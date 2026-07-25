@@ -9,6 +9,7 @@ interface SnapshotParts {
   bodyClass: string
   bodyStyle: string
   htmlStyle: string
+  widgetScripts: string[]
 }
 
 export interface InitEditorOptions {
@@ -109,14 +110,24 @@ function stripNonContentElements(html: string): string {
 }
 
 function stripBakedResponsiveStyles(html: string): string {
-  return html.replace(/\sstyle="([^"]*)"/gi, (_fullMatch, styleVal: string) => {
-    const declarations = styleVal.split(';').filter(d => d.trim())
-    const kept = declarations.filter(d => {
-      const prop = d.split(':')[0].trim().toLowerCase()
-      return !RESPONSIVE_PROPS.has(prop)
+  // Match opening HTML tags individually so we can check for
+  // data-widget-frozen before stripping responsive properties.
+  // Frozen widget styles must be preserved — they were fully baked
+  // during capture and have no CSS rules to fall back on.
+  return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => {
+    if (!tag.includes(' style="')) return tag
+    // Preserve all inline styles on frozen widget elements
+    if (tag.includes('data-widget-frozen')) return tag
+
+    return tag.replace(/ style="([^"]*)"/i, (_m, styleVal: string) => {
+      const declarations = styleVal.split(';').filter(d => d.trim())
+      const kept = declarations.filter(d => {
+        const prop = d.split(':')[0].trim().toLowerCase()
+        return !RESPONSIVE_PROPS.has(prop)
+      })
+      if (kept.length === 0) return ''
+      return ` style="${kept.join(';')}"`
     })
-    if (kept.length === 0) return ''
-    return ` style="${kept.join(';')}"`
   })
 }
 
@@ -165,7 +176,11 @@ function parseSnapshotHtml(html: string): SnapshotParts {
   const htmlStyleMatch = htmlAttrs.match(/style="([^"]*)"/)
   const htmlStyle = htmlStyleMatch ? htmlStyleMatch[1] : ''
 
-  return { bodyHtml, cssLinks, inlineCss: inlineStyles.join('\n'), bodyClass, bodyStyle, htmlStyle }
+  // Extract preserved script URLs from meta tag (injected during capture)
+  const scriptsMeta = html.match(/<meta[^>]*name=["']snapshot-preserved-scripts["'][^>]*content=["']([^"']*)["'][^>]*>/i)
+  const widgetScripts = scriptsMeta ? scriptsMeta[1].split('|||').filter(s => s.trim()) : []
+
+  return { bodyHtml, cssLinks, inlineCss: inlineStyles.join('\n'), bodyClass, bodyStyle, htmlStyle, widgetScripts }
 }
 
 /* ------------------------------------------------------------------ */
@@ -326,7 +341,7 @@ const ICON_STRIKETHROUGH = '<svg width="15" height="15" viewBox="0 0 15 15" fill
 /* ------------------------------------------------------------------ */
 
 export function initEditor(container: HTMLElement, snapshotHtml: string, options?: InitEditorOptions): Editor {
-  const { bodyHtml: rawBodyHtml, cssLinks: rawCssLinks, inlineCss, bodyClass, bodyStyle, htmlStyle } = parseSnapshotHtml(snapshotHtml)
+  const { bodyHtml: rawBodyHtml, cssLinks: rawCssLinks, inlineCss, bodyClass, bodyStyle, htmlStyle, widgetScripts } = parseSnapshotHtml(snapshotHtml)
   // 1. Strip iframes, noscripts (whitespace, widgets)
   // 2. Strip responsive inline styles so CSS @media queries work
   const bodyHtml = stripBakedResponsiveStyles(stripNonContentElements(rawBodyHtml))
@@ -360,6 +375,7 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     // adds them AFTER GrapesJS's internal <style> blocks, causing the
     // original CSS to override user edits (e.g. font-family changes).
     // Fonts are loaded separately by the font scanning/injection code.
+    //
     canvas: { styles: [] },
     panels: { defaults: [] },
 
@@ -608,6 +624,9 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       doc.querySelectorAll('*').forEach((el: Element) => {
         const htmlEl = el as HTMLElement
         if (!htmlEl.style) return
+        // Preserve frozen widget styles — they were baked during capture
+        // and have no CSS rules; stripping them breaks the widget appearance
+        if (htmlEl.hasAttribute('data-widget-frozen')) return
         let changed = false
         for (const prop of RESPONSIVE_PROPS) {
           if (htmlEl.style.getPropertyValue(prop)) {
@@ -621,12 +640,79 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       })
     }
 
+    // ── Collapse empty containers (leftover from stripped iframes/widgets) ──
+    // stripNonContentElements removes iframes/noscripts but leaves parent
+    // containers behind.  These empty divs can have min-height/padding that
+    // creates visible whitespace.  Walk bottom-up so nested empty containers
+    // are collapsed recursively (inner empties first, then outer becomes empty).
+    if (doc) {
+      const isVisuallyEmpty = (el: HTMLElement): boolean => {
+        // Has meaningful text?
+        if ((el.textContent || '').trim().length > 0) return false
+        // Has images, videos, canvas, or other media?
+        if (el.querySelector('img, video, canvas, picture, object, embed')) return false
+        // SVGs: only count as meaningful content if reasonably large.
+        // Small decorative SVGs (spacers, separators, tiny icons inside
+        // otherwise-empty containers) should not prevent collapsing.
+        const svgs = el.querySelectorAll('svg')
+        for (const svg of Array.from(svgs)) {
+          const w = parseFloat(svg.getAttribute('width') || '0')
+          const h = parseFloat(svg.getAttribute('height') || '0')
+          if (w > 24 || h > 24) return false
+          // Check viewBox for SVGs without explicit width/height
+          const vb = svg.getAttribute('viewBox')
+          if (vb && !w && !h) {
+            const parts = vb.split(/[\s,]+/)
+            if (parseFloat(parts[2] || '0') > 24 || parseFloat(parts[3] || '0') > 24) return false
+          }
+        }
+        // Has background image?
+        const cs = doc.defaultView?.getComputedStyle(el)
+        if (cs?.backgroundImage && cs.backgroundImage !== 'none') return false
+        return true
+      }
+      // Collect all containers, then process deepest-first (reverse DOM order)
+      const containers = Array.from(doc.querySelectorAll('div, section, aside'))
+      containers.reverse().forEach((el: Element) => {
+        const htmlEl = el as HTMLElement
+        // Skip frozen widget elements
+        if (htmlEl.hasAttribute('data-widget-frozen') || htmlEl.closest('[data-widget-frozen]')) return
+        // Check if all children are hidden (already collapsed)
+        const visibleChildren = Array.from(htmlEl.children).filter(
+          (child) => (child as HTMLElement).style?.display !== 'none'
+        )
+        if (visibleChildren.length > 0) return
+        if (!isVisuallyEmpty(htmlEl)) return
+        htmlEl.style.display = 'none'
+      })
+    }
+
     const enableResize = (component: ReturnType<typeof editor.getWrapper>) => {
       if (!component) return
       component.set('resizable', true)
       component.components().each((child) => enableResize(child))
     }
     enableResize(editor.getWrapper())
+
+    // ── Inject preserved page scripts (jQuery, Elementor, widgets, etc.) ──
+    // Scripts are loaded sequentially to respect dependency order (jQuery
+    // must finish before plugins that depend on it, etc.).  This makes
+    // interactive elements (chat widgets, sliders, tabs, menus) fully
+    // functional inside the editor — 1:1 with the staging site.
+    if (doc && widgetScripts.length > 0) {
+      const injectScripts = async () => {
+        for (const url of widgetScripts) {
+          await new Promise<void>((resolve) => {
+            const s = doc!.createElement('script')
+            s.src = url
+            s.onload = () => resolve()
+            s.onerror = () => resolve() // continue even if one fails
+            doc!.body.appendChild(s)
+          })
+        }
+      }
+      injectScripts().catch(() => {})
+    }
 
     // ── Scan iframe computed styles for ALL fonts (catches external CSS) ──
     if (doc) {
@@ -728,15 +814,6 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     // Store synced values so _applyInline knows these are defaults, not user edits
     _syncedDefaults.set(el, { ...newStyles })
 
-    console.log('[GJS] component:selected sync', {
-      tag: el.tagName,
-      classes: el.className?.toString?.()?.slice(0, 60),
-      syncedProps: Object.keys(newStyles),
-      fontFamily: newStyles['font-family'] || '(not synced)',
-      ruleFont: ruleStyles['font-family'] || '(none)',
-      compFont: currentStyles['font-family'] || '(none)',
-    })
-
     if (Object.keys(newStyles).length > 0) {
       component.addStyle(newStyles)
     }
@@ -831,16 +908,6 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       allStyles[prop] = val
     }
 
-    console.log('[GJS] _applyInline', {
-      tag: el.tagName,
-      classes: el.className?.toString?.()?.slice(0, 60),
-      allStylesFont: allStyles['font-family'] || '(none)',
-      compFont: compStyles['font-family'] || '(none)',
-      syncedFont: synced['font-family'] || '(none)',
-      compFontMatchesSynced: compStyles['font-family'] === synced['font-family'],
-      allStyleKeys: Object.keys(allStyles).filter(k => allStyles[k]).slice(0, 15),
-    })
-
     const prev = _gjsApplied.get(el) || new Set<string>()
     const current = new Set<string>()
 
@@ -849,9 +916,6 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       const strVal = String(val)
       // Skip synced defaults — only apply !important for actual changes
       if (synced[prop] === strVal) continue
-      if (prop === 'font-family') {
-        console.log('[GJS] APPLYING font-family !important:', strVal, '| synced was:', synced[prop])
-      }
       el.style.setProperty(prop, strVal, 'important')
       current.add(prop)
     }
@@ -867,31 +931,12 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     if (current.size > 0) _gjsModifiedEls.add(el)
   }
 
-  editor.on('component:styleUpdate', (comp: any) => {
-    console.log('[GJS] component:styleUpdate fired', {
-      tag: comp?.getEl?.()?.tagName,
-      compFont: comp?.getStyle?.()?.['font-family'] || '(none)',
-    })
-    _applyInline(comp)
-  })
+  editor.on('component:styleUpdate', _applyInline)
 
   // Also listen for CSS rule additions/changes (class-based style targets)
   editor.CssComposer.getAll().on('add change', () => {
     const sel = editor.getSelected()
-    if (sel) {
-      // Log all CssComposer rules that have font-family
-      editor.CssComposer.getAll().each((rule: any) => {
-        const style = rule.getStyle() || {}
-        if (style['font-family']) {
-          console.log('[GJS] CssComposer rule with font-family:', {
-            selector: rule.selectorsToString(),
-            fontFamily: style['font-family'],
-            mediaText: rule.get('mediaText') || '(none)',
-          })
-        }
-      })
-      _applyInline(sel)
-    }
+    if (sel) _applyInline(sel)
   })
 
   // ── Responsive: clear user-edit overrides on device change ──

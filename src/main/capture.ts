@@ -471,6 +471,35 @@ export async function captureUrl(url: string): Promise<string> {
       console.log(`[capture]     <${s.tag}> .${s.classes.slice(0, 40)} → ${s.propsAdded} props: ${s.sample}`)
     })
 
+    // ── Preserve functional page scripts ──
+    // Extract ALL external script URLs except analytics/tracking/ads.
+    // These are stored in a <meta> tag that survives script stripping.
+    // The GrapesJS editor re-injects them into its canvas iframe so
+    // interactive elements (chat widgets, sliders, tabs, menus, etc.)
+    // work exactly as on the staging site.
+    const preservedScripts: string[] = await captureWindow.webContents.executeJavaScript(`
+      (() => {
+        var scripts = Array.from(document.querySelectorAll('script[src]'));
+        // Blacklist: analytics, tracking, ads, monitoring — non-functional
+        var blacklist = /google-analytics\\.com|googletagmanager\\.com|gtag\\/js|connect\\.facebook\\.net|fbevents|hotjar\\.com|static\\.hotjar|mixpanel\\.com|cdn\\.segment\\.(com|io)|doubleclick\\.net|googlesyndication\\.com|adsbygoogle|pagead2|google\\.com\\/recaptcha|gstatic\\.com\\/recaptcha|nr-data\\.net|newrelic|sentry-cdn|sentry\\.io\\/sdk|bugsnag|datadoghq\\.com|clarity\\.ms|optimizely\\.com|crazyegg\\.com|mouseflow\\.com|smartlook|fullstory\\.com|heap-analytics|cdn\\.amplitude|plausible\\.io|matomo|piwik|clicky\\.com|statcounter\\.com|chartbeat\\.com|pardot\\.com|marketo\\.(net|com)|mc\\.yandex/i;
+        var urls = scripts
+          .map(function(s) { return s.src; })
+          .filter(function(src) {
+            if (!src) return false;
+            return !blacklist.test(src);
+          });
+        if (urls.length > 0) {
+          var meta = document.createElement('meta');
+          meta.setAttribute('name', 'snapshot-preserved-scripts');
+          meta.setAttribute('content', urls.join('|||'));
+          document.head.appendChild(meta);
+        }
+        return urls;
+      })()
+    `)
+    console.log('[capture] Preserved scripts:', preservedScripts.length)
+    preservedScripts.forEach((u: string) => console.log('[capture]   ' + u))
+
     // Final cleanup — remove any cookie/overlay elements that re-appeared,
     // empty containers (chat widgets, stripped iframes, header spacers),
     // and other non-content elements that create whitespace.
@@ -497,10 +526,14 @@ export async function captureUrl(url: string): Promise<string> {
           '[class*="zendesk"]', '[id*="zendesk"]',
         ];
         selectors.forEach(sel => {
-          try { document.querySelectorAll(sel).forEach(el => { el.remove(); removed++; }); } catch {}
+          try { document.querySelectorAll(sel).forEach(el => {
+            if (el.hasAttribute('data-widget-frozen') || el.closest('[data-widget-frozen]')) return;
+            el.remove(); removed++;
+          }); } catch {}
         });
-        // Remove remaining fixed overlays
+        // Remove remaining fixed overlays (skip frozen widgets)
         document.querySelectorAll('*').forEach(el => {
+          if (el.hasAttribute('data-widget-frozen') || el.closest('[data-widget-frozen]')) return;
           const s = getComputedStyle(el);
           if (s.position !== 'fixed' && s.position !== 'sticky') return;
           const z = parseInt(s.zIndex, 10);
@@ -521,6 +554,7 @@ export async function captureUrl(url: string): Promise<string> {
         // child elements) to avoid collapsing legitimate flex/grid
         // parents whose children are positioned elsewhere.
         document.querySelectorAll('div, section, aside').forEach(el => {
+          if (el.hasAttribute('data-widget-frozen') || el.closest('[data-widget-frozen]')) return;
           // Must be a leaf — no child elements at all
           if (el.children.length > 0) return;
           // Skip elements with text content
