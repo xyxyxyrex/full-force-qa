@@ -1,0 +1,430 @@
+/*
+ * GrapesJS Dark Theme — Figma-like (§7)
+ *
+ * Overrides GrapesJS's default light UI to match the design direction:
+ * dark neutral workspace, blue accent, compact panels, flat/precise feel.
+ */
+
+/* ── Base color tokens ───────────────────────── */
+
+.gjs-one-bg {
+  background-color: #252525;
+}
+
+.gjs-two-color {
+  color: #e8e8e8;
+}
+
+.gjs-three-bg {
+  background-color: #2d2d2d;
+}
+
+.gjs-four-color,
+.gjs-four-color-h:hover {
+  color: #a0a0a0;
+}
+
+/* ── Canvas ──────────────────────────────────── */
+
+.gjs-cv-canvas {
+  background-color: #1a1a1a;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The iframe wrapper — adds "page" feel */
+.gjs-frame-wrapper {
+  background: #fff;
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+  margin: 24px auto;
+}
+
+/* ── Selection & highlight ───────────────────── */
+
+.gjs-selected {
+  outline: 2px solid #4C8BF5 !important;
+  outline-offset: -1px;
+}
+
+.gjs-highlighter {
+  outline: 1px solid rgba(76, 139, 245, 0.5) !important;
+}
+
+/* Resize handles */
+.gjs-resizer-h {
+  border: 2px solid #4C8BF5;
+  width: 8px !important;
+  height: 8px !important;
+  background: #252525;
+  border-radius: 2px;
+}
+
+/* Toolbar that appears above selected element */
+.gjs-toolbar {
+  background: #333;
+  border-radius: 4px;
+  padding: 2px;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.gjs-toolbar-item {
+  padding: 4px 6px;
+  color: #b0b0b0;
+  font-size: 12px;
+  border-radius: 3px;
+}
+
+.gjs-toolbar-item:hover {
+  color: #fff;
+  background: rgba(76, 139, 245, 0.2);
+}
+
+/* ── Panels ──────────────────────────────────── */
+
+.gjs-pn-panel {
+  background: #252525;
+  border: none;
+}
+
+.gjs-pn-btn {
+  color: #a0a0a0;
+  border-radius: 4px;
+}
+
+.gjs-pn-btn:hover {
+  color: #e8e8e8;
+}
+
+.gjs-pn-btn.gjs-pn-active {
+  color: #4C8BF5;
+  box-shadow: none;
+}
+
+/* ── Style Manager ───────────────────────────── */
+
+.gjs-sm-sector {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.gjs-sm-sector .gjs-sm-sector-title {
+  background: transparent;
+  color: #909090;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 10px 14px;
+  border: none;
+}
+
+.gjs-sm-sector .gjs-sm-sector-title:hover {
+  color: #c0c0c0;
+}
+
+.gjs-sm-sector .gjs-sm-properties {
+  padding: 4px 14px 12px;
+}
+
+/* Property rows */
+.gjs-sm-property {
+  margin-bottom: 6px;
+}
+
+.gjs-sm-property .gjs-sm-label {
+  font-size: 11px;
+  color: #808080;
+  margin-bottom: 3px;
+}
+
+/* Inputs */
+.gjs-sm-property .gjs-field,
+.gjs-field {
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #e8e8e8;
+  transition: border-color 0.12s;
+}
+
+.gjs-field:focus-within {
+  border-color: #4C8BF5;
+}
+
+.gjs-field input,
+.gjs-field select,
+.gjs-field textarea {
+  color: #e8e8e8;
+  font-size: 12px;
+}
+
+.gjs-field-arrows {
+  color: #606060;
+}
+
+.gjs-field-arrows:hover {
+  color: #a0a0a0;
+}
+
+/* Color picker field */
+.gjs-field-color .gjs-field-colorp {
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Composite / radio / select */
+.gjs-sm-composite .gjs-sm-property {
+  margin-bottom: 4px;
+}
+
+.gjs-radio-item {
+  background: #2d2d2d;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #909090;
+}
+
+.gjs-radio-item:hover {
+  color: #c0c0c0;
+}
+
+.gjs-radio-item input:checked + .gjs-radio-item-label {
+  background: rgba(76, 139, 245, 0.15);
+  color: #4C8BF5;
+}
+
+/* Select dropdown */
+.gjs-sm-property select,
+.gjs-clm-select select,
+.gjs-field select {
+  background: #1a1a1a;
+  color: #e8e8e8;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+/* ── Selector / Class Manager ────────────────── */
+
+.gjs-clm-tags {
+  background: transparent;
+  padding: 8px 14px;
+}
+
+.gjs-clm-tag {
+  background: rgba(76, 139, 245, 0.12);
+  color: #7eb0f7;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.gjs-clm-tag:hover {
+  background: rgba(76, 139, 245, 0.2);
+}
+
+.gjs-clm-tag-close {
+  color: #7eb0f7;
+}
+
+.gjs-clm-sels-info {
+  color: #606060;
+  font-size: 11px;
+  padding: 4px 14px;
+}
+
+/* ── Layer Manager ───────────────────────────── */
+
+.gjs-layers {
+  background: transparent;
+}
+
+.gjs-layer {
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.gjs-layer:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gjs-layer.gjs-selected {
+  background: rgba(76, 139, 245, 0.1) !important;
+  outline: none !important;
+}
+
+.gjs-layer-title {
+  color: #b0b0b0;
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.gjs-layer.gjs-selected .gjs-layer-title {
+  color: #e8e8e8;
+}
+
+.gjs-layer-title-inn {
+  padding-left: 4px;
+}
+
+.gjs-layer-caret {
+  color: #606060;
+  font-size: 8px;
+}
+
+.gjs-layer-vis {
+  color: #606060;
+}
+
+.gjs-layer-vis:hover {
+  color: #a0a0a0;
+}
+
+/* Layer nesting indentation */
+.gjs-layer-children {
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  margin-left: 10px;
+}
+
+/* ── Scrollbars ──────────────────────────────── */
+
+.editor-panel::-webkit-scrollbar,
+.gjs-layers::-webkit-scrollbar,
+.gjs-sm-properties::-webkit-scrollbar {
+  width: 6px;
+}
+
+.editor-panel::-webkit-scrollbar-track,
+.gjs-layers::-webkit-scrollbar-track,
+.gjs-sm-properties::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.editor-panel::-webkit-scrollbar-thumb,
+.gjs-layers::-webkit-scrollbar-thumb,
+.gjs-sm-properties::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+.editor-panel::-webkit-scrollbar-thumb:hover,
+.gjs-layers::-webkit-scrollbar-thumb:hover,
+.gjs-sm-properties::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ── Badge (component type indicator) ────────── */
+
+.gjs-badge {
+  background: #4C8BF5;
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+/* ── Typography icon radio buttons ──────────── */
+
+/* Text-align and text-decoration radios: compact icon-button style */
+.gjs-sm-property__text-align .gjs-radio-items,
+.gjs-sm-property__text-decoration .gjs-radio-items,
+.gjs-sm-property__text-transform .gjs-radio-items {
+  display: flex;
+  gap: 2px;
+}
+
+.gjs-sm-property__text-align .gjs-radio-item,
+.gjs-sm-property__text-decoration .gjs-radio-item,
+.gjs-sm-property__text-transform .gjs-radio-item {
+  flex: 0 0 auto;
+}
+
+.gjs-sm-property__text-align .gjs-radio-item-label,
+.gjs-sm-property__text-decoration .gjs-radio-item-label,
+.gjs-sm-property__text-transform .gjs-radio-item-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.gjs-sm-property__text-align .gjs-radio-item-label svg,
+.gjs-sm-property__text-decoration .gjs-radio-item-label svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.gjs-sm-property__text-align .gjs-radio-item input:checked + .gjs-radio-item-label,
+.gjs-sm-property__text-decoration .gjs-radio-item input:checked + .gjs-radio-item-label,
+.gjs-sm-property__text-transform .gjs-radio-item input:checked + .gjs-radio-item-label {
+  background: rgba(76, 139, 245, 0.2);
+  color: #4C8BF5;
+}
+
+/* Color picker improvements */
+.gjs-field-color .sp-preview {
+  border-radius: 3px;
+}
+
+.gjs-field-color .sp-replacer {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: #1a1a1a;
+  padding: 2px;
+}
+
+.sp-container {
+  background: #2a2a2a !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+.sp-input {
+  background: #1a1a1a !important;
+  color: #e8e8e8 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+}
+
+.sp-button-container .sp-cancel,
+.sp-button-container .sp-choose {
+  background: rgba(255, 255, 255, 0.08);
+  color: #c0c0c0;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.sp-button-container .sp-choose {
+  background: #4C8BF5;
+  color: #fff;
+}
+
+/* ── Misc cleanup ────────────────────────────── */
+
+/* Remove GrapesJS default borders and shadows */
+.gjs-cv-canvas .gjs-ghost,
+.gjs-cv-canvas .gjs-placeholder {
+  border-color: #4C8BF5;
+}
+
+/* Make the editor fill its container */
+.gjs-editor {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.gjs-editor-cont {
+  height: 100% !important;
+}
