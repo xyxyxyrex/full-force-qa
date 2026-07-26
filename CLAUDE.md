@@ -166,6 +166,9 @@ SVGs ≤24px are treated as decorative and don't prevent collapsing.
 
 | Feature | Description |
 |---------|-------------|
+| **Top Tabs** | Switch between `Layout` mode and `Audit` SEO mode while keeping central canvas and left layers tree active |
+| **SEO Audit Inspector** | GrapesJS CAD-style right panel inspector: `META TAGS`, `HEADER TAGS`, `IMAGES & ALT`, `LINKS & ANCHORS`, `DUPLICATE CONTENT`, and `ASSETS & LIBRARIES` (Internal/External JS & CSS) |
+| **Duplicate Detection Overlay** | Automatic canvas duplicate detection when switching to `Audit` tab: highlights duplicate headings & text blocks in red with `[Duplicate]` overlay badges; switching back to `Layout` restores clean canvas |
 | **Device Presets** | Desktop/Tablet/Mobile with responsive CSS |
 | **Free Transform** | Custom dimensions, drag-to-resize edges |
 | **Zoom** | 25–200%, Ctrl+scroll, fit-to-screen |
@@ -206,6 +209,11 @@ These were debugged and fixed during development. Context preserved for future s
 5. **Left whitespace**: Stripping `width`/`min-width` from inline styles broke Elementor column layout. Fixed by removing those from RESPONSIVE_PROPS.
 
 6. **Small decorative SVGs preventing collapse**: Blanket `querySelector('svg')` check treated any SVG as meaningful content. Fixed by only counting SVGs >24px as meaningful.
+
+7. **Whitespace at bottom from SVG sprite sheets & stripped display:none**: Stripping `display` from inline styles removed `display: none` from hidden SVG icon sprite sheets (`<svg style="display:none">`) and hidden helper tags sitting at the bottom of `<body>`. Browsers rendered unhidden SVGs as 300×150 layout blocks below `<footer>`. Fixed by:
+   - Preserving `display: none` when stripping responsive inline properties in `stripBakedResponsiveStyles()` and live DOM cleanup in `init.ts`
+   - Explicitly applying `display: none` to SVG sprite sheets (`<svg>` containing `<symbol>` or `<defs>`) and post-footer non-content elements
+   - Stripping `<link>` tags from `bodyHtml` in `stripNonContentElements()` to prevent unwanted `Link` components at the root of `Body`
 
 ## Analytics/Tracking Script Blacklist
 

@@ -6,6 +6,7 @@ interface SnapshotParts {
   bodyHtml: string
   cssLinks: string[]
   inlineCss: string
+  htmlClass: string
   bodyClass: string
   bodyStyle: string
   htmlStyle: string
@@ -31,19 +32,6 @@ const SYSTEM_FONTS = new Set([
   'segoe ui symbol', 'noto color emoji', 'brush script mt'
 ])
 
-const SYSTEM_FONT_OPTIONS = [
-  { id: 'Arial, Helvetica, sans-serif', label: 'Arial' },
-  { id: 'Arial Black, Gadget, sans-serif', label: 'Arial Black' },
-  { id: 'Comic Sans MS, cursive', label: 'Comic Sans MS' },
-  { id: 'Courier New, Courier, monospace', label: 'Courier New' },
-  { id: 'Georgia, serif', label: 'Georgia' },
-  { id: 'Helvetica, Arial, sans-serif', label: 'Helvetica' },
-  { id: 'Impact, Charcoal, sans-serif', label: 'Impact' },
-  { id: 'Tahoma, Geneva, sans-serif', label: 'Tahoma' },
-  { id: 'Times New Roman, Times, serif', label: 'Times New Roman' },
-  { id: 'Trebuchet MS, Helvetica, sans-serif', label: 'Trebuchet MS' },
-  { id: 'Verdana, Geneva, sans-serif', label: 'Verdana' },
-]
 
 const CDN_FONTS: Record<string, string> = {
   'Font Awesome 6 Free': 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css',
@@ -116,13 +104,21 @@ function stripBakedResponsiveStyles(html: string): string {
   // during capture and have no CSS rules to fall back on.
   return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => {
     if (!tag.includes(' style="')) return tag
-    // Preserve all inline styles on frozen widget elements
-    if (tag.includes('data-widget-frozen')) return tag
+    // Preserve all inline styles on frozen widget & preserved header elements
+    if (tag.includes('data-widget-frozen') || tag.includes('data-header-preserved')) return tag
 
     return tag.replace(/ style="([^"]*)"/i, (_m, styleVal: string) => {
       const declarations = styleVal.split(';').filter(d => d.trim())
       const kept = declarations.filter(d => {
-        const prop = d.split(':')[0].trim().toLowerCase()
+        const parts = d.split(':')
+        const prop = parts[0].trim().toLowerCase()
+        const val = parts.slice(1).join(':').trim().toLowerCase()
+        // Strip inline display: none from non-popup/modal elements so stylesheet @media queries natively unhide them on mobile
+        if (prop === 'display' && val.includes('none')) {
+          const isPopupOrModal = /popup|modal|consent|cookie|dialog/i.test(tag)
+          if (!isPopupOrModal) return false
+          return true
+        }
         return !RESPONSIVE_PROPS.has(prop)
       })
       if (kept.length === 0) return ''
@@ -170,9 +166,11 @@ function parseSnapshotHtml(html: string): SnapshotParts {
   const bodyStyleMatch = bodyAttrs.match(/style="([^"]*)"/)
   const bodyStyle = bodyStyleMatch ? bodyStyleMatch[1] : ''
 
-  // Extract html tag style (CSS custom properties / Elementor variables)
+  // Extract html tag attributes (class, style)
   const htmlTagMatch = html.match(/<html([^>]*)>/i)
   const htmlAttrs = htmlTagMatch ? htmlTagMatch[1] : ''
+  const htmlClassMatch = htmlAttrs.match(/class="([^"]*)"/)
+  const htmlClass = htmlClassMatch ? htmlClassMatch[1] : ''
   const htmlStyleMatch = htmlAttrs.match(/style="([^"]*)"/)
   const htmlStyle = htmlStyleMatch ? htmlStyleMatch[1] : ''
 
@@ -180,7 +178,7 @@ function parseSnapshotHtml(html: string): SnapshotParts {
   const scriptsMeta = html.match(/<meta[^>]*name=["']snapshot-preserved-scripts["'][^>]*content=["']([^"']*)["'][^>]*>/i)
   const widgetScripts = scriptsMeta ? scriptsMeta[1].split('|||').filter(s => s.trim()) : []
 
-  return { bodyHtml, cssLinks, inlineCss: inlineStyles.join('\n'), bodyClass, bodyStyle, htmlStyle, widgetScripts }
+  return { bodyHtml, cssLinks, inlineCss: inlineStyles.join('\n'), htmlClass, bodyClass, bodyStyle, htmlStyle, widgetScripts }
 }
 
 /* ------------------------------------------------------------------ */
@@ -298,53 +296,15 @@ async function injectAndLoadFonts(doc: Document, textFonts: string[], iconFonts:
   await doc.fonts.ready
 }
 
-/* ------------------------------------------------------------------ */
-/*  Style Manager: update font-family dropdown with discovered fonts  */
-/* ------------------------------------------------------------------ */
-
-function updateFontOptions(editor: Editor, webFonts: string[]) {
-  const webFontOpts = webFonts
-    .filter((f) => !isIconFont(f))
-    .sort()
-    .map((f) => ({ id: f, label: f }))
-
-  const allOptions = [...webFontOpts, ...SYSTEM_FONT_OPTIONS]
-
-  // Walk GrapesJS StyleManager sectors to find the font-family property
-  try {
-    const sectors = editor.StyleManager.getSectors()
-    sectors.each((sector: any) => {
-      const props = sector.get('properties')
-      if (!props) return
-      props.each((prop: any) => {
-        if (prop.get('property') === 'font-family') {
-          prop.set('options', allOptions)
-        }
-      })
-    })
-  } catch (_) { /* graceful fallback */ }
-}
-
-/* ------------------------------------------------------------------ */
-/*  Typography icon SVGs (used in StyleManager radio labels via HTML)  */
-/* ------------------------------------------------------------------ */
-
-const ICON_ALIGN_LEFT = '<svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor"><rect x="1" y="2" width="13" height="1.5" rx=".5"/><rect x="1" y="5.5" width="8" height="1.5" rx=".5"/><rect x="1" y="9" width="11" height="1.5" rx=".5"/><rect x="1" y="12.5" width="6" height="1.5" rx=".5"/></svg>'
-const ICON_ALIGN_CENTER = '<svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor"><rect x="1" y="2" width="13" height="1.5" rx=".5"/><rect x="3.5" y="5.5" width="8" height="1.5" rx=".5"/><rect x="2" y="9" width="11" height="1.5" rx=".5"/><rect x="4.5" y="12.5" width="6" height="1.5" rx=".5"/></svg>'
-const ICON_ALIGN_RIGHT = '<svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor"><rect x="1" y="2" width="13" height="1.5" rx=".5"/><rect x="6" y="5.5" width="8" height="1.5" rx=".5"/><rect x="3" y="9" width="11" height="1.5" rx=".5"/><rect x="8" y="12.5" width="6" height="1.5" rx=".5"/></svg>'
-const ICON_ALIGN_JUSTIFY = '<svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor"><rect x="1" y="2" width="13" height="1.5" rx=".5"/><rect x="1" y="5.5" width="13" height="1.5" rx=".5"/><rect x="1" y="9" width="13" height="1.5" rx=".5"/><rect x="1" y="12.5" width="8" height="1.5" rx=".5"/></svg>'
-const ICON_UNDERLINE = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.5 2v5.5a4 4 0 008 0V2"/><line x1="2" y1="13.5" x2="13" y2="13.5"/></svg>'
-const ICON_STRIKETHROUGH = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="1" y1="7.5" x2="14" y2="7.5"/><path d="M10.5 4C10 3 9 2.5 7.5 2.5S4.5 3.5 4.5 5c0 1.2.8 2 2.5 2.5m.5 0c1.7.5 3 1.3 3 2.5 0 1.5-1.5 2.5-3 2.5S4.5 12 4 11"/></svg>'
 
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
 
 export function initEditor(container: HTMLElement, snapshotHtml: string, options?: InitEditorOptions): Editor {
-  const { bodyHtml: rawBodyHtml, cssLinks: rawCssLinks, inlineCss, bodyClass, bodyStyle, htmlStyle, widgetScripts } = parseSnapshotHtml(snapshotHtml)
-  // 1. Strip iframes, noscripts (whitespace, widgets)
-  // 2. Strip responsive inline styles so CSS @media queries work
-  const bodyHtml = stripBakedResponsiveStyles(stripNonContentElements(rawBodyHtml))
+  const { bodyHtml: rawBodyHtml, cssLinks: rawCssLinks, inlineCss, htmlClass, bodyClass, bodyStyle, htmlStyle, widgetScripts } = parseSnapshotHtml(snapshotHtml)
+  // Preserve rawBodyHtml 100% intact — DO NOT strip inline styles or non-content elements
+  const bodyHtml = rawBodyHtml
   let fontsReady = false
 
   // Separate regular CSS links from media-constrained ones
@@ -369,14 +329,7 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
 
     storageManager: false,
 
-    // Do NOT load external CSS links here — the captured CSSOM (injected
-    // at the beginning of <head> in the load handler) already contains all
-    // rules from those stylesheets.  Loading them again via canvas.styles
-    // adds them AFTER GrapesJS's internal <style> blocks, causing the
-    // original CSS to override user edits (e.g. font-family changes).
-    // Fonts are loaded separately by the font scanning/injection code.
-    //
-    canvas: { styles: [] },
+    canvas: { styles: plainCssLinks },
     panels: { defaults: [] },
 
     colorPicker: {
@@ -388,125 +341,16 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
 
     deviceManager: {
       devices: [
-        // widthMedia: '' on Desktop/Custom prevents GrapesJS from wrapping
-        // user edits in @media rules.  Without this, ALL style changes get
-        // stored as @media (max-width: 1900px) and _applyInline skips them.
-        { name: 'Desktop', width: '1900px', widthMedia: '' },
-        { name: 'Tablet', width: '1199px', widthMedia: '1199px' },
-        { name: 'Mobile', width: '767px', widthMedia: '767px' },
-        { name: 'Custom', width: '1900px', widthMedia: '' }
+        { name: 'Desktop', width: '1920px', height: '1200px', widthMedia: '' },
+        { name: 'Tablet', width: '1199px', height: '768px', widthMedia: '1199px' },
+        { name: 'Mobile', width: '767px', height: '329px', widthMedia: '767px' },
+        { name: 'Custom', width: '1920px', height: '1200px', widthMedia: '' }
       ]
     },
 
     selectorManager: { appendTo: '#selector-container' },
 
-    styleManager: {
-      appendTo: '#style-manager-container',
-      sectors: [
-        {
-          name: 'Typography',
-          open: true,
-          properties: [
-            {
-              property: 'font-family',
-              type: 'select',
-              options: SYSTEM_FONT_OPTIONS, // will be updated after iframe scan
-            },
-            {
-              property: 'font-size',
-              type: 'number',
-              units: ['px', 'em', 'rem', '%', 'vw'],
-              min: 0,
-            },
-            {
-              property: 'font-weight',
-              type: 'select',
-              defaults: '400',
-              full: true,
-              options: [
-                { id: '100', label: 'Thin (100)' },
-                { id: '200', label: 'Extra Light (200)' },
-                { id: '300', label: 'Light (300)' },
-                { id: '400', label: 'Regular (400)' },
-                { id: '500', label: 'Medium (500)' },
-                { id: '600', label: 'Semi Bold (600)' },
-                { id: '700', label: 'Bold (700)' },
-                { id: '800', label: 'Extra Bold (800)' },
-                { id: '900', label: 'Black (900)' },
-              ]
-            },
-            'letter-spacing',
-            'line-height',
-            'color',
-            {
-              property: 'text-align',
-              type: 'radio',
-              defaults: 'left',
-              full: true,
-              options: [
-                { id: 'left', label: ICON_ALIGN_LEFT },
-                { id: 'center', label: ICON_ALIGN_CENTER },
-                { id: 'right', label: ICON_ALIGN_RIGHT },
-                { id: 'justify', label: ICON_ALIGN_JUSTIFY },
-              ]
-            },
-            {
-              property: 'text-decoration',
-              type: 'radio',
-              defaults: 'none',
-              full: true,
-              options: [
-                { id: 'none', label: '—' },
-                { id: 'underline', label: ICON_UNDERLINE },
-                { id: 'line-through', label: ICON_STRIKETHROUGH },
-              ]
-            },
-            {
-              property: 'text-transform',
-              type: 'radio',
-              defaults: 'none',
-              full: true,
-              options: [
-                { id: 'none', label: '—' },
-                { id: 'uppercase', label: 'AA' },
-                { id: 'lowercase', label: 'aa' },
-                { id: 'capitalize', label: 'Aa' },
-              ]
-            },
-            {
-              property: 'text-indent',
-              type: 'number',
-              units: ['px', 'em', 'rem', '%'],
-              defaults: '0',
-            },
-            {
-              property: 'word-spacing',
-              type: 'number',
-              units: ['px', 'em', 'rem'],
-              defaults: 'normal',
-            },
-          ]
-        },
-        {
-          name: 'Spacing',
-          open: true,
-          properties: [
-            'margin', 'padding',
-            { property: 'gap', type: 'number', units: ['px', 'em', 'rem', '%'], defaults: '0', min: 0 }
-          ]
-        },
-        {
-          name: 'Size',
-          open: true,
-          properties: ['width', 'min-width', 'max-width', 'height', 'min-height', 'max-height']
-        },
-        {
-          name: 'Appearance',
-          open: false,
-          properties: ['background-color', 'border', 'border-radius', 'box-shadow', 'opacity']
-        }
-      ]
-    },
+    // styleManager disabled — replaced by NativeStylePanel in EditorWorkspace
 
     layerManager: { appendTo: '#layers-container' }
   })
@@ -514,6 +358,16 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
   // ── After load: inject CSS, enable resize, discover + load fonts ──
   editor.on('load', () => {
     const doc = editor.Canvas.getDocument()
+
+    // Ensure <base href="..."> from snapshotHtml is injected into doc.head first!
+    const baseMatch = snapshotHtml.match(/<base[^>]*href=["']([^"']+)["'][^>]*>/i)
+    if (doc && baseMatch) {
+      if (!doc.querySelector('base')) {
+        const baseEl = doc.createElement('base')
+        baseEl.setAttribute('href', baseMatch[1])
+        doc.head.insertBefore(baseEl, doc.head.firstChild)
+      }
+    }
 
     // Restore original <html> and <body> attributes.
     // WordPress/Elementor CSS selectors depend on body classes (e.g.
@@ -527,6 +381,19 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     // Moving them to a <style> block with normal specificity lets the
     // @media rules win at mobile/tablet viewports.
     if (doc) {
+      if (htmlClass) {
+        doc.documentElement.className = htmlClass
+      }
+
+      // Add reset style to prevent canvas scrollbar margin gaps on right side
+      const canvasReset = doc.createElement('style')
+      canvasReset.textContent = `
+        html, body {
+          overflow-x: hidden !important;
+        }
+      `
+      doc.head.appendChild(canvasReset)
+
       // Split htmlStyle into custom properties (→ <style>) and regular (→ inline)
       const cssVarsHtml: string[] = []
       const regularHtml: string[] = []
@@ -581,11 +448,41 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
         doc.head.insertBefore(varsStyle, doc.head.firstChild)
       }
 
-      if (bodyClass) {
-        doc.body.className = bodyClass
-      }
-      // WordPress resets body margin to 0; browser default is 8px
+      // Inject global canvas reset stylesheet to eliminate whitespace gaps and fix responsive layout
+      const resetStyle = doc.createElement('style')
+      resetStyle.setAttribute('data-canvas-reset', 'true')
+      resetStyle.textContent = `
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow-x: hidden !important;
+          box-sizing: border-box !important;
+        }
+        *, *:before, *:after {
+          box-sizing: border-box;
+        }
+      `
+      doc.head.insertBefore(resetStyle, doc.head.firstChild)
       doc.body.style.margin = '0'
+
+      // Debug log hamburger elements
+      setTimeout(() => {
+        const hamburgs = doc.querySelectorAll('.elementskit-menu-hamburger, .elementskit-menu-toggler, .elementor-menu-toggle, [class*="hamburger"], [class*="burger"]')
+        console.log('[DEBUG HAMBURGER] Found menu toggle elements count:', hamburgs.length)
+        hamburgs.forEach((el, idx) => {
+          const htmlEl = el as HTMLElement
+          const cs = doc.defaultView?.getComputedStyle(htmlEl)
+          console.log(`[DEBUG HAMBURGER] #${idx} tag=${el.tagName} class="${el.className}" innerHTML="${el.innerHTML.slice(0, 200)}"`)
+          console.log(`[DEBUG HAMBURGER] #${idx} style="${htmlEl.getAttribute('style')}" display=${cs?.display} visibility=${cs?.visibility} color=${cs?.color} bg=${cs?.backgroundColor} w=${cs?.width} h=${cs?.height}`)
+          Array.from(el.children).forEach((child, cidx) => {
+            const cEl = child as HTMLElement
+            const cCs = doc.defaultView?.getComputedStyle(cEl)
+            console.log(`  [CHILD #${cidx}] tag=${child.tagName} class="${child.className}" style="${cEl.getAttribute('style')}" display=${cCs?.display} bg=${cCs?.backgroundColor} w=${cCs?.width} h=${cCs?.height}`)
+          })
+        })
+      }, 500)
     }
 
     // Inject captured CSSOM at the BEGINNING of <head>.
@@ -606,6 +503,18 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       }
     }
 
+    // Inject external CSS links into iframe <head> (elementor-icons, FontAwesome, etc.)
+    if (doc && plainCssLinks.length > 0) {
+      for (const href of plainCssLinks) {
+        if (!doc.querySelector(`link[href="${CSS.escape(href)}"]`)) {
+          const link = doc.createElement('link')
+          link.rel = 'stylesheet'
+          link.href = href
+          doc.head.appendChild(link)
+        }
+      }
+    }
+
     // Inject media-constrained CSS links that canvas.styles can't handle
     if (doc && mediaCssLinks.length > 0) {
       for (const { href, media } of mediaCssLinks) {
@@ -617,27 +526,78 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       }
     }
 
-    // ── Strip baked inline styles that break responsive CSS ──
-    // Safety net: also strip from the live DOM in case GrapesJS re-adds
-    // any responsive-toggle properties during rendering.
+    // Preserve native HTML & stylesheets intact without stripping inline styles
     if (doc) {
-      doc.querySelectorAll('*').forEach((el: Element) => {
-        const htmlEl = el as HTMLElement
-        if (!htmlEl.style) return
-        // Preserve frozen widget styles — they were baked during capture
-        // and have no CSS rules; stripping them breaks the widget appearance
-        if (htmlEl.hasAttribute('data-widget-frozen')) return
-        let changed = false
-        for (const prop of RESPONSIVE_PROPS) {
-          if (htmlEl.style.getPropertyValue(prop)) {
-            htmlEl.style.removeProperty(prop)
-            changed = true
+      const resetStyle = doc.createElement('style')
+      resetStyle.setAttribute('data-canvas-reset', 'true')
+      resetStyle.textContent = `
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow-x: hidden !important;
+          box-sizing: border-box !important;
+        }
+        *, *:before, *:after {
+          box-sizing: border-box;
+        }
+      `
+      doc.head.insertBefore(resetStyle, doc.head.firstChild)
+    }
+
+    // ── Hide SVG sprite sheets & symbol definitions (eicons, FontAwesome, etc.) ──
+    // WordPress/Elementor injects icon sprite sheets at the bottom of <body>.
+    // When display:none is stripped, browser renders them as 300x150 layout blocks
+    // creating a large white section at the bottom of the page.
+    if (doc) {
+      doc.querySelectorAll('svg').forEach((svg) => {
+        const hasDefsOrSymbols = svg.querySelector('symbol, defs') !== null
+        const directShapes = svg.querySelectorAll(':scope > path, :scope > rect, :scope > circle, :scope > polygon, :scope > polyline, :scope > ellipse, :scope > image, :scope > text')
+        if (hasDefsOrSymbols && directShapes.length === 0) {
+          svg.style.display = 'none'
+        } else if (svg.parentElement === doc.body) {
+          const style = doc.defaultView?.getComputedStyle(svg)
+          if (style?.position !== 'absolute' && style?.position !== 'fixed') {
+            svg.style.display = 'none'
           }
         }
-        if (changed && htmlEl.getAttribute('style')?.trim() === '') {
-          htmlEl.removeAttribute('style')
-        }
       })
+
+      // Hide direct children of <body> sitting after <footer> or <main> if they are non-content/empty
+      const bodyChildren = Array.from(doc.body.children)
+      let seenMainOrFooter = false
+      for (const child of bodyChildren) {
+        const tag = child.tagName.toLowerCase()
+        if (tag === 'footer' || tag === 'main') {
+          seenMainOrFooter = true
+          continue
+        }
+        if (seenMainOrFooter) {
+          const htmlChild = child as HTMLElement
+          if (htmlChild.hasAttribute && (htmlChild.hasAttribute('data-widget-frozen') || htmlChild.closest('[data-widget-frozen]'))) {
+            continue
+          }
+          if (tag === 'span' || tag === 'i' || /hamburger|burger|toggle|toggler|icon|eicon/i.test(htmlChild.className + ' ' + htmlChild.id)) {
+            continue
+          }
+          if (tag === 'svg' || tag === 'link' || tag === 'script') {
+            const text = (htmlChild.textContent || '').trim()
+            const hasMedia = htmlChild.querySelector('img, video, canvas, iframe')
+            if (!text && !hasMedia) {
+              htmlChild.style.display = 'none'
+            }
+          } else {
+            const text = (htmlChild.textContent || '').trim()
+            const hasMedia = htmlChild.querySelector('img, video, canvas, iframe')
+            const style = doc.defaultView?.getComputedStyle(htmlChild)
+            const isFixedOrSticky = style?.position === 'fixed' || style?.position === 'sticky' || style?.position === 'absolute'
+            if (!text && !hasMedia && !isFixedOrSticky) {
+              htmlChild.style.display = 'none'
+            }
+          }
+        }
+      }
     }
 
     // ── Collapse empty containers (leftover from stripped iframes/widgets) ──
@@ -651,15 +611,13 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
         if ((el.textContent || '').trim().length > 0) return false
         // Has images, videos, canvas, or other media?
         if (el.querySelector('img, video, canvas, picture, object, embed')) return false
-        // SVGs: only count as meaningful content if reasonably large.
-        // Small decorative SVGs (spacers, separators, tiny icons inside
-        // otherwise-empty containers) should not prevent collapsing.
+        // SVGs: sprite sheets or small decorative SVGs should not prevent collapsing
         const svgs = el.querySelectorAll('svg')
         for (const svg of Array.from(svgs)) {
+          if (svg.querySelector('symbol, defs') !== null) continue
           const w = parseFloat(svg.getAttribute('width') || '0')
           const h = parseFloat(svg.getAttribute('height') || '0')
           if (w > 24 || h > 24) return false
-          // Check viewBox for SVGs without explicit width/height
           const vb = svg.getAttribute('viewBox')
           if (vb && !w && !h) {
             const parts = vb.split(/[\s,]+/)
@@ -672,11 +630,17 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
         return true
       }
       // Collect all containers, then process deepest-first (reverse DOM order)
-      const containers = Array.from(doc.querySelectorAll('div, section, aside'))
+      const containers = Array.from(doc.querySelectorAll('div, section, aside, span, p, article, nav, header, footer, form, ul, ol, svg, a'))
       containers.reverse().forEach((el: Element) => {
         const htmlEl = el as HTMLElement
         // Skip frozen widget elements
         if (htmlEl.hasAttribute('data-widget-frozen') || htmlEl.closest('[data-widget-frozen]')) return
+        // Never collapse icon elements, buttons, menu toggles, or hamburger lines
+        const tag = htmlEl.tagName.toLowerCase()
+        const isIconOrToggle = tag === 'span' || tag === 'i' || tag === 'svg' || tag === 'button' ||
+          /hamburger|burger|toggle|toggler|icon|eicon/i.test(htmlEl.className + ' ' + htmlEl.id) ||
+          htmlEl.closest('.elementor-menu-toggle, .menu-toggle, [class*="hamburger"], [class*="burger"]') !== null
+        if (isIconOrToggle) return
         // Check if all children are hidden (already collapsed)
         const visibleChildren = Array.from(htmlEl.children).filter(
           (child) => (child as HTMLElement).style?.display !== 'none'
@@ -724,9 +688,6 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
         const allFonts = scanDocumentFonts(doc)
         const textFonts = [...allFonts].filter((f) => !isIconFont(f))
         const iconFonts = [...allFonts].filter((f) => isIconFont(f))
-
-        // Update the font-family dropdown with all discovered fonts
-        updateFontOptions(editor, [...allFonts])
 
         // Load from Google Fonts / CDN + force download font files
         await injectAndLoadFonts(doc, textFonts, iconFonts)

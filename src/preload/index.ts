@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   login(adminUrl: string): Promise<void> {
     return ipcRenderer.invoke('auth:login', adminUrl)
   },
+  mondayLogin(): Promise<{ success: boolean; token?: string; error?: string }> {
+    return ipcRenderer.invoke('monday:login')
+  },
   capture(url: string): Promise<CaptureResult> {
     return ipcRenderer.invoke('capture:start', url)
   },

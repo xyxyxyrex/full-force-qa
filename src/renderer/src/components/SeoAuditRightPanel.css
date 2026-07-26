@@ -1,0 +1,322 @@
+/* ── Exact Visual Language Match to Layout Right Panel (GrapesJS Style Manager) ── */
+
+.seo-audit-right-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* Main Section Header (Matches SELECTORS / STYLE headers in Layout) */
+
+.seo-main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #707070;
+  background: #1e1e1e;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.seo-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Action button matching GrapesJS - State - / + buttons */
+.gjs-btn-action {
+  padding: 2px 7px;
+  background: #252525;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  color: #a0a0a0;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.gjs-btn-action:hover {
+  background: #303030;
+  color: #e8e8e8;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Overview Score Row */
+
+.seo-score-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #181818;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.score-val-badge {
+  font-size: 11px;
+  color: #888888;
+}
+
+.score-val-badge strong {
+  color: #e0e0e0;
+}
+
+.score-counts-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.count-tag {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: #252525;
+}
+
+.tag-err { color: #ef4444; }
+.tag-warn { color: #f59e0b; }
+.tag-pass { color: #10b981; }
+
+/* Sectors Scroll Wrap */
+
+.seo-sectors-wrap {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.seo-sectors-wrap::-webkit-scrollbar {
+  width: 5px;
+}
+
+.seo-sectors-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* Collapsible Sector (Matches GrapesJS TYPOGRAPHY / SPACING sectors) */
+
+.seo-sector {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.sector-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #1e1e1e;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s ease;
+}
+
+.sector-header:hover {
+  background: #232323;
+}
+
+.arrow-icon {
+  font-size: 8px;
+  color: #606060;
+}
+
+.sector-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #808080;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.sector-badge-warn {
+  font-size: 9px;
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.sector-content {
+  padding: 8px 14px 12px 14px;
+  background: #191919;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+/* Field Rows & Inputs (Matching GrapesJS Form Inputs) */
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.field-lbl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field-lbl {
+  font-size: 11px;
+  color: #707070;
+}
+
+.field-sub {
+  font-size: 10px;
+  color: #505050;
+}
+
+.field-input-box {
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  padding: 5px 8px;
+  color: #d0d0d0;
+  font-size: 11px;
+  font-family: inherit;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.text-muted {
+  color: #555555;
+  font-style: italic;
+}
+
+.text-err {
+  color: #ef4444;
+}
+
+/* Selected Element Banner */
+
+.selected-tag-info {
+  font-size: 11px;
+  color: #707070;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.selected-tag-info .tag-name {
+  color: #4C8BF5;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+/* List Stacks (Headers, Images, Links) */
+
+.list-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.list-item-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 8px;
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.list-item-row:hover {
+  background: #202020;
+  border-color: rgba(76, 139, 245, 0.3);
+}
+
+.list-item-row.row-warn {
+  border-left: 2px solid #ef4444;
+}
+
+.chip-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  background: #252525;
+  color: #4C8BF5;
+  border-radius: 2px;
+  width: max-content;
+}
+
+.chip-badge-sm {
+  font-size: 9px;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.item-text {
+  font-size: 11px;
+  color: #c0c0c0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-url-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.item-url {
+  font-size: 10px;
+  color: #7dd3fc;
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-alt-sub {
+  font-size: 10px;
+  color: #707070;
+}
+
+/* Asset List Box */
+
+.asset-list-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.asset-item {
+  font-size: 10px;
+  color: #7dd3fc;
+  font-family: monospace;
+  background: #141414;
+  padding: 3px 6px;
+  border-radius: 2px;
+  word-break: break-all;
+}

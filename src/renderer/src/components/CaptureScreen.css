@@ -1,25 +1,58 @@
-.capture-screen {
+/* ── Backdrop Overlay (Blurs Dashboard Background) ────────────────────────── */
+
+.capture-screen-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  background: #1a1a1a;
   padding: 24px;
+  animation: backdropFadeIn 0.2s ease-out;
 }
 
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal Card */
 .capture-card {
-  background: #2d2d2d;
-  border-radius: 12px;
-  padding: 40px;
+  background: #242424;
+  border-radius: 14px;
+  padding: 36px;
   width: 100%;
-  max-width: 560px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  max-width: 520px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
+  animation: cardPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cardPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .capture-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 28px;
 }
 
@@ -31,15 +64,15 @@
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: transparent;
-  color: #707070;
+  background: rgba(255, 255, 255, 0.05);
+  color: #808080;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
   flex-shrink: 0;
 }
 
 .back-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.1);
   color: #e8e8e8;
 }
 
@@ -51,8 +84,9 @@
 
 .capture-logo h1 {
   font-size: 18px;
-  font-weight: 600;
-  color: #e8e8e8;
+  font-weight: 700;
+  color: #f0f0f0;
+  letter-spacing: -0.01em;
 }
 
 .capture-section {
@@ -64,8 +98,8 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  font-weight: 500;
-  color: #b0b0b0;
+  font-weight: 600;
+  color: #c0c0c0;
   margin-bottom: 4px;
 }
 
@@ -76,15 +110,44 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(76, 139, 245, 0.15);
-  color: #4C8BF5;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.step-badge.optional {
+  background: rgba(255, 255, 255, 0.06);
+  color: #888;
+}
+
+.capture-optional-tag {
+  font-size: 10px;
+  font-weight: 500;
+  color: #666;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 2px;
+}
+
+.capture-btn.btn-clear {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #888;
+  min-width: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.capture-btn.btn-clear:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ccc;
 }
 
 .capture-hint {
   font-size: 12px;
-  color: #606060;
+  color: #707070;
   margin: 0 0 8px;
   padding-left: 28px;
 }
@@ -97,18 +160,18 @@
 .capture-input {
   flex: 1;
   padding: 10px 12px;
-  background: #1a1a1a;
+  background: #181818;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   color: #e8e8e8;
-  font-size: 14px;
+  font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s;
 }
 
 .capture-input:focus {
-  border-color: #4C8BF5;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .capture-input:disabled {
@@ -121,11 +184,11 @@
 
 /* Buttons */
 .capture-btn {
-  padding: 10px 20px;
+  padding: 10px 18px;
   border: none;
   border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
@@ -138,19 +201,19 @@
 }
 
 .btn-primary {
-  background: #4C8BF5;
-  color: #fff;
+  background: #ffffff;
+  color: #111111;
 }
 .btn-primary:hover:not(:disabled) {
-  background: #3a7ae0;
+  background: #e0e0e0;
 }
 
 .btn-secondary {
-  background: #3a3a3a;
-  color: #e8e8e8;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d0d0d0;
 }
 .btn-secondary:hover:not(:disabled) {
-  background: #454545;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .btn-done {
@@ -175,7 +238,7 @@
 /* Status / errors */
 .capture-status {
   font-size: 13px;
-  color: #7eb0f7;
+  color: #cccccc;
   margin-bottom: 8px;
 }
 
@@ -195,3 +258,229 @@
   margin-top: 16px;
   text-align: center;
 }
+
+/* ── FIGMA-STYLE LOADING SCREEN OVERLAY ──────────────────────────────────── */
+
+.figma-loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 48px;
+  user-select: none;
+  animation: cardPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.figma-logo-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 4px 16px rgba(255, 255, 255, 0.1));
+  animation: logoPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes logoPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+.figma-loading-track {
+  width: 140px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.figma-loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  background: #ffffff;
+  border-radius: 2px;
+  animation: loadingSlide 1.2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes loadingSlide {
+  0% {
+    left: -40%;
+    width: 40%;
+  }
+  50% {
+    left: 30%;
+    width: 50%;
+  }
+  100% {
+    left: 100%;
+    width: 20%;
+  }
+}
+
+.figma-loading-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #888888;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── Monday Quick-fill Dropdown ─────────────────────────────────────────── */
+.monday-quickfill {
+  position: relative;
+  margin-top: 8px;
+}
+
+.monday-quickfill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  padding: 4px 10px;
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.monday-quickfill-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #eee;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.monday-quickfill-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 320px;
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: 4px;
+}
+
+.monday-quickfill-ticket {
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.monday-quickfill-ticket + .monday-quickfill-ticket {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.monday-quickfill-ticket-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b0b0b0;
+  padding: 2px 4px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.monday-quickfill-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.monday-quickfill-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+  overflow: hidden;
+}
+
+.monday-quickfill-link:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.monday-qf-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c0c0c0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.monday-qf-url {
+  font-size: 10px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── Top-Level Ticket Selector Banner ───────────────────────────────────── */
+
+.top-ticket-autofill-banner {
+  background: #1c1c1c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.autofill-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #cccccc;
+}
+
+.autofill-ticket-select {
+  width: 100%;
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #eeeeee;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.autofill-ticket-select:focus {
+  border-color: #777777;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+.autofill-ticket-select option {
+  background: #1e1e1e;
+  color: #e0e0e0;
+}
+

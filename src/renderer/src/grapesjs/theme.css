@@ -31,6 +31,7 @@
   top: 0;
   width: 100%;
   height: 100%;
+  overflow: auto !important;
 }
 
 /* The iframe wrapper — adds "page" feel */
@@ -427,4 +428,41 @@
 
 .gjs-editor-cont {
   height: 100% !important;
+}
+
+/* ── Sleek GrapesJS Panel Scrollbars ───────────── */
+.gjs-editor-cont ::-webkit-scrollbar,
+.gjs-pn-views-container ::-webkit-scrollbar,
+.gjs-sm-sectors ::-webkit-scrollbar,
+.gjs-blocks-c ::-webkit-scrollbar,
+.gjs-layers ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.gjs-editor-cont ::-webkit-scrollbar-track,
+.gjs-pn-views-container ::-webkit-scrollbar-track,
+.gjs-sm-sectors ::-webkit-scrollbar-track,
+.gjs-blocks-c ::-webkit-scrollbar-track,
+.gjs-layers ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.gjs-editor-cont ::-webkit-scrollbar-thumb,
+.gjs-pn-views-container ::-webkit-scrollbar-thumb,
+.gjs-sm-sectors ::-webkit-scrollbar-thumb,
+.gjs-blocks-c ::-webkit-scrollbar-thumb,
+.gjs-layers ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.gjs-editor-cont ::-webkit-scrollbar-thumb:hover,
+.gjs-pn-views-container ::-webkit-scrollbar-thumb:hover,
+.gjs-sm-sectors ::-webkit-scrollbar-thumb:hover,
+.gjs-blocks-c ::-webkit-scrollbar-thumb:hover,
+.gjs-layers ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }

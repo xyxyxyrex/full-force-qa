@@ -33,6 +33,45 @@
 .toolbar-center {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+/* ── Workspace Top Tab Switcher (Layout | Audit) ── */
+
+.workspace-tab-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.workspace-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #a0a0a0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.workspace-tab-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.workspace-tab-btn.active {
+  background: #4C8BF5;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(76, 139, 245, 0.35);
 }
 
 .toolbar-btn {
@@ -119,6 +158,12 @@
 
 /* ── Dimension inputs ────────────────────────── */
 
+.dimension-inputs-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .dimension-inputs {
   display: flex;
   align-items: center;
@@ -175,6 +220,101 @@
 .dim-swap:hover {
   background: rgba(255, 255, 255, 0.06);
   color: #b0b0b0;
+}
+
+.dim-caret-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 26px;
+  padding: 0;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #707070;
+  cursor: pointer;
+  margin-left: 1px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.dim-caret-btn:hover,
+.dim-caret-btn.active {
+  background: #282828;
+  color: #4C8BF5;
+  border-color: rgba(76, 139, 245, 0.4);
+}
+
+.devtools-preset-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 230px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: #1e1e1e;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+  z-index: 9999;
+  padding: 4px 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.devtools-dd-header {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4C8BF5;
+  background: rgba(76, 139, 245, 0.08);
+}
+
+.devtools-dd-subheader {
+  padding: 6px 12px 3px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.devtools-dd-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.devtools-dd-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 12px 6px 24px;
+  background: transparent;
+  border: none;
+  color: #d0d0d0;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.devtools-dd-item:hover {
+  background: #04395e;
+  color: #ffffff;
+}
+
+.devtools-dd-item.active {
+  background: #004b76;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.preset-dims {
+  font-size: 11px;
+  color: #808080;
+}
+
+.devtools-dd-item:hover .preset-dims,
+.devtools-dd-item.active .preset-dims {
+  color: #b0d8ff;
 }
 
 /* ── Zoom controls ───────────────────────────── */
@@ -240,11 +380,343 @@
 }
 
 .panel-left {
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
 }
 
 .panel-right {
   border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Accordion sections in left panel */
+.accordion-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.accordion-section.expanded {
+  flex: 1;
+}
+
+.accordion-section.collapsed {
+  flex: 0 0 auto;
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #1e1e1e;
+  user-select: none;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.12s;
+}
+
+.accordion-header:hover {
+  background: #282828;
+}
+
+.accordion-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c0c0c0;
+}
+
+.accordion-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #909090;
+}
+
+.accordion-header:hover .accordion-title {
+  color: #e0e0e0;
+}
+
+.accordion-chevron {
+  color: #707070;
+  transition: transform 0.18s ease-in-out;
+}
+
+.accordion-chevron.open {
+  transform: rotate(90deg);
+  color: #4C8BF5;
+}
+
+.accordion-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #808080;
+}
+
+.accordion-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Sleek Segmented Switch for Layers Display Mode (MINIFIED | VERBOSE) */
+.layer-mode-switch {
+  display: flex;
+  align-items: center;
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.layer-mode-btn {
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #707070;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease-in-out;
+}
+
+.layer-mode-btn:hover:not(.active) {
+  color: #c0c0c0;
+}
+
+.layer-mode-btn.active {
+  background: #004b76;
+  color: #4C8BF5;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.accordion-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Photoshop History Panel ─────────────────── */
+
+.history-content {
+  background: #1a1a1a;
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s, border-color 0.1s, opacity 0.1s;
+}
+
+.history-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.history-item.active {
+  background: #004b76;
+  border-left-color: #4C8BF5;
+}
+
+.history-item.active .history-item-action {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.history-item.active .history-item-detail {
+  color: #b0d8ff;
+}
+
+.history-item.future {
+  opacity: 0.4;
+  font-style: italic;
+}
+
+.history-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #808080;
+}
+
+.history-item.active .history-item-icon {
+  color: #ffffff;
+}
+
+.history-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-action {
+  font-size: 12px;
+  font-weight: 500;
+  color: #d0d0d0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-detail {
+  font-size: 10px;
+  color: #707070;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.history-item-time {
+  font-size: 10px;
+  color: #606060;
+  flex-shrink: 0;
+}
+
+.history-footer {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: #1e1e1e;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.history-revert-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #a0a0a0;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.history-revert-btn:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: rgba(248, 81, 73, 0.4);
+  color: #ff7b72;
+}
+
+.history-revert-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── CSS Inspector Panel ───────────────────────── */
+
+.css-inspector-content {
+  background: #1a1a1a;
+  font-family: 'Consolas', 'SF Mono', 'Menlo', monospace;
+  font-size: 11px;
+}
+
+.css-inspector-tag {
+  padding: 6px 10px;
+  color: #7dd3fc;
+  font-size: 11px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.css-inspector-rules {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 280px;
+  padding: 0;
+}
+
+.css-inspector-rules pre {
+  margin: 0;
+  padding: 8px 10px;
+  color: #c9d1d9;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: inherit;
+}
+
+.css-inspector-custom {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 6px 8px;
+}
+
+.css-inspector-custom-label {
+  font-size: 10px;
+  color: #8b949e;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.css-inspector-textarea {
+  width: 100%;
+  min-height: 80px;
+  max-height: 200px;
+  background: #0d1117;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 8px;
+  font-family: 'Consolas', 'SF Mono', 'Menlo', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+
+.css-inspector-textarea:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.3);
+}
+
+.css-inspector-textarea::placeholder {
+  color: #484f58;
+}
+
+.css-inspector-empty {
+  padding: 16px 10px;
+  color: #484f58;
+  font-size: 11px;
+  text-align: center;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Panel resize handles */
@@ -859,3 +1331,511 @@
   font-family: 'Consolas', 'Monaco', monospace;
   letter-spacing: -0.02em;
 }
+
+/* ── Figma Design Overlay ──────────────────────── */
+
+.overlay-dropdown {
+  padding: 0 !important;
+}
+
+.overlay-dd-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 16px;
+  text-align: center;
+  color: #808080;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.overlay-dd-hint strong {
+  color: #b0b0b0;
+  font-weight: 600;
+}
+
+.overlay-dd-preview {
+  padding: 8px;
+  max-height: 140px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-conic-gradient(#2a2a2a 0% 25%, #222 0% 50%) 50% / 12px 12px;
+}
+
+.overlay-dd-preview img {
+  max-width: 100%;
+  max-height: 124px;
+  object-fit: contain;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.overlay-dd-control {
+  padding: 8px 12px;
+}
+
+.overlay-dd-control label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: #808080;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.overlay-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.overlay-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+  cursor: pointer;
+}
+
+.overlay-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4c8bf5;
+  border: 2px solid #252525;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.overlay-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.overlay-slider-val {
+  font-size: 11px;
+  color: #909090;
+  font-family: 'Consolas', 'Monaco', monospace;
+  min-width: 32px;
+  text-align: right;
+}
+
+.overlay-mode-switcher {
+  display: flex;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.overlay-mode-btn {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #808080;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.overlay-mode-btn:hover {
+  color: #c0c0c0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.overlay-mode-btn.active {
+  color: #fff;
+  background: rgba(76, 139, 245, 0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Canvas overlay image — absolute inside canvas-inner */
+
+.figma-overlay-img {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  overflow: hidden;
+}
+
+.figma-overlay-img img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  object-position: top left;
+}
+
+/* Diff blend mode */
+.figma-overlay-diff {
+  opacity: 1 !important;
+  mix-blend-mode: difference;
+}
+
+.figma-overlay-diff img {
+  filter: invert(0);
+}
+
+/* Side-by-side */
+.figma-overlay-side {
+  position: absolute;
+  z-index: 5;
+  overflow: hidden;
+  border: 1px solid rgba(76, 139, 245, 0.3);
+  border-radius: 4px;
+  background: repeating-conic-gradient(#2a2a2a 0% 25%, #222 0% 50%) 50% / 16px 16px;
+}
+
+.figma-overlay-side img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  object-position: top left;
+}
+
+.figma-overlay-side-label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(76, 139, 245, 0.7);
+  border-radius: 4px;
+  z-index: 1;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(8px);
+}
+
+/* ── Resizable Bottom QA Spreadsheet (Mock Sheets) ────── */
+
+.panel-resize-handle-v {
+  height: 6px;
+  background: #1e1e1e;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: row-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  transition: background 0.15s;
+}
+
+.panel-resize-handle-v:hover,
+.panel-resize-handle-v:active {
+  background: #4c8bf5;
+}
+
+.bottom-sheet-panel {
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  z-index: 15;
+  overflow: hidden;
+  position: relative;
+}
+
+.bottom-sheet-header {
+  height: 32px;
+  padding: 0 12px;
+  background: #252525;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.bottom-sheet-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.bottom-sheet-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.12);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.bottom-sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bottom-sheet-btn {
+  background: transparent;
+  border: none;
+  color: #808080;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bottom-sheet-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bottom-sheet-body {
+  flex: 1;
+  width: 100%;
+  height: calc(100% - 32px);
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ensure FortuneSheet container, work area, and grid canvas take 100% height and width */
+.bottom-sheet-body .fortune-workbook-container,
+.bottom-sheet-body .fortune-sheet-container,
+.bottom-sheet-body .fortune-sheet,
+.bottom-sheet-body .fortune-sheet-flow,
+.bottom-sheet-body > div {
+  width: 100% !important;
+  height: 100% !important;
+  flex: 1 !important;
+}
+
+/* Tab Switcher (Mock Sheets vs Mastersheet) */
+.sheet-tab-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-left: 8px;
+}
+
+.sheet-tab-btn {
+  background: transparent;
+  border: none;
+  color: #808080;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sheet-tab-btn:hover {
+  color: #c0c0c0;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sheet-tab-btn.active {
+  color: #ffffff;
+  background: #3fb950;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.bottom-sheet-link-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a0a0a0;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-right: 4px;
+}
+
+.bottom-sheet-link-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Google Sheets Input & Embedded iframe */
+.google-sheet-input-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #181818;
+  padding: 24px;
+}
+
+.google-sheet-input-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+  background: #222222;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.google-sheet-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(63, 185, 80, 0.1);
+  border: 1px solid rgba(63, 185, 80, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.google-sheet-input-card h3 {
+  margin: 0 0 6px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #f0f0f0;
+}
+
+.google-sheet-input-card p {
+  margin: 0 0 16px 0;
+  font-size: 12px;
+  color: #888888;
+  line-height: 1.4;
+}
+
+.google-sheet-input-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.google-sheet-input {
+  flex: 1;
+  background: #181818;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #ffffff;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.google-sheet-input:focus {
+  border-color: #3fb950;
+}
+
+.google-sheet-save-btn {
+  background: #3fb950;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.google-sheet-save-btn:hover:not(:disabled) {
+  background: #34a043;
+}
+
+.google-sheet-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.google-sheets-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #ffffff;
+}
+
+/* Floating Canvas Edge Dock Buttons for Collapsed Panels */
+.panel-dock-btn {
+  position: absolute;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1c1c1c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cccccc;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+  backdrop-filter: blur(8px);
+}
+
+.panel-dock-btn:hover {
+  background: #252525;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: scale(1.02);
+}
+
+.panel-dock-btn.dock-left {
+  top: 12px;
+  left: 12px;
+  border-left: 3px solid #4c8bf5;
+}
+
+.panel-dock-btn.dock-right {
+  top: 12px;
+  right: 12px;
+  border-right: 3px solid #a371f7;
+}
+
+.panel-dock-btn.dock-bottom {
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom: 3px solid #3fb950;
+}
+
+.panel-dock-btn.dock-bottom:hover {
+  transform: translateX(-50%) scale(1.02);
+}
+
