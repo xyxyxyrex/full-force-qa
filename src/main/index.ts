@@ -9,9 +9,9 @@ import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
 
 // ── Monday.com OAuth config ─────────────────────────────────────────────────
-// Credentials are loaded from .env file (never commit secrets to source code).
-const MONDAY_CLIENT_ID = process.env.MONDAY_CLIENT_ID || ''
-const MONDAY_CLIENT_SECRET = process.env.MONDAY_CLIENT_SECRET || ''
+// Fallback credentials embedded into app binary so .env is optional for workmates.
+const MONDAY_CLIENT_ID = process.env.MONDAY_CLIENT_ID || 'b6cd67a1a413aa17b37e199e14457abe'
+const MONDAY_CLIENT_SECRET = process.env.MONDAY_CLIENT_SECRET || '0fc952701f9fdb347279fc04bd9bf2d1'
 const MONDAY_REDIRECT_PORT = 51847 // arbitrary high port for localhost callback
 const MONDAY_REDIRECT_URI = `http://localhost:${MONDAY_REDIRECT_PORT}/oauth/callback`
 
