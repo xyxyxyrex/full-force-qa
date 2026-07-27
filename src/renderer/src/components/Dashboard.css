@@ -1,7 +1,8 @@
 /* ── Modern, Figma-Style Dark Theme Dashboard ────────────────────────── */
 
 .dashboard {
-  min-height: 100vh;
+  height: 100%;
+  box-sizing: border-box;
   background: #1a1a1a;
   padding: 40px 32px 64px 32px;
   overflow-y: auto;
@@ -33,6 +34,40 @@
   font-weight: 700;
   color: #f0f0f0;
   letter-spacing: -0.02em;
+}
+
+.dashboard-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.figma-global-login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f0f0f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.figma-global-login-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.card-action-btn.pin-btn.pinned {
+  color: #38bdf8 !important;
+  background: rgba(56, 189, 248, 0.15) !important;
+  border-color: rgba(56, 189, 248, 0.3) !important;
 }
 
 .new-project-btn {

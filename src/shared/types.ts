@@ -11,6 +11,8 @@ export interface Project {
   name: string
   adminUrl: string
   stagingUrl: string
+  figmaUrl?: string
+  googleSheetUrl?: string
   createdAt: number
   lastOpenedAt: number
   thumbnailUrl?: string
@@ -25,4 +27,8 @@ export interface ElectronAPI {
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project) => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  openExternal: (url: string) => Promise<void>
+  openDetachedWindow: (url: string, title?: string) => Promise<void>
+  figmaLoginWindow: (url?: string) => Promise<void>
+  toggleMaximizeWindow: () => Promise<void>
 }

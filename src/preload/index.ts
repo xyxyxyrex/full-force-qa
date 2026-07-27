@@ -19,5 +19,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   deleteProject(id: string): Promise<void> {
     return ipcRenderer.invoke('projects:delete', id)
+  },
+  openExternal(url: string): Promise<void> {
+    return ipcRenderer.invoke('app:openExternal', url)
+  },
+  openDetachedWindow(url: string, title?: string): Promise<void> {
+    return ipcRenderer.invoke('app:openDetachedWindow', url, title)
+  },
+  figmaLoginWindow(url?: string): Promise<void> {
+    return ipcRenderer.invoke('app:figmaLoginWindow', url)
+  },
+  toggleMaximizeWindow(): Promise<void> {
+    return ipcRenderer.invoke('app:toggleMaximizeWindow')
   }
 })

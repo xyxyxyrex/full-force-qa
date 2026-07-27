@@ -41,6 +41,29 @@ function getGradientForId(id: string) {
   return GRADIENTS[index]
 }
 
+function formatDate(timestamp: number): string {
+  if (!timestamp) return ''
+  const diff = Date.now() - timestamp
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(timestamp).toLocaleDateString()
+}
+
+function getDomain(urlStr: string): string {
+  if (!urlStr) return ''
+  try {
+    const url = new URL(urlStr.startsWith('http') ? urlStr : `https://${urlStr}`)
+    return url.hostname.replace(/^www\./, '')
+  } catch {
+    return urlStr
+  }
+}
+
 export default function Dashboard({ onNewProject, onOpenProject }: Props) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -372,6 +395,34 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
       })
   }, [projects, mondayTickets, activeTicketIds, searchQuery, sortBy])
 
+  // Pinned Projects State
+  const [pinnedProjectIds, setPinnedProjectIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('pinned_project_ids')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  })
+
+  const togglePinProject = (projectId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    setPinnedProjectIds((prev) => {
+      const isPinned = prev.includes(projectId)
+      const updated = isPinned ? prev.filter((id) => id !== projectId) : [...prev, projectId]
+      localStorage.setItem('pinned_project_ids', JSON.stringify(updated))
+      return updated
+    })
+  }
+
+  const pinnedProjects = useMemo(() => {
+    return activeProjects.filter((p) => pinnedProjectIds.includes(p.id))
+  }, [activeProjects, pinnedProjectIds])
+
+  const unpinnedActiveProjects = useMemo(() => {
+    return activeProjects.filter((p) => !pinnedProjectIds.includes(p.id))
+  }, [activeProjects, pinnedProjectIds])
+
   // Trash Projects
   const trashProjects = useMemo(() => {
     return projects.filter((p) => p.inTrash)
@@ -389,12 +440,28 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
             </svg>
             <h1>QA Snapshot Editor</h1>
           </div>
-          <button className="new-project-btn" onClick={onNewProject}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M8 3v10M3 8h10" />
-            </svg>
-            New Capture
-          </button>
+          <div className="dashboard-header-actions">
+            <button
+              className="figma-global-login-btn"
+              onClick={() => {
+                if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
+                  ;(window.electronAPI as any).figmaLoginWindow()
+                } else {
+                  window.open('https://www.figma.com/login', '_blank', 'width=1024,height=768')
+                }
+              }}
+              title="Sign in to Figma in-app globally — persists across all projects and sessions"
+            >
+              <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
+              <span>Login to Figma</span>
+            </button>
+            <button className="new-project-btn" onClick={onNewProject}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M8 3v10M3 8h10" />
+              </svg>
+              New Capture
+            </button>
+          </div>
         </div>
 
         {/* Search, Sort, View Controls Bar */}
@@ -468,7 +535,297 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
           </div>
         </div>
 
-        {/* My Monday Tickets Section */}
+        {/* 1. PINNED PROJECTS SECTION (Top priority if any project is pinned) */}
+        {!loading && pinnedProjects.length > 0 && (
+          <div className="dashboard-section pinned-section" style={{ marginBottom: 28 }}>
+            <div className="section-label-row">
+              <h2 className="section-label" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#38bdf8' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#38bdf8" stroke="#38bdf8" strokeWidth="2">
+                  <path d="M12 17v5M9 2h6l-1 7 3 3v2H7v-2l3-3-1-7z" />
+                </svg>
+                <span>PINNED PROJECTS ({pinnedProjects.length})</span>
+              </h2>
+            </div>
+
+            {viewMode === 'cards' && (
+              <div className="project-grid">
+                {pinnedProjects.map((project) => {
+                  const isMonday = !!project.mondayTicket
+                  const statusColor = getStatusColor(project.mondayTicket?.status)
+                  const isPinned = true
+
+                  return (
+                    <div
+                      key={project.id}
+                      className={`project-card ${isMonday ? 'has-monday-badge' : ''} is-pinned-card`}
+                      onClick={() => {
+                        if (isMonday && !project.adminUrl) {
+                          handleLaunchTicket(project.mondayTicket!)
+                        } else {
+                          onOpenProject(project)
+                        }
+                      }}
+                    >
+                      <div className="project-thumbnail" style={{ background: project.thumbnailUrl ? 'none' : getGradientForId(project.id) }}>
+                        {project.thumbnailUrl ? (
+                          <img src={project.thumbnailUrl} alt={project.name} className="thumbnail-img" />
+                        ) : (
+                          <div className="gradient-badge">
+                            {getDomain(project.stagingUrl || project.name).charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        {isMonday && (
+                          <div className="monday-circle-badge" style={{ borderColor: statusColor }} title={`Monday Ticket: ${project.mondayTicket?.status}`}>
+                            <img src={mondayLogo} alt="Monday" width="14" height="14" />
+                          </div>
+                        )}
+                        <div className="card-actions-overlay" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className="card-action-btn pin-btn pinned"
+                            onClick={(e) => togglePinProject(project.id, e)}
+                            title="Unpin project"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="#38bdf8" stroke="#38bdf8" strokeWidth="2">
+                              <path d="M12 17v5M9 2h6l-1 7 3 3v2H7v-2l3-3-1-7z" />
+                            </svg>
+                          </button>
+                          <button className="card-action-btn edit-btn" onClick={(e) => { e.stopPropagation(); onOpenProject(project, true) }} title="Edit Settings">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                          </button>
+                          <button className="card-action-btn delete-btn" onClick={(e) => { e.stopPropagation(); setDeleteConfirmProject(project) }} title="Move to Trash">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="project-card-body">
+                        <div className="project-name" title={project.name}>{project.name}</div>
+                        <div className="project-url" title={project.stagingUrl}>{getDomain(project.stagingUrl)}</div>
+                        <div className="project-meta-row">
+                          <span className="project-meta">{formatDate(project.lastOpenedAt)}</span>
+                          {isMonday && (
+                            <span className={`monday-status-pill status-${project.mondayTicket?.status.toLowerCase().replace(/\s+/g, '-')}`} style={{ marginLeft: 'auto', fontSize: 9 }}>
+                              {project.mondayTicket?.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 2. ACTIVE PROJECTS SECTION */}
+        <div className="dashboard-section" style={{ marginBottom: 28 }}>
+          <div className="section-label-row">
+            <h2 className="section-label">ACTIVE PROJECTS ({unpinnedActiveProjects.length})</h2>
+          </div>
+
+          {loading && <div className="dashboard-empty">Loading projects...</div>}
+
+          {!loading && activeProjects.length === 0 && (
+            <div className="dashboard-empty">
+              <div className="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#404040" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="6" y="6" width="36" height="36" rx="4" />
+                  <path d="M6 18h36M18 18v24" />
+                </svg>
+              </div>
+              <p>{searchQuery ? 'No matching projects found' : 'No active projects yet'}</p>
+              <p className="empty-hint">{searchQuery ? 'Try clearing your search query' : 'Right-click a Monday ticket or click "New Capture" to get started'}</p>
+            </div>
+          )}
+
+          {!loading && unpinnedActiveProjects.length > 0 && (
+            <>
+              {viewMode === 'cards' && (
+                <div className="project-grid">
+                  {unpinnedActiveProjects.map((project) => {
+                    const isMonday = !!project.mondayTicket
+                    const statusColor = getStatusColor(project.mondayTicket?.status)
+
+                    return (
+                      <div
+                        key={project.id}
+                        className={`project-card ${isMonday ? 'has-monday-badge' : ''}`}
+                        onClick={() => {
+                          if (isMonday && !project.adminUrl) {
+                            handleLaunchTicket(project.mondayTicket!)
+                          } else {
+                            onOpenProject(project)
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          if (isMonday) {
+                            e.preventDefault()
+                            setContextMenu({ x: e.clientX, y: e.clientY, ticket: project.mondayTicket!, isActive: true })
+                          }
+                        }}
+                      >
+                        <div className="project-thumbnail" style={{ background: project.thumbnailUrl ? 'none' : getGradientForId(project.id) }}>
+                          {project.thumbnailUrl ? (
+                            <img src={project.thumbnailUrl} alt={project.name} className="thumbnail-img" />
+                          ) : (
+                            <div className="gradient-badge">
+                              {getDomain(project.stagingUrl || project.name).charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          {isMonday && (
+                            <div className="monday-circle-badge" style={{ borderColor: statusColor }} title={`Monday Ticket: ${project.mondayTicket?.status}`}>
+                              <img src={mondayLogo} alt="Monday" width="14" height="14" />
+                            </div>
+                          )}
+                          <div className="card-actions-overlay" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              className="card-action-btn pin-btn"
+                              onClick={(e) => togglePinProject(project.id, e)}
+                              title="Pin project to top"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M12 17v5M9 2h6l-1 7 3 3v2H7v-2l3-3-1-7z" />
+                              </svg>
+                            </button>
+                            <button className="card-action-btn edit-btn" onClick={(e) => { e.stopPropagation(); onOpenProject(project, true) }} title="Edit Settings">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                            </button>
+                            {isMonday || project.id.startsWith('monday-') ? (
+                              <button
+                                className="card-action-btn delete-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const tId = project.mondayTicket ? project.mondayTicket.id : project.id.replace('monday-', '')
+                                  toggleActiveTicket(tId)
+                                }}
+                                title="Set Inactive"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <line x1="18" y1="6" x2="6" y2="18" />
+                                  <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                              </button>
+                            ) : (
+                              <button className="card-action-btn delete-btn" onClick={(e) => { e.stopPropagation(); setDeleteConfirmProject(project) }} title="Move to Trash">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="project-card-body">
+                          <div className="project-name" title={project.name}>{project.name}</div>
+                          <div className="project-url" title={project.stagingUrl}>{getDomain(project.stagingUrl)}</div>
+                          <div className="project-meta-row">
+                            <span className="project-meta">{formatDate(project.lastOpenedAt)}</span>
+                            {isMonday && (
+                              <span className={`monday-status-pill status-${project.mondayTicket?.status.toLowerCase().replace(/\s+/g, '-')}`} style={{ marginLeft: 'auto', fontSize: 9 }}>
+                                {project.mondayTicket?.status}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {viewMode === 'list' && (
+                <div className="project-list-table">
+                  <div className="list-header">
+                    <div className="col-pin" style={{ width: 28 }} />
+                    <div className="col-name">Project / Ticket Name</div>
+                    <div className="col-domain">Staging Domain</div>
+                    <div className="col-status">Status</div>
+                    <div className="col-time">Last Opened</div>
+                    <div className="col-actions">Actions</div>
+                  </div>
+                  {unpinnedActiveProjects.map((project) => {
+                    const isMonday = !!project.mondayTicket
+                    const isPinned = pinnedProjectIds.includes(project.id)
+
+                    return (
+                      <div
+                        key={project.id}
+                        className="list-row"
+                        onClick={() => {
+                          if (isMonday && !project.adminUrl) {
+                            handleLaunchTicket(project.mondayTicket!)
+                          } else {
+                            onOpenProject(project)
+                          }
+                        }}
+                      >
+                        <div className="col-pin" onClick={(e) => togglePinProject(project.id, e)} title={isPinned ? "Unpin" : "Pin"}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={isPinned ? "#38bdf8" : "none"} stroke={isPinned ? "#38bdf8" : "#888"} strokeWidth="2">
+                            <path d="M12 17v5M9 2h6l-1 7 3 3v2H7v-2l3-3-1-7z" />
+                          </svg>
+                        </div>
+                        <div className="col-name">
+                          <div className="list-icon">
+                            {getDomain(project.stagingUrl || project.name).charAt(0).toUpperCase()}
+                          </div>
+                          <span>{project.name}</span>
+                        </div>
+                        <div className="col-domain">{getDomain(project.stagingUrl || project.name)}</div>
+                        <div className="col-status">
+                          {project.mondayTicket?.status ? (
+                            <span className={`card-status-badge status-${project.mondayTicket.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                              {project.mondayTicket.status}
+                            </span>
+                          ) : (
+                            <span className="card-status-badge local">Local</span>
+                          )}
+                        </div>
+                        <div className="col-time">{formatDate(project.lastOpenedAt)}</div>
+                        <div className="col-actions" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className="list-action-btn"
+                            onClick={() => onOpenProject(project, true)}
+                            title="Edit Settings"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          {isMonday || project.id.startsWith('monday-') ? (
+                            <button
+                              className="list-action-btn delete"
+                              onClick={() => {
+                                const tId = project.mondayTicket ? project.mondayTicket.id : project.id.replace('monday-', '')
+                                toggleActiveTicket(tId)
+                              }}
+                              title="Set Inactive"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                              </svg>
+                            </button>
+                          ) : (
+                            <button
+                              className="list-action-btn delete"
+                              onClick={() => setDeleteConfirmProject(project)}
+                              title="Move to Trash"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* 3. MY MONDAY TICKETS SECTION */}
         <div className="dashboard-section monday-section">
           <div className="section-label-row">
             <div className="section-title-with-badge" onClick={() => mondayConnected && setMondaySectionExpanded(!mondaySectionExpanded)} style={{ cursor: mondayConnected ? 'pointer' : 'default' }}>

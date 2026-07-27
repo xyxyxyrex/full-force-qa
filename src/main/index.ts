@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, session, Menu } from 'electron'
 import { join } from 'path'
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
@@ -18,12 +18,22 @@ const MONDAY_REDIRECT_URI = `http://localhost:${MONDAY_REDIRECT_PORT}/oauth/call
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  // Completely remove default File, Edit, View, Window, Help application menu bar
+  Menu.setApplicationMenu(null)
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 600,
     backgroundColor: '#1a1a1a',
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#1a1a1a',
+      symbolColor: '#a1a1aa',
+      height: 38
+    },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -31,8 +41,27 @@ function createWindow(): void {
       sandbox: false,
       // Disable CORS so GrapesJS iframe can load cross-origin fonts
       // (eicons, Font Awesome, etc. from captured sites)
-      webSecurity: false
+      webSecurity: false,
+      webviewTag: true
     }
+  })
+
+  // Set standard Chrome User-Agent on default session so Google OAuth works in webviews
+  session.defaultSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
+
+  // Strip X-Frame-Options and Content-Security-Policy to allow embedding Figma
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = { ...details.responseHeaders }
+    delete responseHeaders['x-frame-options']
+    delete responseHeaders['X-Frame-Options']
+    delete responseHeaders['content-security-policy']
+    delete responseHeaders['Content-Security-Policy']
+    callback({ responseHeaders })
+  })
+
+  // Intercept popup windows to ensure child windows inherit Chrome User-Agent for Google Sign-In
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'allow' }
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -41,6 +70,14 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+// Ensure all web contents (popups, webviews, child windows) use Chrome User-Agent for seamless Google Accounts OAuth
+app.on('web-contents-created', (_event, contents) => {
+  contents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
+  contents.setWindowOpenHandler(() => {
+    return { action: 'allow' }
+  })
+})
 
 // ── PKCE helpers ────────────────────────────────────────────────────────────
 function generateCodeVerifier(): string {
@@ -75,16 +112,98 @@ function registerIpcHandlers(): void {
 
       loginWindow.loadURL(adminUrl)
 
-      loginWindow.webContents.on('did-navigate', (_e, url) => {
+      loginWindow.webContents.on('did-navigate', async (_e, url) => {
         if (url.includes('wp-admin') && !url.includes('wp-login')) {
-          setTimeout(() => {
+          try { await session.defaultSession.cookies.flushStore() } catch {}
+          setTimeout(async () => {
+            try { await session.defaultSession.cookies.flushStore() } catch {}
             if (!loginWindow.isDestroyed()) loginWindow.close()
           }, 1000)
         }
       })
 
-      loginWindow.on('closed', () => resolve())
+      loginWindow.on('closed', async () => {
+        try { await session.defaultSession.cookies.flushStore() } catch {}
+        resolve()
+      })
     })
+  })
+
+  // Figma Login Window: Uses standard Chrome User-Agent so Google Accounts OAuth works cleanly inside Electron
+  ipcMain.handle('app:figmaLoginWindow', async (_event, figmaUrl?: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      const chromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      const loginWin = new BrowserWindow({
+        width: 1024,
+        height: 768,
+        title: 'Sign in to Figma',
+        parent: mainWindow!,
+        backgroundColor: '#181818',
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          webSecurity: false
+        }
+      })
+
+      loginWin.webContents.setUserAgent(chromeUa)
+
+      const targetUrl = figmaUrl
+        ? `https://www.figma.com/login?redirect_to=${encodeURIComponent(figmaUrl)}`
+        : 'https://www.figma.com/login'
+
+      loginWin.loadURL(targetUrl)
+
+      loginWin.webContents.on('did-navigate', async (_e, url) => {
+        if (url.includes('figma.com/files') || url.includes('figma.com/design') || url.includes('figma.com/file')) {
+          try { await session.defaultSession.cookies.flushStore() } catch {}
+          setTimeout(() => {
+            try { if (!loginWin.isDestroyed()) loginWin.close() } catch {}
+          }, 1000)
+        }
+      })
+
+      loginWin.on('closed', async () => {
+        try { await session.defaultSession.cookies.flushStore() } catch {}
+        resolve()
+      })
+    })
+  })
+
+  ipcMain.handle('app:toggleMaximizeWindow', async (): Promise<void> => {
+    if (mainWindow) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize()
+      } else {
+        mainWindow.maximize()
+      }
+    }
+  })
+
+  ipcMain.handle('app:openExternal', async (_event, url: string): Promise<void> => {
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      shell.openExternal(url)
+    }
+  })
+
+  ipcMain.handle('app:openDetachedWindow', async (_event, url: string, title?: string): Promise<void> => {
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      const detachedWindow = new BrowserWindow({
+        width: 1280,
+        height: 850,
+        title: title || 'QA Master Tracker',
+        backgroundColor: '#181818',
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          webSecurity: false
+        }
+      })
+      detachedWindow.setMenu(null)
+      detachedWindow.loadURL(url)
+    }
   })
 
   // ── Monday.com OAuth: System browser + localhost callback + PKCE ───────

@@ -33,12 +33,93 @@ function looksLike404OrExpired(html: string): boolean {
 }
 
 function normalizeUrl(url: string): string {
-  const trimmed = (url || '').trim()
+  let trimmed = (url || '').trim()
   if (!trimmed) return ''
+  trimmed = trimmed.replace(/&amp;/gi, '&')
+  trimmed = trimmed.replace(/&amp;/gi, '&')
+  trimmed = trimmed.replace(/&lt;/gi, '<')
+  trimmed = trimmed.replace(/&gt;/gi, '>')
+  trimmed = trimmed.replace(/&quot;/gi, '"')
+  trimmed = trimmed.replace(/&#39;/gi, "'")
   if (!/^https?:\/\//i.test(trimmed)) {
     return 'https://' + trimmed
   }
   return trimmed
+}
+
+interface TicketSearchItem {
+  ticket: MondayTicket
+  targetUrl: string
+  targetLabel: string
+}
+
+function MondaySearchDropdown({
+  items,
+  onSelect,
+  placeholder = 'Search tickets...'
+}: {
+  items: TicketSearchItem[]
+  onSelect: (item: TicketSearchItem) => void
+  placeholder?: string
+}) {
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filtered = items.filter(({ ticket, targetUrl, targetLabel }) => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.toLowerCase().trim()
+    return (
+      ticket.name.toLowerCase().includes(q) ||
+      ticket.status.toLowerCase().includes(q) ||
+      targetUrl.toLowerCase().includes(q) ||
+      targetLabel.toLowerCase().includes(q)
+    )
+  })
+
+  return (
+    <div className="monday-search-dropdown-menu">
+      <div className="monday-search-input-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <input
+          type="text"
+          className="monday-search-input"
+          placeholder={placeholder}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+        />
+        {searchQuery && (
+          <button className="monday-search-clear" onClick={() => setSearchQuery('')}>✕</button>
+        )}
+      </div>
+
+      <div className="monday-search-results">
+        {filtered.length === 0 ? (
+          <div className="monday-search-empty">No matching Monday tickets found</div>
+        ) : (
+          filtered.map((item, idx) => (
+            <button
+              key={`${item.ticket.id}-${idx}`}
+              className="monday-search-item"
+              onClick={() => onSelect(item)}
+            >
+              <div className="monday-search-item-header">
+                <span className="monday-search-status-tag">{item.ticket.status}</span>
+                <span className="monday-search-ticket-title">{item.ticket.name}</span>
+              </div>
+              <div className="monday-search-item-url-row">
+                <span className="monday-search-url-label">{item.targetLabel}:</span>
+                <span className="monday-search-url-text">{item.targetUrl}</span>
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function CaptureScreen({
@@ -51,6 +132,7 @@ export default function CaptureScreen({
   const [adminUrl, setAdminUrl] = useState(() => normalizeUrl(initialAdminUrl))
   const [stagingUrl, setStagingUrl] = useState(() => normalizeUrl(initialStagingUrl))
   const [sheetsUrl, setSheetsUrl] = useState(() => normalizeUrl(localStorage.getItem('qa_google_sheet_url') || ''))
+  const [figmaUrl, setFigmaUrl] = useState(() => normalizeUrl(localStorage.getItem('qa_figma_url') || ''))
   const [loggedIn, setLoggedIn] = useState(false)
   const [loading, setLoading] = useState(autoCapture)
   const [status, setStatus] = useState(autoCapture ? 'Opening project snapshot...' : '')
@@ -62,8 +144,10 @@ export default function CaptureScreen({
   const [mondayTickets, setMondayTickets] = useState<MondayTicket[]>([])
   const [mondayDropdownOpen, setMondayDropdownOpen] = useState(false)
   const [sheetsDropdownOpen, setSheetsDropdownOpen] = useState(false)
+  const [figmaDropdownOpen, setFigmaDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const sheetsDropdownRef = useRef<HTMLDivElement>(null)
+  const figmaDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     try {
@@ -81,22 +165,31 @@ export default function CaptureScreen({
       if (sheetsDropdownRef.current && !sheetsDropdownRef.current.contains(e.target as Node)) {
         setSheetsDropdownOpen(false)
       }
+      if (figmaDropdownRef.current && !figmaDropdownRef.current.contains(e.target as Node)) {
+        setFigmaDropdownOpen(false)
+      }
     }
-    if (mondayDropdownOpen || sheetsDropdownOpen) document.addEventListener('mousedown', handler)
+    if (mondayDropdownOpen || sheetsDropdownOpen || figmaDropdownOpen) document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [mondayDropdownOpen, sheetsDropdownOpen])
+  }, [mondayDropdownOpen, sheetsDropdownOpen, figmaDropdownOpen])
 
-  const handleSelectTicketLink = (url: string, target: 'staging' | 'sheets') => {
+  const handleSelectTicketLink = (url: string, target: 'staging' | 'sheets' | 'figma') => {
     const norm = normalizeUrl(url)
     if (target === 'sheets') {
       setSheetsUrl(norm)
+      localStorage.setItem('qa_google_sheet_url', norm)
+    } else if (target === 'figma') {
+      setFigmaUrl(norm)
+      localStorage.setItem('qa_figma_url', norm)
     } else {
       setStagingUrl(norm)
     }
     setMondayDropdownOpen(false)
+    setSheetsDropdownOpen(false)
+    setFigmaDropdownOpen(false)
   }
 
-  // Helper: extract best staging URL from a ticket (including scraped update links)
+  // Helpers to extract links from ticket (checking properties & otherLinks)
   const getStagingUrlFromTicket = (ticket: MondayTicket): string => {
     if (ticket.stagingUrl) return ticket.stagingUrl
     const nonSheetFigma = ticket.otherLinks?.find(
@@ -107,117 +200,140 @@ export default function CaptureScreen({
     return ''
   }
 
-  // Collect all usable links from a ticket
-  const getTicketLinks = (ticket: MondayTicket): MondayLink[] => {
-    const links: MondayLink[] = []
-    const bestStaging = getStagingUrlFromTicket(ticket)
-    if (bestStaging) links.push({ url: bestStaging, label: 'Staging' })
-    if (ticket.adminUrl) links.push({ url: ticket.adminUrl, label: 'WP Admin' })
-    if (ticket.googleSheetUrl) links.push({ url: ticket.googleSheetUrl, label: 'QA Sheet' })
-    if (ticket.figmaUrl) links.push({ url: ticket.figmaUrl, label: 'Figma' })
-    for (const link of ticket.otherLinks || []) {
-      if (!links.some(l => l.url === link.url)) {
-        links.push(link)
-      }
-    }
-    return links
+  const getSheetUrlFromTicket = (ticket: MondayTicket): string => {
+    if (ticket.googleSheetUrl) return ticket.googleSheetUrl
+    const match = ticket.otherLinks?.find(l => 
+      l.url.includes('docs.google.com/spreadsheets') || 
+      l.url.includes('sheets.google.com') || 
+      l.url.includes('google.com/sheets') ||
+      (l.label || '').toLowerCase().includes('sheet') ||
+      (l.label || '').toLowerCase().includes('tracker')
+    )
+    return match ? match.url : ''
   }
 
-  // Auto-capture on mount when reopening a saved project
+  const getFigmaUrlFromTicket = (ticket: MondayTicket): string => {
+    if (ticket.figmaUrl) return ticket.figmaUrl
+    const match = ticket.otherLinks?.find(l => l.url.includes('figma.com'))
+    return match ? match.url : ''
+  }
+
+  const handleAutofillTicket = (selected: MondayTicket) => {
+    const sUrl = getStagingUrlFromTicket(selected)
+    if (sUrl) setStagingUrl(normalizeUrl(sUrl))
+
+    const aUrl = selected.adminUrl || selected.otherLinks?.find(l => l.url.includes('/wp-admin'))?.url
+    if (aUrl) setAdminUrl(normalizeUrl(aUrl))
+
+    const sheetUrl = getSheetUrlFromTicket(selected)
+    if (sheetUrl) {
+      const normSheet = normalizeUrl(sheetUrl)
+      setSheetsUrl(normSheet)
+      localStorage.setItem('qa_google_sheet_url', normSheet)
+    }
+
+    const figUrl = getFigmaUrlFromTicket(selected)
+    if (figUrl) {
+      const normFig = normalizeUrl(figUrl)
+      setFigmaUrl(normFig)
+      localStorage.setItem('qa_figma_url', normFig)
+    }
+  }
+
+  const handleLogin = async () => {
+    if (!adminUrl.trim()) return
+    setError('')
+    setSessionExpired(false)
+    const norm = normalizeUrl(adminUrl)
+    setAdminUrl(norm)
+    setLoading(true)
+    setStatus('Opening WordPress login in browser window...')
+
+    try {
+      await window.electronAPI.login(norm)
+      setLoggedIn(true)
+      setStatus('')
+      setError('')
+    } catch (err: any) {
+      setError(err.message || 'Login failed')
+    } finally {
+      setLoading(false)
+      setStatus('')
+    }
+  }
+
+  const doCapture = async (force: boolean = false) => {
+    if (!stagingUrl.trim()) return
+    setError('')
+    setSessionExpired(false)
+    const normStaging = normalizeUrl(stagingUrl)
+    const normAdmin = normalizeUrl(adminUrl)
+    setStagingUrl(normStaging)
+
+    if (sheetsUrl.trim()) {
+      localStorage.setItem('qa_google_sheet_url', normalizeUrl(sheetsUrl))
+    }
+    if (figmaUrl.trim()) {
+      localStorage.setItem('qa_figma_url', normalizeUrl(figmaUrl))
+    }
+
+    setLoading(true)
+    setStatus('Loading page & waiting for full rendering...')
+
+    try {
+      const res = await window.electronAPI.capture(normStaging)
+      if (res.success && res.html) {
+        if (!force && (res.is404 || res.isSessionExpired || looksLike404OrExpired(res.html))) {
+          setSessionExpired(true)
+          setError('Warning: Captured page looks like a WordPress login screen or 404 page. Please verify your admin login or preview URL.')
+          setLoading(false)
+          setStatus('')
+          return
+        }
+        onCapture(res.html, normStaging, normAdmin)
+      } else {
+        setError(res.error || 'Failed to extract HTML from page')
+      }
+    } catch (err: any) {
+      setError(err.message || 'Capture failed')
+    } finally {
+      setLoading(false)
+      setStatus('')
+    }
+  }
+
+  const handleCapture = () => doCapture(false)
+  const handleForceOpenCaptured = () => doCapture(true)
+
   useEffect(() => {
     if (autoCapture && initialStagingUrl && !autoCaptureRan.current) {
       autoCaptureRan.current = true
-      doCapture(normalizeUrl(initialStagingUrl))
+      doCapture(false)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoCapture, initialStagingUrl])
 
-  const handleLogin = async () => {
-    const targetAdmin = normalizeUrl(adminUrl)
-    setAdminUrl(targetAdmin)
-    if (!targetAdmin) return
-    setLoading(true)
-    setStatus('Opening login window...')
-    setError('')
-    setSessionExpired(false)
-    try {
-      await window.electronAPI.login(targetAdmin)
-      setLoggedIn(true)
-      setStatus('Logged in successfully')
+  // Build items for step search dropdowns
+  const stagingItems: TicketSearchItem[] = mondayTickets
+    .map(t => ({ ticket: t, targetUrl: getStagingUrlFromTicket(t), targetLabel: 'Staging' }))
+    .filter(i => !!i.targetUrl)
 
-      if (sessionExpired && stagingUrl.trim()) {
-        setSessionExpired(false)
-        await doCapture(normalizeUrl(stagingUrl))
-      } else {
-        setLoading(false)
-      }
-    } catch (e) {
-      setError(`Login failed: ${(e as Error).message}`)
-      setLoading(false)
-    }
-  }
+  const sheetsItems: TicketSearchItem[] = mondayTickets
+    .map(t => ({ ticket: t, targetUrl: getSheetUrlFromTicket(t), targetLabel: 'QA Sheet' }))
+    .filter(i => !!i.targetUrl)
 
-  const doCapture = async (rawUrl: string) => {
-    const url = normalizeUrl(rawUrl)
-    if (!url) return
-    setLoading(true)
-    setStatus('Capturing page — this may take a few seconds...')
-    setError('')
-    try {
-      const result = await window.electronAPI.capture(url)
-      if (!result.success) {
-        if (result.is404 || result.isSessionExpired || result.error?.includes('SESSION_EXPIRED_404')) {
-          setSessionExpired(true)
-          setLoggedIn(false)
-          setError('⚠️ Session Expired / 404 Page Not Found — Preview links require an active WordPress session. Please re-login below.')
-          setLoading(false)
-          return
-        }
-
-        setError(result.error || 'Capture failed')
-        setLoading(false)
-        return
-      }
-
-      if (!result.html) {
-        setError('Capture returned empty content')
-        setLoading(false)
-        return
-      }
-
-      // Check if the captured HTML is actually a 404 or WP login page
-      if (looksLike404OrExpired(result.html)) {
-        setSessionExpired(true)
-        setLoggedIn(false)
-        setError('⚠️ Session Expired / 404 Page Not Found — Please re-login to WordPress below, and the capture will retry automatically.')
-        setLoading(false)
-        return
-      }
-
-      // Save sheets URL to localStorage so EditorWorkspace picks it up
-      if (sheetsUrl.trim()) {
-        localStorage.setItem('qa_google_sheet_url', sheetsUrl.trim())
-      }
-      onCapture(result.html, url, adminUrl.trim())
-    } catch (e) {
-      setError(`Capture failed: ${(e as Error).message}`)
-      setLoading(false)
-    }
-  }
-
-  const handleCapture = () => {
-    if (!stagingUrl.trim()) return
-    doCapture(stagingUrl.trim())
-  }
+  const figmaItems: TicketSearchItem[] = mondayTickets
+    .map(t => ({ ticket: t, targetUrl: getFigmaUrlFromTicket(t), targetLabel: 'Figma' }))
+    .filter(i => !!i.targetUrl)
 
   // ── FIGMA-STYLE LOADING SCREEN OVERLAY ────────────────────────────────────
   if (loading) {
     return (
-      <div className="capture-screen-backdrop" onClick={onBack}>
-        <div className="figma-loading-screen" onClick={(e) => e.stopPropagation()}>
+      <div className="capture-screen-backdrop">
+        <div className="capture-card figma-loading-screen">
           <div className="figma-logo-wrap">
-            <svg width="44" height="44" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#4C8BF5" />
-              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#fff" />
+            <svg width="40" height="40" viewBox="0 0 32 32" fill="none">
+              <rect width="32" height="32" rx="8" fill="#27272a" stroke="#3f3f46" strokeWidth="1" />
+              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#f4f4f5" />
             </svg>
           </div>
           <div className="figma-loading-track">
@@ -241,8 +357,8 @@ export default function CaptureScreen({
           </button>
           <div className="capture-logo">
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#4C8BF5" />
-              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#fff" />
+              <rect width="32" height="32" rx="8" fill="#27272a" stroke="#3f3f46" strokeWidth="1" />
+              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#f4f4f5" />
             </svg>
             <h1>
               {initialStagingUrl ? 'Recapture Page' : 'New Capture'}
@@ -263,13 +379,7 @@ export default function CaptureScreen({
               onChange={(e) => {
                 const selected = mondayTickets.find(t => t.id === e.target.value)
                 if (selected) {
-                  const sUrl = getStagingUrlFromTicket(selected)
-                  if (sUrl) setStagingUrl(normalizeUrl(sUrl))
-                  if (selected.adminUrl) setAdminUrl(normalizeUrl(selected.adminUrl))
-                  if (selected.googleSheetUrl) {
-                    setSheetsUrl(normalizeUrl(selected.googleSheetUrl))
-                    localStorage.setItem('qa_google_sheet_url', selected.googleSheetUrl)
-                  }
+                  handleAutofillTicket(selected)
                 }
               }}
             >
@@ -306,7 +416,7 @@ export default function CaptureScreen({
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
             />
             <button
-              className={`capture-btn ${loggedIn && !sessionExpired ? 'btn-done' : sessionExpired ? 'btn-warn' : 'btn-secondary'}`}
+              className={`capture-btn ${loggedIn && !sessionExpired ? 'btn-done' : sessionExpired ? 'btn-relogin' : 'btn-secondary'}`}
               onClick={handleLogin}
               disabled={loading || (loggedIn && !sessionExpired) || !adminUrl.trim()}
             >
@@ -330,7 +440,10 @@ export default function CaptureScreen({
               className="capture-input"
               placeholder="https://example.com/?page_id=7145&preview=true"
               value={stagingUrl}
-              onChange={(e) => setStagingUrl(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value
+                setStagingUrl(val.includes('&amp;') ? normalizeUrl(val) : val)
+              }}
               onBlur={() => setStagingUrl(normalizeUrl(stagingUrl))}
               disabled={loading}
               onKeyDown={(e) => e.key === 'Enter' && handleCapture()}
@@ -344,8 +457,8 @@ export default function CaptureScreen({
             </button>
           </div>
 
-          {/* Monday tickets quick-fill */}
-          {mondayTickets.length > 0 && (
+          {/* Monday tickets quick-fill for staging */}
+          {stagingItems.length > 0 && (
             <div className="monday-quickfill" ref={dropdownRef}>
               <button
                 className="monday-quickfill-btn"
@@ -359,30 +472,11 @@ export default function CaptureScreen({
               </button>
 
               {mondayDropdownOpen && (
-                <div className="monday-quickfill-dropdown">
-                  {mondayTickets.map((ticket) => {
-                    const links = getTicketLinks(ticket)
-                    if (links.length === 0) return null
-                    return (
-                      <div key={ticket.id} className="monday-quickfill-ticket">
-                        <div className="monday-quickfill-ticket-name">{ticket.name}</div>
-                        <div className="monday-quickfill-links">
-                          {links.map((link, i) => (
-                            <button
-                              key={i}
-                              className="monday-quickfill-link"
-                              onClick={() => handleSelectTicketLink(link.url, link.label === 'QA Sheet' ? 'sheets' : 'staging')}
-                              title={link.url}
-                            >
-                              <span className="monday-qf-label">{link.label}</span>
-                              <span className="monday-qf-url">{link.url}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                <MondaySearchDropdown
+                  items={stagingItems}
+                  placeholder="Search staging URLs..."
+                  onSelect={(item) => handleSelectTicketLink(item.targetUrl, 'staging')}
+                />
               )}
             </div>
           )}
@@ -405,6 +499,9 @@ export default function CaptureScreen({
               placeholder="https://docs.google.com/spreadsheets/d/.../edit"
               value={sheetsUrl}
               onChange={(e) => setSheetsUrl(e.target.value)}
+              onBlur={() => {
+                if (sheetsUrl.trim()) localStorage.setItem('qa_google_sheet_url', normalizeUrl(sheetsUrl))
+              }}
               disabled={loading}
             />
             {sheetsUrl.trim() && (
@@ -419,7 +516,7 @@ export default function CaptureScreen({
           </div>
 
           {/* Monday tickets quick-fill for sheets */}
-          {mondayTickets.some(t => t.googleSheetUrl) && (
+          {sheetsItems.length > 0 && (
             <div className="monday-quickfill" ref={sheetsDropdownRef}>
               <button
                 className="monday-quickfill-btn"
@@ -433,26 +530,86 @@ export default function CaptureScreen({
               </button>
 
               {sheetsDropdownOpen && (
-                <div className="monday-quickfill-dropdown">
-                  {mondayTickets.filter(t => t.googleSheetUrl).map((ticket) => (
-                    <button
-                      key={ticket.id}
-                      className="monday-quickfill-link"
-                      onClick={() => handleSelectTicketLink(ticket.googleSheetUrl!, 'sheets')}
-                      title={ticket.googleSheetUrl}
-                    >
-                      <span className="monday-qf-label">{ticket.name}</span>
-                      <span className="monday-qf-url">{ticket.googleSheetUrl}</span>
-                    </button>
-                  ))}
-                </div>
+                <MondaySearchDropdown
+                  items={sheetsItems}
+                  placeholder="Search QA Sheets..."
+                  onSelect={(item) => handleSelectTicketLink(item.targetUrl, 'sheets')}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Step 4: Figma Design Link (optional) */}
+        <div className="capture-section">
+          <label className="capture-label">
+            <span className="step-badge optional">4</span>
+            Figma Design
+            <span className="capture-optional-tag">Optional</span>
+          </label>
+          <p className="capture-hint">
+            Attach a Figma link to open design references in your browser from the top panel
+          </p>
+          <div className="capture-input-row">
+            <input
+              type="url"
+              className="capture-input"
+              placeholder="https://www.figma.com/design/..."
+              value={figmaUrl}
+              onChange={(e) => setFigmaUrl(e.target.value)}
+              onBlur={() => {
+                if (figmaUrl.trim()) localStorage.setItem('qa_figma_url', normalizeUrl(figmaUrl))
+              }}
+              disabled={loading}
+            />
+            {figmaUrl.trim() && (
+              <button
+                className="capture-btn btn-clear"
+                onClick={() => { setFigmaUrl(''); localStorage.removeItem('qa_figma_url') }}
+                title="Clear"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Monday tickets quick-fill for figma */}
+          {figmaItems.length > 0 && (
+            <div className="monday-quickfill" ref={figmaDropdownRef}>
+              <button
+                className="monday-quickfill-btn"
+                onClick={() => setFigmaDropdownOpen(!figmaDropdownOpen)}
+              >
+                <img src={mondayLogo} alt="" width="14" height="14" />
+                <span>Fill from Monday ticket</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points={figmaDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
+                </svg>
+              </button>
+
+              {figmaDropdownOpen && (
+                <MondaySearchDropdown
+                  items={figmaItems}
+                  placeholder="Search Figma links..."
+                  onSelect={(item) => handleSelectTicketLink(item.targetUrl, 'figma')}
+                />
               )}
             </div>
           )}
         </div>
 
         {error && (
-          <div className={`capture-error ${sessionExpired ? 'error-warn' : ''}`}>{error}</div>
+          <div className={`capture-error ${sessionExpired ? 'error-warn' : ''}`}>
+            <div className="capture-error-text">{error}</div>
+            {sessionExpired && (
+              <button
+                className="capture-btn btn-proceed-force"
+                onClick={handleForceOpenCaptured}
+              >
+                Proceed & Open Captured Page Anyway →
+              </button>
+            )}
+          </div>
         )}
 
         <p className="capture-note">

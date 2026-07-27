@@ -8,6 +8,7 @@ import SeoAuditRightPanel from './SeoAuditRightPanel'
 import NativeStylePanel from './NativeStylePanel'
 import CssInspectorEditor from './CssInspectorEditor'
 import { toggleCanvasDuplicates } from '../utils/seoCanvasOverlay'
+import figmaIcon from '../assets/figma.png'
 import './EditorWorkspace.css'
 
 const defaultQaSheetData = [
@@ -179,14 +180,14 @@ function updateLayersDisplayMode(editor: any, mode: 'minified' | 'verbose') {
 const PRESETS: Record<DevicePreset, { w: number; h: number; label: string }> = {
   Desktop: { w: 1920, h: 1200, label: '1920×1200' },
   Tablet:  { w: 1199, h: 768,  label: '1199×768' },
-  Mobile:  { w: 767,  h: 329,  label: '767×329' }
+  Mobile:  { w: 329,  h: 767,  label: '329×767' }
 }
 
 const DEVTOOLS_PRESETS: DevtoolsPreset[] = [
   { name: 'Desktop (1920×1200)', w: 1920, h: 1200, category: 'Standard' },
   { name: 'Laptop (1440×900)', w: 1440, h: 900, category: 'Standard' },
   { name: 'Tablet (1199×768)', w: 1199, h: 768, category: 'Standard' },
-  { name: 'Mobile (767×329)', w: 767, h: 329, category: 'Standard' },
+  { name: 'Mobile (329×767)', w: 329, h: 767, category: 'Standard' },
   { name: 'iPhone SE', w: 375, h: 667 },
   { name: 'iPhone XR', w: 414, h: 896 },
   { name: 'iPhone 12 Pro', w: 390, h: 844 },
@@ -237,6 +238,37 @@ export default function EditorWorkspace({
   const [loadingFonts, setLoadingFonts] = useState(false)
   const [fontsAttempted, setFontsAttempted] = useState(false)
 
+  const [storedFigmaUrl, setStoredFigmaUrl] = useState<string>(() => localStorage.getItem('qa_figma_url') || '')
+  const [figmaModalOpen, setFigmaModalOpen] = useState(false)
+  const [figmaInputVal, setFigmaInputVal] = useState('')
+
+  const openFigmaModal = () => {
+    setFigmaInputVal(localStorage.getItem('qa_figma_url') || '')
+    setFigmaModalOpen(true)
+  }
+
+  const saveFigmaModal = () => {
+    const trimmed = figmaInputVal.trim()
+    localStorage.setItem('qa_figma_url', trimmed)
+    setStoredFigmaUrl(trimmed)
+    setFigmaModalOpen(false)
+  }
+
+  const clearFigmaModal = () => {
+    localStorage.removeItem('qa_figma_url')
+    setStoredFigmaUrl('')
+    setFigmaInputVal('')
+    setFigmaModalOpen(false)
+  }
+
+  const handleFigmaButtonClick = () => {
+    if (storedFigmaUrl) {
+      window.electronAPI.openExternal(storedFigmaUrl)
+    } else {
+      openFigmaModal()
+    }
+  }
+
   // ── Auto-highlight canvas duplicates in Audit mode ──
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -250,11 +282,13 @@ export default function EditorWorkspace({
   const [rightPanelWidth, setRightPanelWidth] = useState(260)
   const [leftPanelOpen, setLeftPanelOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const [figmaSplitOpen, setFigmaSplitOpen] = useState(false)
+  const [figmaSplitWidth, setFigmaSplitWidth] = useState(550)
   const [bottomSheetOpen, setBottomSheetOpen] = useState(true)
   const [bottomSheetHeight, setBottomSheetHeight] = useState(300)
   const [bottomSheetMaximized, setBottomSheetMaximized] = useState(false)
   const panelDragRef = useRef<{
-    side: 'left' | 'right' | 'bottom'
+    side: 'left' | 'right' | 'bottom' | 'figma'
     startX: number
     startY: number
     startWidth: number
@@ -1148,7 +1182,7 @@ export default function EditorWorkspace({
     } else if (p.w === 1199 && p.h === 768) {
       setActivePreset('Tablet')
       setMode('preset')
-    } else if (p.w === 767 && p.h === 329) {
+    } else if (p.w === 329 && p.h === 767) {
       setActivePreset('Mobile')
       setMode('preset')
     } else {
@@ -1632,13 +1666,13 @@ export default function EditorWorkspace({
   }
 
   // ── Panel resize (with Hard-Drag / Snap-to-Collapse UX) ──
-  const onPanelResizeStart = (side: 'left' | 'right' | 'bottom', e: React.MouseEvent) => {
+  const onPanelResizeStart = (side: 'left' | 'right' | 'bottom' | 'figma', e: React.MouseEvent) => {
     e.preventDefault()
     panelDragRef.current = {
       side,
       startX: e.clientX,
       startY: e.clientY,
-      startWidth: side === 'left' ? leftPanelWidth : rightPanelWidth,
+      startWidth: side === 'left' ? leftPanelWidth : side === 'right' ? rightPanelWidth : figmaSplitWidth,
       startHeight: bottomSheetHeight
     }
     document.body.style.cursor = side === 'bottom' ? 'row-resize' : 'col-resize'
@@ -1703,6 +1737,19 @@ export default function EditorWorkspace({
 
             const newWidth = Math.max(180, Math.min(500, rawWidth))
             setRightPanelWidth(newWidth)
+          } else if (d.side === 'figma') {
+            const dx = latestX - d.startX
+            const rawWidth = d.startWidth - dx
+
+            if (rawWidth < 120) {
+              setFigmaSplitOpen(false)
+              setFigmaSplitWidth(550)
+              onUp()
+              return
+            }
+
+            const newWidth = Math.max(250, Math.min(1100, rawWidth))
+            setFigmaSplitWidth(newWidth)
           }
         })
       }
@@ -2084,6 +2131,20 @@ export default function EditorWorkspace({
       }
     `
 
+    const formatFontBadge = (cs: CSSStyleDeclaration): string => {
+      const fontFamily = cs.fontFamily || ''
+      const shortFont = fontFamily.split(',')[0].replace(/['"]/g, '').trim() || 'Sans'
+      const fontSize = cs.fontSize || ''
+      const rawWeight = cs.fontWeight || ''
+
+      let weightLabel = rawWeight
+      if (rawWeight === '700' || rawWeight === 'bold') weightLabel = 'Bold (700)'
+      else if (rawWeight === '400' || rawWeight === 'normal') weightLabel = '400'
+      else if (rawWeight === '600') weightLabel = 'SemiBold (600)'
+
+      return `${shortFont} | ${fontSize} | ${weightLabel}`
+    }
+
     // Walk DOM and inject badges
     const elements = iframeDoc.querySelectorAll(TEXT_TAGS.join(','))
     const processedSet = new Set<Element>()
@@ -2108,7 +2169,7 @@ export default function EditorWorkspace({
 
       const badge = iframeDoc.createElement('span')
       badge.className = '__fi-badge'
-      badge.textContent = shortFont
+      badge.textContent = formatFontBadge(cs)
       htmlEl.appendChild(badge)
     })
 
@@ -2137,7 +2198,7 @@ export default function EditorWorkspace({
       }
       const badge = iframeDoc.createElement('span')
       badge.className = '__fi-badge'
-      badge.textContent = shortFont
+      badge.textContent = formatFontBadge(cs)
       htmlEl.appendChild(badge)
     })
 
@@ -2722,7 +2783,7 @@ export default function EditorWorkspace({
             </button>
           </div>
 
-          {(workspaceTab === 'layout' || workspaceTab === 'live') && (
+          {(workspaceTab === 'layout' || workspaceTab === 'live' || workspaceTab === 'audit') && (
             <div className="viewport-controls">
               {/* Interaction Mode Toggle: Edit Mode vs Interact Mode */}
               <div className="device-switcher" style={{ marginRight: 4 }}>
@@ -2986,6 +3047,33 @@ export default function EditorWorkspace({
 
               <div className="toolbar-divider" />
 
+              {/* Figma External Link & Overlay Controls */}
+              <button
+                className={`device-btn ${storedFigmaUrl ? 'active' : ''}`}
+                onClick={handleFigmaButtonClick}
+                onContextMenu={(e) => { e.preventDefault(); openFigmaModal() }}
+                title={
+                  storedFigmaUrl
+                    ? `Open Figma Link in Chrome: ${storedFigmaUrl} (Right-click to edit/clear link)`
+                    : `Add Figma Link (1-click open in Chrome)`
+                }
+                style={{ marginRight: 4 }}
+              >
+                <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
+              </button>
+
+              <button
+                className={`device-btn ${figmaSplitOpen ? 'active' : ''}`}
+                onClick={() => setFigmaSplitOpen((p) => !p)}
+                title="Toggle Live Figma Split View (Dev Mode & Measurements)"
+                style={{ marginRight: 4 }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                </svg>
+              </button>
+
               {/* Figma Design Overlay */}
               <div className="ruler-dropdown-wrap" ref={overlayDropdownRef}>
                 <button
@@ -3001,32 +3089,76 @@ export default function EditorWorkspace({
                   </svg>
                 </button>
                 {overlayPanelOpen && (
-                  <div className="ruler-dropdown overlay-dropdown" style={{ minWidth: 240 }}>
-                    {!overlayImage ? (
+                  <div className="ruler-dropdown overlay-dropdown" style={{ minWidth: 250 }}>
+                    <button
+                      className="ruler-dd-item"
+                      style={{ background: figmaSplitOpen ? '#0284c7' : '#27272a', color: '#ffffff', fontWeight: 600, padding: '8px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                      onClick={() => { setFigmaSplitOpen((p) => !p); setOverlayPanelOpen(false); }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <line x1="12" y1="3" x2="12" y2="21" />
+                      </svg>
+                      <span>{figmaSplitOpen ? 'Close Live Figma Split' : 'Live Figma Split Panel ⚡'}</span>
+                    </button>
+                    <div className="ruler-dd-divider" />
+                    {storedFigmaUrl ? (
                       <>
-                        <div className="overlay-dd-hint">
-                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
-                            <rect x="2" y="2" width="9" height="9" rx="1" />
-                            <rect x="13" y="13" width="9" height="9" rx="1" />
-                            <path d="M13 2h4a3 3 0 0 1 3 3v4" />
-                            <path d="M2 13v4a3 3 0 0 0 3 3h4" />
-                          </svg>
-                          <span>Copy a layer as PNG in Figma,<br/>then <strong>Ctrl + V</strong> here</span>
-                        </div>
-                        <div className="ruler-dd-divider" />
                         <button
                           className="ruler-dd-item"
-                          onClick={() => overlayFileRef.current?.click()}
+                          style={{ color: '#ffffff', fontWeight: 500, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                          onClick={() => window.electronAPI.openExternal(storedFigmaUrl)}
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
-                          </svg>
-                          Upload Image...
+                          <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
+                          <span>Open Figma in Chrome ↗</span>
                         </button>
+                        <button
+                          className="ruler-dd-item"
+                          style={{ color: '#a1a1aa', padding: '4px 10px', fontSize: 11, marginBottom: 6 }}
+                          onClick={openFigmaModal}
+                        >
+                          Edit / Change Figma Link
+                        </button>
+                        <div className="ruler-dd-divider" />
                       </>
                     ) : (
+                      <>
+                        <button
+                          className="ruler-dd-item"
+                          style={{ color: '#3b82f6', fontWeight: 600, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                          onClick={openFigmaModal}
+                        >
+                          <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
+                          <span>+ Add Figma Link</span>
+                        </button>
+                        <div className="ruler-dd-divider" />
+                      </>
+                    )}
+                          {!overlayImage ? (
+                            <>
+                              <div className="overlay-dd-hint">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+                                  <rect x="2" y="2" width="9" height="9" rx="1" />
+                                  <rect x="13" y="13" width="9" height="9" rx="1" />
+                                  <path d="M13 2h4a3 3 0 0 1 3 3v4" />
+                                  <path d="M2 13v4a3 3 0 0 0 3 3h4" />
+                                </svg>
+                                <span>Copy a layer as PNG in Figma,<br/>then <strong>Ctrl + V</strong> here</span>
+                              </div>
+                              <div className="ruler-dd-divider" />
+                              <button
+                                className="ruler-dd-item"
+                                onClick={() => overlayFileRef.current?.click()}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                  <polyline points="17 8 12 3 7 8" />
+                                  <line x1="12" y1="3" x2="12" y2="15" />
+                                </svg>
+                                Upload Image...
+                              </button>
+                            </>
+                          ) : (
                       <>
                         <div className="overlay-dd-preview">
                           <img src={overlayImage} alt="Design overlay" />
@@ -3699,7 +3831,7 @@ export default function EditorWorkspace({
           </div>
 
           {/* Bottom Resizable QA Spreadsheet (Mock Sheets & Google Mastersheet) */}
-          {bottomSheetOpen && workspaceTab === 'layout' && (
+          {bottomSheetOpen && (workspaceTab === 'layout' || workspaceTab === 'audit') && (
             <>
               <div
                 className="panel-resize-handle-v"
@@ -3749,6 +3881,28 @@ export default function EditorWorkspace({
                         <span>Change Link</span>
                       </button>
                     )}
+                    <button
+                      className="bottom-sheet-btn"
+                      onClick={() => {
+                        if (googleSheetsUrl) {
+                          if (typeof window.electronAPI?.openDetachedWindow === 'function') {
+                            window.electronAPI.openDetachedWindow(googleSheetsUrl, 'QA Master Tracker')
+                          } else {
+                            window.open(googleSheetsUrl, '_blank', 'width=1280,height=850,top=100,left=100,resizable=yes')
+                          }
+                        } else {
+                          setActiveSheetTab('google')
+                          setIsEditingGoogleUrl(true)
+                        }
+                      }}
+                      title="Detach QA Master Tracker to standalone native window (Dual Monitors)"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                    </button>
                     <button
                       className="bottom-sheet-btn"
                       onClick={() => setBottomSheetMaximized((m) => !m)}
@@ -3834,6 +3988,89 @@ export default function EditorWorkspace({
           )}
         </div>
 
+        {/* Live Figma Split View Panel (Dev Mode & Measurements) */}
+        {figmaSplitOpen && (
+          <>
+            <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('figma', e)} />
+            <div className="editor-panel figma-split-panel" style={{ width: figmaSplitWidth, display: 'flex', flexDirection: 'column', height: '100%', background: '#1e1e1e', borderLeft: '1px solid #27272a', position: 'relative', zIndex: 10 }}>
+              <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#09090b', borderBottom: '1px solid #27272a' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12, color: '#f4f4f5' }}>
+                  <img src={figmaIcon} alt="Figma" width="14" height="14" style={{ objectFit: 'contain' }} />
+                  <span>Figma Design (Live Dev Mode)</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    className="bottom-sheet-link-btn"
+                    style={{ padding: '2px 8px', fontSize: 11, background: '#2563eb', color: '#ffffff', border: 'none' }}
+                    onClick={() => {
+                      if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
+                        ;(window.electronAPI as any).figmaLoginWindow(storedFigmaUrl)
+                      } else {
+                        window.open(storedFigmaUrl || 'https://figma.com/login', '_blank', 'width=1024,height=768')
+                      }
+                    }}
+                    title="Sign in to Figma in-app with your company Google Account"
+                  >
+                    Sign In ↗
+                  </button>
+                  {storedFigmaUrl && (
+                    <button
+                      className="bottom-sheet-link-btn"
+                      style={{ padding: '2px 8px', fontSize: 11 }}
+                      onClick={() => {
+                        if (typeof window.electronAPI?.openDetachedWindow === 'function') {
+                          window.electronAPI.openDetachedWindow(storedFigmaUrl, 'Figma Design')
+                        } else {
+                          window.open(storedFigmaUrl, '_blank', 'width=1280,height=850,top=100,left=100,resizable=yes')
+                        }
+                      }}
+                      title="Open in standalone window"
+                    >
+                      Detach ↗
+                    </button>
+                  )}
+                  <button
+                    className="bottom-sheet-link-btn"
+                    style={{ padding: '2px 8px', fontSize: 11 }}
+                    onClick={openFigmaModal}
+                    title="Change Figma Link"
+                  >
+                    Edit Link
+                  </button>
+                  <button
+                    className="bottom-sheet-btn"
+                    onClick={() => setFigmaSplitOpen(false)}
+                    title="Close Live Figma Split Panel"
+                    style={{ padding: '2px 6px' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#1e1e1e' }}>
+                {storedFigmaUrl ? (
+                  <webview
+                    src={storedFigmaUrl}
+                    partition="persist:figma"
+                    style={{ width: '100%', height: '100%', border: 'none', background: '#1e1e1e' }}
+                    useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                    allowpopups
+                  />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 24, textAlign: 'center', color: '#71717a' }}>
+                    <img src={figmaIcon} alt="Figma" width="36" height="36" style={{ marginBottom: 12, opacity: 0.6 }} />
+                    <h4 style={{ color: '#f4f4f5', margin: '0 0 6px 0', fontSize: 14 }}>No Figma Link Connected</h4>
+                    <p style={{ fontSize: 12, margin: '0 0 14px 0', maxWidth: 280, lineHeight: 1.4 }}>Connect your Figma design link to inspect live Dev Mode, measurements, and CSS properties side-by-side.</p>
+                    <button className="google-sheet-save-btn" onClick={openFigmaModal}>
+                      Connect Figma Link
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
         {rightPanelOpen && workspaceTab !== 'live' && (
           <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('right', e)} />
         )}
@@ -3886,13 +4123,13 @@ export default function EditorWorkspace({
             </div>
           </div>
 
-          {/* Audit mode panel container — ALWAYS MOUNTED */}
           <div className="audit-panel-wrap" style={{ display: workspaceTab === 'audit' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%' }}>
             <SeoAuditRightPanel
               html={html}
               sourceUrl={sourceUrl}
               editor={editorRef.current}
               selectedComponent={selectedComponent}
+              iframeRef={liveIframeRef}
             />
           </div>
         </div>
@@ -3939,6 +4176,48 @@ export default function EditorWorkspace({
             <div className="add-guides-actions">
               <button className="add-guides-cancel" onClick={() => setAddGuidesOpen(false)}>Cancel</button>
               <button className="add-guides-ok" onClick={addGuideLayout}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Figma Link Dialog */}
+      {figmaModalOpen && (
+        <div className="add-guides-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setFigmaModalOpen(false) }}>
+          <div className="add-guides-dialog" style={{ width: 440 }}>
+            <div className="add-guides-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img src={figmaIcon} alt="Figma" width="18" height="18" style={{ objectFit: 'contain' }} />
+              <span>Figma Design Link</span>
+            </div>
+            <p style={{ fontSize: 12, color: '#a1a1aa', margin: '4px 0 14px 0' }}>
+              Paste your Figma file or frame link to enable 1-click open in Chrome:
+            </p>
+            <input
+              type="url"
+              className="google-sheet-input"
+              placeholder="https://figma.com/file/... or https://figma.com/design/..."
+              value={figmaInputVal}
+              onChange={(e) => setFigmaInputVal(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && saveFigmaModal()}
+              autoFocus
+              style={{ width: '100%', boxSizing: 'border-box', marginBottom: 16 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              {storedFigmaUrl && (
+                <button
+                  className="add-guides-cancel"
+                  onClick={clearFigmaModal}
+                  style={{ color: '#ef4444', borderColor: '#ef444440', marginRight: 'auto' }}
+                >
+                  Remove Link
+                </button>
+              )}
+              <button className="add-guides-cancel" onClick={() => setFigmaModalOpen(false)}>
+                Cancel
+              </button>
+              <button className="add-guides-ok" onClick={saveFigmaModal}>
+                Save Link
+              </button>
             </div>
           </div>
         </div>

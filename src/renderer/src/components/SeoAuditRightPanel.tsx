@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { runSeoAudit, type SeoAuditReport } from '../utils/seoAudit'
 import type { Editor } from 'grapesjs'
 import './SeoAuditRightPanel.css'
@@ -8,6 +8,7 @@ interface Props {
   sourceUrl: string
   editor: Editor | null
   selectedComponent: any
+  iframeRef?: React.RefObject<HTMLIFrameElement>
 }
 
 type SectorKey = 'selected' | 'meta' | 'headers' | 'images' | 'links' | 'duplicates' | 'assets'
@@ -16,7 +17,8 @@ export default function SeoAuditRightPanel({
   html,
   sourceUrl,
   editor,
-  selectedComponent
+  selectedComponent,
+  iframeRef
 }: Props) {
   const [openSectors, setOpenSectors] = useState<Record<SectorKey, boolean>>({
     selected: true,
@@ -29,6 +31,150 @@ export default function SeoAuditRightPanel({
   })
 
   const [copied, setCopied] = useState(false)
+
+  const [auditOverlays, setAuditOverlays] = useState({
+    showLinks: false,
+    showAltText: false,
+    showHrefs: false,
+    showHeadings: false
+  })
+
+  const toggleOverlay = (key: keyof typeof auditOverlays) => {
+    setAuditOverlays((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  // ── Canvas Overlay Injector (Targeting Native Preview IFRAME) ─────────────
+  useEffect(() => {
+    const getIframeDoc = (): Document | null => {
+      // 1. Primary target: Native preview iframe (liveIframeRef)
+      if (iframeRef?.current?.contentDocument?.body) {
+        return iframeRef.current.contentDocument
+      }
+      // 2. Query iframe in DOM
+      const iframeEls = Array.from(document.querySelectorAll('iframe')) as HTMLIFrameElement[]
+      for (const iframe of iframeEls) {
+        try {
+          if (iframe.contentDocument && iframe.contentDocument.body) {
+            return iframe.contentDocument
+          }
+        } catch (_) {}
+      }
+      // 3. Fallback: GrapesJS canvas
+      try {
+        if (editor && editor.Canvas) {
+          const doc = typeof editor.Canvas.getDocument === 'function' ? editor.Canvas.getDocument() : null
+          if (doc && doc.body) return doc
+          const frame = typeof editor.Canvas.getFrameEl === 'function' ? editor.Canvas.getFrameEl() : null
+          if (frame?.contentDocument?.body) return frame.contentDocument
+        }
+      } catch (_) {}
+      return null
+    }
+
+    const updateOverlays = () => {
+      const iframeDoc = getIframeDoc()
+      if (!iframeDoc || !iframeDoc.body) return
+
+      // Clean previous audit overlay container
+      const oldContainer = iframeDoc.getElementById('__audit-overlay-container')
+      if (oldContainer) oldContainer.remove()
+
+      const { showLinks, showAltText, showHrefs, showHeadings } = auditOverlays
+      if (!showLinks && !showAltText && !showHrefs && !showHeadings) return
+
+      const win = iframeDoc.defaultView || window
+      const scrollX = win.scrollX || 0
+      const scrollY = win.scrollY || 0
+
+      // Single top-level overlay container in iframeDoc.body
+      const container = iframeDoc.createElement('div')
+      container.id = '__audit-overlay-container'
+      container.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:9999999;'
+      iframeDoc.body.appendChild(container)
+
+      const drawBadge = (el: Element, text: string, bgColor: string, textColor: string = '#ffffff') => {
+        const rect = el.getBoundingClientRect()
+        if (rect.width < 1 && rect.height < 1) return
+
+        const badge = iframeDoc.createElement('div')
+        badge.style.cssText = `
+          position: absolute;
+          left: ${Math.max(4, rect.left + scrollX + 4)}px;
+          top: ${Math.max(4, rect.top + scrollY + 4)}px;
+          background: ${bgColor};
+          color: ${textColor};
+          font-size: 10px;
+          font-weight: 700;
+          padding: 2px 6px;
+          border-radius: 4px;
+          pointer-events: none;
+          z-index: 9999999;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          line-height: 1.2;
+          white-space: nowrap;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+          border: 1px solid rgba(255,255,255,0.25);
+        `
+        badge.textContent = text
+        container.appendChild(badge)
+      }
+
+      // 1. Show Alt Text
+      if (showAltText) {
+        iframeDoc.querySelectorAll('img').forEach((img) => {
+          const alt = img.getAttribute('alt')
+          if (alt != null && alt.trim() !== '') {
+            drawBadge(img, `alt: "${alt.trim().slice(0, 35)}"`, '#10b981')
+          } else {
+            drawBadge(img, 'MISSING ALT', '#ef4444')
+          }
+        })
+      }
+
+      // 2. Show Links
+      if (showLinks) {
+        iframeDoc.querySelectorAll('a').forEach((a) => {
+          const href = a.getAttribute('href') || '#'
+          drawBadge(a, `link: ${href.slice(0, 40)}`, '#3b82f6')
+        })
+      }
+
+      // 3. Show Hrefs
+      if (showHrefs) {
+        iframeDoc.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], .btn, .button').forEach((btn) => {
+          const href = btn.getAttribute('href') || btn.getAttribute('onclick') || btn.getAttribute('type') || 'button'
+          drawBadge(btn, `href: ${href.slice(0, 40)}`, '#8b5cf6')
+        })
+      }
+
+      // 4. Show Headings
+      if (showHeadings) {
+        iframeDoc.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+          const tag = h.tagName.toUpperCase()
+          const snippet = (h.textContent || '').trim().slice(0, 30)
+          drawBadge(h, `${tag}: ${snippet}`, '#f59e0b', '#000000')
+        })
+      }
+    }
+
+    updateOverlays()
+
+    // Interval loop while active
+    let interval: any = null
+    const hasAnyActive = Object.values(auditOverlays).some(Boolean)
+    if (hasAnyActive) {
+      interval = setInterval(updateOverlays, 250)
+    }
+
+    return () => {
+      if (interval) clearInterval(interval)
+      const iframeDoc = getIframeDoc()
+      if (iframeDoc) {
+        const c = iframeDoc.getElementById('__audit-overlay-container')
+        if (c) c.remove()
+      }
+    }
+  }, [auditOverlays, editor, html, iframeRef])
 
   // Calculate SEO audit report
   const report: SeoAuditReport = useMemo(() => {
@@ -98,7 +244,6 @@ export default function SeoAuditRightPanel({
     const md = `
 # On-Page SEO Audit Summary
 **URL:** ${sourceUrl}  
-**SEO Health Score:** ${report.score}/100  
 **Title:** ${report.metaData.title || 'Missing'}  
 **Meta Description:** ${report.metaData.description || 'Missing'}  
 **Canonical:** ${report.metaData.canonical || 'Missing'}  
@@ -127,13 +272,67 @@ export default function SeoAuditRightPanel({
         </div>
       </div>
 
-      {/* ── Overview Stats Row (Flat Dark Inspector Style) ────────── */}
+      {/* ── Overview Stats Row (Err / Warn / Pass) ────────── */}
       <div className="seo-score-bar">
-        <div className="score-val-badge">Score: <strong>{report.score}</strong> / 100</div>
         <div className="score-counts-inline">
           <span className="count-tag tag-err">{report.errorCount} Err</span>
           <span className="count-tag tag-warn">{report.warningCount} Warn</span>
           <span className="count-tag tag-pass">{report.passedCount} Pass</span>
+        </div>
+      </div>
+
+      {/* ── Canvas Overlays Toggle Buttons (Layout Icon System) ────── */}
+      <div className="seo-overlay-toggles-bar">
+        <div className="seo-toggle-bar-title">Canvas Overlays</div>
+        <div className="seo-toggle-btn-group">
+          <button
+            className={`seo-overlay-btn ${auditOverlays.showLinks ? 'active' : ''}`}
+            onClick={() => toggleOverlay('showLinks')}
+            title="Show all link URLs overlay on canvas"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span>Show Links</span>
+          </button>
+
+          <button
+            className={`seo-overlay-btn ${auditOverlays.showAltText ? 'active' : ''}`}
+            onClick={() => toggleOverlay('showAltText')}
+            title="Show image ALT text and missing ALTs on canvas"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+            <span>Show Alt Text</span>
+          </button>
+
+          <button
+            className={`seo-overlay-btn ${auditOverlays.showHrefs ? 'active' : ''}`}
+            onClick={() => toggleOverlay('showHrefs')}
+            title="Show button hrefs and click targets on canvas"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="12" cy="12" r="6" />
+              <circle cx="12" cy="12" r="2" />
+            </svg>
+            <span>Show Hrefs</span>
+          </button>
+
+          <button
+            className={`seo-overlay-btn ${auditOverlays.showHeadings ? 'active' : ''}`}
+            onClick={() => toggleOverlay('showHeadings')}
+            title="Show heading tag hierarchy (H1-H6) on canvas"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12h8m-8-6v12m8-12v12m5-6h3" />
+            </svg>
+            <span>Show Headings</span>
+          </button>
         </div>
       </div>
 

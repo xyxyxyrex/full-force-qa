@@ -343,7 +343,7 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       devices: [
         { name: 'Desktop', width: '1920px', height: '1200px', widthMedia: '' },
         { name: 'Tablet', width: '1199px', height: '768px', widthMedia: '1199px' },
-        { name: 'Mobile', width: '767px', height: '329px', widthMedia: '767px' },
+        { name: 'Mobile', width: '329px', height: '767px', widthMedia: '329px' },
         { name: 'Custom', width: '1920px', height: '1200px', widthMedia: '' }
       ]
     },
@@ -654,7 +654,7 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     const enableResize = (component: ReturnType<typeof editor.getWrapper>) => {
       if (!component) return
       component.set('resizable', true)
-      component.components().each((child) => enableResize(child))
+      component.components().each((child: any) => enableResize(child))
     }
     enableResize(editor.getWrapper())
 

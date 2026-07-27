@@ -1,11 +1,24 @@
 import { BrowserWindow } from 'electron'
 
+export function sanitizeUrl(rawUrl: string): string {
+  if (!rawUrl) return ''
+  let url = rawUrl.trim()
+  url = url.replace(/&amp;/gi, '&')
+  url = url.replace(/&amp;/gi, '&')
+  url = url.replace(/&lt;/gi, '<')
+  url = url.replace(/&gt;/gi, '>')
+  url = url.replace(/&quot;/gi, '"')
+  url = url.replace(/&#39;/gi, "'")
+  return url
+}
+
 /**
  * Opens the URL in a hidden BrowserWindow (shares default session for auth cookies),
  * waits for dynamic rendering, scrolls to load lazy assets, injects <base href="URL">,
  * and extracts the full native outerHTML.
  */
-export async function captureUrl(url: string): Promise<string> {
+export async function captureUrl(rawUrl: string): Promise<string> {
+  const url = sanitizeUrl(rawUrl)
   const captureWindow = new BrowserWindow({
     width: 1920,
     height: 1080,
@@ -49,9 +62,9 @@ export async function captureUrl(url: string): Promise<string> {
           const is404Body = document.body ? (
             document.body.classList.contains('error404') ||
             document.body.classList.contains('page-not-found') ||
-            !!document.querySelector('.error-404, #error-404, .not-found')
+            !!document.querySelector('.error-404, #error-404')
           ) : false;
-          const titleHas404 = lowerTitle.includes('page not found') || lowerTitle.includes('404') || lowerTitle.includes('not found');
+          const titleHas404 = lowerTitle.includes('404 page not found') || lowerTitle.includes('page not found') || lowerTitle.includes('page cannot be found') || lowerTitle.startsWith('404 -') || lowerTitle === '404';
           const isLoginPage = window.location.href.includes('wp-login.php') || !!document.querySelector('#loginform');
           if (isLoginPage) return { is404OrLogin: true, title, reason: 'WordPress Login Redirect' };
           if (is404Body || titleHas404) return { is404OrLogin: true, title, reason: '404 Page Not Found' };
@@ -63,8 +76,7 @@ export async function captureUrl(url: string): Promise<string> {
     `)
 
     if (httpStatusCode === 404 || pageCheck.is404OrLogin) {
-      console.log(`[capture] ⚠ Session Expired / 404 Detected: ${pageCheck.reason} ("${pageCheck.title}")`)
-      throw new Error(`SESSION_EXPIRED_404: ${pageCheck.reason} ("${pageCheck.title}")`)
+      console.warn(`[capture] ⚠ Session Expired / 404 Warning: ${pageCheck.reason} ("${pageCheck.title}") - URL: ${captureWindow.webContents.getURL()}`)
     }
 
     // Scroll through page to trigger lazy loading of images & below-the-fold content

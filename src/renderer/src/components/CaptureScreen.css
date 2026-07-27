@@ -1,4 +1,4 @@
-/* ── Backdrop Overlay (Blurs Dashboard Background) ────────────────────────── */
+/* ── Monotone Sleek Backdrop & Card ────────────────────────────────────── */
 
 .capture-screen-backdrop {
   position: fixed;
@@ -6,7 +6,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(9, 9, 11, 0.75);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   z-index: 9999;
@@ -18,30 +18,25 @@
 }
 
 @keyframes backdropFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-/* Modal Card */
 .capture-card {
-  background: #242424;
+  background: #18181b;
   border-radius: 14px;
-  padding: 36px;
+  padding: 32px;
   width: 100%;
-  max-width: 520px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
+  max-width: 500px;
+  border: 1px solid #27272a;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
   animation: cardPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes cardPopIn {
   from {
     opacity: 0;
-    transform: scale(0.95);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
@@ -53,7 +48,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .back-btn {
@@ -62,18 +57,19 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: none;
+  border: 1px solid #27272a;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #808080;
+  background: #27272a;
+  color: #a1a1aa;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: all 0.12s ease;
   flex-shrink: 0;
 }
 
 .back-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #e8e8e8;
+  background: #3f3f46;
+  color: #f4f4f5;
+  border-color: #52525b;
 }
 
 .capture-logo {
@@ -85,12 +81,12 @@
 .capture-logo h1 {
   font-size: 18px;
   font-weight: 700;
-  color: #f0f0f0;
+  color: #f4f4f5;
   letter-spacing: -0.01em;
 }
 
 .capture-section {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .capture-label {
@@ -99,7 +95,7 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #c0c0c0;
+  color: #e4e4e7;
   margin-bottom: 4px;
 }
 
@@ -110,44 +106,32 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  color: #e0e0e0;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  color: #d4d4d8;
   font-size: 11px;
   font-weight: 700;
 }
 
 .step-badge.optional {
-  background: rgba(255, 255, 255, 0.06);
-  color: #888;
+  background: #18181b;
+  border-color: #27272a;
+  color: #71717a;
 }
 
 .capture-optional-tag {
   font-size: 10px;
   font-weight: 500;
-  color: #666;
-  background: rgba(255, 255, 255, 0.05);
+  color: #71717a;
+  background: #27272a;
   padding: 1px 6px;
   border-radius: 4px;
   margin-left: 2px;
 }
 
-.capture-btn.btn-clear {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #888;
-  min-width: auto;
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.capture-btn.btn-clear:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #ccc;
-}
-
 .capture-hint {
   font-size: 12px;
-  color: #707070;
+  color: #71717a;
   margin: 0 0 8px;
   padding-left: 28px;
 }
@@ -159,19 +143,20 @@
 
 .capture-input {
   flex: 1;
-  padding: 10px 12px;
-  background: #181818;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 9px 12px;
+  background: #09090b;
+  border: 1px solid #27272a;
   border-radius: 6px;
-  color: #e8e8e8;
+  color: #f4f4f5;
   font-size: 13px;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.15s;
+  transition: all 0.15s ease;
 }
 
 .capture-input:focus {
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: #52525b;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
 }
 
 .capture-input:disabled {
@@ -179,12 +164,18 @@
 }
 
 .capture-input::placeholder {
-  color: #505050;
+  color: #52525b;
 }
 
-/* Buttons */
+/* Monotone Input warning highlight */
+.input-warn {
+  border-color: #3f3f46 !important;
+}
+
+/* ── Sleek Monotone Buttons ───────────────────────────────────────────── */
+
 .capture-btn {
-  padding: 10px 18px;
+  padding: 9px 16px;
   border: none;
   border-radius: 6px;
   font-size: 13px;
@@ -192,7 +183,7 @@
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.15s, opacity 0.15s;
+  transition: all 0.15s ease;
 }
 
 .capture-btn:disabled {
@@ -200,66 +191,112 @@
   cursor: not-allowed;
 }
 
+/* Primary Action Button (Capture) */
 .btn-primary {
   background: #ffffff;
-  color: #111111;
+  color: #09090b;
+  border: 1px solid #ffffff;
 }
+
 .btn-primary:hover:not(:disabled) {
-  background: #e0e0e0;
+  background: #e4e4e7;
+  border-color: #e4e4e7;
 }
 
+/* Secondary Button (Login / Clear) */
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.08);
-  color: #d0d0d0;
-}
-.btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
+  background: #27272a;
+  color: #e4e4e7;
+  border: 1px solid #3f3f46;
 }
 
+.btn-secondary:hover:not(:disabled) {
+  background: #3f3f46;
+  color: #ffffff;
+  border-color: #52525b;
+}
+
+/* Re-Login Monotone Button */
+.btn-relogin {
+  background: #27272a;
+  color: #f4f4f5;
+  border: 1px solid #52525b;
+}
+
+.btn-relogin:hover:not(:disabled) {
+  background: #3f3f46;
+  color: #ffffff;
+}
+
+/* Logged In Status Badge */
 .btn-done {
-  background: #2ea043;
-  color: #fff;
+  background: #27272a;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
   cursor: default;
 }
 
-.btn-warn {
-  background: #d29922;
-  color: #fff;
-}
-.btn-warn:hover:not(:disabled) {
-  background: #bb8a1e;
-}
-
-/* Session-expired input highlight */
-.input-warn {
-  border-color: #d29922 !important;
+.capture-btn.btn-clear {
+  background: transparent;
+  border: 1px solid #27272a;
+  color: #71717a;
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
-/* Status / errors */
-.capture-status {
-  font-size: 13px;
-  color: #cccccc;
-  margin-bottom: 8px;
+.capture-btn.btn-clear:hover {
+  border-color: #3f3f46;
+  color: #e4e4e7;
+  background: #27272a;
 }
+
+/* ── Error & Warning Monotone Banner ─────────────────────────────────── */
 
 .capture-error {
-  font-size: 13px;
-  color: #f85149;
-  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  animation: cardPopIn 0.15s ease-out;
 }
 
-.capture-error.error-warn {
-  color: #d29922;
+.capture-error-text {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #d4d4d8;
+}
+
+.btn-proceed-force {
+  align-self: flex-start;
+  margin-top: 10px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: #f4f4f5;
+  color: #09090b;
+  border: 1px solid #ffffff;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.btn-proceed-force:hover {
+  background: #e4e4e7;
+  border-color: #e4e4e7;
 }
 
 .capture-note {
   font-size: 12px;
-  color: #505050;
+  color: #71717a;
   margin-top: 16px;
   text-align: center;
 }
 
-/* ── FIGMA-STYLE LOADING SCREEN OVERLAY ──────────────────────────────────── */
+/* ── Figma-style Loading Screen Overlay ──────────────────────────────── */
 
 .figma-loading-screen {
   display: flex;
@@ -276,7 +313,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 4px 16px rgba(255, 255, 255, 0.1));
+  filter: drop-shadow(0 4px 16px rgba(255, 255, 255, 0.08));
   animation: logoPulse 1.8s infinite ease-in-out;
 }
 
@@ -294,7 +331,7 @@
 .figma-loading-track {
   width: 140px;
   height: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  background: #27272a;
   border-radius: 2px;
   overflow: hidden;
   position: relative;
@@ -306,36 +343,28 @@
   left: 0;
   height: 100%;
   width: 40%;
-  background: #ffffff;
+  background: #f4f4f5;
   border-radius: 2px;
   animation: loadingSlide 1.2s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes loadingSlide {
-  0% {
-    left: -40%;
-    width: 40%;
-  }
-  50% {
-    left: 30%;
-    width: 50%;
-  }
-  100% {
-    left: 100%;
-    width: 20%;
-  }
+  0% { left: -40%; width: 40%; }
+  50% { left: 30%; width: 50%; }
+  100% { left: 100%; width: 20%; }
 }
 
 .figma-loading-text {
   font-size: 13px;
   font-weight: 500;
-  color: #888888;
+  color: #a1a1aa;
   letter-spacing: -0.01em;
   margin: 0;
   text-align: center;
 }
 
 /* ── Monday Quick-fill Dropdown ─────────────────────────────────────────── */
+
 .monday-quickfill {
   position: relative;
   margin-top: 8px;
@@ -345,11 +374,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 5px;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
   padding: 4px 10px;
-  color: #aaa;
+  color: #a1a1aa;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -357,9 +386,9 @@
 }
 
 .monday-quickfill-btn:hover {
-  background: rgba(255, 255, 255, 0.09);
-  color: #eee;
-  border-color: rgba(255, 255, 255, 0.18);
+  background: #3f3f46;
+  color: #f4f4f5;
+  border-color: #52525b;
 }
 
 .monday-quickfill-dropdown {
@@ -367,10 +396,10 @@
   top: calc(100% + 6px);
   left: 0;
   width: 320px;
-  background: #1e1e1e;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #18181b;
+  border: 1px solid #3f3f46;
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   max-height: 220px;
   overflow-y: auto;
   z-index: 100;
@@ -383,13 +412,13 @@
 }
 
 .monday-quickfill-ticket + .monday-quickfill-ticket {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid #27272a;
 }
 
 .monday-quickfill-ticket-name {
   font-size: 11px;
   font-weight: 600;
-  color: #b0b0b0;
+  color: #a1a1aa;
   padding: 2px 4px 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -418,20 +447,20 @@
 }
 
 .monday-quickfill-link:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: #27272a;
 }
 
 .monday-qf-label {
   font-size: 11px;
   font-weight: 600;
-  color: #c0c0c0;
+  color: #d4d4d8;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .monday-qf-url {
   font-size: 10px;
-  color: #555;
+  color: #71717a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -441,11 +470,11 @@
 /* ── Top-Level Ticket Selector Banner ───────────────────────────────────── */
 
 .top-ticket-autofill-banner {
-  background: #1c1c1c;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #18181b;
+  border: 1px solid #27272a;
   border-radius: 8px;
   padding: 12px 14px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -457,14 +486,14 @@
   gap: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #cccccc;
+  color: #a1a1aa;
 }
 
 .autofill-ticket-select {
   width: 100%;
-  background: #141414;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #eeeeee;
+  background: #09090b;
+  border: 1px solid #27272a;
+  color: #f4f4f5;
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12.5px;
@@ -475,12 +504,156 @@
 }
 
 .autofill-ticket-select:focus {
-  border-color: #777777;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+  border-color: #52525b;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
 }
 
 .autofill-ticket-select option {
-  background: #1e1e1e;
-  color: #e0e0e0;
+  background: #18181b;
+  color: #f4f4f5;
 }
 
+/* ── Comprehensive Monday Search Dropdown ───────────────────────────────── */
+
+.monday-search-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  min-width: 360px;
+  max-width: 440px;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+  z-index: 999;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: cardPopIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.monday-search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.monday-search-input-wrap:focus-within {
+  border-color: #52525b;
+}
+
+.monday-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #f4f4f5;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.monday-search-input::placeholder {
+  color: #52525b;
+}
+
+.monday-search-clear {
+  background: none;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.monday-search-clear:hover {
+  color: #e4e4e7;
+}
+
+.monday-search-results {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.monday-search-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #71717a;
+}
+
+.monday-search-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #27272a;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+}
+
+.monday-search-item:hover {
+  background: #3f3f46;
+  border-color: #52525b;
+}
+
+.monday-search-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.monday-search-status-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #e4e4e7;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.monday-search-ticket-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f4f4f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.monday-search-item-url-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.monday-search-url-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #a1a1aa;
+  flex-shrink: 0;
+}
+
+.monday-search-url-text {
+  font-size: 11px;
+  color: #60a5fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

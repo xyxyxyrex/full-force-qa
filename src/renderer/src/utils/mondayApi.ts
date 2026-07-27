@@ -54,12 +54,22 @@ const extractLinksFromUpdates = (updates: any[]): MondayLink[] => {
 }
 
 // Helper: classify a URL into a link category
-const classifyUrl = (url: string): 'googleSheet' | 'figma' | 'admin' | 'other' | null => {
-  if (url.includes('docs.google.com/spreadsheets')) return 'googleSheet'
-  if (url.includes('figma.com')) return 'figma'
-  if (url.includes('/wp-admin')) return 'admin'
-  if (NOISE_DOMAINS.some(d => url.includes(d))) return null
-  if (url.startsWith('http://') || url.startsWith('https://')) return 'other'
+const classifyUrl = (url: string, label?: string): 'googleSheet' | 'figma' | 'admin' | 'other' | null => {
+  const lowerUrl = url.toLowerCase()
+  const lowerLabel = (label || '').toLowerCase()
+
+  if (
+    lowerUrl.includes('docs.google.com/spreadsheets') ||
+    lowerUrl.includes('sheets.google.com') ||
+    lowerUrl.includes('google.com/sheets') ||
+    (lowerUrl.includes('google.com') && (lowerLabel.includes('sheet') || lowerLabel.includes('tracker') || lowerLabel.includes('qa')))
+  ) {
+    return 'googleSheet'
+  }
+  if (lowerUrl.includes('figma.com')) return 'figma'
+  if (lowerUrl.includes('/wp-admin') || lowerUrl.includes('wp-admin')) return 'admin'
+  if (NOISE_DOMAINS.some(d => lowerUrl.includes(d))) return null
+  if (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) return 'other'
   return null
 }
 
@@ -74,21 +84,42 @@ const labelForUrl = (link: MondayLink): string => {
   }
 }
 
-export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket[]> {
+// Helper: safely fetch Monday API with 503 / non-JSON handling
+const safeFetchMonday = async (token: string, query: string, variables?: any): Promise<any> => {
   try {
-    // Step 1: Get current user ID
-    const meRes = await fetch('https://api.monday.com/v2', {
+    const res = await fetch('https://api.monday.com/v2', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        'Authorization': token,
+        'API-Version': '2024-10'
       },
-      body: JSON.stringify({ query: `{ me { id name } }` })
+      body: JSON.stringify({ query, variables })
     })
-    const meJson = await meRes.json()
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      console.warn(`[Monday] Server returned HTTP ${res.status}:`, text.slice(0, 150))
+      return null
+    }
+    const text = await res.text()
+    try {
+      return JSON.parse(text)
+    } catch {
+      console.warn('[Monday] Response was not valid JSON:', text.slice(0, 150))
+      return null
+    }
+  } catch (err) {
+    console.warn('[Monday] Network error:', err)
+    return null
+  }
+}
 
-    if (meJson.errors) {
-      console.error('[Monday] API errors:', meJson.errors)
+export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket[]> {
+  try {
+    // Step 1: Get current user ID
+    const meJson = await safeFetchMonday(token, `{ me { id name } }`)
+    if (!meJson || meJson.errors) {
+      if (meJson?.errors) console.error('[Monday] API errors:', meJson.errors)
       return []
     }
 
@@ -99,19 +130,8 @@ export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket
     }
 
     // Step 2: Get board IDs for the key boards + other boards
-    const boardListRes = await fetch('https://api.monday.com/v2', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token,
-        'API-Version': '2024-10'
-      },
-      body: JSON.stringify({
-        query: `query { boards(limit: 200, order_by: used_at) { id name } }`
-      })
-    })
-    const boardListJson = await boardListRes.json()
-    const allBoards: { id: string; name: string }[] = boardListJson.data?.boards || []
+    const boardListJson = await safeFetchMonday(token, `query { boards(limit: 200, order_by: used_at) { id name } }`)
+    const allBoards: { id: string; name: string }[] = boardListJson?.data?.boards || []
 
     const keyBoardIds = allBoards.filter(b => KEY_BOARDS.includes(b.name)).map(b => b.id)
     const otherBoardIds = allBoards
@@ -119,52 +139,41 @@ export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket
       .slice(0, 30)
       .map(b => b.id)
 
-    const fetchBoardItems = async (boardIds: string[], itemLimit: number, includeUpdates: boolean) => {
+    const fetchBoardItems = async (boardIds: string[], itemLimit: number, includeUpdates: boolean): Promise<any[]> => {
       if (boardIds.length === 0) return []
       const updatesField = includeUpdates ? 'updates(limit: 15) { body replies { body } }' : ''
-      const res = await fetch('https://api.monday.com/v2', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token,
-          'API-Version': '2024-10'
-        },
-        body: JSON.stringify({
-          query: `query($ids: [ID!]) {
-            boards(ids: $ids) {
+      const query = `query($ids: [ID!]) {
+        boards(ids: $ids) {
+          id
+          name
+          items_page(limit: ${itemLimit}) {
+            items {
               id
               name
-              items_page(limit: ${itemLimit}) {
-                items {
-                  id
-                  name
-                  updated_at
-                  creator { id }
-                  subscribers { id }
-                  ${updatesField}
-                  column_values {
-                    id
-                    text
-                    value
-                    type
-                    column { title }
-                  }
-                }
+              updated_at
+              creator { id }
+              subscribers { id }
+              ${updatesField}
+              column_values {
+                id
+                text
+                value
+                type
+                column { title }
               }
             }
-          }`,
-          variables: { ids: boardIds }
-        })
-      })
-      const data = await res.json()
-      return data.data?.boards || []
+          }
+        }
+      }`
+      const json = await safeFetchMonday(token, query, { ids: boardIds })
+      return json?.data?.boards || []
     }
 
     const [keyBoards, otherBoards] = await Promise.all([
       fetchBoardItems(keyBoardIds, 200, true),
       fetchBoardItems(otherBoardIds, 50, false)
     ])
-    const json = { data: { boards: [...keyBoards, ...otherBoards] } }
+    const json = { data: { boards: [...(keyBoards || []), ...(otherBoards || [])] } }
 
     if (json.data && json.data.boards) {
       const itemMap = new Map<string, MondayTicket>()
@@ -198,19 +207,32 @@ export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket
           const allLinks: MondayLink[] = []
 
           item.column_values?.forEach((cv: any) => {
-            const text = cv.text || ''
+            const text = (cv.text || '').trim()
             let urlFromValue = ''
             if (cv.value) {
               try {
                 const parsed = JSON.parse(cv.value)
-                urlFromValue = parsed.url || parsed.text || ''
+                urlFromValue = (parsed.url || parsed.text || '').trim()
               } catch {
-                urlFromValue = cv.value
+                if (typeof cv.value === 'string') urlFromValue = cv.value.trim()
               }
             }
-            const urlStr = text || urlFromValue
-            if (urlStr.includes('http://') || urlStr.includes('https://')) {
-              allLinks.push({ url: urlStr, label: cv.column?.title || '' })
+
+            // Extract real HTTP URL properly!
+            let targetUrl = ''
+            if (urlFromValue.startsWith('http://') || urlFromValue.startsWith('https://')) {
+              targetUrl = urlFromValue
+            } else if (text.startsWith('http://') || text.startsWith('https://')) {
+              targetUrl = text
+            } else {
+              const combo = urlFromValue + ' ' + text
+              const match = combo.match(/https?:\/\/[^\s"'<>]+/i)
+              if (match) targetUrl = match[0]
+            }
+
+            if (targetUrl) {
+              const title = cv.column?.title || (text && !text.startsWith('http') ? text : '') || 'Link'
+              allLinks.push({ url: targetUrl, label: title })
             }
           })
 
@@ -227,11 +249,19 @@ export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket
           for (const link of allLinks) {
             if (seen.has(link.url)) continue
             seen.add(link.url)
-            const type = classifyUrl(link.url)
-            if (type === 'googleSheet' && !googleSheetUrl) googleSheetUrl = link.url
-            else if (type === 'figma' && !figmaUrl) figmaUrl = link.url
-            else if (type === 'admin' && !adminUrl) adminUrl = link.url
-            else if (type === 'other') otherLinks.push({ url: link.url, label: labelForUrl(link) })
+            const type = classifyUrl(link.url, link.label)
+            if (type === 'googleSheet') {
+              if (!googleSheetUrl) googleSheetUrl = link.url
+              otherLinks.push({ url: link.url, label: link.label || 'QA Sheet' })
+            } else if (type === 'figma') {
+              if (!figmaUrl) figmaUrl = link.url
+              otherLinks.push({ url: link.url, label: link.label || 'Figma' })
+            } else if (type === 'admin') {
+              if (!adminUrl) adminUrl = link.url
+              otherLinks.push({ url: link.url, label: link.label || 'WP Admin' })
+            } else if (type === 'other') {
+              otherLinks.push({ url: link.url, label: labelForUrl(link) })
+            }
           }
 
           let statusStr = 'Requested'
