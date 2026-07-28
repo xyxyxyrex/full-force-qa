@@ -1432,7 +1432,7 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
             </div>
             <div className="modal-body">
               <p className="modal-text">
-                If the browser authorization screen didn't present or open, you can connect using your <strong>Monday.com Personal API Token</strong>.
+                If Monday shows <em>"You are not permitted to use this app"</em> or browser auth fails, connect instantly using your <strong>Monday.com Personal API Token</strong>.
               </p>
               <p className="modal-subtext" style={{ marginBottom: '16px', fontSize: '12px', color: '#a1a1aa' }}>
                 How to get your token: Open <strong>Monday.com</strong> → Avatar (bottom left) → <strong>Developers</strong> → <strong>My Tokens</strong> → Copy API v2 Token.
