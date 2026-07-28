@@ -227,6 +227,14 @@ function registerIpcHandlers(): void {
 
     return new Promise((resolve) => {
       let resolved = false
+      let authWin: BrowserWindow | null = null
+
+      const closeAuthWin = () => {
+        if (authWin && !authWin.isDestroyed()) {
+          try { authWin.close() } catch { }
+          authWin = null
+        }
+      }
 
       // 1. Spin up a one-shot HTTP server to catch the OAuth redirect
       const server = createServer(async (req, res) => {
@@ -241,8 +249,9 @@ function registerIpcHandlers(): void {
         if (error || !code) {
           resolved = true
           res.writeHead(200, { 'Content-Type': 'text/html' })
-          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Login cancelled</h2><p>You can close this tab.</p></body></html>')
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Login cancelled</h2><p>You can close this window.</p></body></html>')
           activeOAuthServer = null
+          setTimeout(closeAuthWin, 1000)
           try { server.close() } catch { }
           resolve({ success: false, error: error || 'No authorization code received' })
           return
@@ -270,6 +279,7 @@ function registerIpcHandlers(): void {
             res.writeHead(200, { 'Content-Type': 'text/html' })
             res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#1a1a1a;color:#e0e0e0"><h2 style="color:#3fb950">✓ Connected to Monday.com</h2><p>You can close this tab and return to the app.</p></body></html>')
             activeOAuthServer = null
+            setTimeout(closeAuthWin, 1000)
             try { server.close() } catch { }
             resolve({ success: true, token: tokenData.access_token })
           } else {
@@ -277,6 +287,7 @@ function registerIpcHandlers(): void {
             res.writeHead(200, { 'Content-Type': 'text/html' })
             res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Token exchange failed</h2><p>Please try again.</p></body></html>')
             activeOAuthServer = null
+            setTimeout(closeAuthWin, 1500)
             try { server.close() } catch { }
             resolve({ success: false, error: tokenData.error || 'Token exchange failed' })
           }
@@ -285,6 +296,7 @@ function registerIpcHandlers(): void {
           res.writeHead(200, { 'Content-Type': 'text/html' })
           res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Connection error</h2></body></html>')
           activeOAuthServer = null
+          setTimeout(closeAuthWin, 1500)
           try { server.close() } catch { }
           resolve({ success: false, error: (err as Error).message })
         }
@@ -297,6 +309,7 @@ function registerIpcHandlers(): void {
         if (!resolved) {
           resolved = true
           activeOAuthServer = null
+          closeAuthWin()
           try { server.close() } catch { }
           if (err.code === 'EADDRINUSE') {
             resolve({
@@ -313,7 +326,7 @@ function registerIpcHandlers(): void {
       })
 
       server.listen(MONDAY_REDIRECT_PORT, '127.0.0.1', () => {
-        // 3. Open a dedicated browser window for Monday OAuth login
+        // Dedicated browser window for Monday OAuth login + external browser fallback
         const authUrl = new URL('https://auth.monday.com/oauth2/authorize')
         authUrl.searchParams.set('client_id', MONDAY_CLIENT_ID)
         authUrl.searchParams.set('redirect_uri', MONDAY_REDIRECT_URI)
@@ -324,19 +337,46 @@ function registerIpcHandlers(): void {
 
         const url = authUrl.toString()
 
-        // Launch Edge/Chrome in its own window (not a tab in the company browser)
-        const { exec } = require('child_process')
-        exec(`start msedge --new-window "${url}"`, (err: Error | null) => {
-          if (err) {
-            // Edge not found — try Chrome
-            exec(`start chrome --new-window "${url}"`, (err2: Error | null) => {
-              if (err2) {
-                // Neither found — fall back to default browser
-                shell.openExternal(url)
-              }
-            })
+        // Fallback 1: Dedicated In-App Window (guarantees auth screen is presented to all users)
+        authWin = new BrowserWindow({
+          width: 1020,
+          height: 760,
+          title: 'Authorize QA Snapshot Editor - Monday.com',
+          parent: mainWindow || undefined,
+          modal: true,
+          backgroundColor: '#1a1a1a',
+          autoHideMenuBar: true,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            webSecurity: true
           }
         })
+
+        authWin.setMenu(null)
+        authWin.webContents.setUserAgent(
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        )
+
+        authWin.on('closed', () => {
+          authWin = null
+          if (!resolved) {
+            resolved = true
+            activeOAuthServer = null
+            try { server.close() } catch { }
+            resolve({ success: false, error: 'Login window was closed' })
+          }
+        })
+
+        authWin.loadURL(url).catch(() => {
+          // If in-app window fails to load, open system default browser
+          shell.openExternal(url)
+        })
+
+        // Fallback 2: Also trigger native system browser open (Edge/default) cleanly
+        try {
+          shell.openExternal(url)
+        } catch { }
       })
 
       // Timeout: auto-close after 3 minutes if user never completes login
@@ -344,6 +384,7 @@ function registerIpcHandlers(): void {
         if (!resolved) {
           resolved = true
           activeOAuthServer = null
+          closeAuthWin()
           try { server.close() } catch { }
           resolve({ success: false, error: 'Login timed out' })
         }

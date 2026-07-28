@@ -186,6 +186,11 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
   const [editAdminUrl, setEditAdminUrl] = useState('')
   const [editStagingUrl, setEditStagingUrl] = useState('')
 
+  // Manual Monday API token fallback state
+  const [showTokenFallbackModal, setShowTokenFallbackModal] = useState(false)
+  const [manualTokenInput, setManualTokenInput] = useState('')
+  const [manualTokenError, setManualTokenError] = useState('')
+
   const handleMondayLogin = async () => {
     setMondaySyncing(true)
     try {
@@ -195,9 +200,36 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
         setMondayToken(res.token)
         setMondayConnected(true)
         fetchMondayTickets(res.token)
+      } else if (res.error && res.error !== 'Login window was closed') {
+        setShowTokenFallbackModal(true)
       }
     } catch {
       // login window closed or cancelled
+    } finally {
+      setMondaySyncing(false)
+    }
+  }
+
+  const handleSaveManualToken = async () => {
+    const trimmed = manualTokenInput.trim()
+    if (!trimmed) {
+      setManualTokenError('Please enter a valid Monday API token.')
+      return
+    }
+    setMondaySyncing(true)
+    setManualTokenError('')
+    try {
+      const tickets = await fetchMondayTicketsApi(trimmed)
+      localStorage.setItem('monday_api_token', trimmed)
+      setMondayToken(trimmed)
+      setMondayConnected(true)
+      if (tickets && tickets.length > 0) {
+        setMondayTickets(tickets)
+      }
+      setShowTokenFallbackModal(false)
+      setManualTokenInput('')
+    } catch {
+      setManualTokenError('Failed to connect with token. Please verify the API token.')
     } finally {
       setMondaySyncing(false)
     }
@@ -866,17 +898,26 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
                   </button>
                 </>
               ) : (
-                <button
-                  className="monday-connect-btn"
-                  onClick={handleMondayLogin}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                    <polyline points="10 17 15 12 10 7" />
-                    <line x1="15" y1="12" x2="3" y2="12" />
-                  </svg>
-                  <span>Connect Monday Account</span>
-                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    className="monday-connect-btn"
+                    onClick={handleMondayLogin}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                      <polyline points="10 17 15 12 10 7" />
+                      <line x1="15" y1="12" x2="3" y2="12" />
+                    </svg>
+                    <span>Connect Monday Account</span>
+                  </button>
+                  <button
+                    className="monday-account-btn"
+                    onClick={() => setShowTokenFallbackModal(true)}
+                    title="Enter Personal API Token manually"
+                  >
+                    Enter Token
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -885,14 +926,8 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
             <div className="monday-notice-card">
               <div className="monday-notice-content">
                 <strong>Monday.com Integration (Optional)</strong>
-                <span>Log in to Monday.com to automatically fetch your assigned tickets and attached QA resources.</span>
+                <span>Log in to Monday.com using the "Connect Monday Account" button above to automatically fetch your assigned tickets and attached QA resources.</span>
               </div>
-              <button
-                className="monday-notice-btn"
-                onClick={handleMondayLogin}
-              >
-                Log In to Monday.com
-              </button>
             </div>
           )}
 
@@ -1368,6 +1403,61 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
                 onClick={() => handlePermanentDelete(permanentDeleteProject.id)}
               >
                 Delete Forever
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MONDAY MANUAL API TOKEN FALLBACK MODAL ────────────────── */}
+      {showTokenFallbackModal && (
+        <div className="modal-overlay" onClick={() => setShowTokenFallbackModal(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <img src={mondayLogo} alt="" width="18" height="18" />
+                <h3 className="modal-title">Monday.com API Token Fallback</h3>
+              </div>
+              <button className="modal-close-btn" onClick={() => setShowTokenFallbackModal(false)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="modal-text">
+                If the browser authorization screen didn't present or open, you can connect using your <strong>Monday.com Personal API Token</strong>.
+              </p>
+              <p className="modal-subtext" style={{ marginBottom: '16px', fontSize: '12px', color: '#a1a1aa' }}>
+                How to get your token: Open <strong>Monday.com</strong> → Avatar (bottom left) → <strong>Developers</strong> → <strong>My Tokens</strong> → Copy API v2 Token.
+              </p>
+              {manualTokenError && (
+                <div style={{ color: '#ff7b72', fontSize: '13px', marginBottom: '12px', background: 'rgba(255,123,114,0.1)', padding: '8px 12px', borderRadius: '6px' }}>
+                  {manualTokenError}
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Personal API Token</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="Paste your Monday API token here..."
+                  value={manualTokenInput}
+                  onChange={(e) => setManualTokenInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveManualToken()
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-btn secondary-btn" onClick={() => setShowTokenFallbackModal(false)}>
+                Cancel
+              </button>
+              <button className="modal-btn primary-btn" onClick={handleSaveManualToken} disabled={mondaySyncing}>
+                {mondaySyncing ? 'Connecting...' : 'Connect Token'}
               </button>
             </div>
           </div>
