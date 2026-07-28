@@ -57,14 +57,12 @@ function getGoogleSheetsEmbedUrl(rawUrl: string): string {
   if (!rawUrl) return ''
   let cleaned = rawUrl.trim()
   if (cleaned.includes('docs.google.com/spreadsheets')) {
-    if (cleaned.includes('/edit')) {
-      if (!cleaned.includes('rm=')) {
-        cleaned = cleaned.replace('/edit', '/edit?rm=minimal')
-      }
-    } else if (!cleaned.includes('/pubhtml') && !cleaned.includes('/embed')) {
+    // Remove rm=minimal / rm=embedded so worksheet tabs at the bottom remain fully visible & interactive
+    cleaned = cleaned.replace(/[?&]rm=minimal/g, '').replace(/[?&]rm=embedded/g, '')
+    if (!cleaned.includes('/edit') && !cleaned.includes('/pubhtml') && !cleaned.includes('/embed')) {
       const match = cleaned.match(/\/d\/([a-zA-Z0-9-_]+)/)
       if (match && match[1]) {
-        return `https://docs.google.com/spreadsheets/d/${match[1]}/edit?rm=minimal`
+        return `https://docs.google.com/spreadsheets/d/${match[1]}/edit`
       }
     }
   }

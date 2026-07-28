@@ -24,23 +24,64 @@ export interface TabState {
 export default function App() {
   const lastSyncRef = useRef<number>(0)
 
-  const [tabs, setTabs] = useState<TabState[]>(() => [
-    {
-      id: 'tab-1',
-      title: 'Dashboard',
-      view: 'dashboard',
-      snapshotHtml: null,
-      captureUrl: '',
-      snapshotKey: 0,
-      activeProject: null,
-      prefillAdmin: '',
-      prefillStaging: '',
-      skipAutoCapture: false
-    }
-  ])
+  const [tabs, setTabs] = useState<TabState[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('fullforce_app_tabs')
+      if (saved) {
+        const parsed: TabState[] = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((t) => {
+            const tabHtml = sessionStorage.getItem(`fullforce_snapshot_html_${t.id}`) || sessionStorage.getItem('fullforce_captured_html')
+            return {
+              ...t,
+              snapshotHtml: t.view === 'editor' ? (tabHtml || null) : null
+            }
+          })
+        }
+      }
+    } catch {}
+    return [
+      {
+        id: 'tab-1',
+        title: 'Dashboard',
+        view: 'dashboard',
+        snapshotHtml: null,
+        captureUrl: '',
+        snapshotKey: 0,
+        activeProject: null,
+        prefillAdmin: '',
+        prefillStaging: '',
+        skipAutoCapture: false
+      }
+    ]
+  })
 
-  const [activeTabId, setActiveTabId] = useState<string>('tab-1')
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const savedId = sessionStorage.getItem('fullforce_active_tab_id')
+    return savedId || 'tab-1'
+  })
+
   const [isPinned, setIsPinned] = useState<boolean>(() => localStorage.getItem('tab_bar_pinned') === 'true')
+
+  // Persist tab configuration & snapshot HTML in sessionStorage across page reloads (Ctrl+R / F5)
+  useEffect(() => {
+    try {
+      const serialized = tabs.map((t) => {
+        if (t.snapshotHtml) {
+          sessionStorage.setItem(`fullforce_snapshot_html_${t.id}`, t.snapshotHtml)
+        }
+        return {
+          ...t,
+          snapshotHtml: null
+        }
+      })
+      sessionStorage.setItem('fullforce_app_tabs', JSON.stringify(serialized))
+    } catch {}
+  }, [tabs])
+
+  useEffect(() => {
+    sessionStorage.setItem('fullforce_active_tab_id', activeTabId)
+  }, [activeTabId])
 
   const togglePin = () => {
     setIsPinned(prev => {
@@ -90,6 +131,7 @@ export default function App() {
 
   const handleCloseTab = (tabIdToClose: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    sessionStorage.removeItem(`fullforce_snapshot_html_${tabIdToClose}`)
     setTabs(prev => {
       const remaining = prev.filter(t => t.id !== tabIdToClose)
       if (remaining.length === 0) {
@@ -173,6 +215,10 @@ export default function App() {
         }
 
     await window.electronAPI.saveProject(project)
+    const tabId = activeTabId
+    sessionStorage.setItem(`fullforce_snapshot_html_${tabId}`, html)
+    sessionStorage.setItem('fullforce_captured_html', html)
+
     updateActiveTab(t => ({
       ...t,
       activeProject: project,
