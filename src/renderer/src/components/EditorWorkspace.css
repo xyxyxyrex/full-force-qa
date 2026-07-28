@@ -1641,6 +1641,14 @@
   flex: 1 !important;
 }
 
+.bottom-sheet-body .fortune-sheet-foot,
+.bottom-sheet-body .fortune-sheet-tab-container {
+  height: 32px !important;
+  flex: 0 0 32px !important;
+  display: flex !important;
+  z-index: 10 !important;
+}
+
 /* Tab Switcher (Mock Sheets vs Mastersheet) */
 .sheet-tab-switcher {
   display: flex;

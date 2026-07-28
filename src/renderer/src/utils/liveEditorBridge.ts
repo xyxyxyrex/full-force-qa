@@ -659,10 +659,254 @@ export function attachLiveEditor(
     if (target) target.removeAttribute('data-live-hover')
   }
 
+  // ── Helper: Check and dismiss cookie/privacy consent banners on click ──
+  const handleCookieDismiss = (target: HTMLElement): boolean => {
+    const cookieContainer = target.closest(
+      '[class*="cookie"], [class*="consent"], [class*="gdpr"], [class*="privacy"], [id*="cookie"], [id*="consent"], [id*="gdpr"], .cky-consent-container, #cn-accept-cookie, .cmplz-cookiebanner'
+    ) as HTMLElement | null
+
+    if (cookieContainer) {
+      cookieContainer.style.setProperty('display', 'none', 'important')
+      options.onChange()
+      return true
+    }
+    return false
+  }
+
+  // ── Helper: Universal Accordion & FAQ Reveal Engine ──
+  const handleAccordionToggle = (target: HTMLElement): boolean => {
+    // 1. Check if clicked target or any parent has a hash link (#collapse-123) or data-target/aria-controls
+    const linkEl = (target.closest('a[href*="#"], [data-target], [data-bs-target], [aria-controls]') || target.closest('a, button, [role="button"]')) as HTMLElement | null
+    let targetContentId = ''
+
+    if (linkEl) {
+      const href = linkEl.getAttribute('href') || ''
+      const hashMatch = href.match(/#([a-zA-Z0-9-_]+)/)
+      if (hashMatch && hashMatch[1] && !hashMatch[1].startsWith('elementor-action')) {
+        targetContentId = hashMatch[1]
+      }
+      if (!targetContentId) {
+        targetContentId = linkEl.getAttribute('data-target') || linkEl.getAttribute('data-bs-target') || linkEl.getAttribute('aria-controls') || ''
+        targetContentId = targetContentId.replace(/^#/, '')
+      }
+    }
+
+    // 2. Find toggler element (header / button / link)
+    const toggler = (target.closest(
+      '.ekit-accordion--toggler, .elementskit-btn-link, .elementskit-accordion-header, .elementor-accordion-title, .elementor-tab-title, .accordion-header, .accordion-title, [role="tab"], .faq-title, .toggle-title, summary'
+    ) || linkEl) as HTMLElement | null
+
+    if (!toggler && !targetContentId) return false
+
+    // 3. Find item container (for context only — ALWAYS ensure outer card remains 100% visible)
+    const item = target.closest(
+      '.elementskit-card, .ekit-accordion-item, .elementskit-accordion-item, .elementor-accordion-item, .accordion-item, .card, .faq-item, .toggle-item, details'
+    ) as HTMLElement | null
+
+    if (item) {
+      item.style.setProperty('display', 'block', 'important')
+      item.style.setProperty('opacity', '1', 'important')
+      item.style.setProperty('visibility', 'visible', 'important')
+    }
+
+    // 4. Gather ALL candidate content elements (ID match, card query, next sibling)
+    const candidateMap = new Set<HTMLElement>()
+
+    if (targetContentId) {
+      try {
+        const byId = doc.getElementById(targetContentId) || doc.querySelector(`#${CSS.escape(targetContentId)}`)
+        if (byId && byId !== toggler) candidateMap.add(byId as HTMLElement)
+      } catch {}
+    }
+
+    if (item) {
+      const bodyEls = item.querySelectorAll<HTMLElement>(
+        '.elementskit-card-body, .ekit-accordion-content, .elementskit-accordion-content, .elementor-tab-content, .accordion-body, .accordion-content, [role="tabpanel"], .faq-content, .faq-answer, .toggle-content, .collapse, [class*="card-body"], [class*="accordion-content"]'
+      )
+      bodyEls.forEach((b) => {
+        if (b !== toggler) candidateMap.add(b)
+      })
+    }
+
+    if (toggler) {
+      if (toggler.nextElementSibling && toggler.nextElementSibling !== toggler) {
+        candidateMap.add(toggler.nextElementSibling as HTMLElement)
+      }
+      if (toggler.parentElement && toggler.parentElement.nextElementSibling && toggler.parentElement.nextElementSibling !== toggler) {
+        candidateMap.add(toggler.parentElement.nextElementSibling as HTMLElement)
+      }
+    }
+
+    const contents = Array.from(candidateMap)
+    if (contents.length === 0) return false
+
+    // Check if currently hidden (collapsed)
+    const isHidden =
+      contents.some((c) => {
+        const comp = doc.defaultView?.getComputedStyle(c)
+        return (
+          comp?.display === 'none' ||
+          c.style.display === 'none' ||
+          comp?.height === '0px' ||
+          c.style.height === '0px' ||
+          c.hasAttribute('hidden') ||
+          (c.classList.contains('collapse') && !c.classList.contains('show'))
+        )
+      }) ||
+      linkEl?.classList.contains('collapsed') ||
+      toggler?.classList.contains('collapsed')
+
+    if (isHidden) {
+      // Expand ALL candidate content panels
+      contents.forEach((c) => {
+        c.style.setProperty('display', 'block', 'important')
+        c.style.setProperty('height', 'auto', 'important')
+        c.style.setProperty('max-height', 'none', 'important')
+        c.style.setProperty('opacity', '1', 'important')
+        c.style.setProperty('visibility', 'visible', 'important')
+        c.removeAttribute('hidden')
+        c.classList.add('show', 'in', 'open', 'is-open', 'active')
+        c.classList.remove('collapse')
+
+        const descendants = c.querySelectorAll<HTMLElement>('*')
+        descendants.forEach((child) => {
+          const childComp = doc.defaultView?.getComputedStyle(child)
+          if (childComp?.display === 'none' || child.style.display === 'none') {
+            child.style.setProperty('display', 'block', 'important')
+          }
+          if (childComp?.height === '0px' || child.style.height === '0px') {
+            child.style.setProperty('height', 'auto', 'important')
+          }
+          child.style.setProperty('opacity', '1', 'important')
+          child.style.setProperty('visibility', 'visible', 'important')
+          child.style.setProperty('max-height', 'none', 'important')
+        })
+      })
+
+      const togglersToUpdate = [toggler, linkEl].filter(Boolean) as HTMLElement[]
+      togglersToUpdate.forEach((t) => {
+        t.classList.add('elementor-active', 'active')
+        t.classList.remove('collapsed')
+        t.setAttribute('aria-expanded', 'true')
+      })
+    } else {
+      // Collapse ALL candidate content panels
+      contents.forEach((c) => {
+        c.style.setProperty('display', 'none', 'important')
+        c.style.setProperty('height', '0px', 'important')
+        c.style.setProperty('opacity', '0', 'important')
+        c.classList.remove('show', 'in', 'open', 'is-open', 'active')
+        c.classList.add('collapse')
+      })
+
+      const togglersToUpdate = [toggler, linkEl].filter(Boolean) as HTMLElement[]
+      togglersToUpdate.forEach((t) => {
+        t.classList.remove('elementor-active', 'active')
+        t.classList.add('collapsed')
+        t.setAttribute('aria-expanded', 'false')
+      })
+    }
+
+    options.onChange()
+    return true
+
+    return false
+  }
+
+  // ── Helper: Universal Carousel & Slider Engine (Swiper, Slick, Owl, Elementor Slides) ──
+  const handleSliderNavigation = (target: HTMLElement): boolean => {
+    const navBtn = target.closest(
+      '.swiper-button-next, .swiper-button-prev, .slick-next, .slick-prev, .owl-next, .owl-prev, .swiper-pagination-bullet, .slick-dots li, .owl-dot, [class*="slider-next"], [class*="slider-prev"], [class*="carousel-next"], [class*="carousel-prev"], [class*="pagination-bullet"]'
+    ) as HTMLElement | null
+
+    if (!navBtn) return false
+
+    const slider = navBtn.closest(
+      '.swiper, .swiper-container, .slick-slider, .owl-carousel, .elementor-slides, .elementor-testimonial-carousel, [class*="slider"], [class*="carousel"]'
+    ) as HTMLElement | null
+
+    if (!slider) return false
+
+    const slides = Array.from(
+      slider.querySelectorAll(
+        '.swiper-slide, .slick-slide, .owl-item, .elementor-slide, [class*="slide-item"], [class*="carousel-item"]'
+      )
+    ) as HTMLElement[]
+
+    if (slides.length === 0) return false
+
+    // Find current active slide index
+    let activeIdx = slides.findIndex(s => s.classList.contains('swiper-slide-active') || s.classList.contains('slick-active') || s.classList.contains('active') || s.style.display !== 'none')
+    if (activeIdx < 0) activeIdx = 0
+
+    const btnStr = (navBtn.className + ' ' + navBtn.id + ' ' + (navBtn.getAttribute('aria-label') || '')).toLowerCase()
+    const isNext = /next|right|forward/i.test(btnStr)
+    const isPrev = /prev|previous|left|back/i.test(btnStr)
+
+    let targetIdx = activeIdx
+
+    if (isNext) {
+      targetIdx = (activeIdx + 1) % slides.length
+    } else if (isPrev) {
+      targetIdx = (activeIdx - 1 + slides.length) % slides.length
+    } else {
+      const dots = Array.from(navBtn.parentElement?.children || [])
+      const dotIdx = dots.indexOf(navBtn)
+      if (dotIdx >= 0 && dotIdx < slides.length) {
+        targetIdx = dotIdx
+      }
+    }
+
+    slides.forEach((slide, idx) => {
+      if (idx === targetIdx) {
+        slide.style.setProperty('display', 'block', 'important')
+        slide.style.setProperty('opacity', '1', 'important')
+        slide.style.setProperty('visibility', 'visible', 'important')
+        slide.classList.add('swiper-slide-active', 'slick-active', 'active')
+      } else {
+        slide.style.setProperty('display', 'none', 'important')
+        slide.classList.remove('swiper-slide-active', 'slick-active', 'active')
+      }
+    })
+
+    options.onChange()
+    return true
+  }
+
   const handleClick = (e: MouseEvent) => {
-    if (mode === 'interact' || paused) return
     const target = e.target as HTMLElement
     if (!target || target === doc.body || target === doc.documentElement || target.id === 'live-mini-toolbar-host' || target.closest('#live-mini-toolbar-host')) return
+
+    // 1. Check and dismiss cookie/privacy consent window on click (works in both Live and Layout mode!)
+    if (handleCookieDismiss(target)) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+
+    // 2. Intercept link tags to prevent browser redirects
+    const anchor = target.closest('a') as HTMLAnchorElement | null
+
+    if (mode === 'interact' || paused) {
+      if (anchor) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      // Toggle FAQ / Reveal-type accordion cards on click in Live mode!
+      if (handleAccordionToggle(target)) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      // Navigate sliders & carousels on click in Live mode!
+      if (handleSliderNavigation(target)) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      return
+    }
+
     e.preventDefault()
     e.stopPropagation()
 

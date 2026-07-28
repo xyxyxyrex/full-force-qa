@@ -1,6 +1,6 @@
 import { Workbook } from '@fortune-sheet/react'
 import '@fortune-sheet/react/dist/index.css'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { initEditor, loadMissingFonts } from '../grapesjs/init'
 import { attachLiveEditor } from '../utils/liveEditorBridge'
 import type { Editor } from 'grapesjs'
@@ -57,13 +57,20 @@ function getGoogleSheetsEmbedUrl(rawUrl: string): string {
   if (!rawUrl) return ''
   let cleaned = rawUrl.trim()
   if (cleaned.includes('docs.google.com/spreadsheets')) {
-    // Remove rm=minimal / rm=embedded so worksheet tabs at the bottom remain fully visible & interactive
+    // Strip rm=minimal / rm=embedded which explicitly hides worksheet tabs
     cleaned = cleaned.replace(/[?&]rm=minimal/g, '').replace(/[?&]rm=embedded/g, '')
+    
     if (!cleaned.includes('/edit') && !cleaned.includes('/pubhtml') && !cleaned.includes('/embed')) {
       const match = cleaned.match(/\/d\/([a-zA-Z0-9-_]+)/)
       if (match && match[1]) {
-        return `https://docs.google.com/spreadsheets/d/${match[1]}/edit`
+        cleaned = `https://docs.google.com/spreadsheets/d/${match[1]}/edit`
       }
+    }
+
+    // Append widget=true&headers=false to strip 180px top header so bottom worksheet tabs are 100% visible
+    if (!cleaned.includes('widget=')) {
+      const sep = cleaned.includes('?') ? '&' : '?'
+      cleaned = `${cleaned}${sep}widget=true&headers=false`
     }
   }
   return cleaned
@@ -283,7 +290,7 @@ export default function EditorWorkspace({
   const [figmaSplitOpen, setFigmaSplitOpen] = useState(false)
   const [figmaSplitWidth, setFigmaSplitWidth] = useState(550)
   const [bottomSheetOpen, setBottomSheetOpen] = useState(true)
-  const [bottomSheetHeight, setBottomSheetHeight] = useState(300)
+  const [bottomSheetHeight, setBottomSheetHeight] = useState(420)
   const [bottomSheetMaximized, setBottomSheetMaximized] = useState(false)
   const panelDragRef = useRef<{
     side: 'left' | 'right' | 'bottom' | 'figma'
@@ -4144,12 +4151,21 @@ export default function EditorWorkspace({
                         </div>
                       </div>
                     ) : (
-                      <iframe
-                        src={getGoogleSheetsEmbedUrl(googleSheetsUrl)}
-                        className="google-sheets-iframe"
-                        title="Google Mastersheet"
-                        allow="clipboard-read; clipboard-write"
-                      />
+                      typeof window !== 'undefined' && (window as any).electronAPI ? (
+                        React.createElement('webview', {
+                          src: getGoogleSheetsEmbedUrl(googleSheetsUrl),
+                          className: 'google-sheets-iframe',
+                          allowpopups: 'true',
+                          style: { width: '100%', height: '100%', border: 'none', background: '#ffffff' }
+                        })
+                      ) : (
+                        <iframe
+                          src={getGoogleSheetsEmbedUrl(googleSheetsUrl)}
+                          className="google-sheets-iframe"
+                          title="Google Mastersheet"
+                          allow="clipboard-read; clipboard-write"
+                        />
+                      )
                     )
                   )}
                 </div>
