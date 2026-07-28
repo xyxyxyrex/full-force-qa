@@ -306,6 +306,7 @@ function registerIpcHandlers(): void {
 
       // Catch EADDRINUSE or server start errors gracefully
       server.on('error', (err: any) => {
+        console.error('[Monday Auth] Server error:', err)
         if (!resolved) {
           resolved = true
           activeOAuthServer = null
@@ -325,58 +326,66 @@ function registerIpcHandlers(): void {
         }
       })
 
-      server.listen(MONDAY_REDIRECT_PORT, '127.0.0.1', () => {
-        // Dedicated browser window for Monday OAuth login + external browser fallback
-        const authUrl = new URL('https://auth.monday.com/oauth2/authorize')
-        authUrl.searchParams.set('client_id', MONDAY_CLIENT_ID)
-        authUrl.searchParams.set('redirect_uri', MONDAY_REDIRECT_URI)
-        authUrl.searchParams.set('response_type', 'code')
-        authUrl.searchParams.set('scope', 'me:read boards:read docs:read workspaces:read users:read updates:read assets:read')
-        authUrl.searchParams.set('code_challenge', codeChallenge)
-        authUrl.searchParams.set('code_challenge_method', 'S256')
+      // Start listening on redirect port
+      try {
+        server.listen(MONDAY_REDIRECT_PORT, '127.0.0.1')
+      } catch (e) {
+        console.error('[Monday Auth] Listen failed:', e)
+      }
 
-        const url = authUrl.toString()
+      // Build OAuth authorization URL
+      const authUrl = new URL('https://auth.monday.com/oauth2/authorize')
+      authUrl.searchParams.set('client_id', MONDAY_CLIENT_ID)
+      authUrl.searchParams.set('redirect_uri', MONDAY_REDIRECT_URI)
+      authUrl.searchParams.set('response_type', 'code')
+      authUrl.searchParams.set('scope', 'me:read boards:read docs:read workspaces:read users:read updates:read assets:read')
+      authUrl.searchParams.set('code_challenge', codeChallenge)
+      authUrl.searchParams.set('code_challenge_method', 'S256')
 
-        // Fallback 1: Dedicated In-App Window (guarantees auth screen is presented to all users)
-        authWin = new BrowserWindow({
-          width: 1020,
-          height: 760,
-          title: 'Authorize QA Snapshot Editor - Monday.com',
-          parent: mainWindow || undefined,
-          modal: true,
-          backgroundColor: '#1a1a1a',
-          autoHideMenuBar: true,
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            webSecurity: true
-          }
-        })
+      const url = authUrl.toString()
 
-        authWin.setMenu(null)
-        authWin.webContents.setUserAgent(
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-        )
+      // 1. Create and show dedicated in-app Electron auth popup window IMMEDIATELY
+      authWin = new BrowserWindow({
+        width: 1020,
+        height: 760,
+        title: 'Authorize QA Snapshot Editor - Monday.com',
+        show: true,
+        center: true,
+        backgroundColor: '#1a1a1a',
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          webSecurity: false
+        }
+      })
 
-        authWin.on('closed', () => {
-          authWin = null
-          if (!resolved) {
-            resolved = true
-            activeOAuthServer = null
-            try { server.close() } catch { }
-            resolve({ success: false, error: 'Login window was closed' })
-          }
-        })
+      authWin.setMenu(null)
+      authWin.webContents.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      )
 
-        authWin.loadURL(url).catch(() => {
-          // If in-app window fails to load, open system default browser
-          shell.openExternal(url)
-        })
+      authWin.on('closed', () => {
+        authWin = null
+        if (!resolved) {
+          resolved = true
+          activeOAuthServer = null
+          try { server.close() } catch { }
+          resolve({ success: false, error: 'Login window was closed' })
+        }
+      })
 
-        // Fallback 2: Also trigger native system browser open (Edge/default) cleanly
-        try {
-          shell.openExternal(url)
-        } catch { }
+      authWin.loadURL(url).catch((err) => {
+        console.error('[Monday Auth] authWin loadURL error:', err)
+      })
+
+      try {
+        authWin.focus()
+      } catch {}
+
+      // 2. Also trigger native system browser open (Edge / Chrome / default) cleanly
+      shell.openExternal(url).catch((err) => {
+        console.error('[Monday Auth] openExternal error:', err)
       })
 
       // Timeout: auto-close after 3 minutes if user never completes login
