@@ -1552,26 +1552,94 @@ export default function EditorWorkspace({
     if (!overlayImage || !overlayVisible) return
 
     let raf: number
-    let lastScrollY = 0
+    let lastScrollY = -1
 
-    const track = () => {
-      // Read scroll from the native iframe (the one the user actually scrolls)
+    const getScrollY = (): number => {
       const nativeFrame = liveIframeRef.current
-      if (nativeFrame) {
-        try {
-          const doc = nativeFrame.contentDocument || nativeFrame.contentWindow?.document
-          const scrollY = doc?.documentElement?.scrollTop || doc?.body?.scrollTop || 0
-          if (scrollY !== lastScrollY) {
-            lastScrollY = scrollY
-            setIframeScrollY(scrollY)
+      if (!nativeFrame) return 0
+      try {
+        const win = nativeFrame.contentWindow
+        const doc = nativeFrame.contentDocument || win?.document
+
+        // 1. Primary: Standard window scrollY / pageYOffset (supported by 99% of modern site layouts)
+        if (win) {
+          if (typeof win.scrollY === 'number' && win.scrollY > 0) return win.scrollY
+          if (typeof win.pageYOffset === 'number' && win.pageYOffset > 0) return win.pageYOffset
+        }
+
+        // 2. Secondary: Document element & body scrollTop (for standard & legacy DOMs)
+        if (doc) {
+          if (doc.documentElement && doc.documentElement.scrollTop > 0) return doc.documentElement.scrollTop
+          if (doc.body && doc.body.scrollTop > 0) return doc.body.scrollTop
+        }
+
+        // 3. Fallback: Scrollable container elements (#page, #app, #root, main, .wrapper, etc.)
+        if (doc) {
+          const scrollable = doc.querySelectorAll('main, #app, #root, #page, .site, .wrapper, [style*="overflow"]')
+          for (let i = 0; i < scrollable.length; i++) {
+            const st = scrollable[i].scrollTop
+            if (st > 0) return st
           }
-        } catch {}
-      }
-      raf = requestAnimationFrame(track)
+        }
+      } catch {}
+      return 0
     }
 
-    raf = requestAnimationFrame(track)
-    return () => cancelAnimationFrame(raf)
+    const updateScroll = () => {
+      const sy = getScrollY()
+      if (sy !== lastScrollY) {
+        lastScrollY = sy
+        setIframeScrollY(sy)
+      }
+    }
+
+    // Attach passive scroll listeners directly to iframe window & document
+    const nativeFrame = liveIframeRef.current
+    let iframeWin: Window | null = null
+    let iframeDoc: Document | null = null
+
+    try {
+      iframeWin = nativeFrame?.contentWindow || null
+      iframeDoc = nativeFrame?.contentDocument || iframeWin?.document || null
+
+      if (iframeWin) iframeWin.addEventListener('scroll', updateScroll, { passive: true })
+      if (iframeDoc) iframeDoc.addEventListener('scroll', updateScroll, { passive: true })
+    } catch {}
+
+    // Continuous animation frame loop to catch smooth scrolling, momentum, and dynamic script scrolls
+    const loop = () => {
+      updateScroll()
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      try {
+        if (iframeWin) iframeWin.removeEventListener('scroll', updateScroll)
+        if (iframeDoc) iframeDoc.removeEventListener('scroll', updateScroll)
+      } catch {}
+    }
+  }, [overlayImage, overlayVisible, html])
+
+  // Forward wheel scrolling from canvas container into iframe so scrolling works anywhere on canvas
+  useEffect(() => {
+    if (!overlayImage || !overlayVisible) return
+    const inner = canvasInnerRef.current
+    if (!inner) return
+
+    const onCanvasWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return // Allow Ctrl+Scroll for zoom
+      const win = liveIframeRef.current?.contentWindow
+      if (win) {
+        try {
+          win.scrollBy({ top: e.deltaY, behavior: 'auto' })
+        } catch {}
+      }
+    }
+
+    inner.addEventListener('wheel', onCanvasWheel, { passive: true })
+    return () => inner.removeEventListener('wheel', onCanvasWheel)
   }, [overlayImage, overlayVisible])
 
   // ── Track native canvas frame wrapper position for free transform ──────

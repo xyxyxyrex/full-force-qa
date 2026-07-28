@@ -83,15 +83,21 @@ export function attachLiveEditor(
   updateAnimStyle(revealAnimations)
   doc.head.appendChild(animStyle)
 
-  // Shadow DOM Host for Mini Toolbar — completely isolated from page CSS
+  // Shadow DOM Host for Mini Toolbar & Transform Handles — completely isolated from page CSS
   let hostEl: HTMLElement | null = null
   let shadowRoot: ShadowRoot | null = null
+  let barEl: HTMLElement | null = null
+  let boxEl: HTMLElement | null = null
+  let dimBadgeEl: HTMLElement | null = null
 
   const removeToolbar = () => {
     if (hostEl) {
       hostEl.remove()
       hostEl = null
       shadowRoot = null
+      barEl = null
+      boxEl = null
+      dimBadgeEl = null
     }
   }
 
@@ -103,21 +109,39 @@ export function attachLiveEditor(
     const rect = selectedEl.getBoundingClientRect()
     const scrollX = doc.defaultView?.scrollX || 0
     const scrollY = doc.defaultView?.scrollY || 0
-    let top = rect.top + scrollY - 36
-    if (top < scrollY) top = rect.bottom + scrollY + 6
-    let left = rect.left + scrollX
-    hostEl.style.top = `${top}px`
-    hostEl.style.left = `${left}px`
+
+    // 1. Position Action Bar above the element
+    let barTop = rect.top + scrollY - 38
+    if (barTop < scrollY) barTop = rect.bottom + scrollY + 8
+    let barLeft = rect.left + scrollX
+
+    if (barEl) {
+      barEl.style.top = `${barTop}px`
+      barEl.style.left = `${barLeft}px`
+    }
+
+    // 2. Position Bounding Box & Transform Handles directly over element
+    if (boxEl) {
+      boxEl.style.top = `${rect.top + scrollY}px`
+      boxEl.style.left = `${rect.left + scrollX}px`
+      boxEl.style.width = `${Math.max(1, rect.width)}px`
+      boxEl.style.height = `${Math.max(1, rect.height)}px`
+    }
+
+    // 3. Update Live Dimension Badge
+    if (dimBadgeEl) {
+      dimBadgeEl.textContent = `${Math.round(rect.width)} × ${Math.round(rect.height)} px`
+    }
   }
 
   const renderToolbar = (el: HTMLElement) => {
     removeToolbar()
     if (mode === 'interact') return
 
-    // Host element
+    // Host element (positioned at 0,0 of page document)
     const host = doc.createElement('div')
     host.id = 'live-mini-toolbar-host'
-    host.style.cssText = 'position:absolute;z-index:999999;pointer-events:auto;user-select:none;'
+    host.style.cssText = 'position:absolute;top:0;left:0;z-index:999999;pointer-events:none;user-select:none;'
     
     // Attach Shadow Root for 100% CSS Isolation
     const shadow = host.attachShadow({ mode: 'open' })
@@ -129,6 +153,7 @@ export function attachLiveEditor(
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
       .toolbar-bar {
+        position: absolute;
         display: flex;
         align-items: center;
         gap: 3px;
@@ -138,6 +163,8 @@ export function attachLiveEditor(
         padding: 3px 6px;
         box-shadow: 0 8px 20px rgba(0,0,0,0.6);
         box-sizing: border-box;
+        pointer-events: auto;
+        z-index: 20;
       }
       .toolbar-tag {
         font-size: 10px;
@@ -189,9 +216,146 @@ export function attachLiveEditor(
         stroke-linejoin: round;
         fill: none;
       }
+
+      /* ── Transform Bounding Box & Handles ── */
+      .transform-box {
+        position: absolute;
+        border: 1.5px solid #2563eb;
+        pointer-events: none;
+        box-sizing: border-box;
+        z-index: 10;
+      }
+
+      .handle {
+        position: absolute;
+        width: 9px;
+        height: 9px;
+        background: #ffffff;
+        border: 1.5px solid #2563eb;
+        border-radius: 2px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        pointer-events: auto;
+        box-sizing: border-box;
+        z-index: 15;
+      }
+      .handle:hover {
+        background: #2563eb;
+        transform: scale(1.25);
+      }
+
+      .handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+      .handle-n  { top: -5px; left: calc(50% - 4px); cursor: ns-resize; }
+      .handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+      .handle-e  { top: calc(50% - 4px); right: -5px; cursor: ew-resize; }
+      .handle-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+      .handle-s  { bottom: -5px; left: calc(50% - 4px); cursor: ns-resize; }
+      .handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+      .handle-w  { top: calc(50% - 4px); left: -5px; cursor: ew-resize; }
+
+      .dim-badge {
+        position: absolute;
+        bottom: -26px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #18181b;
+        color: #10b981;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid #3f3f46;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        pointer-events: none;
+        white-space: nowrap;
+        font-family: inherit;
+        z-index: 15;
+      }
     `
     shadow.appendChild(shadowStyle)
 
+    // Bounding Box Container
+    const box = doc.createElement('div')
+    box.className = 'transform-box'
+
+    // Live Dimension Pill Badge
+    const dimBadge = doc.createElement('div')
+    dimBadge.className = 'dim-badge'
+    box.appendChild(dimBadge)
+    dimBadgeEl = dimBadge
+
+    // 8-Point Transform Handles (NW, N, NE, E, SE, S, SW, W)
+    const handleDirs = [
+      { name: 'nw', dir: 'nw' },
+      { name: 'n',  dir: 'n'  },
+      { name: 'ne', dir: 'ne' },
+      { name: 'e',  dir: 'e'  },
+      { name: 'se', dir: 'se' },
+      { name: 's',  dir: 's'  },
+      { name: 'sw', dir: 'sw' },
+      { name: 'w',  dir: 'w'  }
+    ]
+
+    handleDirs.forEach(({ name, dir }) => {
+      const hEl = doc.createElement('div')
+      hEl.className = `handle handle-${name}`
+      hEl.title = `Drag to resize container (${dir.toUpperCase()})`
+
+      hEl.onmousedown = (e: MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        const startX = e.clientX
+        const startY = e.clientY
+        const startRect = el.getBoundingClientRect()
+        const startW = startRect.width
+        const startH = startRect.height
+
+        const onMouseMove = (ev: MouseEvent) => {
+          ev.preventDefault()
+          ev.stopPropagation()
+          const dx = ev.clientX - startX
+          const dy = ev.clientY - startY
+
+          let newW = startW
+          let newH = startH
+
+          if (dir.includes('e')) newW = Math.max(10, startW + dx)
+          if (dir.includes('w')) newW = Math.max(10, startW - dx)
+          if (dir.includes('s')) newH = Math.max(10, startH + dy)
+          if (dir.includes('n')) newH = Math.max(10, startH - dy)
+
+          if (dir.includes('e') || dir.includes('w')) {
+            el.style.setProperty('width', `${Math.round(newW)}px`, 'important')
+            el.style.setProperty('max-width', 'none', 'important')
+          }
+          if (dir.includes('s') || dir.includes('n')) {
+            el.style.setProperty('height', `${Math.round(newH)}px`, 'important')
+            el.style.setProperty('max-height', 'none', 'important')
+          }
+
+          positionToolbar()
+          options.onSelect(extractInfo(el), el)
+        }
+
+        const onMouseUp = (ev: MouseEvent) => {
+          ev.preventDefault()
+          ev.stopPropagation()
+          doc.removeEventListener('mousemove', onMouseMove, true)
+          doc.removeEventListener('mouseup', onMouseUp, true)
+          options.onChange()
+        }
+
+        doc.addEventListener('mousemove', onMouseMove, true)
+        doc.addEventListener('mouseup', onMouseUp, true)
+      }
+
+      box.appendChild(hEl)
+    })
+
+    shadow.appendChild(box)
+    boxEl = box
+
+    // Action Toolbar Bar
     const bar = doc.createElement('div')
     bar.className = 'toolbar-bar'
 
@@ -278,6 +442,8 @@ export function attachLiveEditor(
     bar.appendChild(delBtn)
 
     shadow.appendChild(bar)
+    barEl = bar
+
     doc.body.appendChild(host)
     hostEl = host
     shadowRoot = shadow
