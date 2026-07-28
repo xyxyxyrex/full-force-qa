@@ -873,6 +873,58 @@ export function attachLiveEditor(
     return true
   }
 
+  // ── Helper: Universal Tab Switcher Engine (Elementor Tabs, Webflow Tabs, Bootstrap Tabs) ──
+  const handleTabSwitch = (target: HTMLElement): boolean => {
+    const tabBtn = target.closest(
+      '.elementor-tab-title, [role="tab"], .nav-link, [data-tab], [class*="tab-title"], [class*="tab-link"], [class*="tab-btn"]'
+    ) as HTMLElement | null
+
+    if (!tabBtn) return false
+
+    const tabContainer = tabBtn.closest(
+      '.elementor-tabs, .tabs, .nav-tabs, [role="tablist"], [class*="tabs-wrapper"], [class*="tab-container"]'
+    ) as HTMLElement | null
+
+    if (!tabContainer) return false
+
+    const allTabBtns = Array.from(
+      tabContainer.querySelectorAll<HTMLElement>('.elementor-tab-title, [role="tab"], .nav-link, [data-tab], [class*="tab-title"], [class*="tab-link"]')
+    )
+    const allTabPanels = Array.from(
+      tabContainer.querySelectorAll<HTMLElement>('.elementor-tab-content, [role="tabpanel"], .tab-pane, [class*="tab-content"], [class*="tab-pane"]')
+    )
+
+    const clickedIdx = allTabBtns.indexOf(tabBtn)
+    if (clickedIdx >= 0 && allTabPanels.length > 0) {
+      allTabBtns.forEach((btn, idx) => {
+        if (idx === clickedIdx) {
+          btn.classList.add('elementor-active', 'active', 'show')
+          btn.setAttribute('aria-selected', 'true')
+        } else {
+          btn.classList.remove('elementor-active', 'active', 'show')
+          btn.setAttribute('aria-selected', 'false')
+        }
+      })
+
+      allTabPanels.forEach((panel, idx) => {
+        if (idx === clickedIdx) {
+          panel.style.setProperty('display', 'block', 'important')
+          panel.style.setProperty('opacity', '1', 'important')
+          panel.style.setProperty('visibility', 'visible', 'important')
+          panel.classList.add('elementor-active', 'active', 'show')
+        } else {
+          panel.style.setProperty('display', 'none', 'important')
+          panel.classList.remove('elementor-active', 'active', 'show')
+        }
+      })
+
+      options.onChange()
+      return true
+    }
+
+    return false
+  }
+
   const handleClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement
     if (!target || target === doc.body || target === doc.documentElement || target.id === 'live-mini-toolbar-host' || target.closest('#live-mini-toolbar-host')) return
@@ -894,6 +946,12 @@ export function attachLiveEditor(
       }
       // Toggle FAQ / Reveal-type accordion cards on click in Live mode!
       if (handleAccordionToggle(target)) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      // Switch tabs (Elementor Tabs, Webflow Tabs, Bootstrap Tabs) in Live mode!
+      if (handleTabSwitch(target)) {
         e.preventDefault()
         e.stopPropagation()
         return
