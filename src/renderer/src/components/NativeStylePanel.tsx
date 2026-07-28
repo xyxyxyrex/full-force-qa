@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 interface Props {
   selectedElement: HTMLElement | null
   onStyleChange: (property: string, value: string, isFinalCommit?: boolean) => void
+  styleRevision?: number
 }
 
 // ─── Constants ─────────────────────────────────────────────
@@ -377,7 +378,7 @@ const DEFAULT: StyleState = {
 
 // ─── Main Component ────────────────────────────────────────
 
-export default function NativeStylePanel({ selectedElement, onStyleChange }: Props) {
+export default function NativeStylePanel({ selectedElement, onStyleChange, styleRevision }: Props) {
   const [styles, setStyles] = useState<StyleState>(DEFAULT)
   const [sectors, setSectors] = useState({ typography: true, spacing: true, size: true, appearance: false })
 
@@ -387,7 +388,11 @@ export default function NativeStylePanel({ selectedElement, onStyleChange }: Pro
     if (!win) return
     const cs = win.getComputedStyle(selectedElement)
     const inl = selectedElement.style
-    const sizeVal = (k: string) => { const v = inl.getPropertyValue(k); return v && v !== '' ? v : 'auto' }
+    const sizeVal = (k: string, computedFallback: string) => {
+      const v = inl.getPropertyValue(k)
+      if (v && v !== '') return v
+      return computedFallback && computedFallback !== '' && computedFallback !== '0px' ? computedFallback : 'auto'
+    }
 
     setStyles({
       fontFamily: cs.fontFamily || '', fontSize: cs.fontSize || '16px',
@@ -402,8 +407,8 @@ export default function NativeStylePanel({ selectedElement, onStyleChange }: Pro
       paddingTop: cs.paddingTop || '0px', paddingRight: cs.paddingRight || '0px',
       paddingBottom: cs.paddingBottom || '0px', paddingLeft: cs.paddingLeft || '0px',
       gap: cs.gap || '0px',
-      width: sizeVal('width'), minWidth: sizeVal('min-width'), maxWidth: sizeVal('max-width'),
-      height: sizeVal('height'), minHeight: sizeVal('min-height'), maxHeight: sizeVal('max-height'),
+      width: sizeVal('width', cs.width), minWidth: sizeVal('min-width', cs.minWidth), maxWidth: sizeVal('max-width', cs.maxWidth),
+      height: sizeVal('height', cs.height), minHeight: sizeVal('min-height', cs.minHeight), maxHeight: sizeVal('max-height', cs.maxHeight),
       backgroundColor: rgbToHex(cs.backgroundColor),
       borderWidth: cs.borderTopWidth || '0px', borderStyle: cs.borderTopStyle || 'none',
       borderColor: rgbToHex(cs.borderTopColor),
@@ -412,7 +417,7 @@ export default function NativeStylePanel({ selectedElement, onStyleChange }: Pro
       boxShadow: cs.boxShadow === 'none' ? 'none' : cs.boxShadow || 'none',
       opacity: cs.opacity || '1',
     })
-  }, [selectedElement])
+  }, [selectedElement, styleRevision])
 
   const apply = useCallback((p: string, v: string) => onStyleChange(p, v, true), [onStyleChange])
   const preview = useCallback((p: string, v: string) => onStyleChange(p, v, false), [onStyleChange])
@@ -441,11 +446,20 @@ export default function NativeStylePanel({ selectedElement, onStyleChange }: Pro
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
 
             {/* Font family */}
-            <select value={styles.fontFamily} onChange={(e) => set('fontFamily', 'font-family', e.target.value)}
-              style={{ ...inputBase, borderRadius: '3px', padding: '5px 6px', cursor: 'pointer', width: '100%' }}>
-              <option value="">Inherit</option>
-              {COMMON_FONTS.map(f => <option key={f} value={f}>{f.split(',')[0]}</option>)}
-            </select>
+            {(() => {
+              const cleanFont = (styles.fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '')
+              const matchedOpt = COMMON_FONTS.find(f => f.toLowerCase().startsWith(cleanFont.toLowerCase()) || f.toLowerCase().includes(cleanFont.toLowerCase())) || (cleanFont ? cleanFont : '')
+              return (
+                <select value={matchedOpt} onChange={(e) => set('fontFamily', 'font-family', e.target.value)}
+                  style={{ ...inputBase, borderRadius: '3px', padding: '5px 6px', cursor: 'pointer', width: '100%' }}>
+                  <option value="">Inherit</option>
+                  {cleanFont && !COMMON_FONTS.some(f => f.toLowerCase().includes(cleanFont.toLowerCase())) && (
+                    <option value={cleanFont}>{cleanFont}</option>
+                  )}
+                  {COMMON_FONTS.map(f => <option key={f} value={f}>{f.split(',')[0].replace(/^["']|["']$/g, '')}</option>)}
+                </select>
+              )
+            })()}
 
             {/* Size + Weight */}
             <div style={row2}>

@@ -359,10 +359,156 @@ export function attachLiveEditor(
     const bar = doc.createElement('div')
     bar.className = 'toolbar-bar'
 
+    // Tag Label Badge (also draggable)
     const tagLabel = doc.createElement('span')
     tagLabel.className = 'toolbar-tag'
     tagLabel.textContent = el.tagName.toLowerCase()
+    tagLabel.title = 'Click and drag to reposition element'
+    tagLabel.style.cursor = 'grab'
     bar.appendChild(tagLabel)
+
+    // Move / Drag Handle ⣿
+    const dragBtn = doc.createElement('button')
+    dragBtn.className = 'toolbar-btn'
+    dragBtn.title = 'Click and drag to reposition element inside page'
+    dragBtn.style.cursor = 'grab'
+    dragBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>'
+    bar.appendChild(dragBtn)
+
+    // ── Drag & Drop reordering logic ──
+    let dropTarget: { el: HTMLElement; position: 'before' | 'after' } | null = null
+
+    const handleDragStart = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const draggedEl = el
+      doc.body.style.cursor = 'grabbing'
+      tagLabel.style.cursor = 'grabbing'
+      dragBtn.style.cursor = 'grabbing'
+
+      let dropLine = doc.getElementById('live-drop-indicator') as HTMLElement
+      if (!dropLine) {
+        dropLine = doc.createElement('div')
+        dropLine.id = 'live-drop-indicator'
+        dropLine.style.cssText = 'position:absolute;z-index:999999;background:#2563eb;box-shadow:0 0 10px #2563eb;pointer-events:none;display:none;border-radius:2px;transition:all 0.04s ease;'
+        
+        const dot1 = doc.createElement('div')
+        dot1.className = 'drop-dot-1'
+        dot1.style.cssText = 'position:absolute;width:10px;height:10px;background:#2563eb;border-radius:50%;box-shadow:0 0 6px #2563eb;'
+        
+        const dot2 = doc.createElement('div')
+        dot2.className = 'drop-dot-2'
+        dot2.style.cssText = 'position:absolute;width:10px;height:10px;background:#2563eb;border-radius:50%;box-shadow:0 0 6px #2563eb;'
+        
+        dropLine.appendChild(dot1)
+        dropLine.appendChild(dot2)
+        doc.body.appendChild(dropLine)
+      }
+      dropLine.style.display = 'block'
+
+      const onMouseMove = (ev: MouseEvent) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+
+        const hoverTarget = doc.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+        if (
+          !hoverTarget ||
+          hoverTarget === doc.body ||
+          hoverTarget === doc.documentElement ||
+          hoverTarget === draggedEl ||
+          draggedEl.contains(hoverTarget) ||
+          hoverTarget.id === 'live-mini-toolbar-host' ||
+          hoverTarget.closest('#live-mini-toolbar-host')
+        ) {
+          dropLine.style.display = 'none'
+          dropTarget = null
+          return
+        }
+
+        const cs = doc.defaultView?.getComputedStyle(hoverTarget)
+        const parentCs = hoverTarget.parentElement ? doc.defaultView?.getComputedStyle(hoverTarget.parentElement) : null
+
+        const isRowFlex = parentCs && parentCs.display.includes('flex') && parentCs.flexDirection.includes('row')
+        const isInline = cs && (cs.display.includes('inline') || cs.display.includes('grid'))
+        const prev = hoverTarget.previousElementSibling as HTMLElement | null
+        const isSideBySide = prev ? Math.abs(hoverTarget.getBoundingClientRect().top - prev.getBoundingClientRect().top) < 15 : false
+        const isHorizontal = isRowFlex || isInline || isSideBySide
+
+        const rect = hoverTarget.getBoundingClientRect()
+        const scrollX = doc.defaultView?.scrollX || 0
+        const scrollY = doc.defaultView?.scrollY || 0
+
+        const dot1 = dropLine.querySelector('.drop-dot-1') as HTMLElement
+        const dot2 = dropLine.querySelector('.drop-dot-2') as HTMLElement
+
+        if (isHorizontal) {
+          // Horizontal Layout: Left vs Right drop
+          const midX = rect.left + rect.width / 2
+          const isLeft = ev.clientX < midX
+          dropTarget = { el: hoverTarget, position: isLeft ? 'before' : 'after' }
+
+          const lineX = isLeft ? rect.left + scrollX - 1.5 : rect.right + scrollX - 1.5
+          dropLine.style.display = 'block'
+          dropLine.style.width = '3px'
+          dropLine.style.height = `${Math.max(16, rect.height)}px`
+          dropLine.style.left = `${lineX}px`
+          dropLine.style.top = `${rect.top + scrollY}px`
+
+          if (dot1) { dot1.style.top = '-4px'; dot1.style.left = '-3.5px'; dot1.style.bottom = 'auto'; dot1.style.right = 'auto'; }
+          if (dot2) { dot2.style.bottom = '-4px'; dot2.style.left = '-3.5px'; dot2.style.top = 'auto'; dot2.style.right = 'auto'; }
+        } else {
+          // Vertical Layout: Top vs Bottom drop
+          const midY = rect.top + rect.height / 2
+          const isBefore = ev.clientY < midY
+          dropTarget = { el: hoverTarget, position: isBefore ? 'before' : 'after' }
+
+          const lineY = isBefore ? rect.top + scrollY - 1.5 : rect.bottom + scrollY - 1.5
+          dropLine.style.display = 'block'
+          dropLine.style.width = `${Math.max(20, rect.width)}px`
+          dropLine.style.height = '3px'
+          dropLine.style.left = `${rect.left + scrollX}px`
+          dropLine.style.top = `${lineY}px`
+
+          if (dot1) { dot1.style.left = '-4px'; dot1.style.top = '-3.5px'; dot1.style.right = 'auto'; dot1.style.bottom = 'auto'; }
+          if (dot2) { dot2.style.right = '-4px'; dot2.style.top = '-3.5px'; dot2.style.left = 'auto'; dot2.style.bottom = 'auto'; }
+        }
+      }
+
+      const onMouseUp = (ev: MouseEvent) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+
+        doc.body.style.cursor = ''
+        tagLabel.style.cursor = 'grab'
+        dragBtn.style.cursor = 'grab'
+
+        if (dropLine) dropLine.style.display = 'none'
+
+        doc.removeEventListener('mousemove', onMouseMove, true)
+        doc.removeEventListener('mouseup', onMouseUp, true)
+
+        if (dropTarget && dropTarget.el && draggedEl.parentElement) {
+          const { el: targetEl, position } = dropTarget
+          if (position === 'before') {
+            targetEl.parentElement?.insertBefore(draggedEl, targetEl)
+          } else {
+            targetEl.parentElement?.insertBefore(draggedEl, targetEl.nextElementSibling)
+          }
+          positionToolbar()
+          options.onSelect(extractInfo(draggedEl), draggedEl)
+          options.onChange()
+        }
+
+        dropTarget = null
+      }
+
+      doc.addEventListener('mousemove', onMouseMove, true)
+      doc.addEventListener('mouseup', onMouseUp, true)
+    }
+
+    tagLabel.onmousedown = handleDragStart
+    dragBtn.onmousedown = handleDragStart
 
     const div1 = doc.createElement('div')
     div1.className = 'toolbar-divider'

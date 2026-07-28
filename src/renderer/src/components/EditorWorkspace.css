@@ -402,6 +402,16 @@
   flex: 1;
 }
 
+.right-panel-accordion {
+  flex: 0 0 auto !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.right-panel-accordion .accordion-content {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 .accordion-section.collapsed {
   flex: 0 0 auto;
 }

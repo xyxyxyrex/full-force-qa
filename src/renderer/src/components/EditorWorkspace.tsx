@@ -373,9 +373,13 @@ export default function EditorWorkspace({
   const bdDocRef = useRef<Document | null>(null)
   const bdRedrawRef = useRef<(() => void) | null>(null)
 
-  // ── Color palette state ──────────────────────
+  // ── Color & Font palette state ────────────────
+  const [colorsExpanded, setColorsExpanded] = useState(true)
+  const [fontsExpanded, setFontsExpanded] = useState(true)
   const [pageColors, setPageColors] = useState<{ hex: string; count: number }[]>([])
   const [selectedColors, setSelectedColors] = useState<Set<string>>(new Set())
+  const [pageFonts, setPageFonts] = useState<{ family: string; count: number }[]>([])
+  const [selectedFonts, setSelectedFonts] = useState<Set<string>>(new Set())
 
   // ── Left panel accordion & Photoshop History state ─
   const [layersExpanded, setLayersExpanded] = useState(true)
@@ -401,12 +405,33 @@ export default function EditorWorkspace({
   const isSelectingRef = useRef(false)
   const selectingFromNativeRef = useRef(false)
 
-  // ── Figma Design Overlay state ─────────────────
-  const [overlayImage, setOverlayImage] = useState<string | null>(null)
-  const [overlayOpacity, setOverlayOpacity] = useState(50)
-  const [overlayVisible, setOverlayVisible] = useState(true)
-  const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>('overlay')
+  // ── Figma Design Overlay state (persists across reopens via localStorage) ─
+  const [overlayImage, setOverlayImageState] = useState<string | null>(() => localStorage.getItem('qa_figma_overlay_image') || null)
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(() => Number(localStorage.getItem('qa_figma_overlay_opacity')) || 50)
+  const [overlayVisible, setOverlayVisible] = useState<boolean>(() => localStorage.getItem('qa_figma_overlay_visible') !== 'false')
+  const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>(() => (localStorage.getItem('qa_figma_overlay_mode') as any) || 'overlay')
   const [overlayPanelOpen, setOverlayPanelOpen] = useState(false)
+
+  const setOverlayImage = useCallback((img: string | null) => {
+    setOverlayImageState(img)
+    if (img) {
+      localStorage.setItem('qa_figma_overlay_image', img)
+    } else {
+      localStorage.removeItem('qa_figma_overlay_image')
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('qa_figma_overlay_opacity', String(overlayOpacity))
+  }, [overlayOpacity])
+
+  useEffect(() => {
+    localStorage.setItem('qa_figma_overlay_visible', String(overlayVisible))
+  }, [overlayVisible])
+
+  useEffect(() => {
+    localStorage.setItem('qa_figma_overlay_mode', overlayMode)
+  }, [overlayMode])
   const overlayFileRef = useRef<HTMLInputElement>(null)
   const overlayDropdownRef = useRef<HTMLDivElement>(null)
   const [iframeScrollY, setIframeScrollY] = useState(0)
@@ -556,6 +581,7 @@ export default function EditorWorkspace({
 
   const selectedNativeElRef = useRef<HTMLElement | null>(null)
   const [selectedNativeEl, setSelectedNativeEl] = useState<HTMLElement | null>(null)
+  const [nativeStyleRevision, setNativeStyleRevision] = useState(0)
   const [cssRules, setCssRules] = useState<string>('')
   const [customCss, setCustomCss] = useState<string>('')
   const customStyleRef = useRef<HTMLStyleElement | null>(null)
@@ -869,6 +895,7 @@ export default function EditorWorkspace({
       onSelect: (_info, el) => {
         selectedNativeElRef.current = el
         setSelectedNativeEl(el)
+        setNativeStyleRevision((r) => r + 1)
         if (el) {
           selectingFromNativeRef.current = true
           const editor = editorRef.current
@@ -2668,9 +2695,7 @@ export default function EditorWorkspace({
   }
 
   const scanPageColors = useCallback(() => {
-    const editor = editorRef.current
-    if (!editor) return
-    const iframeDoc = editor.Canvas.getDocument()
+    const iframeDoc = liveIframeRef.current?.contentDocument || editorRef.current?.Canvas?.getDocument()
     if (!iframeDoc) return
     const win = iframeDoc.defaultView
     if (!win) return
@@ -2686,7 +2711,6 @@ export default function EditorWorkspace({
       }
     })
 
-    // Also include #000 and #fff but at lower priority
     const bgHex = parseColor(win.getComputedStyle(iframeDoc.body).backgroundColor)
     if (bgHex) colorMap.set(bgHex, (colorMap.get(bgHex) || 0) + 100)
 
@@ -2697,14 +2721,40 @@ export default function EditorWorkspace({
     setPageColors(sorted)
   }, [])
 
-  // Scan colors when editor loads
+  // ── Fonts palette: scan all font families from iframe ──
+  const SYSTEM_FONTS_SET = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'inherit', 'initial', 'unset', 'arial', 'helvetica', 'times new roman', 'georgia', 'verdana'])
+
+  const scanPageFonts = useCallback(() => {
+    const iframeDoc = liveIframeRef.current?.contentDocument || editorRef.current?.Canvas?.getDocument()
+    if (!iframeDoc) return
+    const win = iframeDoc.defaultView
+    if (!win) return
+
+    const fontMap = new Map<string, number>()
+    iframeDoc.querySelectorAll('*').forEach((el) => {
+      const cs = win.getComputedStyle(el as HTMLElement)
+      if (!cs || !cs.fontFamily) return
+      const primary = cs.fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '')
+      if (primary && !SYSTEM_FONTS_SET.has(primary.toLowerCase())) {
+        fontMap.set(primary, (fontMap.get(primary) || 0) + 1)
+      }
+    })
+
+    const sorted = [...fontMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([family, count]) => ({ family, count }))
+
+    setPageFonts(sorted)
+  }, [])
+
+  // Auto scan colors & fonts when page loads
   useEffect(() => {
-    const editor = editorRef.current
-    if (!editor) return
-    const onLoad = () => { setTimeout(scanPageColors, 2000) }
-    editor.on('load', onLoad)
-    return () => { editor.off('load', onLoad) }
-  }, [html, scanPageColors])
+    const timer = setTimeout(() => {
+      scanPageColors()
+      scanPageFonts()
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [html, scanPageColors, scanPageFonts])
 
   const toggleColorSelection = (hex: string) => {
     setSelectedColors((prev) => {
@@ -2714,6 +2764,60 @@ export default function EditorWorkspace({
       return next
     })
   }
+
+  const toggleFontSelection = (family: string) => {
+    setSelectedFonts((prev) => {
+      const next = new Set(prev)
+      if (next.has(family)) next.delete(family)
+      else next.add(family)
+      return next
+    })
+  }
+
+  // Highlight elements using selected fonts
+  useEffect(() => {
+    const iframeDoc = liveIframeRef.current?.contentDocument || editorRef.current?.Canvas?.getDocument()
+    if (!iframeDoc) return
+    const win = iframeDoc.defaultView
+    if (!win) return
+
+    const oldOverlay = iframeDoc.getElementById('__font-highlight-overlay')
+    if (oldOverlay) oldOverlay.remove()
+
+    if (selectedFonts.size === 0) return
+
+    const overlay = iframeDoc.createElement('div')
+    overlay.id = '__font-highlight-overlay'
+    overlay.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:999999;'
+    iframeDoc.documentElement.appendChild(overlay)
+
+    iframeDoc.querySelectorAll('*').forEach((el) => {
+      const htmlEl = el as HTMLElement
+      const cs = win.getComputedStyle(htmlEl)
+      if (!cs || !cs.fontFamily) return
+      const primary = cs.fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '')
+      if (selectedFonts.has(primary)) {
+        const rect = htmlEl.getBoundingClientRect()
+        const sx = win.scrollX || 0
+        const sy = win.scrollY || 0
+        if (rect.width > 0 && rect.height > 0) {
+          const box = iframeDoc.createElement('div')
+          box.style.cssText = `
+            position: absolute;
+            left: ${rect.left + sx}px;
+            top: ${rect.top + sy}px;
+            width: ${rect.width}px;
+            height: ${rect.height}px;
+            outline: 2px solid #38bdf8;
+            background: rgba(56, 189, 248, 0.12);
+            pointer-events: none;
+            z-index: 999999;
+          `
+          overlay.appendChild(box)
+        }
+      }
+    })
+  }, [selectedFonts])
 
   // ── Grayscale + color highlight effect ──
   // CSS filter on a parent always applies to all children — you can't "un-grayscale"
@@ -4147,47 +4251,154 @@ export default function EditorWorkspace({
           <div className="editor-panel panel-right" style={{ width: workspaceTab === 'audit' ? Math.max(rightPanelWidth, 320) : rightPanelWidth }}>
           {/* Layout mode panel container — ALWAYS MOUNTED so GrapesJS never loses DOM container references */}
           <div className="layout-panel-wrap" style={{ display: workspaceTab === 'layout' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%', overflowY: 'auto' }}>
+            {/* 1. Collapsible Colors Section (Top of Right Panel) */}
+            <div className={`accordion-section right-panel-accordion ${colorsExpanded ? 'expanded' : 'collapsed'}`}>
+              <div className="accordion-header">
+                <div
+                  className="accordion-header-left"
+                  onClick={() => setColorsExpanded((p) => !p)}
+                  title="Click to toggle Colors"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <svg
+                    className={`accordion-chevron ${colorsExpanded ? 'open' : ''}`}
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  <span className="accordion-title">Colors</span>
+                </div>
+                <div className="accordion-header-right" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button className="color-scan-btn" onClick={scanPageColors} title="Rescan page colors">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 4v6h6" />
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    </svg>
+                  </button>
+                  {selectedColors.size > 0 && (
+                    <button className="color-clear-btn" onClick={() => setSelectedColors(new Set())} title="Clear selection">
+                      Clear
+                    </button>
+                  )}
+                  <span className="accordion-badge">{pageColors.length}</span>
+                </div>
+              </div>
+              {colorsExpanded && (
+                <div className="accordion-content color-palette-content" style={{ padding: '8px' }}>
+                  {pageColors.length === 0 ? (
+                    <div className="color-palette-empty">No colors detected yet</div>
+                  ) : (
+                    <div className="color-palette-grid">
+                      {pageColors.map(({ hex, count }) => (
+                        <button
+                          key={hex}
+                          className={`color-swatch-btn ${selectedColors.has(hex) ? 'active' : ''}`}
+                          onClick={() => toggleColorSelection(hex)}
+                          title={`${hex} (${count} uses)`}
+                        >
+                          <span className="color-swatch-preview" style={{ background: hex }} />
+                          <span className="color-swatch-hex">{hex}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 2. Collapsible Detected Fonts Section (Below Colors) */}
+            <div className={`accordion-section right-panel-accordion ${fontsExpanded ? 'expanded' : 'collapsed'}`}>
+              <div className="accordion-header">
+                <div
+                  className="accordion-header-left"
+                  onClick={() => setFontsExpanded((p) => !p)}
+                  title="Click to toggle Fonts"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <svg
+                    className={`accordion-chevron ${fontsExpanded ? 'open' : ''}`}
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  <span className="accordion-title">Fonts</span>
+                </div>
+                <div className="accordion-header-right" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button className="color-scan-btn" onClick={scanPageFonts} title="Rescan page fonts">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 4v6h6" />
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    </svg>
+                  </button>
+                  {selectedFonts.size > 0 && (
+                    <button className="color-clear-btn" onClick={() => setSelectedFonts(new Set())} title="Clear selection">
+                      Clear
+                    </button>
+                  )}
+                  <span className="accordion-badge">{pageFonts.length}</span>
+                </div>
+              </div>
+              {fontsExpanded && (
+                <div className="accordion-content font-palette-content" style={{ padding: '8px' }}>
+                  {pageFonts.length === 0 ? (
+                    <div className="color-palette-empty">No web fonts detected yet</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {pageFonts.map(({ family, count }) => (
+                        <button
+                          key={family}
+                          className={`font-swatch-btn ${selectedFonts.has(family) ? 'active' : ''}`}
+                          onClick={() => toggleFontSelection(family)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: selectedFonts.has(family) ? '#2563eb' : '#18181b',
+                            color: selectedFonts.has(family) ? '#ffffff' : '#e4e4e7',
+                            border: '1px solid #3f3f46',
+                            borderRadius: '4px',
+                            padding: '5px 8px',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, fontFamily: `"${family}", sans-serif` }}>{family}</span>
+                          <span style={{ fontSize: '10px', opacity: 0.7 }}>{count} uses</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Selectors */}
             <div className="panel-header">Selectors</div>
             <div id="selector-container" className="panel-content" />
+
+            {/* 4. Style Inspector */}
             <div className="panel-header">Style</div>
             <div className="panel-content">
               <NativeStylePanel
                 selectedElement={selectedNativeEl}
                 onStyleChange={handleNativeStyleChange}
+                styleRevision={nativeStyleRevision}
               />
-            </div>
-            <div className="panel-header color-palette-header">
-              <span>Colors</span>
-              <button className="color-scan-btn" onClick={scanPageColors} title="Rescan page colors">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 4v6h6" />
-                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                </svg>
-              </button>
-              {selectedColors.size > 0 && (
-                <button className="color-clear-btn" onClick={() => setSelectedColors(new Set())} title="Clear selection">
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="panel-content color-palette-content">
-              {pageColors.length === 0 ? (
-                <div className="color-palette-empty">No colors detected yet</div>
-              ) : (
-                <div className="color-palette-grid">
-                  {pageColors.map(({ hex, count }) => (
-                    <button
-                      key={hex}
-                      className={`color-swatch-btn ${selectedColors.has(hex) ? 'active' : ''}`}
-                      onClick={() => toggleColorSelection(hex)}
-                      title={`${hex} (${count} uses)`}
-                    >
-                      <span className="color-swatch-preview" style={{ background: hex }} />
-                      <span className="color-swatch-hex">{hex}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 

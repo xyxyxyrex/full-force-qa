@@ -259,6 +259,7 @@ async function injectAndLoadFonts(doc: Document, textFonts: string[], iconFonts:
   const linkPromises: Promise<void>[] = []
 
   const addLink = (url: string) => {
+    if (!url || doc.querySelector(`link[href="${CSS.escape(url)}"]`)) return
     const link = doc.createElement('link')
     link.rel = 'stylesheet'
     link.href = url
@@ -269,11 +270,15 @@ async function injectAndLoadFonts(doc: Document, textFonts: string[], iconFonts:
     }))
   }
 
-  if (textFonts.length > 0) {
-    const families = textFonts.map(
-      (f) => `family=${encodeURIComponent(f)}:wght@100..900`
-    )
-    addLink(`https://fonts.googleapis.com/css2?${families.join('&')}&display=swap`)
+  // Load each text font cleanly from Google Fonts
+  for (const rawFont of textFonts) {
+    let fontName = rawFont.trim().replace(/^["']|["']$/g, '')
+    if (!fontName) continue
+    if (fontName.toLowerCase() === 'oxygen-sans') fontName = 'Oxygen'
+    if (fontName.toLowerCase() === 'noto-sans') fontName = 'Noto Sans'
+
+    const encoded = encodeURIComponent(fontName).replace(/%20/g, '+')
+    addLink(`https://fonts.googleapis.com/css2?family=${encoded}:wght@400;500;600;700&display=swap`)
   }
 
   const cdnUrls = new Set<string>()
@@ -285,15 +290,14 @@ async function injectAndLoadFonts(doc: Document, textFonts: string[], iconFonts:
   // Wait for stylesheet links to load
   await Promise.all(linkPromises)
 
-  // Explicitly trigger font file downloads — without this, the browser only
-  // downloads font files when an element on the page actually uses them.
-  // Since the page's CSS classes reference these fonts but GrapesJS may not
-  // have rendered with them yet, we force the download here.
-  const loadPromises = textFonts.map((f) =>
-    doc.fonts.load(`1em "${f}"`).catch(() => {})
-  )
+  // Trigger browser font file loading
+  const loadPromises = textFonts.map((f) => {
+    let fontName = f.trim().replace(/^["']|["']$/g, '')
+    if (fontName.toLowerCase() === 'oxygen-sans') fontName = 'Oxygen'
+    return doc.fonts.load(`1em "${fontName}"`).catch(() => {})
+  })
   await Promise.all(loadPromises)
-  await doc.fonts.ready
+  try { await doc.fonts.ready } catch {}
 }
 
 
