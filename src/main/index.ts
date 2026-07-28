@@ -361,12 +361,11 @@ function registerIpcHandlers(): void {
         console.error('[Monday Auth] Listen failed:', e)
       }
 
-      // Build OAuth authorization URL (valid Monday.com v2 scopes)
+      // Build OAuth authorization URL (omitting scope parameter so Monday uses pre-configured App scopes)
       const authUrl = new URL('https://auth.monday.com/oauth2/authorize')
       authUrl.searchParams.set('client_id', MONDAY_CLIENT_ID)
       authUrl.searchParams.set('redirect_uri', MONDAY_REDIRECT_URI)
       authUrl.searchParams.set('response_type', 'code')
-      authUrl.searchParams.set('scope', 'me:read boards:read workspaces:read users:read updates:read assets:read')
       authUrl.searchParams.set('code_challenge', codeChallenge)
       authUrl.searchParams.set('code_challenge_method', 'S256')
 
