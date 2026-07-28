@@ -71,11 +71,39 @@ function createWindow(): void {
   }
 }
 
-// Ensure all web contents (popups, webviews, child windows) use Chrome User-Agent for seamless Google Accounts OAuth
+// Ensure all web contents (popups, webviews, child windows) use Chrome User-Agent and enable DevTools shortcuts
 app.on('web-contents-created', (_event, contents) => {
   contents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
   contents.setWindowOpenHandler(() => {
     return { action: 'allow' }
+  })
+
+  // Restore Ctrl+Shift+I / F12 (DevTools) and Ctrl+R / F5 (Reload) since Menu.setApplicationMenu(null) removes default shortcuts
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+
+    const key = input.key.toLowerCase()
+    const isToggleDevTools =
+      (input.control && input.shift && key === 'i') ||
+      (input.meta && input.alt && key === 'i') ||
+      key === 'f12'
+
+    const isReload =
+      (input.control && key === 'r') ||
+      (input.meta && key === 'r') ||
+      key === 'f5'
+
+    if (isToggleDevTools) {
+      if (contents.isDevToolsOpened()) {
+        contents.closeDevTools()
+      } else {
+        contents.openDevTools({ mode: 'detach' })
+      }
+      event.preventDefault()
+    } else if (isReload) {
+      contents.reload()
+      event.preventDefault()
+    }
   })
 })
 
@@ -333,18 +361,18 @@ function registerIpcHandlers(): void {
         console.error('[Monday Auth] Listen failed:', e)
       }
 
-      // Build OAuth authorization URL
+      // Build OAuth authorization URL (valid Monday.com v2 scopes)
       const authUrl = new URL('https://auth.monday.com/oauth2/authorize')
       authUrl.searchParams.set('client_id', MONDAY_CLIENT_ID)
       authUrl.searchParams.set('redirect_uri', MONDAY_REDIRECT_URI)
       authUrl.searchParams.set('response_type', 'code')
-      authUrl.searchParams.set('scope', 'me:read boards:read docs:read workspaces:read users:read updates:read assets:read')
+      authUrl.searchParams.set('scope', 'me:read boards:read workspaces:read users:read updates:read assets:read')
       authUrl.searchParams.set('code_challenge', codeChallenge)
       authUrl.searchParams.set('code_challenge_method', 'S256')
 
       const url = authUrl.toString()
 
-      // 1. Create and show dedicated in-app Electron auth popup window IMMEDIATELY
+      // Create dedicated in-app Electron auth popup window
       authWin = new BrowserWindow({
         width: 1020,
         height: 760,
@@ -376,17 +404,13 @@ function registerIpcHandlers(): void {
       })
 
       authWin.loadURL(url).catch((err) => {
-        console.error('[Monday Auth] authWin loadURL error:', err)
+        console.error('[Monday Auth] authWin loadURL error, falling back to default browser:', err)
+        shell.openExternal(url).catch(() => { })
       })
 
       try {
         authWin.focus()
-      } catch {}
-
-      // 2. Also trigger native system browser open (Edge / Chrome / default) cleanly
-      shell.openExternal(url).catch((err) => {
-        console.error('[Monday Auth] openExternal error:', err)
-      })
+      } catch { }
 
       // Timeout: auto-close after 3 minutes if user never completes login
       setTimeout(() => {

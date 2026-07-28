@@ -200,7 +200,12 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
         setMondayToken(res.token)
         setMondayConnected(true)
         fetchMondayTickets(res.token)
-      } else if (res.error && res.error !== 'Login window was closed') {
+      } else if (
+        res.error &&
+        res.error !== 'Login window was closed' &&
+        res.error !== 'Login cancelled' &&
+        res.error !== 'No authorization code received'
+      ) {
         setShowTokenFallbackModal(true)
       }
     } catch {
