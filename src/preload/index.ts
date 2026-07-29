@@ -40,5 +40,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   deleteSnapshot(snapshotId: string): Promise<any> {
     return ipcRenderer.invoke('snapshot:delete', snapshotId)
+  },
+  runGrammarSpellAudit(items: Array<{ id: string; tag: string; text: string; index: number }>): Promise<any> {
+    return ipcRenderer.invoke('app:runGrammarSpellAudit', items)
+  },
+  onGlobalEscape(callback: () => void) {
+    const handler = () => callback()
+    ipcRenderer.on('global-escape-pressed', handler)
+    return () => {
+      ipcRenderer.removeListener('global-escape-pressed', handler)
+    }
   }
 })

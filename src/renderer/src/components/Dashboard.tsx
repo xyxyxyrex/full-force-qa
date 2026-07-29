@@ -191,6 +191,22 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
   const [manualTokenInput, setManualTokenInput] = useState('')
   const [manualTokenError, setManualTokenError] = useState('')
 
+  const fetchMondayTickets = async (token: string) => {
+    if (!token) return
+    setMondaySyncing(true)
+    try {
+      const fetched = await fetchMondayTicketsApi(token)
+      setMondayTickets(fetched || [])
+      localStorage.setItem('monday_tickets', JSON.stringify(fetched || []))
+      localStorage.setItem('qa_cached_monday_tickets', JSON.stringify(fetched || []))
+      window.dispatchEvent(new Event('monday_tickets_updated'))
+    } catch (err) {
+      console.error('[Monday] Fetch error:', err)
+    } finally {
+      setMondaySyncing(false)
+    }
+  }
+
   const handleMondayLogin = async () => {
     setMondaySyncing(true)
     try {
@@ -199,7 +215,8 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
         localStorage.setItem('monday_api_token', res.token)
         setMondayToken(res.token)
         setMondayConnected(true)
-        fetchMondayTickets(res.token)
+        // Immediately fetch and sync tickets after successful login
+        await fetchMondayTickets(res.token)
       } else if (
         res.error &&
         res.error !== 'Login window was closed' &&
@@ -208,8 +225,8 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
       ) {
         setShowTokenFallbackModal(true)
       }
-    } catch {
-      // login window closed or cancelled
+    } catch (e) {
+      console.error('[Monday] Login error:', e)
     } finally {
       setMondaySyncing(false)
     }
@@ -224,13 +241,10 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
     setMondaySyncing(true)
     setManualTokenError('')
     try {
-      const tickets = await fetchMondayTicketsApi(trimmed)
       localStorage.setItem('monday_api_token', trimmed)
       setMondayToken(trimmed)
       setMondayConnected(true)
-      if (tickets && tickets.length > 0) {
-        setMondayTickets(tickets)
-      }
+      await fetchMondayTickets(trimmed)
       setShowTokenFallbackModal(false)
       setManualTokenInput('')
     } catch {
@@ -243,23 +257,10 @@ export default function Dashboard({ onNewProject, onOpenProject }: Props) {
   const handleDisconnectMonday = () => {
     localStorage.removeItem('monday_api_token')
     localStorage.removeItem('monday_tickets')
+    localStorage.removeItem('qa_cached_monday_tickets')
     setMondayToken('')
     setMondayConnected(false)
     setMondayTickets([])
-  }
-
-  const fetchMondayTickets = async (token: string) => {
-    setMondaySyncing(true)
-    try {
-      const fetched = await fetchMondayTicketsApi(token)
-      if (fetched && fetched.length > 0) {
-        setMondayTickets(fetched)
-      }
-    } catch (err) {
-      console.error('[Monday] Fetch error:', err)
-    } finally {
-      setMondaySyncing(false)
-    }
   }
 
   const handleLaunchTicket = (ticket: MondayTicket) => {

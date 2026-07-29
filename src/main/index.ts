@@ -1,6 +1,9 @@
 import 'dotenv/config'
 import { app, BrowserWindow, ipcMain, shell, session, Menu } from 'electron'
 import { join } from 'path'
+
+// Force Chromium engine to use English locale
+app.commandLine.appendSwitch('lang', 'en-US')
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
 import { getProjects, saveProject, deleteProject } from './store'
@@ -8,6 +11,55 @@ import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager'
 import type { Project, CaptureResult } from '../shared/types'
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
+import nspell from 'nspell'
+
+// ── Main Process Hunspell & Harper Grammar Engines ────────────────────────
+let spellCheckerInstance: any = null
+let harperLinterInstance: any = null
+let initPromise: Promise<void> | null = null
+
+async function initMainSpellingAndGrammar(): Promise<void> {
+  if (initPromise) return initPromise
+
+  initPromise = new Promise(async (resolve) => {
+    try {
+      const dictMod: any = await import('dictionary-en')
+      const dictionaryEn = typeof dictMod === 'function' ? dictMod : (dictMod.default || dictMod)
+      if (typeof dictionaryEn === 'function') {
+        await new Promise<void>((resDict) => {
+          dictionaryEn((err: any, dict: any) => {
+            if (!err && dict) {
+              spellCheckerInstance = nspell(dict)
+              console.log('[Main] Hunspell dictionary loaded successfully!')
+            } else if (err) {
+              console.warn('[Main] dictionary-en error:', err)
+            }
+            resDict()
+          })
+        })
+      }
+    } catch (e) {
+      console.warn('[Main] Error loading Hunspell dictionary:', e)
+    }
+
+    try {
+      const harperMod: any = await import('harper.js')
+      const LinterClass = harperMod.Linter || (harperMod.default ? harperMod.default.Linter : null)
+      if (LinterClass) {
+        harperLinterInstance = new LinterClass()
+        console.log('[Main] Harper Grammar Linter loaded successfully!')
+      }
+    } catch (e) {
+      console.warn('[Main] Error loading Harper Linter:', e)
+    }
+
+    resolve()
+  })
+
+  return initPromise
+}
+
+initMainSpellingAndGrammar()
 
 // ── Monday.com OAuth config ─────────────────────────────────────────────────
 // Fallback credentials embedded into app binary so .env is optional for workmates.
@@ -60,6 +112,13 @@ function createWindow(): void {
     callback({ responseHeaders })
   })
 
+  // Enforce English Accept-Language on all outbound HTTP requests (forces Google Sheets / OAuth to load in English)
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const requestHeaders = { ...details.requestHeaders }
+    requestHeaders['Accept-Language'] = 'en-US,en;q=0.9'
+    callback({ requestHeaders })
+  })
+
   // Intercept popup windows to ensure child windows inherit Chrome User-Agent for Google Sign-In
   mainWindow.webContents.setWindowOpenHandler(() => {
     return { action: 'allow' }
@@ -93,6 +152,12 @@ app.on('web-contents-created', (_event, contents) => {
       (input.control && key === 'r') ||
       (input.meta && key === 'r') ||
       key === 'f5'
+
+    if (input.key === 'Escape') {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('global-escape-pressed')
+      }
+    }
 
     if (isToggleDevTools) {
       if (contents.isDevToolsOpened()) {
@@ -161,7 +226,8 @@ function registerIpcHandlers(): void {
   // Figma Login Window: Uses standard Chrome User-Agent so Google Accounts OAuth works cleanly inside Electron
   ipcMain.handle('app:figmaLoginWindow', async (_event, figmaUrl?: string): Promise<void> => {
     return new Promise<void>((resolve) => {
-      const chromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      const figmaSess = session.fromPartition('persist:figma')
+      const chromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
       const loginWin = new BrowserWindow({
         width: 1024,
         height: 768,
@@ -170,6 +236,7 @@ function registerIpcHandlers(): void {
         backgroundColor: '#181818',
         autoHideMenuBar: true,
         webPreferences: {
+          partition: 'persist:figma',
           nodeIntegration: false,
           contextIsolation: true,
           webSecurity: false
@@ -184,17 +251,26 @@ function registerIpcHandlers(): void {
 
       loginWin.loadURL(targetUrl)
 
-      loginWin.webContents.on('did-navigate', async (_e, url) => {
-        if (url.includes('figma.com/files') || url.includes('figma.com/design') || url.includes('figma.com/file')) {
-          try { await session.defaultSession.cookies.flushStore() } catch {}
-          setTimeout(() => {
-            try { if (!loginWin.isDestroyed()) loginWin.close() } catch {}
-          }, 1000)
+      let closeTimeout: NodeJS.Timeout | null = null
+
+      const checkAuthStatus = async (url: string) => {
+        if (url.includes('figma.com/file') || url.includes('figma.com/design') || url.includes('figma.com/files') || url.includes('figma.com/board')) {
+          if (closeTimeout) clearTimeout(closeTimeout)
+          closeTimeout = setTimeout(async () => {
+            try { await figmaSess.cookies.flushStore() } catch {}
+            try {
+              if (!loginWin.isDestroyed()) loginWin.close()
+            } catch {}
+          }, 3000)
         }
-      })
+      }
+
+      loginWin.webContents.on('did-navigate', (_e, url) => checkAuthStatus(url))
+      loginWin.webContents.on('did-navigate-in-page', (_e, url) => checkAuthStatus(url))
 
       loginWin.on('closed', async () => {
-        try { await session.defaultSession.cookies.flushStore() } catch {}
+        if (closeTimeout) clearTimeout(closeTimeout)
+        try { await figmaSess.cookies.flushStore() } catch {}
         resolve()
       })
     })
@@ -218,6 +294,16 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('app:openDetachedWindow', async (_event, url: string, title?: string): Promise<void> => {
     if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      let targetUrl = url.trim()
+      if (targetUrl.includes('docs.google.com/spreadsheets')) {
+        if (targetUrl.includes('hl=')) {
+          targetUrl = targetUrl.replace(/hl=[a-zA-Z-]+/g, 'hl=en')
+        } else {
+          const sep = targetUrl.includes('?') ? '&' : '?'
+          targetUrl = `${targetUrl}${sep}hl=en`
+        }
+      }
+
       const detachedWindow = new BrowserWindow({
         width: 1280,
         height: 850,
@@ -230,8 +316,109 @@ function registerIpcHandlers(): void {
           webSecurity: false
         }
       })
+      detachedWindow.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
       detachedWindow.setMenu(null)
-      detachedWindow.loadURL(url)
+      detachedWindow.loadURL(targetUrl)
+    }
+  })
+
+  ipcMain.handle('app:runGrammarSpellAudit', async (_event, items: Array<{ id: string; tag: string; text: string; index: number }>) => {
+    await initMainSpellingAndGrammar()
+    const issues: any[] = []
+    if (!Array.isArray(items)) return { totalIssues: 0, spellingCount: 0, grammarCount: 0, issues: [] }
+
+    let globalIdx = 0
+
+    for (const item of items) {
+      const { text, tag, index: elementIdx } = item
+      if (!text || text.length < 3) continue
+      const snippet = text.length > 50 ? text.slice(0, 50) + '...' : text
+
+      // 1. Harper Grammar Engine
+      if (harperLinterInstance) {
+        try {
+          const lintResults = await harperLinterInstance.lint(text)
+          if (Array.isArray(lintResults)) {
+            for (const res of lintResults) {
+              let msg = typeof res.message === 'function' ? res.message() : (res as any).message || 'Grammar issue'
+              let phrase = ''
+              if (typeof res.span === 'function') {
+                const span = res.span()
+                if (span && typeof span.start === 'number' && typeof span.end === 'number') {
+                  phrase = text.slice(span.start, span.end)
+                }
+              }
+              if (!phrase) phrase = text.length > 30 ? text.slice(0, 30) : text
+
+              let sugStr: string | undefined = undefined
+              if (typeof res.suggestions === 'function') {
+                const sugs = res.suggestions()
+                if (Array.isArray(sugs) && sugs.length > 0) {
+                  sugStr = sugs.map((s: any) => (typeof s === 'string' ? s : s.replacement_text ? s.replacement_text() : String(s))).join(', ')
+                }
+              }
+
+              globalIdx++
+              issues.push({
+                id: `g_${globalIdx}_${elementIdx}`,
+                type: 'grammar',
+                wordOrPhrase: phrase || text,
+                suggestion: sugStr,
+                message: msg,
+                elementTag: tag,
+                elementSnippet: snippet,
+                elementIndex: elementIdx,
+                fullText: text
+              })
+            }
+          }
+        } catch (e) {}
+      }
+
+      // 2. Hunspell Spelling Engine
+      if (spellCheckerInstance) {
+        const words = text.split(/[\s,.:;!?"'()\[\]{}–—\/\\]+/)
+        words.forEach((rawWord) => {
+          const cleanWord = rawWord.replace(/^[^a-zA-Z']+|[^a-zA-Z']+$/g, '')
+          if (!cleanWord || cleanWord.length < 3) return
+          if (/^[0-9]/.test(cleanWord) || cleanWord.length > 30) return
+
+          try {
+            const isCorrect = spellCheckerInstance.correct(cleanWord) || spellCheckerInstance.correct(cleanWord.toLowerCase())
+            if (!isCorrect) {
+              const alreadyExists = issues.some(
+                (i) => i.elementIndex === elementIdx && i.wordOrPhrase.toLowerCase() === cleanWord.toLowerCase()
+              )
+              if (!alreadyExists) {
+                const suggestions = spellCheckerInstance.suggest(cleanWord) || spellCheckerInstance.suggest(cleanWord.toLowerCase()) || []
+                const sugStr = suggestions.length > 0 ? suggestions.slice(0, 3).join(', ') : undefined
+                globalIdx++
+                issues.push({
+                  id: `s_${globalIdx}_${elementIdx}`,
+                  type: 'spelling',
+                  wordOrPhrase: cleanWord,
+                  suggestion: sugStr,
+                  message: `Misspelled word: "${cleanWord}"`,
+                  elementTag: tag,
+                  elementSnippet: snippet,
+                  elementIndex: elementIdx,
+                  fullText: text
+                })
+              }
+            }
+          } catch (_) {}
+        })
+      }
+    }
+
+    const spellingCount = issues.filter((i) => i.type === 'spelling').length
+    const grammarCount = issues.filter((i) => i.type === 'grammar').length
+
+    return {
+      totalIssues: issues.length,
+      spellingCount,
+      grammarCount,
+      issues
     }
   })
 

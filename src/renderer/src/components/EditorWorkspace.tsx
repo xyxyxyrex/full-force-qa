@@ -1,6 +1,6 @@
 import { Workbook } from '@fortune-sheet/react'
 import '@fortune-sheet/react/dist/index.css'
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { Project, SnapshotItem } from '../../../shared/types'
 import { initEditor, loadMissingFonts } from '../grapesjs/init'
 import { attachLiveEditor } from '../utils/liveEditorBridge'
@@ -10,6 +10,8 @@ import NativeStylePanel from './NativeStylePanel'
 import CssInspectorEditor from './CssInspectorEditor'
 import { toggleCanvasDuplicates } from '../utils/seoCanvasOverlay'
 import figmaIcon from '../assets/figma.png'
+import mondayIcon from '../assets/monday-icon-svgrepo-com.svg'
+import { fetchMondayTicketsApi, type MondayTicket } from '../utils/mondayApi'
 import './EditorWorkspace.css'
 
 const defaultQaSheetData = [
@@ -58,20 +60,26 @@ function getGoogleSheetsEmbedUrl(rawUrl: string): string {
   if (!rawUrl) return ''
   let cleaned = rawUrl.trim()
   if (cleaned.includes('docs.google.com/spreadsheets')) {
-    // Strip rm=minimal / rm=embedded which explicitly hides worksheet tabs
-    cleaned = cleaned.replace(/[?&]rm=minimal/g, '').replace(/[?&]rm=embedded/g, '')
-    
-    if (!cleaned.includes('/edit') && !cleaned.includes('/pubhtml') && !cleaned.includes('/embed')) {
-      const match = cleaned.match(/\/d\/([a-zA-Z0-9-_]+)/)
-      if (match && match[1]) {
-        cleaned = `https://docs.google.com/spreadsheets/d/${match[1]}/edit`
-      }
+    // Extract Spreadsheet ID
+    const match = cleaned.match(/\/d\/([a-zA-Z0-9-_]+)/)
+    const sheetId = match && match[1] ? match[1] : null
+
+    // Extract gid (specific tab ID if present, e.g. #gid=12345)
+    let gidParam = ''
+    const gidMatch = cleaned.match(/[?&#]gid=([0-9]+)/)
+    if (gidMatch && gidMatch[1]) {
+      gidParam = `&gid=${gidMatch[1]}`
     }
 
-    // Append widget=true&headers=false to strip 180px top header so bottom worksheet tabs are 100% visible
-    if (!cleaned.includes('widget=')) {
-      const sep = cleaned.includes('?') ? '&' : '?'
-      cleaned = `${cleaned}${sep}widget=true&headers=false`
+    if (sheetId) {
+      // rm=embedded: Strips top 140px Google title header so bottom worksheet tabs NEVER get pushed down after JS grid load
+      // widget=true: Keeps bottom worksheet tab navigation bar active
+      // hl=en: Forces English UI language
+      cleaned = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?rm=embedded&widget=true&hl=en${gidParam}`
+    } else {
+      if (!cleaned.includes('rm=')) cleaned += `${cleaned.includes('?') ? '&' : '?'}rm=embedded`
+      if (!cleaned.includes('widget=')) cleaned += `&widget=true`
+      if (!cleaned.includes('hl=')) cleaned += `&hl=en`
     }
   }
   return cleaned
@@ -249,6 +257,73 @@ export default function EditorWorkspace({
   const [storedFigmaUrl, setStoredFigmaUrl] = useState<string>(() => localStorage.getItem('qa_figma_url') || '')
   const [figmaModalOpen, setFigmaModalOpen] = useState(false)
   const [figmaInputVal, setFigmaInputVal] = useState('')
+  const [figmaModalTab, setFigmaModalTab] = useState<'live' | 'png' | 'monday'>('live')
+
+  const [mondayPickerOpen, setMondayPickerOpen] = useState(false)
+  const [mondayPickerTarget, setMondayPickerTarget] = useState<'mastersheet' | 'figma'>('mastersheet')
+  const [mondayTicketsList, setMondayTicketsList] = useState<MondayTicket[]>([])
+  const [loadingMondayTickets, setLoadingMondayTickets] = useState(false)
+  const [mondaySearchQuery, setMondaySearchQuery] = useState('')
+  const mondaySearchInputRef = useRef<HTMLInputElement>(null)
+  const googleSheetInputRef = useRef<HTMLInputElement>(null)
+
+  const loadMondayTicketsForPicker = async () => {
+    let hasCached = false
+    const cached = localStorage.getItem('qa_cached_monday_tickets')
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMondayTicketsList(parsed)
+          hasCached = true
+        }
+      } catch (_) {}
+    }
+
+    if (!hasCached) {
+      setLoadingMondayTickets(true)
+    }
+
+    try {
+      const token =
+        localStorage.getItem('monday_api_token') ||
+        localStorage.getItem('monday_token') ||
+        localStorage.getItem('monday_api_key') ||
+        ''
+      if (token) {
+        const fetched = await fetchMondayTicketsApi(token)
+        if (fetched && fetched.length > 0) {
+          setMondayTicketsList(fetched)
+          localStorage.setItem('qa_cached_monday_tickets', JSON.stringify(fetched))
+        }
+      }
+    } catch (e) {
+      console.warn('[MondayPicker] Error fetching tickets:', e)
+    } finally {
+      setLoadingMondayTickets(false)
+    }
+  }
+
+  const openMondayTicketPicker = (target: 'mastersheet' | 'figma') => {
+    setMondayPickerTarget(target)
+    setMondaySearchQuery('')
+    setMondayPickerOpen(true)
+    loadMondayTicketsForPicker()
+    setTimeout(() => {
+      mondaySearchInputRef.current?.focus()
+    }, 60)
+  }
+
+  const filteredMondayTickets = useMemo(() => {
+    const q = mondaySearchQuery.trim().toLowerCase()
+    if (!q) return mondayTicketsList
+    return mondayTicketsList.filter((t) => {
+      const name = (t.name || '').toLowerCase()
+      const board = (t.boardName || '').toLowerCase()
+      const status = (t.status || '').toLowerCase()
+      return name.includes(q) || board.includes(q) || status.includes(q)
+    })
+  }, [mondayTicketsList, mondaySearchQuery])
 
   const openFigmaModal = () => {
     setFigmaInputVal(localStorage.getItem('qa_figma_url') || '')
@@ -293,7 +368,7 @@ export default function EditorWorkspace({
   const [figmaSplitOpen, setFigmaSplitOpen] = useState(false)
   const [figmaSplitWidth, setFigmaSplitWidth] = useState(550)
   const [bottomSheetOpen, setBottomSheetOpen] = useState(true)
-  const [bottomSheetHeight, setBottomSheetHeight] = useState(420)
+  const [bottomSheetHeight, setBottomSheetHeight] = useState(520)
   const [bottomSheetMaximized, setBottomSheetMaximized] = useState(false)
   const panelDragRef = useRef<{
     side: 'left' | 'right' | 'bottom' | 'figma'
@@ -414,24 +489,49 @@ export default function EditorWorkspace({
   const selectingFromNativeRef = useRef(false)
 
   // ── Design / Snapshot Overlay state ──
-  const [overlayImage, setOverlayImageState] = useState<string | null>(() => localStorage.getItem('qa_figma_overlay_image') || null)
+  const [figmaImage, setFigmaImageState] = useState<string | null>(() => localStorage.getItem('qa_uploaded_figma_png') || null)
+  const [snapshotImage, setSnapshotImageState] = useState<string | null>(() => localStorage.getItem('qa_snapshot_overlay_image') || null)
+  const [snapshotLabel, setSnapshotLabelState] = useState<string>(() => localStorage.getItem('qa_snapshot_overlay_label') || 'Site Snapshot')
+
+  const [overlayImage, setOverlayImageState] = useState<string | null>(() => figmaImage || snapshotImage || null)
   const [overlayLabel, setOverlayLabelState] = useState<string>(() => localStorage.getItem('qa_overlay_label') || 'Figma Design')
   const [overlayOpacity, setOverlayOpacity] = useState<number>(() => Number(localStorage.getItem('qa_figma_overlay_opacity')) || 50)
   const [overlayVisible, setOverlayVisible] = useState<boolean>(() => localStorage.getItem('qa_figma_overlay_visible') !== 'false')
-  const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>(() => (localStorage.getItem('qa_figma_overlay_mode') as any) || 'overlay')
+  const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>(() => (localStorage.getItem('qa_figma_overlay_mode') as any) || 'side-by-side')
   const [overlayPanelOpen, setOverlayPanelOpen] = useState(false)
+  const [figmaCardDismissed, setFigmaCardDismissed] = useState(false)
+  const [figmaViewMode, setFigmaViewMode] = useState<'live' | 'png'>('live')
 
-  const setOverlayImage = useCallback((img: string | null, label: string = 'Figma Design') => {
-    setOverlayImageState(img)
-    setOverlayLabelState(label)
+  const setFigmaImage = useCallback((img: string | null) => {
+    setFigmaImageState(img)
     if (img) {
-      localStorage.setItem('qa_figma_overlay_image', img)
-      localStorage.setItem('qa_overlay_label', label)
+      localStorage.setItem('qa_uploaded_figma_png', img)
     } else {
-      localStorage.removeItem('qa_figma_overlay_image')
-      localStorage.removeItem('qa_overlay_label')
+      localStorage.removeItem('qa_uploaded_figma_png')
     }
   }, [])
+
+  const setSnapshotImage = useCallback((img: string | null, label: string = 'Site Snapshot') => {
+    setSnapshotImageState(img)
+    setSnapshotLabelState(label)
+    if (img) {
+      localStorage.setItem('qa_snapshot_overlay_image', img)
+      localStorage.setItem('qa_snapshot_overlay_label', label)
+    } else {
+      localStorage.removeItem('qa_snapshot_overlay_image')
+      localStorage.removeItem('qa_snapshot_overlay_label')
+    }
+  }, [])
+
+  const setOverlayImage = useCallback((img: string | null, label: string = 'Figma Design') => {
+    if (label === 'Figma Design') {
+      setFigmaImage(img)
+    } else {
+      setSnapshotImage(img, label)
+    }
+    setOverlayImageState(img)
+    setOverlayLabelState(label)
+  }, [setFigmaImage, setSnapshotImage])
 
   useEffect(() => {
     localStorage.setItem('qa_figma_overlay_opacity', String(overlayOpacity))
@@ -444,6 +544,41 @@ export default function EditorWorkspace({
   useEffect(() => {
     localStorage.setItem('qa_figma_overlay_mode', overlayMode)
   }, [overlayMode])
+
+  const figmaWebviewRef = useRef<any>(null)
+
+  useEffect(() => {
+    const wv = figmaWebviewRef.current
+    if (!wv) return
+    const handleNewWindow = (e: any) => {
+      if (e.url) {
+        if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
+          ;(window.electronAPI as any).figmaLoginWindow(e.url).then(() => {
+            try { wv.reload() } catch {}
+          })
+        } else {
+          window.open(e.url, '_blank', 'width=1024,height=768')
+        }
+      }
+    }
+    const handleDomReady = () => {
+      try {
+        const scale = Math.max(0.2, Math.min(1.0, canvasFrame ? canvasFrame.width / vpWidth : 1))
+        if (typeof wv.setZoomFactor === 'function') {
+          wv.setZoomFactor(scale)
+        }
+      } catch (e) {}
+    }
+    wv.addEventListener('new-window', handleNewWindow)
+    wv.addEventListener('dom-ready', handleDomReady)
+    handleDomReady()
+    return () => {
+      try {
+        wv.removeEventListener('new-window', handleNewWindow)
+        wv.removeEventListener('dom-ready', handleDomReady)
+      } catch (e) {}
+    }
+  }, [storedFigmaUrl, figmaSplitOpen, canvasFrame?.width, vpWidth])
 
   // ── Snapshots State & Helper Functions ─────────────
   const activeProjectId = project?.id || (sourceUrl ? new URL(sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`).hostname.replace(/^www\./, '') : 'default_project')
@@ -461,6 +596,12 @@ export default function EditorWorkspace({
     'iPhone 12 Pro'
   ])
   const [batchToast, setBatchToast] = useState<{ active: boolean; message: string; isComplete?: boolean } | null>(null)
+
+  const getFigmaEmbedUrl = (url?: string) => {
+    if (!url) return ''
+    if (url.includes('figma.com/embed')) return url
+    return `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`
+  }
 
   const getSnapshotCategory = (snap: SnapshotItem): 'desktop' | 'tablet' | 'phone' | 'custom' => {
     const w = snap.viewportWidth || 1920
@@ -1234,6 +1375,16 @@ export default function EditorWorkspace({
     })
     editorRef.current = editor
 
+    // Register Escape keymap directly in GrapesJS core keymaps
+    try {
+      if (editor.Keymaps) {
+        editor.Keymaps.add('core:deselect-component', 'escape', (ed: any) => {
+          ed.select(null)
+          setSelectedComponent(null)
+        })
+      }
+    } catch (_) {}
+
     const updateLayerCount = () => {
       try {
         const wrapper = editor.getWrapper()
@@ -1251,6 +1402,31 @@ export default function EditorWorkspace({
       applyDimensions(1920, 1200)
       updateLayerCount()
       updateLayersDisplayMode(editor, layerDisplayMode)
+
+      // Attach Escape key listener directly to GrapesJS iframe window & document in capture mode
+      try {
+        const gFrame = editor.Canvas?.getFrameEl() as HTMLIFrameElement
+        if (gFrame && gFrame.contentWindow) {
+          const frameWin = gFrame.contentWindow
+          const frameDoc = gFrame.contentDocument || frameWin.document
+          const handleFrameEscape = (ev: KeyboardEvent) => {
+            if (ev.key === 'Escape' || ev.code === 'Escape') {
+              const target = ev.target as HTMLElement
+              const isEdit = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+              if (!isEdit) {
+                ev.preventDefault()
+                ev.stopPropagation()
+                const sel: any = (editor as any).getSelected()
+                if (sel && typeof sel.deselect === 'function') sel.deselect()
+                if (typeof (editor as any).select === 'function') (editor as any).select(undefined as any)
+                setSelectedComponent(null)
+              }
+            }
+          }
+          frameWin.addEventListener('keydown', handleFrameEscape, true)
+          if (frameDoc) frameDoc.addEventListener('keydown', handleFrameEscape, true)
+        }
+      } catch (_) {}
 
       // Stamp data-npath on GrapesJS components to match native iframe paths
       const stampCompPaths = (comp: any, prefix: string) => {
@@ -1627,11 +1803,123 @@ export default function EditorWorkspace({
     }
   }, [applyZoom])
 
-  // Handle Spacebar key state & Ctrl+A override
+  // ── Global IPC Escape key listener (captures Escape across ALL native & GrapesJS frames) ──
+  useEffect(() => {
+    if (typeof window.electronAPI?.onGlobalEscape === 'function') {
+      const handleEscape = () => {
+        const active = document.activeElement as HTMLElement
+        const isEditable = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable || active.tagName === 'SELECT')
+        if (isEditable) return
+
+        const ed: any = editorRef.current
+        if (ed) {
+          try {
+            console.log('[Native Global Escape IPC] Deselecting GrapesJS component...')
+            const sel: any = ed.getSelected()
+            if (sel) {
+              if (typeof sel.set === 'function') {
+                sel.set('status', '')
+                sel.set('active', false)
+                sel.set('selected', false)
+              }
+              if (typeof sel.deselect === 'function') sel.deselect()
+            }
+            if (typeof ed.select === 'function') {
+              ed.select([])
+              ed.select(undefined as any)
+            }
+            if (ed.Canvas) {
+              if (typeof ed.Canvas.clearSelection === 'function') {
+                ed.Canvas.clearSelection()
+              }
+              const toolsEl = ed.Canvas.getToolsEl ? ed.Canvas.getToolsEl() : null
+              if (toolsEl) {
+                const toolbars = toolsEl.querySelectorAll('.gjs-toolbar, .gjs-highlighter, .gjs-badge')
+                toolbars.forEach((el: HTMLElement) => { el.style.display = 'none' })
+              }
+            }
+            if (typeof ed.trigger === 'function') {
+              ed.trigger('component:deselected', sel)
+              ed.trigger('component:toggled')
+            }
+          } catch (err) {
+            console.error('[Global Escape] Deselect error:', err)
+          }
+        }
+        setSelectedComponent(null)
+        if (bdLockedRef.current) {
+          bdLockedRef.current = null
+        }
+        try {
+          window.getSelection()?.removeAllRanges()
+          const gFrame = editorRef.current?.Canvas?.getFrameEl() as HTMLIFrameElement
+          if (gFrame && gFrame.contentWindow) {
+            gFrame.contentWindow.getSelection()?.removeAllRanges()
+          }
+        } catch (_) {}
+      }
+
+      return window.electronAPI.onGlobalEscape(handleEscape)
+    }
+  }, [])
+
+  // Handle Spacebar key state, Escape key deselect, & Ctrl+A override
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
       const isEditable = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.tagName === 'SELECT')
+
+      // 0. Escape Key: Exit out of element selection & clear inspector highlights
+      if (e.key === 'Escape' || e.code === 'Escape') {
+        if (!isEditable) {
+          const ed: any = editorRef.current
+          if (ed) {
+            try {
+              console.log('[Escape Key] Triggering GrapesJS deselection...')
+              const sel: any = ed.getSelected()
+              if (sel) {
+                if (typeof sel.set === 'function') {
+                  sel.set('status', '')
+                  sel.set('active', false)
+                  sel.set('selected', false)
+                }
+                if (typeof sel.deselect === 'function') sel.deselect()
+              }
+              if (typeof ed.select === 'function') {
+                ed.select([])
+                ed.select(undefined as any)
+              }
+              if (ed.Canvas) {
+                if (typeof ed.Canvas.clearSelection === 'function') {
+                  ed.Canvas.clearSelection()
+                }
+                const toolsEl = ed.Canvas.getToolsEl ? ed.Canvas.getToolsEl() : null
+                if (toolsEl) {
+                  const toolbars = toolsEl.querySelectorAll('.gjs-toolbar, .gjs-highlighter, .gjs-badge')
+                  toolbars.forEach((el: HTMLElement) => { el.style.display = 'none' })
+                }
+              }
+              if (typeof ed.trigger === 'function') {
+                ed.trigger('component:deselected', sel)
+                ed.trigger('component:toggled')
+              }
+            } catch (err) {
+              console.error('[Escape Key] GrapesJS deselect error:', err)
+            }
+          }
+          setSelectedComponent(null)
+          if (bdLockedRef.current) {
+            bdLockedRef.current = null
+          }
+          try {
+            window.getSelection()?.removeAllRanges()
+            const gFrame = editorRef.current?.Canvas?.getFrameEl() as HTMLIFrameElement
+            if (gFrame && gFrame.contentWindow) {
+              gFrame.contentWindow.getSelection()?.removeAllRanges()
+            }
+          } catch (_) {}
+        }
+      }
 
       // 1. Ctrl + A: Prevent whole-page highlight unless typing in an editable field
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
@@ -1685,9 +1973,26 @@ export default function EditorWorkspace({
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
 
+    // Forward iframe key events so pressing Escape inside the website frame also exits selection
+    let iframeWin: Window | null = null
+    try {
+      const gFrame = editorRef.current?.Canvas?.getFrameEl() as HTMLIFrameElement
+      if (gFrame && gFrame.contentWindow) {
+        iframeWin = gFrame.contentWindow
+        iframeWin.addEventListener('keydown', onKeyDown)
+        iframeWin.addEventListener('keyup', onKeyUp)
+      }
+    } catch (_) {}
+
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      if (iframeWin) {
+        try {
+          iframeWin.removeEventListener('keydown', onKeyDown)
+          iframeWin.removeEventListener('keyup', onKeyUp)
+        } catch (_) {}
+      }
     }
   }, [])
 
@@ -2059,9 +2364,11 @@ export default function EditorWorkspace({
     }
   }
 
-  // ── Panel resize (with Hard-Drag / Snap-to-Collapse UX) ──
+  // ── Panel resize (with Pointer-Events Suppressor & Smooth Throttle) ──
   const onPanelResizeStart = (side: 'left' | 'right' | 'bottom' | 'figma', e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+
     panelDragRef.current = {
       side,
       startX: e.clientX,
@@ -2069,12 +2376,15 @@ export default function EditorWorkspace({
       startWidth: side === 'left' ? leftPanelWidth : side === 'right' ? rightPanelWidth : figmaSplitWidth,
       startHeight: bottomSheetHeight
     }
-    document.body.style.cursor = side === 'bottom' ? 'row-resize' : 'col-resize'
-    document.body.style.userSelect = 'none'
 
-    // Disable pointer events on iframe during drag
-    const iframe = editorRef.current?.Canvas.getFrameEl()
-    if (iframe) iframe.style.pointerEvents = 'none'
+    document.body.classList.add('is-panel-resizing')
+    document.body.style.cursor = side === 'bottom' ? 'row-resize' : 'col-resize'
+
+    // Suppress pointer events on ALL iframes and webviews in the document during resize drag!
+    const allIframes = document.querySelectorAll('iframe, webview')
+    allIframes.forEach((el: any) => {
+      try { el.style.pointerEvents = 'none' } catch (_) {}
+    })
 
     let rafId = 0
     let latestX = e.clientX
@@ -2083,6 +2393,7 @@ export default function EditorWorkspace({
     const onMove = (ev: MouseEvent) => {
       latestX = ev.clientX
       latestY = ev.clientY
+
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
           rafId = 0
@@ -2101,7 +2412,7 @@ export default function EditorWorkspace({
               return
             }
 
-            const newHeight = Math.max(120, Math.min(650, rawHeight))
+            const newHeight = Math.max(120, Math.min(850, rawHeight))
             setBottomSheetHeight(newHeight)
           } else if (d.side === 'left') {
             const dx = latestX - d.startX
@@ -2115,7 +2426,7 @@ export default function EditorWorkspace({
               return
             }
 
-            const newWidth = Math.max(180, Math.min(500, rawWidth))
+            const newWidth = Math.max(180, Math.min(600, rawWidth))
             setLeftPanelWidth(newWidth)
           } else if (d.side === 'right') {
             const dx = latestX - d.startX
@@ -2129,7 +2440,7 @@ export default function EditorWorkspace({
               return
             }
 
-            const newWidth = Math.max(180, Math.min(500, rawWidth))
+            const newWidth = Math.max(180, Math.min(650, rawWidth))
             setRightPanelWidth(newWidth)
           } else if (d.side === 'figma') {
             const dx = latestX - d.startX
@@ -2151,16 +2462,22 @@ export default function EditorWorkspace({
 
     const onUp = () => {
       panelDragRef.current = null
+      document.body.classList.remove('is-panel-resizing')
       document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      if (iframe) iframe.style.pointerEvents = ''
+
+      allIframes.forEach((el: any) => {
+        try { el.style.pointerEvents = '' } catch (_) {}
+      })
+
       if (rafId) cancelAnimationFrame(rafId)
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
+      window.removeEventListener('mousemove', onMove, true)
+      window.removeEventListener('mouseup', onUp, true)
+      window.removeEventListener('blur', onUp)
     }
 
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+    window.addEventListener('mousemove', onMove, true)
+    window.addEventListener('mouseup', onUp, true)
+    window.addEventListener('blur', onUp)
   }
 
   // ── F5 / Ctrl+R hard refresh ───────────────────
@@ -3540,14 +3857,19 @@ export default function EditorWorkspace({
                     </div>
                     <button
                       className="ruler-dd-item"
-                      style={{ background: figmaSplitOpen ? '#0284c7' : '#27272a', color: '#ffffff', fontWeight: 600, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
-                      onClick={() => { setFigmaSplitOpen((p) => !p); setOverlayPanelOpen(false); }}
+                      style={{ background: figmaSplitOpen ? '#7c3aed' : '#27272a', color: '#ffffff', fontWeight: 600, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                      onClick={() => {
+                        setFigmaSplitOpen((p) => !p)
+                        setOverlayVisible(true)
+                        setOverlayMode('side-by-side')
+                        setOverlayPanelOpen(false)
+                      }}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                         <line x1="12" y1="3" x2="12" y2="21" />
                       </svg>
-                      <span>{figmaSplitOpen ? 'Close Live Figma Split' : 'Live Figma Split Panel'}</span>
+                      <span>{figmaSplitOpen ? 'Hide In-Canvas Figma Live Embed' : 'Embed Figma Live (Left Canvas)'}</span>
                     </button>
                     {storedFigmaUrl ? (
                       <>
@@ -4755,66 +5077,296 @@ export default function EditorWorkspace({
                   </div>
                 )}
 
-                {/* Figma Design Overlay — positioned to match iframe */}
-                {overlayImage && overlayVisible && canvasFrame && overlayMode === 'overlay' && (
-                  <div
-                    className="figma-overlay-img"
-                    style={{
-                      left: canvasFrame.left,
-                      top: canvasFrame.top,
-                      width: canvasFrame.width,
-                      height: canvasFrame.height,
-                      opacity: overlayOpacity / 100,
-                    }}
-                  >
-                    <img
-                      src={overlayImage}
-                      alt=""
-                      draggable={false}
-                      style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)` }}
-                    />
-                  </div>
-                )}
+                {/* ── IN-CANVAS 3-WAY SIDE-BY-SIDE / OVERLAY / DIFF ── */}
+                {canvasFrame && (
+                  <>
+                    {/* LEFT PANEL: Standard Desktop Figma Live App / Reference PNG */}
+                    {!figmaCardDismissed && (storedFigmaUrl || figmaImage || figmaSplitOpen) && overlayMode === 'side-by-side' && (
+                      <div
+                        className="figma-overlay-side"
+                        style={{
+                          left: canvasFrame.left - canvasFrame.width - 24,
+                          top: canvasFrame.top,
+                          width: canvasFrame.width,
+                          height: canvasFrame.height,
+                          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                          borderRadius: 8,
+                          overflow: 'visible',
+                          background: '#18181b',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          border: '1px solid rgba(255,255,255,0.12)'
+                        }}
+                      >
+                        {/* Sleek Mini Floating Tooltip Pill ABOVE Frame */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: -34,
+                            left: 0,
+                            height: 26,
+                            padding: '3px 8px 3px 6px',
+                            background: 'rgba(20, 20, 24, 0.88)',
+                            backdropFilter: 'blur(12px)',
+                            WebkitBackdropFilter: 'blur(12px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: 20,
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            zIndex: 10
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 500, color: '#e4e4e7' }}>
+                            <img src={figmaIcon} alt="Figma" width="12" height="12" style={{ width: 12, height: 12, objectFit: 'contain' }} />
+                            <span>{storedFigmaUrl && figmaImage ? 'Figma Design' : storedFigmaUrl ? 'Figma Live App' : 'Figma PNG Reference'}</span>
+                          </div>
 
-                {/* Side-by-side mode: show Figma design next to the captured page */}
-                {overlayImage && overlayVisible && canvasFrame && overlayMode === 'side-by-side' && (
-                  <div
-                    className="figma-overlay-side"
-                    style={{
-                      left: canvasFrame.left + canvasFrame.width + 24,
-                      top: canvasFrame.top,
-                      width: canvasFrame.width,
-                      height: canvasFrame.height,
-                    }}
-                  >
-                    <div className="figma-overlay-side-label">{overlayLabel}</div>
-                    <img
-                      src={overlayImage}
-                      alt=""
-                      draggable={false}
-                      style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)` }}
-                    />
-                  </div>
-                )}
+                          {/* Toggle between Live App & PNG if both exist */}
+                          {storedFigmaUrl && figmaImage && (
+                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: 1, gap: 1 }}>
+                              <button
+                                style={{ padding: '1px 6px', fontSize: 10, border: 'none', borderRadius: 9, cursor: 'pointer', background: figmaViewMode === 'live' ? 'rgba(255,255,255,0.2)' : 'transparent', color: figmaViewMode === 'live' ? '#fff' : '#a1a1aa', fontWeight: figmaViewMode === 'live' ? 600 : 400 }}
+                                onClick={() => setFigmaViewMode('live')}
+                              >
+                                Live App
+                              </button>
+                              <button
+                                style={{ padding: '1px 6px', fontSize: 10, border: 'none', borderRadius: 9, cursor: 'pointer', background: figmaViewMode === 'png' ? 'rgba(255,255,255,0.2)' : 'transparent', color: figmaViewMode === 'png' ? '#fff' : '#a1a1aa', fontWeight: figmaViewMode === 'png' ? 600 : 400 }}
+                                onClick={() => setFigmaViewMode('png')}
+                              >
+                                PNG
+                              </button>
+                            </div>
+                          )}
 
-                {/* Diff mode: overlay with blend difference */}
-                {overlayImage && overlayVisible && canvasFrame && overlayMode === 'diff' && (
-                  <div
-                    className="figma-overlay-img figma-overlay-diff"
-                    style={{
-                      left: canvasFrame.left,
-                      top: canvasFrame.top,
-                      width: canvasFrame.width,
-                      height: canvasFrame.height,
-                    }}
-                  >
-                    <img
-                      src={overlayImage}
-                      alt=""
-                      draggable={false}
-                      style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)` }}
-                    />
-                  </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 2 }}>
+                            {storedFigmaUrl && (
+                              <>
+                                <button
+                                  style={{ padding: '2px 8px', fontSize: 10, background: 'rgba(255,255,255,0.1)', color: '#e4e4e7', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, cursor: 'pointer', fontWeight: 500 }}
+                                  onClick={() => {
+                                    const doLogin = async () => {
+                                      if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
+                                        await (window.electronAPI as any).figmaLoginWindow(storedFigmaUrl)
+                                        setTimeout(() => {
+                                          try { figmaWebviewRef.current?.reload() } catch {}
+                                        }, 500)
+                                      } else {
+                                        window.open(storedFigmaUrl || 'https://figma.com/login', '_blank', 'width=1024,height=768')
+                                      }
+                                    }
+                                    doLogin()
+                                  }}
+                                  title="Sign in to Figma with your Google Account"
+                                >
+                                  Sign In
+                                </button>
+                                <button
+                                  style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.08)', color: '#a1a1aa', border: 'none', borderRadius: '50%', cursor: 'pointer' }}
+                                  onClick={() => window.electronAPI.openExternal(storedFigmaUrl)}
+                                  title="Open in external browser / Detach"
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                    <polyline points="15 3 21 3 21 9" />
+                                    <line x1="10" y1="14" x2="21" y2="3" />
+                                  </svg>
+                                </button>
+                              </>
+                            )}
+                            <button
+                              style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.08)', color: '#a1a1aa', border: 'none', borderRadius: '50%', cursor: 'pointer' }}
+                              onClick={openFigmaModal}
+                              title="Edit Figma Link or Upload PNG"
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
+                            <button
+                              style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', color: '#a1a1aa', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}
+                              onClick={() => {
+                                setFigmaSplitOpen(false)
+                                setFigmaCardDismissed(true)
+                              }}
+                              title="Close Figma Panel"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Standard Desktop Viewport Content matching Center Site */}
+                        <div className="figma-overlay-side-content" style={{ width: canvasFrame.width, height: canvasFrame.height, background: '#1e1e1e', position: 'relative', overflow: 'hidden', borderRadius: 8 }}>
+                          {(storedFigmaUrl && (figmaViewMode === 'live' || !figmaImage)) ? (
+                            <webview
+                              ref={figmaWebviewRef}
+                              src={storedFigmaUrl}
+                              partition="persist:figma"
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                border: 'none',
+                                background: '#1e1e1e'
+                              }}
+                              useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                              allowpopups
+                            />
+                          ) : figmaImage ? (
+                            <img
+                              src={figmaImage}
+                              alt="Figma Design PNG"
+                              draggable={false}
+                              style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)`, width: '100%' }}
+                            />
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 24, textAlign: 'center', color: '#a1a1aa' }}>
+                              <img src={figmaIcon} alt="Figma" width="32" height="32" style={{ marginBottom: 12, opacity: 0.6 }} />
+                              <div style={{ color: '#ffffff', fontWeight: 600, fontSize: 13, marginBottom: 4 }}>No Figma Link or PNG Connected</div>
+                              <div style={{ fontSize: 11, color: '#a1a1aa', maxWidth: 240, marginBottom: 14 }}>Connect a Figma design URL or upload a PNG image to inspect designs side-by-side.</div>
+                              <button
+                                style={{ background: '#7c3aed', color: '#ffffff', fontWeight: 600, fontSize: 11, padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer' }}
+                                onClick={() => {
+                                  setFigmaCardDismissed(false)
+                                  openFigmaModal()
+                                }}
+                              >
+                                + Connect Figma Link / Upload PNG
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* RIGHT PANEL: Site Snapshot */}
+                    {snapshotImage && overlayMode === 'side-by-side' && (
+                      <div
+                        className="figma-overlay-side"
+                        style={{
+                          left: canvasFrame.left + canvasFrame.width + 24,
+                          top: canvasFrame.top,
+                          width: canvasFrame.width,
+                          height: canvasFrame.height,
+                          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                          borderRadius: 8,
+                          overflow: 'visible',
+                          background: '#18181b',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          border: '1px solid rgba(255,255,255,0.12)'
+                        }}
+                      >
+                        {/* Sleek Mini Floating Tooltip Pill ABOVE Frame */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: -34,
+                            left: 0,
+                            height: 26,
+                            padding: '3px 8px 3px 6px',
+                            background: 'rgba(20, 20, 24, 0.88)',
+                            backdropFilter: 'blur(12px)',
+                            WebkitBackdropFilter: 'blur(12px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: 20,
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            zIndex: 10
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 500, color: '#e4e4e7' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                            <span>Site Snapshot {snapshotLabel && snapshotLabel !== 'Site Snapshot' ? `(${snapshotLabel})` : ''}</span>
+                          </div>
+                          <button
+                            style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', color: '#a1a1aa', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}
+                            onClick={() => setSnapshotImage(null)}
+                            title="Close Snapshot Panel"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Exact Viewport Card Content matching Center Site */}
+                        <div className="figma-overlay-side-content" style={{ width: canvasFrame.width, height: canvasFrame.height, background: '#fff', position: 'relative', overflow: 'hidden', borderRadius: 8 }}>
+                          <img
+                            src={snapshotImage}
+                            alt="Site Snapshot"
+                            draggable={false}
+                            style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)`, width: '100%' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Single fallback side-by-side if legacy overlayImage exists without figmaImage or snapshotImage */}
+                    {overlayImage && !figmaImage && !snapshotImage && overlayMode === 'side-by-side' && (
+                      <div
+                        className="figma-overlay-side"
+                        style={{
+                          left: canvasFrame.left + canvasFrame.width + 24,
+                          top: canvasFrame.top,
+                          width: canvasFrame.width,
+                          height: canvasFrame.height,
+                        }}
+                      >
+                        <div className="figma-overlay-side-label">{overlayLabel}</div>
+                        <img
+                          src={overlayImage}
+                          alt=""
+                          draggable={false}
+                          style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)` }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Opacity Overlay Mode (Figma or Snapshot) */}
+                    {overlayMode === 'overlay' && (snapshotImage || figmaImage || overlayImage) && (
+                      <div
+                        className="figma-overlay-img"
+                        style={{
+                          left: canvasFrame.left,
+                          top: canvasFrame.top,
+                          width: canvasFrame.width,
+                          height: canvasFrame.height,
+                          opacity: overlayOpacity / 100,
+                        }}
+                      >
+                        <img
+                          src={snapshotImage || figmaImage || overlayImage!}
+                          alt=""
+                          draggable={false}
+                          style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)` }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Difference Blend Mode */}
+                    {overlayMode === 'diff' && (snapshotImage || figmaImage || overlayImage) && (
+                      <div
+                        className="figma-overlay-img figma-overlay-diff"
+                        style={{
+                          left: canvasFrame.left,
+                          top: canvasFrame.top,
+                          width: canvasFrame.width,
+                          height: canvasFrame.height,
+                        }}
+                      >
+                        <img
+                          src={snapshotImage || figmaImage || overlayImage!}
+                          alt=""
+                          draggable={false}
+                          style={{ transform: `translateY(-${iframeScrollY * (zoom / 100)}px)` }}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Guides overlay — positioned to match iframe, so guides scale with zoom */}
@@ -4906,10 +5458,19 @@ export default function EditorWorkspace({
                       className="bottom-sheet-btn"
                       onClick={() => {
                         if (googleSheetsUrl) {
+                          let targetUrl = googleSheetsUrl.trim()
+                          if (targetUrl.includes('docs.google.com/spreadsheets')) {
+                            if (targetUrl.includes('hl=')) {
+                              targetUrl = targetUrl.replace(/hl=[a-zA-Z-]+/g, 'hl=en')
+                            } else {
+                              const sep = targetUrl.includes('?') ? '&' : '?'
+                              targetUrl = `${targetUrl}${sep}hl=en`
+                            }
+                          }
                           if (typeof window.electronAPI?.openDetachedWindow === 'function') {
-                            window.electronAPI.openDetachedWindow(googleSheetsUrl, 'QA Master Tracker')
+                            window.electronAPI.openDetachedWindow(targetUrl, 'QA Master Tracker')
                           } else {
-                            window.open(googleSheetsUrl, '_blank', 'width=1280,height=850,top=100,left=100,resizable=yes')
+                            window.open(targetUrl, '_blank', 'width=1280,height=850,top=100,left=100,resizable=yes')
                           }
                         } else {
                           setActiveSheetTab('google')
@@ -4974,15 +5535,17 @@ export default function EditorWorkspace({
                             </svg>
                           </div>
                           <h3>Google Mastersheet URL</h3>
-                          <p>Paste your Google Sheets link below to embed and edit your live QA tracker directly in-app.</p>
-                          <div className="google-sheet-input-row">
+                          <p>Paste your Google Sheets link below or pull directly from a Monday.com ticket:</p>
+                          <div className="google-sheet-input-row" style={{ marginBottom: 12 }}>
                             <input
+                              ref={googleSheetInputRef}
                               type="url"
                               className="google-sheet-input"
                               placeholder="https://docs.google.com/spreadsheets/d/.../edit"
                               value={tempGoogleUrl}
                               onChange={(e) => setTempGoogleUrl(e.target.value)}
                               onKeyDown={(e) => e.key === 'Enter' && handleSaveGoogleUrl()}
+                              autoFocus
                             />
                             <button
                               className="google-sheet-save-btn"
@@ -4992,6 +5555,28 @@ export default function EditorWorkspace({
                               Connect Sheet
                             </button>
                           </div>
+
+                          <button
+                            onClick={() => openMondayTicketPicker('mastersheet')}
+                            style={{
+                              background: '#27272a',
+                              border: '1px solid rgba(255,255,255,0.12)',
+                              color: '#e4e4e7',
+                              borderRadius: 6,
+                              padding: '8px 14px',
+                              fontSize: 12,
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              margin: '0 auto',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <img src={mondayIcon} alt="Monday" width="14" height="14" style={{ objectFit: 'contain' }} />
+                            <span>Add from Monday Ticket</span>
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -5018,88 +5603,6 @@ export default function EditorWorkspace({
           )}
         </div>
 
-        {/* Live Figma Split View Panel (Dev Mode & Measurements) */}
-        {figmaSplitOpen && (
-          <>
-            <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('figma', e)} />
-            <div className="editor-panel figma-split-panel" style={{ width: figmaSplitWidth, display: 'flex', flexDirection: 'column', height: '100%', background: '#1e1e1e', borderLeft: '1px solid #27272a', position: 'relative', zIndex: 10 }}>
-              <div className="panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#09090b', borderBottom: '1px solid #27272a' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12, color: '#f4f4f5' }}>
-                  <img src={figmaIcon} alt="Figma" width="14" height="14" style={{ objectFit: 'contain' }} />
-                  <span>Figma Design (Live Dev Mode)</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <button
-                    className="bottom-sheet-link-btn"
-                    style={{ padding: '2px 8px', fontSize: 11, background: '#2563eb', color: '#ffffff', border: 'none' }}
-                    onClick={() => {
-                      if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
-                        ;(window.electronAPI as any).figmaLoginWindow(storedFigmaUrl)
-                      } else {
-                        window.open(storedFigmaUrl || 'https://figma.com/login', '_blank', 'width=1024,height=768')
-                      }
-                    }}
-                    title="Sign in to Figma in-app with your company Google Account"
-                  >
-                    Sign In ↗
-                  </button>
-                  {storedFigmaUrl && (
-                    <button
-                      className="bottom-sheet-link-btn"
-                      style={{ padding: '2px 8px', fontSize: 11 }}
-                      onClick={() => {
-                        if (typeof window.electronAPI?.openDetachedWindow === 'function') {
-                          window.electronAPI.openDetachedWindow(storedFigmaUrl, 'Figma Design')
-                        } else {
-                          window.open(storedFigmaUrl, '_blank', 'width=1280,height=850,top=100,left=100,resizable=yes')
-                        }
-                      }}
-                      title="Open in standalone window"
-                    >
-                      Detach ↗
-                    </button>
-                  )}
-                  <button
-                    className="bottom-sheet-link-btn"
-                    style={{ padding: '2px 8px', fontSize: 11 }}
-                    onClick={openFigmaModal}
-                    title="Change Figma Link"
-                  >
-                    Edit Link
-                  </button>
-                  <button
-                    className="bottom-sheet-btn"
-                    onClick={() => setFigmaSplitOpen(false)}
-                    title="Close Live Figma Split Panel"
-                    style={{ padding: '2px 6px' }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-              <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#1e1e1e' }}>
-                {storedFigmaUrl ? (
-                  <webview
-                    src={storedFigmaUrl}
-                    partition="persist:figma"
-                    style={{ width: '100%', height: '100%', border: 'none', background: '#1e1e1e' }}
-                    useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                    allowpopups
-                  />
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 24, textAlign: 'center', color: '#71717a' }}>
-                    <img src={figmaIcon} alt="Figma" width="36" height="36" style={{ marginBottom: 12, opacity: 0.6 }} />
-                    <h4 style={{ color: '#f4f4f5', margin: '0 0 6px 0', fontSize: 14 }}>No Figma Link Connected</h4>
-                    <p style={{ fontSize: 12, margin: '0 0 14px 0', maxWidth: 280, lineHeight: 1.4 }}>Connect your Figma design link to inspect live Dev Mode, measurements, and CSS properties side-by-side.</p>
-                    <button className="google-sheet-save-btn" onClick={openFigmaModal}>
-                      Connect Figma Link
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
 
         {rightPanelOpen && workspaceTab !== 'live' && (
           <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('right', e)} />
@@ -5318,42 +5821,374 @@ export default function EditorWorkspace({
         </div>
       )}
 
-      {/* Figma Link Dialog */}
-      {figmaModalOpen && (
-        <div className="add-guides-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setFigmaModalOpen(false) }}>
-          <div className="add-guides-dialog" style={{ width: 440 }}>
-            <div className="add-guides-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img src={figmaIcon} alt="Figma" width="18" height="18" style={{ objectFit: 'contain' }} />
-              <span>Figma Design Link</span>
+      {/* Monday Ticket Picker Overlay Dialog */}
+      {mondayPickerOpen && (
+        <div className="figma-modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setMondayPickerOpen(false) }}>
+          <div className="figma-modal-dialog" style={{ maxWidth: 480 }}>
+            <div className="figma-modal-header">
+              <div className="figma-modal-title-wrap">
+                <div className="figma-logo-badge">
+                  <img src={mondayIcon} alt="Monday" width="18" height="18" style={{ objectFit: 'contain' }} />
+                </div>
+                <div>
+                  <h3>Select Monday.com Ticket</h3>
+                  <p>Pull {mondayPickerTarget === 'mastersheet' ? 'Google Mastersheet' : 'Figma Reference'} directly from ticket:</p>
+                </div>
+              </div>
+              <button className="figma-modal-close-btn" onClick={() => setMondayPickerOpen(false)}>
+                ✕
+              </button>
             </div>
-            <p style={{ fontSize: 12, color: '#a1a1aa', margin: '4px 0 14px 0' }}>
-              Paste your Figma file or frame link to enable 1-click open in Chrome:
-            </p>
-            <input
-              type="url"
-              className="google-sheet-input"
-              placeholder="https://figma.com/file/... or https://figma.com/design/..."
-              value={figmaInputVal}
-              onChange={(e) => setFigmaInputVal(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && saveFigmaModal()}
-              autoFocus
-              style={{ width: '100%', boxSizing: 'border-box', marginBottom: 16 }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              {storedFigmaUrl && (
+
+            {/* Search Input Bar with Auto-Focus */}
+            <div style={{ position: 'relative', marginBottom: 12 }}>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#a1a1aa"
+                strokeWidth="2"
+                style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+
+              <input
+                ref={mondaySearchInputRef}
+                type="text"
+                className="figma-input-field"
+                placeholder="Search tickets by project, board, or status..."
+                value={mondaySearchQuery}
+                onChange={(e) => setMondaySearchQuery(e.target.value)}
+                style={{ paddingLeft: 34, paddingRight: mondaySearchQuery ? 30 : 12, height: 36, fontSize: 12 }}
+                autoFocus
+              />
+
+              {mondaySearchQuery && (
                 <button
-                  className="add-guides-cancel"
-                  onClick={clearFigmaModal}
-                  style={{ color: '#ef4444', borderColor: '#ef444440', marginRight: 'auto' }}
+                  onClick={() => setMondaySearchQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#a1a1aa',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    padding: '2px 6px'
+                  }}
                 >
-                  Remove Link
+                  ✕
                 </button>
               )}
-              <button className="add-guides-cancel" onClick={() => setFigmaModalOpen(false)}>
+            </div>
+
+            <div style={{ maxHeight: 260, overflowY: 'auto', marginBottom: 16 }}>
+              {loadingMondayTickets ? (
+                <div style={{ textAlign: 'center', padding: 20, color: '#a1a1aa', fontSize: 12 }}>Loading Monday tickets...</div>
+              ) : filteredMondayTickets.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 20, color: '#a1a1aa', fontSize: 12 }}>
+                  {mondaySearchQuery ? `No tickets matching "${mondaySearchQuery}"` : 'No Monday tickets found. Make sure you are logged into Monday.com on the Dashboard.'}
+                </div>
+              ) : (
+                filteredMondayTickets.map((ticket) => {
+                  const targetUrl = mondayPickerTarget === 'mastersheet'
+                    ? (ticket.googleSheetUrl || ticket.otherLinks?.find(l => l.url.includes('docs.google.com'))?.url)
+                    : (ticket.figmaUrl || ticket.otherLinks?.find(l => l.url.includes('figma.com'))?.url)
+
+                  return (
+                    <div
+                      key={ticket.id}
+                      className="figma-ticket-item"
+                      onClick={() => {
+                        if (targetUrl) {
+                          if (mondayPickerTarget === 'mastersheet') {
+                            setGoogleSheetsUrl(targetUrl)
+                            setTempGoogleUrl(targetUrl)
+                            setIsEditingGoogleUrl(false)
+                            localStorage.setItem('qa_google_sheets_url', targetUrl)
+                          } else {
+                            setStoredFigmaUrl(targetUrl)
+                            setFigmaInputVal(targetUrl)
+                            localStorage.setItem('qa_figma_url', targetUrl)
+                            setFigmaViewMode('live')
+                            setFigmaCardDismissed(false)
+                            setOverlayMode('side-by-side')
+                          }
+                          setMondayPickerOpen(false)
+                        }
+                      }}
+                      style={{ opacity: targetUrl ? 1 : 0.5, cursor: targetUrl ? 'pointer' : 'not-allowed' }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#f4f4f5' }}>{ticket.name}</div>
+                        <div style={{ fontSize: 10, color: '#a1a1aa', display: 'flex', gap: 6, marginTop: 2 }}>
+                          <span>{ticket.boardName}</span>
+                          <span>•</span>
+                          <span style={{ color: '#6161ff' }}>{targetUrl ? 'Link Found' : 'No Direct Link'}</span>
+                        </div>
+                      </div>
+                      <span className="chip-badge" style={{ background: '#27272a', fontSize: 10, padding: '2px 6px', borderRadius: 4 }}>
+                        {ticket.status}
+                      </span>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            <div className="figma-footer-actions">
+              <button className="figma-btn-cancel" onClick={() => loadMondayTicketsForPicker()}>
+                Refresh Tickets
+              </button>
+              <button className="figma-btn-cancel" onClick={() => setMondayPickerOpen(false)}>
                 Cancel
               </button>
-              <button className="add-guides-ok" onClick={saveFigmaModal}>
-                Save Link
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Redesigned Figma Link / PNG Upload Dialog */}
+      {figmaModalOpen && (
+        <div className="figma-modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setFigmaModalOpen(false) }}>
+          <div className="figma-modal-dialog">
+            {/* Header */}
+            <div className="figma-modal-header">
+              <div className="figma-modal-title-wrap">
+                <div className="figma-logo-badge">
+                  <img src={figmaIcon} alt="Figma" width="18" height="18" style={{ objectFit: 'contain' }} />
+                </div>
+                <div>
+                  <h3>Figma Reference</h3>
+                  <p>Attach live app URL, local PNG, or pull from Monday.com</p>
+                </div>
+              </div>
+              <button className="figma-modal-close-btn" onClick={() => setFigmaModalOpen(false)}>
+                ✕
+              </button>
+            </div>
+
+            {/* Segmented Control Tabs */}
+            <div className="figma-tabs-bar">
+              <button
+                className={`figma-tab-btn ${figmaModalTab === 'live' ? 'active' : ''}`}
+                onClick={() => setFigmaModalTab('live')}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <span>Live Web URL</span>
+              </button>
+
+              <button
+                className={`figma-tab-btn ${figmaModalTab === 'png' ? 'active' : ''}`}
+                onClick={() => setFigmaModalTab('png')}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <span>PNG Image</span>
+              </button>
+
+              <button
+                className={`figma-tab-btn ${figmaModalTab === 'monday' ? 'active' : ''}`}
+                onClick={() => {
+                  setFigmaModalTab('monday')
+                  loadMondayTicketsForPicker()
+                }}
+              >
+                <img src={mondayIcon} alt="Monday" width="14" height="14" style={{ objectFit: 'contain' }} />
+                <span>Monday Ticket</span>
+              </button>
+            </div>
+
+            {/* Tab 1: Live Web URL */}
+            {figmaModalTab === 'live' && (
+              <div className="figma-tab-content">
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#a1a1aa', display: 'block', marginBottom: 8 }}>
+                  FIGMA LIVE APP WEB URL
+                </label>
+                <div className="figma-input-wrap">
+                  <svg className="figma-input-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <input
+                    type="url"
+                    className="figma-input-field"
+                    placeholder="https://figma.com/file/... or https://figma.com/design/..."
+                    value={figmaInputVal}
+                    onChange={(e) => setFigmaInputVal(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveFigmaModal()}
+                    autoFocus
+                  />
+                </div>
+                <p style={{ fontSize: 11, color: '#71717a', marginTop: 8 }}>
+                  Renders an interactive live Figma file preview on the left side of your workspace.
+                </p>
+              </div>
+            )}
+
+            {/* Tab 2: PNG Image */}
+            {figmaModalTab === 'png' && (
+              <div className="figma-tab-content">
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#a1a1aa', display: 'block', marginBottom: 8 }}>
+                  UPLOAD FIGMA DESIGN SCREENSHOT (PNG / WEBP)
+                </label>
+                
+                <label className="figma-dropzone" style={{ display: 'block' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.5" style={{ marginBottom: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e7' }}>
+                    {figmaImage ? 'Change Attached PNG Reference' : 'Click or Drag PNG Image Here'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>Supports PNG, JPEG, WEBP files</div>
+
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = (evt) => {
+                        const dataUrl = evt.target?.result as string
+                        if (dataUrl) {
+                          setFigmaImage(dataUrl)
+                          setFigmaViewMode('png')
+                          setFigmaCardDismissed(false)
+                          setOverlayMode('side-by-side')
+                        }
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                </label>
+
+                {figmaImage && (
+                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>✓ PNG Image Attached</span>
+                    </div>
+                    <button
+                      onClick={() => setFigmaImage(null)}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+                    >
+                      Remove PNG
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab 3: Monday Ticket */}
+            {figmaModalTab === 'monday' && (
+              <div className="figma-tab-content">
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#a1a1aa', display: 'block', marginBottom: 8 }}>
+                  PULL FIGMA REFERENCE FROM MONDAY TICKET
+                </label>
+                
+                {/* Search Bar with Auto-Focus */}
+                <div style={{ position: 'relative', marginBottom: 10 }}>
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#a1a1aa"
+                    strokeWidth="2"
+                    style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    type="text"
+                    className="figma-input-field"
+                    placeholder="Search tickets by project, board, or status..."
+                    value={mondaySearchQuery}
+                    onChange={(e) => setMondaySearchQuery(e.target.value)}
+                    style={{ paddingLeft: 32, paddingRight: mondaySearchQuery ? 28 : 10, height: 32, fontSize: 11 }}
+                    autoFocus
+                  />
+                  {mondaySearchQuery && (
+                    <button
+                      onClick={() => setMondaySearchQuery('')}
+                      style={{
+                        position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                        background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: 11
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                  {loadingMondayTickets ? (
+                    <div style={{ textAlign: 'center', padding: 14, color: '#a1a1aa', fontSize: 11 }}>Loading Monday tickets...</div>
+                  ) : filteredMondayTickets.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 14, color: '#a1a1aa', fontSize: 11 }}>
+                      {mondaySearchQuery ? `No tickets matching "${mondaySearchQuery}"` : 'No Monday tickets found with Figma links'}
+                    </div>
+                  ) : (
+                    filteredMondayTickets.map((t) => {
+                      const link = t.figmaUrl || t.otherLinks?.find(l => l.url.includes('figma.com'))?.url
+                      return (
+                        <div
+                          key={t.id}
+                          className="figma-ticket-item"
+                          onClick={() => {
+                            if (link) {
+                              setStoredFigmaUrl(link)
+                              setFigmaInputVal(link)
+                              localStorage.setItem('qa_figma_url', link)
+                              setFigmaViewMode('live')
+                              setFigmaCardDismissed(false)
+                              setOverlayMode('side-by-side')
+                            }
+                          }}
+                          style={{ opacity: link ? 1 : 0.4, cursor: link ? 'pointer' : 'not-allowed' }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: '#f4f4f5' }}>{t.name}</div>
+                            <div style={{ fontSize: 9, color: '#a1a1aa' }}>{t.boardName}</div>
+                          </div>
+                          <span style={{ fontSize: 10, color: link ? '#3b82f6' : '#71717a', fontWeight: 600 }}>
+                            {link ? 'Use Figma Link ↗' : 'No Figma Link'}
+                          </span>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Footer Buttons */}
+            <div className="figma-footer-actions">
+              {(storedFigmaUrl || figmaImage) && (
+                <button
+                  className="figma-btn-cancel"
+                  onClick={() => {
+                    clearFigmaModal()
+                    setFigmaImage(null)
+                  }}
+                  style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)', marginRight: 'auto' }}
+                >
+                  Remove Reference
+                </button>
+              )}
+              <button className="figma-btn-cancel" onClick={() => setFigmaModalOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="figma-btn-save"
+                onClick={() => {
+                  saveFigmaModal()
+                  setFigmaCardDismissed(false)
+                  setOverlayMode('side-by-side')
+                }}
+              >
+                Save & Inspect
               </button>
             </div>
           </div>

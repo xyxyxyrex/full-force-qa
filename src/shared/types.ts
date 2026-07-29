@@ -57,5 +57,7 @@ export interface ElectronAPI {
   }) => Promise<{ success: boolean; snapshot?: SnapshotItem; error?: string }>
   getSnapshots: (projectId: string) => Promise<SnapshotItem[]>
   deleteSnapshot: (snapshotId: string) => Promise<{ success: boolean }>
+  runGrammarSpellAudit: (items: Array<{ id: string; tag: string; text: string; index: number }>) => Promise<any>
+  onGlobalEscape: (callback: () => void) => () => void
 }
 

@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { runSeoAudit, type SeoAuditReport } from '../utils/seoAudit'
+import { runGrammarSpellAudit, type GrammarSpellReport, type TextIssue } from '../utils/grammarSpellAudit'
 import type { Editor } from 'grapesjs'
 import './SeoAuditRightPanel.css'
 
@@ -11,7 +12,7 @@ interface Props {
   iframeRef?: React.RefObject<HTMLIFrameElement>
 }
 
-type SectorKey = 'selected' | 'meta' | 'headers' | 'images' | 'links' | 'duplicates' | 'assets'
+type SectorKey = 'grammarSpell' | 'selected' | 'meta' | 'headers' | 'images' | 'links' | 'duplicates' | 'assets'
 
 export default function SeoAuditRightPanel({
   html,
@@ -21,6 +22,7 @@ export default function SeoAuditRightPanel({
   iframeRef
 }: Props) {
   const [openSectors, setOpenSectors] = useState<Record<SectorKey, boolean>>({
+    grammarSpell: true,
     selected: true,
     meta: true,
     headers: true,
@@ -31,17 +33,69 @@ export default function SeoAuditRightPanel({
   })
 
   const [copied, setCopied] = useState(false)
+  const [grammarFilter, setGrammarFilter] = useState<'all' | 'spelling' | 'grammar'>('all')
 
   const [auditOverlays, setAuditOverlays] = useState({
     showLinks: false,
     showAltText: false,
     showHrefs: false,
-    showHeadings: false
+    showHeadings: false,
+    showGrammarSpell: false
   })
 
   const toggleOverlay = (key: keyof typeof auditOverlays) => {
     setAuditOverlays((prev) => ({ ...prev, [key]: !prev[key] }))
   }
+
+  // Calculate SEO audit report
+  const report: SeoAuditReport = useMemo(() => {
+    return runSeoAudit(html, sourceUrl)
+  }, [html, sourceUrl])
+
+  const getIframeDoc = useCallback((): Document | null => {
+    if (iframeRef?.current?.contentDocument?.body) {
+      return iframeRef.current.contentDocument
+    }
+    if (editor && typeof editor.Canvas?.getDocument === 'function') {
+      const doc = editor.Canvas.getDocument()
+      if (doc && doc.body) return doc
+    }
+    const gjsIframe = document.querySelector('iframe.gjs-frame') as HTMLIFrameElement
+    if (gjsIframe?.contentDocument?.body) {
+      return gjsIframe.contentDocument
+    }
+    return null
+  }, [editor, iframeRef])
+
+  // Calculate Grammar & Spell Audit report (Harper.js + Hunspell)
+  const [grammarReport, setGrammarReport] = useState<GrammarSpellReport>(() => {
+    const targetDoc = getIframeDoc()
+    return runGrammarSpellAudit(targetDoc || html)
+  })
+
+  const runAuditScan = useCallback(() => {
+    const targetDoc = getIframeDoc()
+    const content = targetDoc || (editor ? editor.getHtml() : html)
+    import('../utils/grammarSpellAudit').then(({ runGrammarSpellAuditAsync }) => {
+      runGrammarSpellAuditAsync(content).then((res) => {
+        if (res) {
+          setGrammarReport(res)
+        }
+      })
+    })
+  }, [html, editor, getIframeDoc])
+
+  useEffect(() => {
+    runAuditScan()
+    const timer = setInterval(runAuditScan, 3000)
+    return () => clearInterval(timer)
+  }, [runAuditScan])
+
+  const filteredGrammarIssues = useMemo(() => {
+    if (grammarFilter === 'spelling') return grammarReport.issues.filter((i) => i.type === 'spelling')
+    if (grammarFilter === 'grammar') return grammarReport.issues.filter((i) => i.type === 'grammar')
+    return grammarReport.issues
+  }, [grammarReport, grammarFilter])
 
   // ── Canvas Overlay Injector (Targeting Native Preview IFRAME) ─────────────
   useEffect(() => {
@@ -79,8 +133,8 @@ export default function SeoAuditRightPanel({
       const oldContainer = iframeDoc.getElementById('__audit-overlay-container')
       if (oldContainer) oldContainer.remove()
 
-      const { showLinks, showAltText, showHrefs, showHeadings } = auditOverlays
-      if (!showLinks && !showAltText && !showHrefs && !showHeadings) return
+      const { showLinks, showAltText, showHrefs, showHeadings, showGrammarSpell } = auditOverlays
+      if (!showLinks && !showAltText && !showHrefs && !showHeadings && !showGrammarSpell) return
 
       const win = iframeDoc.defaultView || window
       const scrollX = win.scrollX || 0
@@ -155,6 +209,23 @@ export default function SeoAuditRightPanel({
           drawBadge(h, `${tag}: ${snippet}`, '#f59e0b', '#000000')
         })
       }
+
+      // 5. Show Grammar & Spell Overlays
+      if (showGrammarSpell) {
+        const textElements = Array.from(
+          iframeDoc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, button, td, th, label, div')
+        )
+        grammarReport.issues.forEach((issue) => {
+          const targetEl = textElements[issue.elementIndex] as HTMLElement
+          if (targetEl) {
+            drawBadge(
+              targetEl,
+              `${issue.type.toUpperCase()}: ${issue.wordOrPhrase}`,
+              issue.type === 'spelling' ? '#ef4444' : '#f59e0b'
+            )
+          }
+        })
+      }
     }
 
     updateOverlays()
@@ -174,12 +245,57 @@ export default function SeoAuditRightPanel({
         if (c) c.remove()
       }
     }
-  }, [auditOverlays, editor, html, iframeRef])
+  }, [auditOverlays, editor, html, iframeRef, grammarReport])
 
-  // Calculate SEO audit report
-  const report: SeoAuditReport = useMemo(() => {
-    return runSeoAudit(html, sourceUrl)
-  }, [html, sourceUrl])
+  // Scroll to and highlight issue element inside live iframe DOM
+  const scrollToAndHighlightIssue = (issue: TextIssue) => {
+    let iframeDoc: Document | null = null
+    if (iframeRef?.current?.contentDocument?.body) {
+      iframeDoc = iframeRef.current.contentDocument
+    } else if (editor && typeof editor.Canvas?.getDocument === 'function') {
+      iframeDoc = editor.Canvas.getDocument()
+    }
+
+    if (!iframeDoc || !iframeDoc.body) return
+
+    const textElements = Array.from(
+      iframeDoc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, button, td, th, label, div')
+    ).filter((el) => {
+      const tag = el.tagName.toLowerCase()
+      if (tag === 'script' || tag === 'style' || tag === 'svg') return false
+      const text = (el.textContent || '').trim()
+      return text.length > 2
+    })
+
+    let targetEl = textElements[issue.elementIndex] as HTMLElement
+    if (!targetEl || !(targetEl.textContent || '').includes(issue.wordOrPhrase)) {
+      targetEl = Array.from(iframeDoc.body.querySelectorAll(issue.elementTag)).find(
+        (el) => (el.textContent || '').includes(issue.wordOrPhrase)
+      ) as HTMLElement
+    }
+
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+      const origOutline = targetEl.style.outline
+      const origBoxShadow = targetEl.style.boxShadow
+      const origTransition = targetEl.style.transition
+
+      targetEl.style.transition = 'all 0.2s ease-in-out'
+      targetEl.style.outline = '2px solid #ef4444'
+      targetEl.style.boxShadow = '0 0 16px rgba(239, 68, 68, 0.75)'
+
+      setTimeout(() => {
+        targetEl.style.outline = origOutline
+        targetEl.style.boxShadow = origBoxShadow
+        targetEl.style.transition = origTransition
+      }, 2500)
+
+      if (editor) {
+        selectElementOnCanvas(targetEl)
+      }
+    }
+  }
 
   const toggleSector = (sector: SectorKey) => {
     setOpenSectors((prev) => ({ ...prev, [sector]: !prev[sector] }))
@@ -329,10 +445,126 @@ export default function SeoAuditRightPanel({
               <path d="M4 12h8m-8-6v12m8-12v12m5-6h3" />
             </svg>
           </button>
+
+          <button
+            className={`seo-overlay-btn ${auditOverlays.showGrammarSpell ? 'active' : ''}`}
+            onClick={() => toggleOverlay('showGrammarSpell')}
+            title="Show Grammar & Spell Overlays"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          </button>
         </div>
       </div>
 
       <div className="seo-sectors-wrap">
+
+        {/* ── Sector: Grammar & Spell Checker ─────────────────────── */}
+        <div className="seo-sector">
+          <div className="sector-header" onClick={() => toggleSector('grammarSpell')}>
+            <span className="arrow-icon">{openSectors.grammarSpell ? '▼' : '►'}</span>
+            <span className="sector-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>GRAMMAR & SPELL CHECK ({grammarReport.totalIssues})</span>
+                <button
+                  style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    runAuditScan()
+                  }}
+                  title="Rescan page for grammar and spelling issues"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                  </svg>
+                </button>
+              </div>
+              {grammarReport.totalIssues > 0 && (
+                <span className="sector-badge-warn" style={{ background: 'rgba(239,68,68,0.18)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600 }}>
+                  {grammarReport.totalIssues} ISSUES
+                </span>
+              )}
+            </span>
+          </div>
+
+          {openSectors.grammarSpell && (
+            <div className="sector-content">
+              {/* Filter Sub-Tabs */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <button
+                  style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'all' ? '#3f3f46' : 'transparent', color: grammarFilter === 'all' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'all' ? 600 : 400 }}
+                  onClick={() => setGrammarFilter('all')}
+                >
+                  All ({grammarReport.totalIssues})
+                </button>
+                <button
+                  style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'spelling' ? '#3f3f46' : 'transparent', color: grammarFilter === 'spelling' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'spelling' ? 600 : 400 }}
+                  onClick={() => setGrammarFilter('spelling')}
+                >
+                  Spelling ({grammarReport.spellingCount})
+                </button>
+                <button
+                  style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'grammar' ? '#3f3f46' : 'transparent', color: grammarFilter === 'grammar' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'grammar' ? 600 : 400 }}
+                  onClick={() => setGrammarFilter('grammar')}
+                >
+                  Grammar ({grammarReport.grammarCount})
+                </button>
+              </div>
+
+              {filteredGrammarIssues.length === 0 ? (
+                <div className="text-muted" style={{ fontSize: 11, padding: '8px 0', textAlign: 'center' }}>No grammar or spelling issues found</div>
+              ) : (
+                <div className="list-stack">
+                  {filteredGrammarIssues.map((issue) => (
+                    <div
+                      key={issue.id}
+                      className="list-item-row"
+                      onClick={() => scrollToAndHighlightIssue(issue)}
+                      style={{ cursor: 'pointer', padding: '8px 10px', background: '#18181b', borderRadius: 4, marginBottom: 4, border: '1px solid rgba(255,255,255,0.06)' }}
+                      title="Click to scroll to and highlight this issue on canvas"
+                    >
+                      <div className="item-url-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span className="chip-badge" style={{ background: '#27272a', color: '#e4e4e7', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>{issue.elementTag}</span>
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 600,
+                              padding: '1px 5px',
+                              borderRadius: 4,
+                              textTransform: 'uppercase',
+                              background: issue.type === 'spelling' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                              color: issue.type === 'spelling' ? '#fca5a5' : '#fcd34d',
+                              border: issue.type === 'spelling' ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(245,158,11,0.3)'
+                            }}
+                          >
+                            {issue.type}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 10, color: '#a1a1aa' }}>Locate ↗</span>
+                      </div>
+
+                      <div className="item-text" style={{ fontSize: 11, color: '#f4f4f5', fontWeight: 600, marginBottom: 2 }}>
+                        "{issue.wordOrPhrase}"
+                      </div>
+                      
+                      <div style={{ fontSize: 10, color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <span>{issue.message}</span>
+                        {issue.suggestion && (
+                          <span style={{ color: '#10b981', fontWeight: 600 }}>
+                            • Suggest: "{issue.suggestion}"
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ── Sector: Selected Element Inspector ────────────────────── */}
         {selectedInfo && (
