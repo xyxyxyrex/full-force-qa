@@ -1,6 +1,7 @@
 import { Workbook } from '@fortune-sheet/react'
 import '@fortune-sheet/react/dist/index.css'
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import type { Project, SnapshotItem } from '../../../shared/types'
 import { initEditor, loadMissingFonts } from '../grapesjs/init'
 import { attachLiveEditor } from '../utils/liveEditorBridge'
 import type { Editor } from 'grapesjs'
@@ -79,6 +80,7 @@ function getGoogleSheetsEmbedUrl(rawUrl: string): string {
 interface Props {
   html: string
   sourceUrl: string
+  project?: Project | null
   onReset: () => void
   onNewCapture: () => void
 }
@@ -219,6 +221,7 @@ const ZOOM_STEP = 10
 export default function EditorWorkspace({
   html,
   sourceUrl,
+  project,
   onReset,
   onNewCapture
 }: Props) {
@@ -410,19 +413,23 @@ export default function EditorWorkspace({
   const isSelectingRef = useRef(false)
   const selectingFromNativeRef = useRef(false)
 
-  // ── Figma Design Overlay state (persists across reopens via localStorage) ─
+  // ── Design / Snapshot Overlay state ──
   const [overlayImage, setOverlayImageState] = useState<string | null>(() => localStorage.getItem('qa_figma_overlay_image') || null)
+  const [overlayLabel, setOverlayLabelState] = useState<string>(() => localStorage.getItem('qa_overlay_label') || 'Figma Design')
   const [overlayOpacity, setOverlayOpacity] = useState<number>(() => Number(localStorage.getItem('qa_figma_overlay_opacity')) || 50)
   const [overlayVisible, setOverlayVisible] = useState<boolean>(() => localStorage.getItem('qa_figma_overlay_visible') !== 'false')
   const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>(() => (localStorage.getItem('qa_figma_overlay_mode') as any) || 'overlay')
   const [overlayPanelOpen, setOverlayPanelOpen] = useState(false)
 
-  const setOverlayImage = useCallback((img: string | null) => {
+  const setOverlayImage = useCallback((img: string | null, label: string = 'Figma Design') => {
     setOverlayImageState(img)
+    setOverlayLabelState(label)
     if (img) {
       localStorage.setItem('qa_figma_overlay_image', img)
+      localStorage.setItem('qa_overlay_label', label)
     } else {
       localStorage.removeItem('qa_figma_overlay_image')
+      localStorage.removeItem('qa_overlay_label')
     }
   }, [])
 
@@ -437,8 +444,244 @@ export default function EditorWorkspace({
   useEffect(() => {
     localStorage.setItem('qa_figma_overlay_mode', overlayMode)
   }, [overlayMode])
+
+  // ── Snapshots State & Helper Functions ─────────────
+  const activeProjectId = project?.id || (sourceUrl ? new URL(sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`).hostname.replace(/^www\./, '') : 'default_project')
+  const [snapshots, setSnapshots] = useState<SnapshotItem[]>([])
+  const [snapshotCategoryFilter, setSnapshotCategoryFilter] = useState<'all' | 'desktop' | 'tablet' | 'phone' | 'custom'>('all')
+  const [snapshotsExpanded, setSnapshotsExpanded] = useState(true)
+  const [snapshotDropdownOpen, setSnapshotDropdownOpen] = useState(false)
+  const [snapshotCreating, setSnapshotCreating] = useState(false)
+  const [snapshotNotice, setSnapshotNotice] = useState<string | null>(null)
+  const snapshotDropdownRef = useRef<HTMLDivElement>(null)
+
+  const [selectedMultiBreakpoints, setSelectedMultiBreakpoints] = useState<string[]>([
+    'Desktop (1920×1200)',
+    'iPad Air',
+    'iPhone 12 Pro'
+  ])
+  const [batchToast, setBatchToast] = useState<{ active: boolean; message: string; isComplete?: boolean } | null>(null)
+
+  const getSnapshotCategory = (snap: SnapshotItem): 'desktop' | 'tablet' | 'phone' | 'custom' => {
+    const w = snap.viewportWidth || 1920
+    if (w >= 1024) return 'desktop'
+    if (w >= 600 && w < 1024) return 'tablet'
+    if (w === 390 || w === 430 || w === 412 || w === 360 || w === 375 || w === 414 || w < 600) return 'phone'
+    return 'custom'
+  }
+
+  const loadSnapshots = useCallback(async () => {
+    try {
+      const list = await window.electronAPI.getSnapshots(activeProjectId)
+      if (Array.isArray(list)) setSnapshots(list)
+    } catch (err) {
+      console.error('Failed to load snapshots:', err)
+    }
+  }, [activeProjectId])
+
+  useEffect(() => {
+    loadSnapshots()
+  }, [loadSnapshots])
+
+  const formatSnapshotDate = (timestamp?: number | string) => {
+    if (!timestamp) return ''
+    const d = new Date(timestamp)
+    if (isNaN(d.getTime())) return ''
+
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    const isToday = d.toDateString() === now.toDateString()
+
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    const isYesterday = d.toDateString() === yesterday.toDateString()
+
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+    if (isToday) return `Today, ${timeStr}`
+    if (isYesterday) return `Yesterday, ${timeStr}`
+    if (diffDays >= 2 && diffDays < 7) {
+      const dayName = d.toLocaleDateString([], { weekday: 'short' })
+      return `${dayName}, ${timeStr}`
+    }
+
+    const isSameYear = d.getFullYear() === now.getFullYear()
+    if (isSameYear) {
+      const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+      return `${monthDay}, ${timeStr}`
+    }
+
+    const fullDate = d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+    return fullDate
+  }
+
+  const formatSnapshotTitle = (snap: SnapshotItem) => {
+    const dims = (snap.viewportWidth && snap.viewportHeight)
+      ? `${snap.viewportWidth}x${snap.viewportHeight}`
+      : `${vpWidth}x${vpHeight}`
+
+    const dateFormatted = formatSnapshotDate(snap.timestamp || (snap as any).createdAt)
+    if (dateFormatted) {
+      return `${dims} • ${dateFormatted}`
+    }
+
+    let title = snap.title || ''
+    if (/^(Image|HTML)\s+Snapshot\s+/i.test(title)) {
+      const rawTime = title.replace(/^(Image|HTML)\s+Snapshot\s+/i, '').trim()
+      const minimalTime = rawTime.replace(/(\d{1,2}:\d{2}):\d{2}\s*([AP]M)?/i, '$1 $2').trim()
+      return `${dims} • ${minimalTime}`
+    }
+    return title || dims
+  }
+
+  const handleCreateSnapshot = async (type: 'image' | 'html') => {
+    setSnapshotCreating(true)
+    setSnapshotDropdownOpen(false)
+    setBatchToast({
+      active: true,
+      message: `Capturing ${type === 'image' ? 'Visual Image' : 'Interactive HTML'} Snapshot (${vpWidth}×${vpHeight})...`
+    })
+    console.log('[Snapshot Debug - Renderer] Starting snapshot creation:', { type, vpWidth, vpHeight, liveUrl, sourceUrl, activeProjectId })
+    try {
+      const targetUrl = liveUrl || sourceUrl
+      const currentHtml = liveIframeRef.current?.contentDocument?.documentElement?.outerHTML || html
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+      const res = await window.electronAPI.createSnapshot({
+        projectId: activeProjectId,
+        url: targetUrl,
+        type,
+        title: `${vpWidth}x${vpHeight} • ${timeStr}`,
+        viewportWidth: vpWidth,
+        viewportHeight: vpHeight,
+        htmlContent: type === 'html' ? currentHtml : undefined
+      })
+      console.log('[Snapshot Debug - Renderer] Received IPC result:', res)
+      if (res.success && res.snapshot) {
+        setSnapshots((prev) => [res.snapshot!, ...prev])
+        if (res.snapshot.type === 'image' && res.snapshot.dataUrl) {
+          const cat = getSnapshotCategory(res.snapshot)
+          setSnapshotCategoryFilter(cat)
+          setOverlayImage(res.snapshot.dataUrl, 'Site Snapshot')
+          setOverlayVisible(true)
+        }
+        setBatchToast({
+          active: true,
+          message: `✓ Snapshot Saved (${res.snapshot.fileSizeFormatted})`,
+          isComplete: true
+        })
+      } else {
+        setBatchToast({
+          active: true,
+          message: `⚠ Error: ${res.error || 'Failed to create snapshot'}`,
+          isComplete: true
+        })
+      }
+    } catch (err: any) {
+      console.error('[Snapshot Debug - Renderer] Exception in handleCreateSnapshot:', err)
+      setBatchToast({
+        active: true,
+        message: `⚠ Failed: ${err.message || 'Error'}`,
+        isComplete: true
+      })
+    } finally {
+      setSnapshotCreating(false)
+      setTimeout(() => setBatchToast(null), 4000)
+    }
+  }
+
+  const handleCaptureMultiBreakpoints = async () => {
+    if (selectedMultiBreakpoints.length === 0) return
+    setSnapshotCreating(true)
+    setSnapshotDropdownOpen(false)
+
+    const targets = DEVTOOLS_PRESETS.filter((p) => selectedMultiBreakpoints.includes(p.name))
+    const total = targets.length
+
+    setBatchToast({
+      active: true,
+      message: `Starting Multi-Device Snapshot (${total} Breakpoints)...`
+    })
+
+    try {
+      const targetUrl = liveUrl || sourceUrl
+      let successCount = 0
+
+      for (let i = 0; i < total; i++) {
+        const item = targets[i]
+        setBatchToast({
+          active: true,
+          message: `Capturing Breakpoints [${i + 1}/${total}]: ${item.name} (${item.w}×${item.h})...`
+        })
+
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        const res = await window.electronAPI.createSnapshot({
+          projectId: activeProjectId,
+          url: targetUrl,
+          type: 'image',
+          title: `${item.w}x${item.h} • ${timeStr}`,
+          viewportWidth: item.w,
+          viewportHeight: item.h
+        })
+
+        if (res.success && res.snapshot && res.snapshot.dataUrl) {
+          successCount++
+          setSnapshots((prev) => [res.snapshot!, ...prev])
+          const cat = getSnapshotCategory(res.snapshot)
+          setSnapshotCategoryFilter(cat)
+          setOverlayImage(res.snapshot.dataUrl, 'Site Snapshot')
+          setOverlayVisible(true)
+        }
+
+        await new Promise((r) => setTimeout(r, 300))
+      }
+
+      setBatchToast({
+        active: true,
+        message: `✓ Multi-Device Snapshot Complete! ${successCount} Breakpoints Saved.`,
+        isComplete: true
+      })
+    } catch (err: any) {
+      setBatchToast({
+        active: true,
+        message: `⚠ Multi-Snapshot Error: ${err.message || 'Failed'}`,
+        isComplete: true
+      })
+    } finally {
+      setSnapshotCreating(false)
+      setTimeout(() => setBatchToast(null), 5000)
+    }
+  }
+
+  const handleDeleteSnapshot = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation()
+    await window.electronAPI.deleteSnapshot(id)
+    setSnapshots((prev) => prev.filter((s) => s.id !== id))
+  }
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClose = (e: MouseEvent) => {
+      if (snapshotDropdownRef.current && !snapshotDropdownRef.current.contains(e.target as Node)) {
+        setSnapshotDropdownOpen(false)
+      }
+      if (overlayDropdownRef.current && !overlayDropdownRef.current.contains(e.target as Node)) {
+        setOverlayPanelOpen(false)
+      }
+      if (snapshotPanelDropdownRef.current && !snapshotPanelDropdownRef.current.contains(e.target as Node)) {
+        setSnapshotPanelOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', handleClose)
+    return () => window.removeEventListener('mousedown', handleClose)
+  }, [])
+
   const overlayFileRef = useRef<HTMLInputElement>(null)
   const overlayDropdownRef = useRef<HTMLDivElement>(null)
+  const [snapshotPanelOpen, setSnapshotPanelOpen] = useState(false)
+  const snapshotPanelDropdownRef = useRef<HTMLDivElement>(null)
   const [iframeScrollY, setIframeScrollY] = useState(0)
 
   const nativeDomSnapshotsRef = useRef<string[]>([])
@@ -541,11 +784,16 @@ export default function EditorWorkspace({
       }
     }
 
-    // Also size the native overlay iframe
+    // Also size the native overlay iframe and live webview wrapper
     const nativeFrame = liveIframeRef.current
     if (nativeFrame) {
       nativeFrame.style.width = `${w}px`
       nativeFrame.style.height = `${h}px`
+    }
+    const liveWrap = liveWebviewRef.current?.parentElement
+    if (liveWrap) {
+      liveWrap.style.width = `${w}px`
+      liveWrap.style.height = `${h}px`
     }
   }, [])
 
@@ -597,24 +845,38 @@ export default function EditorWorkspace({
     if (sourceUrl) setLiveUrl(sourceUrl)
   }, [sourceUrl])
 
+  const liveWebviewRef = useRef<any>(null)
+
   const handleLiveBack = useCallback(() => {
-    const iframe = liveIframeRef.current
-    if (iframe && iframe.contentWindow) {
-      try { iframe.contentWindow.history.back() } catch {}
+    if (liveWebviewRef.current && typeof liveWebviewRef.current.goBack === 'function') {
+      try { liveWebviewRef.current.goBack() } catch {}
+    } else {
+      const iframe = liveIframeRef.current
+      if (iframe && iframe.contentWindow) {
+        try { iframe.contentWindow.history.back() } catch {}
+      }
     }
   }, [])
 
   const handleLiveForward = useCallback(() => {
-    const iframe = liveIframeRef.current
-    if (iframe && iframe.contentWindow) {
-      try { iframe.contentWindow.history.forward() } catch {}
+    if (liveWebviewRef.current && typeof liveWebviewRef.current.goForward === 'function') {
+      try { liveWebviewRef.current.goForward() } catch {}
+    } else {
+      const iframe = liveIframeRef.current
+      if (iframe && iframe.contentWindow) {
+        try { iframe.contentWindow.history.forward() } catch {}
+      }
     }
   }, [])
 
   const handleLiveReload = useCallback(() => {
-    const iframe = liveIframeRef.current
-    if (iframe && iframe.contentWindow) {
-      try { iframe.contentWindow.location.reload() } catch {}
+    if (liveWebviewRef.current && typeof liveWebviewRef.current.reload === 'function') {
+      try { liveWebviewRef.current.reload() } catch {}
+    } else {
+      const iframe = liveIframeRef.current
+      if (iframe && iframe.contentWindow) {
+        try { iframe.contentWindow.location.reload() } catch {}
+      }
     }
   }, [])
 
@@ -625,11 +887,33 @@ export default function EditorWorkspace({
       target = 'https://' + target
     }
     setLiveUrl(target)
-    const iframe = liveIframeRef.current
-    if (iframe) {
-      iframe.src = target
+    if (liveWebviewRef.current && typeof liveWebviewRef.current.loadURL === 'function') {
+      try { liveWebviewRef.current.loadURL(target) } catch {}
+    } else {
+      const iframe = liveIframeRef.current
+      if (iframe) {
+        iframe.src = target
+      }
     }
   }, [])
+
+  useEffect(() => {
+    const webview = liveWebviewRef.current
+    if (!webview) return
+
+    const handleNav = (e: any) => {
+      if (e.url) setLiveUrl(e.url)
+    }
+
+    webview.addEventListener('did-navigate', handleNav)
+    webview.addEventListener('did-navigate-in-page', handleNav)
+    return () => {
+      try {
+        webview.removeEventListener('did-navigate', handleNav)
+        webview.removeEventListener('did-navigate-in-page', handleNav)
+      } catch {}
+    }
+  }, [workspaceTab])
 
   // ── Compute CSS rules for selected element (DevTools-style) ──
   const refreshCssRules = useCallback((el: HTMLElement | null) => {
@@ -1271,6 +1555,12 @@ export default function EditorWorkspace({
       nativeWrap.style.transformOrigin = 'top left'
       nativeWrap.style.transition = 'none'
     }
+    const liveWrap = liveWebviewRef.current?.parentElement
+    if (liveWrap) {
+      liveWrap.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel / 100})`
+      liveWrap.style.transformOrigin = 'top left'
+      liveWrap.style.transition = 'none'
+    }
     const frameEl = editorRef.current?.Canvas?.getFrameEl()
     const wrapperEl = frameEl?.parentElement || (document.querySelector('.gjs-frame-wrapper') as HTMLElement)
     if (wrapperEl) {
@@ -1363,6 +1653,7 @@ export default function EditorWorkspace({
             isSpacePressedRef.current = true
             document.body.style.cursor = 'grab'
             liveEditorRef.current?.setPaused(true)
+            if (liveWebviewRef.current) liveWebviewRef.current.style.pointerEvents = 'none'
           }
         }
       }
@@ -1387,6 +1678,7 @@ export default function EditorWorkspace({
         isSpacePressedRef.current = false
         document.body.style.cursor = ''
         liveEditorRef.current?.setPaused(false)
+        if (liveWebviewRef.current) liveWebviewRef.current.style.pointerEvents = ''
       }
     }
 
@@ -1418,6 +1710,7 @@ export default function EditorWorkspace({
     document.body.style.cursor = 'grabbing'
     liveEditorRef.current?.setPaused(true)
     if (liveIframeRef.current) liveIframeRef.current.style.pointerEvents = 'none'
+    if (liveWebviewRef.current) liveWebviewRef.current.style.pointerEvents = 'none'
     const gFrame = editorRef.current?.Canvas?.getFrameEl()
     if (gFrame) gFrame.style.pointerEvents = 'none'
 
@@ -1433,6 +1726,7 @@ export default function EditorWorkspace({
       document.body.style.cursor = isSpacePressedRef.current ? 'grab' : ''
       if (!isSpacePressedRef.current) liveEditorRef.current?.setPaused(false)
       if (liveIframeRef.current) liveIframeRef.current.style.pointerEvents = ''
+      if (liveWebviewRef.current) liveWebviewRef.current.style.pointerEvents = ''
       const gf = editorRef.current?.Canvas?.getFrameEl()
       if (gf) gf.style.pointerEvents = ''
       window.removeEventListener('mousemove', onMove, true)
@@ -3224,39 +3518,12 @@ export default function EditorWorkspace({
 
               <div className="toolbar-divider" />
 
-              {/* Figma External Link & Overlay Controls */}
-              <button
-                className={`device-btn ${storedFigmaUrl ? 'active' : ''}`}
-                onClick={handleFigmaButtonClick}
-                onContextMenu={(e) => { e.preventDefault(); openFigmaModal() }}
-                title={
-                  storedFigmaUrl
-                    ? `Open Figma Link in Chrome: ${storedFigmaUrl} (Right-click to edit/clear link)`
-                    : `Add Figma Link (1-click open in Chrome)`
-                }
-                style={{ marginRight: 4 }}
-              >
-                <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
-              </button>
-
-              <button
-                className={`device-btn ${figmaSplitOpen ? 'active' : ''}`}
-                onClick={() => setFigmaSplitOpen((p) => !p)}
-                title="Toggle Live Figma Split View (Dev Mode & Measurements)"
-                style={{ marginRight: 4 }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="12" y1="3" x2="12" y2="21" />
-                </svg>
-              </button>
-
-              {/* Figma Design Overlay */}
+              {/* Figma Design Overlay Dropdown */}
               <div className="ruler-dropdown-wrap" ref={overlayDropdownRef}>
                 <button
-                  className={`device-btn ${overlayImage ? 'active' : ''}`}
-                  onClick={() => setOverlayPanelOpen((p) => !p)}
-                  title="Design Overlay (Ctrl+V to paste from Figma)"
+                  className={`device-btn ${overlayImage && overlayLabel === 'Figma Design' ? 'active' : ''}`}
+                  onClick={() => { setOverlayPanelOpen((p) => !p); setSnapshotPanelOpen(false); }}
+                  title="Figma Design Overlay (Ctrl+V to paste Figma image)"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="2" y="2" width="9" height="9" rx="1" />
@@ -3266,27 +3533,30 @@ export default function EditorWorkspace({
                   </svg>
                 </button>
                 {overlayPanelOpen && (
-                  <div className="ruler-dropdown overlay-dropdown" style={{ minWidth: 250 }}>
+                  <div className="ruler-dropdown overlay-dropdown" style={{ minWidth: 260 }}>
+                    <div style={{ padding: '4px 10px 6px', fontSize: 11, fontWeight: 600, color: '#ffffff', borderBottom: '1px solid #27272a', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <img src={figmaIcon} alt="" width="14" height="14" />
+                      <span>Figma Design Overlay</span>
+                    </div>
                     <button
                       className="ruler-dd-item"
-                      style={{ background: figmaSplitOpen ? '#0284c7' : '#27272a', color: '#ffffff', fontWeight: 600, padding: '8px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                      style={{ background: figmaSplitOpen ? '#0284c7' : '#27272a', color: '#ffffff', fontWeight: 600, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
                       onClick={() => { setFigmaSplitOpen((p) => !p); setOverlayPanelOpen(false); }}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                         <line x1="12" y1="3" x2="12" y2="21" />
                       </svg>
-                      <span>{figmaSplitOpen ? 'Close Live Figma Split' : 'Live Figma Split Panel ⚡'}</span>
+                      <span>{figmaSplitOpen ? 'Close Live Figma Split' : 'Live Figma Split Panel'}</span>
                     </button>
-                    <div className="ruler-dd-divider" />
                     {storedFigmaUrl ? (
                       <>
                         <button
                           className="ruler-dd-item"
-                          style={{ color: '#ffffff', fontWeight: 500, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                          style={{ color: '#ffffff', fontWeight: 500, padding: '6px 10px', borderRadius: 6, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}
                           onClick={() => window.electronAPI.openExternal(storedFigmaUrl)}
                         >
-                          <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
+                          <img src={figmaIcon} alt="Figma" width="14" height="14" style={{ objectFit: 'contain', filter: 'grayscale(100%)', opacity: 0.7 }} />
                           <span>Open Figma in Chrome ↗</span>
                         </button>
                         <button
@@ -3296,49 +3566,46 @@ export default function EditorWorkspace({
                         >
                           Edit / Change Figma Link
                         </button>
+                      </>
+                    ) : (
+                      <button
+                        className="ruler-dd-item"
+                        style={{ color: '#3b82f6', fontWeight: 600, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                        onClick={openFigmaModal}
+                      >
+                        <img src={figmaIcon} alt="Figma" width="14" height="14" style={{ objectFit: 'contain' }} />
+                        <span>+ Add Figma Link</span>
+                      </button>
+                    )}
+                    <div className="ruler-dd-divider" />
+                    {!overlayImage || overlayLabel !== 'Figma Design' ? (
+                      <>
+                        <div className="overlay-dd-hint">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+                            <rect x="2" y="2" width="9" height="9" rx="1" />
+                            <rect x="13" y="13" width="9" height="9" rx="1" />
+                            <path d="M13 2h4a3 3 0 0 1 3 3v4" />
+                            <path d="M2 13v4a3 3 0 0 0 3 3h4" />
+                          </svg>
+                          <span>Copy a layer as PNG in Figma,<br/>then <strong>Ctrl + V</strong> here</span>
+                        </div>
                         <div className="ruler-dd-divider" />
+                        <button
+                          className="ruler-dd-item"
+                          onClick={() => overlayFileRef.current?.click()}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                          Upload Image...
+                        </button>
                       </>
                     ) : (
                       <>
-                        <button
-                          className="ruler-dd-item"
-                          style={{ color: '#3b82f6', fontWeight: 600, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
-                          onClick={openFigmaModal}
-                        >
-                          <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
-                          <span>+ Add Figma Link</span>
-                        </button>
-                        <div className="ruler-dd-divider" />
-                      </>
-                    )}
-                          {!overlayImage ? (
-                            <>
-                              <div className="overlay-dd-hint">
-                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
-                                  <rect x="2" y="2" width="9" height="9" rx="1" />
-                                  <rect x="13" y="13" width="9" height="9" rx="1" />
-                                  <path d="M13 2h4a3 3 0 0 1 3 3v4" />
-                                  <path d="M2 13v4a3 3 0 0 0 3 3h4" />
-                                </svg>
-                                <span>Copy a layer as PNG in Figma,<br/>then <strong>Ctrl + V</strong> here</span>
-                              </div>
-                              <div className="ruler-dd-divider" />
-                              <button
-                                className="ruler-dd-item"
-                                onClick={() => overlayFileRef.current?.click()}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                  <polyline points="17 8 12 3 7 8" />
-                                  <line x1="12" y1="3" x2="12" y2="15" />
-                                </svg>
-                                Upload Image...
-                              </button>
-                            </>
-                          ) : (
-                      <>
                         <div className="overlay-dd-preview">
-                          <img src={overlayImage} alt="Design overlay" />
+                          <img src={overlayImage} alt="Figma design overlay" />
                         </div>
                         <div className="ruler-dd-divider" />
 
@@ -3397,20 +3664,203 @@ export default function EditorWorkspace({
                           className="ruler-dd-item ruler-dd-danger"
                           onClick={removeOverlay}
                         >
-                          Remove Overlay
+                          Remove Figma Overlay
                         </button>
                       </>
                     )}
                   </div>
                 )}
-                <input
-                  ref={overlayFileRef}
-                  type="file"
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  onChange={handleOverlayFileUpload}
-                />
               </div>
+
+              {/* Separate Site Snapshot Comparison Dropdown Button */}
+              <div className="ruler-dropdown-wrap" ref={snapshotPanelDropdownRef}>
+                <button
+                  className={`device-btn ${overlayImage && overlayLabel === 'Site Snapshot' ? 'active' : ''}`}
+                  onClick={() => { setSnapshotPanelOpen((p) => !p); setOverlayPanelOpen(false); }}
+                  title="Compare Site Snapshots (Side-by-Side, Overlay, Diff)"
+                  style={{ marginLeft: 4 }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="3" width="9" height="18" rx="2" />
+                    <rect x="13" y="3" width="9" height="18" rx="2" />
+                    <path d="M6 8h1M6 12h1M17 8h1M17 12h1" strokeWidth="2" />
+                  </svg>
+                </button>
+                {snapshotPanelOpen && (
+                  <div className="ruler-dropdown overlay-dropdown" style={{ minWidth: 280 }}>
+                    <div style={{ padding: '4px 10px 6px', fontSize: 11, fontWeight: 600, color: '#ffffff', borderBottom: '1px solid #27272a', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                      <span>Site Snapshot Comparison</span>
+                    </div>
+
+                    {snapshots.filter((s) => s.type === 'image' && s.dataUrl).length > 0 ? (
+                      <>
+                        {/* 5 Monotone Icon Device Category Tabs */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '2px 4px 6px', borderBottom: '1px solid #27272a', marginBottom: 6 }}>
+                          {[
+                            { key: 'all', label: 'All', icon: null },
+                            { key: 'desktop', label: 'Desktop', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
+                            { key: 'tablet', label: 'Tablet', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="12" y1="18" x2="12.01" y2="18" strokeWidth="2.5" /></svg> },
+                            { key: 'phone', label: 'Phone', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="2" width="12" height="20" rx="2" /><line x1="12" y1="18" x2="12.01" y2="18" strokeWidth="2.5" /></svg> },
+                            { key: 'custom', label: 'Custom', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg> }
+                          ].map(({ key, label, icon }) => {
+                            const count = snapshots.filter((s) => s.type === 'image' && s.dataUrl && (key === 'all' || getSnapshotCategory(s) === key)).length
+                            const isSelected = snapshotCategoryFilter === key
+                            return (
+                              <button
+                                key={key}
+                                onClick={() => setSnapshotCategoryFilter(key as any)}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 3,
+                                  padding: '4px 2px',
+                                  borderRadius: 4,
+                                  fontSize: 9.5,
+                                  fontWeight: isSelected ? 600 : 400,
+                                  background: isSelected ? '#27272a' : 'transparent',
+                                  color: isSelected ? '#ffffff' : '#a1a1aa',
+                                  border: isSelected ? '1px solid #3f3f46' : '1px solid transparent',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.12s ease'
+                                }}
+                                title={`${label} snapshots (${count})`}
+                              >
+                                {icon}
+                                <span>{label}</span>
+                                {count > 0 && <span style={{ fontSize: 8.5, opacity: 0.75 }}>({count})</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+
+                        <div style={{ padding: '2px 10px 4px', fontSize: 9.5, color: '#a1a1aa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                          Select Snapshot ({snapshots.filter((s) => s.type === 'image' && s.dataUrl && (snapshotCategoryFilter === 'all' || getSnapshotCategory(s) === snapshotCategoryFilter)).length}):
+                        </div>
+                        <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 4 }}>
+                          {snapshots
+                            .filter((s) => s.type === 'image' && s.dataUrl && (snapshotCategoryFilter === 'all' || getSnapshotCategory(s) === snapshotCategoryFilter))
+                            .map((snap) => (
+                              <button
+                                key={snap.id}
+                                className="ruler-dd-item"
+                                style={{
+                                  color: '#ffffff',
+                                  fontSize: 11,
+                                  padding: '6px 10px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  background: overlayImage === snap.dataUrl ? 'rgba(76, 139, 245, 0.2)' : 'transparent',
+                                  borderRadius: 4
+                                }}
+                                onClick={() => {
+                                  setOverlayImage(snap.dataUrl!, 'Site Snapshot')
+                                  setOverlayVisible(true)
+                                }}
+                              >
+                                <span style={{ maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.85 }}>
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <polyline points="21 15 16 10 5 21" />
+                                  </svg>
+                                  <span>{formatSnapshotTitle(snap)}</span>
+                                </span>
+                                <span style={{ fontSize: 9, color: '#a1a1aa', flexShrink: 0 }}>{snap.fileSizeFormatted}</span>
+                              </button>
+                            ))}
+                          {snapshots.filter((s) => s.type === 'image' && s.dataUrl && (snapshotCategoryFilter === 'all' || getSnapshotCategory(s) === snapshotCategoryFilter)).length === 0 && (
+                            <div style={{ padding: '12px 10px', textAlign: 'center', fontSize: 10, color: '#71717a' }}>
+                              No snapshots in <strong>{snapshotCategoryFilter}</strong> category.
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="overlay-dd-hint" style={{ padding: '12px 10px' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.5 }}>
+                          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                          <circle cx="12" cy="13" r="4" />
+                        </svg>
+                        <span>No image snapshots yet.<br/>Use <strong>Create Snapshot</strong> to capture one.</span>
+                      </div>
+                    )}
+
+                    {overlayImage && overlayLabel === 'Site Snapshot' && (
+                      <>
+                        <div className="ruler-dd-divider" />
+                        <div className="overlay-dd-preview">
+                          <img src={overlayImage} alt="Site snapshot comparison" />
+                        </div>
+                        <div className="ruler-dd-divider" />
+
+                        <div className="overlay-dd-control">
+                          <label>Opacity</label>
+                          <div className="overlay-slider-row">
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={overlayOpacity}
+                              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+                              className="overlay-slider"
+                            />
+                            <span className="overlay-slider-val">{overlayOpacity}%</span>
+                          </div>
+                        </div>
+
+                        <div className="ruler-dd-divider" />
+
+                        <div className="overlay-dd-control">
+                          <label>Mode</label>
+                          <div className="overlay-mode-switcher">
+                            {(['overlay', 'side-by-side', 'diff'] as const).map((m) => (
+                              <button
+                                key={m}
+                                className={`overlay-mode-btn ${overlayMode === m ? 'active' : ''}`}
+                                onClick={() => setOverlayMode(m)}
+                              >
+                                {m === 'overlay' ? 'Overlay' : m === 'side-by-side' ? 'Side' : 'Diff'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="ruler-dd-divider" />
+
+                        <label className="ruler-dd-item ruler-dd-check">
+                          <input
+                            type="checkbox"
+                            checked={overlayVisible}
+                            onChange={(e) => setOverlayVisible(e.target.checked)}
+                          />
+                          <span>Visible</span>
+                        </label>
+
+                        <div className="ruler-dd-divider" />
+
+                        <button
+                          className="ruler-dd-item ruler-dd-danger"
+                          onClick={removeOverlay}
+                        >
+                          Remove Snapshot Comparison
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <input
+                ref={overlayFileRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleOverlayFileUpload}
+              />
 
               <div className="toolbar-divider" />
 
@@ -3472,19 +3922,62 @@ export default function EditorWorkspace({
         </div>
       </div>
 
+      {/* Floating Bottom Status Toast Notification */}
+      {batchToast?.active && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99999,
+            background: batchToast.isComplete ? '#18181b' : '#09090b',
+            color: '#ffffff',
+            border: batchToast.isComplete ? '1px solid #22c55e' : '1px solid #3b82f6',
+            borderRadius: 8,
+            padding: '10px 18px',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.01em'
+          }}
+        >
+          {!batchToast.isComplete ? (
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                border: '2px solid rgba(59, 130, 246, 0.3)',
+                borderTopColor: '#3b82f6',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite'
+              }}
+            />
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+          <span>{batchToast.message}</span>
+        </div>
+      )}
+
       {/* ── Editor body (Canvas stays central, right panel switches between Layout tools & SEO Audit tools) ──────── */}
       <div className="editor-body">
         {leftPanelOpen && workspaceTab !== 'live' && (
           <div className="editor-panel panel-left" style={{ width: leftPanelWidth }}>
             {/* Collapsible Layers Section */}
             <div className={`accordion-section ${layersExpanded ? 'expanded' : 'collapsed'}`}>
-              <div className="accordion-header">
-                <div
-                  className="accordion-header-left"
-                  onClick={() => setLayersExpanded((p) => !p)}
-                  title="Click to toggle Layers"
-                  style={{ cursor: 'pointer' }}
-                >
+              <div
+                className="accordion-header"
+                onClick={() => setLayersExpanded((p) => !p)}
+                title="Click anywhere to toggle Layers"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+              >
+                <div className="accordion-header-left">
                   <svg
                     className={`accordion-chevron ${layersExpanded ? 'open' : ''}`}
                     width="12"
@@ -3530,15 +4023,111 @@ export default function EditorWorkspace({
               )}
             </div>
 
+            {/* Collapsible Snapshots Section */}
+            <div className={`accordion-section ${snapshotsExpanded ? 'expanded' : 'collapsed'}`}>
+              <div
+                className="accordion-header"
+                onClick={() => setSnapshotsExpanded((p) => !p)}
+                title="Click anywhere to toggle Snapshots"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+              >
+                <div className="accordion-header-left">
+                  <svg
+                    className={`accordion-chevron ${snapshotsExpanded ? 'open' : ''}`}
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  <span className="accordion-title">Snapshots</span>
+                </div>
+                <span className="accordion-badge">{snapshots.length}</span>
+              </div>
+
+              {snapshotsExpanded && (
+                <div className="accordion-content snapshots-content" style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {snapshots.length > 0 ? (
+                    snapshots.map((snap) => (
+                      <div
+                        key={snap.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '6px 8px',
+                          borderRadius: 4,
+                          background: overlayImage === snap.dataUrl ? 'rgba(76, 139, 245, 0.18)' : '#1e1e1e',
+                          border: overlayImage === snap.dataUrl ? '1px solid rgba(76, 139, 245, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => {
+                          if (snap.dataUrl) {
+                            setOverlayImage(snap.dataUrl, 'Site Snapshot')
+                            setOverlayVisible(true)
+                          }
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.8 }}>
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <polyline points="21 15 16 10 5 21" />
+                          </svg>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {formatSnapshotTitle(snap)}
+                            </div>
+                            <div style={{ fontSize: 9.5, color: '#a1a1aa' }}>{snap.fileSizeFormatted}</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => handleDeleteSnapshot(snap.id, e)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#71717a',
+                            cursor: 'pointer',
+                            padding: 2,
+                            borderRadius: 3,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                          title="Delete snapshot"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ padding: '12px 8px', textAlign: 'center', fontSize: 10.5, color: '#71717a' }}>
+                      No snapshots captured yet.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Collapsible CSS Inspector Section */}
             <div className={`accordion-section ${cssExpanded ? 'expanded' : 'collapsed'}`}>
-              <div className="accordion-header">
-                <div
-                  className="accordion-header-left"
-                  onClick={() => setCssExpanded((p) => !p)}
-                  title="Click to toggle CSS Inspector"
-                  style={{ cursor: 'pointer' }}
-                >
+              <div
+                className="accordion-header"
+                onClick={() => setCssExpanded((p) => !p)}
+                title="Click anywhere to toggle Styles"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+              >
+                <div className="accordion-header-left">
                   <svg
                     className={`accordion-chevron ${cssExpanded ? 'open' : ''}`}
                     width="12"
@@ -3685,6 +4274,8 @@ export default function EditorWorkspace({
                 </div>
               )}
             </div>
+
+
           </div>
         )}
         {leftPanelOpen && (
@@ -3695,7 +4286,7 @@ export default function EditorWorkspace({
         <div className="editor-canvas-wrap" ref={canvasWrapRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           {/* Top Canvas Viewport area */}
           <div className="canvas-viewport-area" style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar) */}
+            {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar, Create Snapshot) */}
             {workspaceTab === 'live' && (
               <div
                 className="live-browser-navbar"
@@ -3709,7 +4300,8 @@ export default function EditorWorkspace({
                   zIndex: 20
                 }}
               >
-                <div style={{ display: 'flex', gap: '4px' }}>
+                {/* Left navigation controls: Back, Forward, Reload */}
+                <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                   <button
                     className="device-btn"
                     onClick={handleLiveBack}
@@ -3743,6 +4335,7 @@ export default function EditorWorkspace({
                   </button>
                 </div>
 
+                {/* Middle: URL Input bar */}
                 <div
                   style={{
                     flex: 1,
@@ -3775,6 +4368,220 @@ export default function EditorWorkspace({
                       outline: 'none'
                     }}
                   />
+                </div>
+
+                {/* Far Right: Sleek Monotone White/Black Create Snapshot Split Button */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }} ref={snapshotDropdownRef}>
+                  <button
+                    className="create-snapshot-white-btn"
+                    onClick={() => handleCreateSnapshot('image')}
+                    disabled={snapshotCreating}
+                    title="Create Visual Image Snapshot of page"
+                    style={{
+                      background: '#ffffff',
+                      color: '#09090b',
+                      fontWeight: 600,
+                      fontSize: 12,
+                      padding: '0 14px',
+                      height: 28,
+                      width: 'auto',
+                      minWidth: 'auto',
+                      borderRadius: '6px 0 0 6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      border: 'none',
+                      cursor: snapshotCreating ? 'wait' : 'pointer',
+                      whiteSpace: 'nowrap',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#09090b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                      <circle cx="12" cy="13" r="4" />
+                    </svg>
+                    <span>{snapshotCreating ? 'Capturing...' : 'Create Snapshot'}</span>
+                  </button>
+                  <button
+                    className="create-snapshot-arrow-btn"
+                    onClick={() => setSnapshotDropdownOpen((p) => !p)}
+                    disabled={snapshotCreating}
+                    title="Select Snapshot Mode"
+                    style={{
+                      background: '#e4e4e7',
+                      color: '#09090b',
+                      width: 24,
+                      minWidth: 24,
+                      height: 28,
+                      padding: 0,
+                      borderRadius: '0 6px 6px 0',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: 'none',
+                      borderLeft: '1px solid #d4d4d8',
+                      cursor: snapshotCreating ? 'wait' : 'pointer',
+                      flexShrink: 0
+                    }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#09090b" strokeWidth="2">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+
+                  {snapshotDropdownOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        marginTop: 4,
+                        width: 290,
+                        background: '#18181b',
+                        border: '1px solid #3f3f46',
+                        borderRadius: 8,
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                        zIndex: 100,
+                        padding: 8
+                      }}
+                    >
+                      <div style={{ padding: '2px 4px 6px', fontSize: 10.5, fontWeight: 700, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Snapshot Mode:
+                      </div>
+
+                      <button
+                        className="ruler-dd-item"
+                        onClick={() => handleCreateSnapshot('image')}
+                        style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 8px', borderRadius: 4 }}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginTop: 2, flexShrink: 0 }}>
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 11, color: '#ffffff' }}>Visual Image Snapshot</div>
+                          <div style={{ fontSize: 9.5, color: '#a1a1aa' }}>Current Viewport ({vpWidth}×{vpHeight})</div>
+                        </div>
+                      </button>
+
+                      <button
+                        className="ruler-dd-item"
+                        onClick={() => handleCreateSnapshot('html')}
+                        style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 8px', borderRadius: 4 }}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginTop: 2, flexShrink: 0 }}>
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 11, color: '#ffffff' }}>Interactive HTML Snapshot</div>
+                          <div style={{ fontSize: 9.5, color: '#a1a1aa' }}>Preserves interactive DOM elements & code</div>
+                        </div>
+                      </button>
+
+                      <div className="ruler-dd-divider" style={{ margin: '8px 0' }} />
+
+                      {/* Multi-Breakpoints Batch Section */}
+                      <div style={{ padding: '2px 4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+                          Multi-Device Breakpoints
+                        </span>
+                        <span style={{ fontSize: 9, color: '#a1a1aa' }}>({selectedMultiBreakpoints.length} selected)</span>
+                      </div>
+
+                      {/* Quick Selection Pills */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '2px 4px 6px' }}>
+                        {[
+                          { label: 'All', fn: () => setSelectedMultiBreakpoints(DEVTOOLS_PRESETS.map((p) => p.name)) },
+                          { label: 'Desktop', fn: () => setSelectedMultiBreakpoints(DEVTOOLS_PRESETS.filter((p) => (p.w >= 1024)).map((p) => p.name)) },
+                          { label: 'Tablet', fn: () => setSelectedMultiBreakpoints(DEVTOOLS_PRESETS.filter((p) => (p.w >= 600 && p.w < 1024)).map((p) => p.name)) },
+                          { label: 'Mobile', fn: () => setSelectedMultiBreakpoints(DEVTOOLS_PRESETS.filter((p) => (p.w < 600)).map((p) => p.name)) },
+                          { label: 'Clear', fn: () => setSelectedMultiBreakpoints([]) }
+                        ].map(({ label, fn }) => (
+                          <button
+                            key={label}
+                            onClick={fn}
+                            style={{
+                              padding: '2px 5px',
+                              fontSize: 8.5,
+                              fontWeight: 600,
+                              background: '#27272a',
+                              color: '#d4d4d8',
+                              border: '1px solid #3f3f46',
+                              borderRadius: 3,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div style={{ maxHeight: 150, overflowY: 'auto', padding: '2px 4px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {DEVTOOLS_PRESETS.map((preset) => {
+                          const isChecked = selectedMultiBreakpoints.includes(preset.name)
+                          return (
+                            <label
+                              key={preset.name}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '3px 6px',
+                                borderRadius: 4,
+                                background: isChecked ? 'rgba(76, 139, 245, 0.15)' : 'transparent',
+                                cursor: 'pointer',
+                                fontSize: 10.5,
+                                color: '#e4e4e7'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedMultiBreakpoints((prev) => [...prev, preset.name])
+                                    } else {
+                                      setSelectedMultiBreakpoints((prev) => prev.filter((n) => n !== preset.name))
+                                    }
+                                  }}
+                                />
+                                <span>{preset.name}</span>
+                              </div>
+                              <span style={{ fontSize: 9, color: '#a1a1aa' }}>{preset.w}×{preset.h}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+
+                      <button
+                        onClick={handleCaptureMultiBreakpoints}
+                        disabled={selectedMultiBreakpoints.length === 0 || snapshotCreating}
+                        style={{
+                          marginTop: 8,
+                          width: '100%',
+                          padding: '6px 10px',
+                          background: selectedMultiBreakpoints.length > 0 ? '#3b82f6' : '#27272a',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: selectedMultiBreakpoints.length > 0 ? 'pointer' : 'not-allowed',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+                        <span>Capture Selected Breakpoints ({selectedMultiBreakpoints.length})</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -3893,8 +4700,18 @@ export default function EditorWorkspace({
                 {/* GrapesJS canvas — hidden behind native iframe, provides style manager/layers/selectors */}
                 <div className="editor-canvas" ref={containerRef} style={{ opacity: 0, pointerEvents: 'none', position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
 
-                {/* Native overlay iframe — renders captured HTML 100% natively via Chromium */}
-                <div className="native-canvas-wrap" style={{ position: 'relative', width: vpWidth, height: vpHeight, margin: '0 auto', overflow: 'hidden' }}>
+                {/* Native overlay iframe — renders captured HTML 100% natively for Layout & Audit tabs */}
+                <div
+                  className="native-canvas-wrap"
+                  style={{
+                    position: 'relative',
+                    width: vpWidth,
+                    height: vpHeight,
+                    margin: '0 auto',
+                    overflow: 'hidden',
+                    display: workspaceTab === 'live' ? 'none' : 'block'
+                  }}
+                >
                   <iframe
                     ref={liveIframeRef}
                     srcDoc={html}
@@ -3910,6 +4727,33 @@ export default function EditorWorkspace({
                     title="Native page preview"
                   />
                 </div>
+
+                {/* Independent Live Browser Webview — dedicated clean instance for Live tab */}
+                {workspaceTab === 'live' && (
+                  <div
+                    className="live-browser-wrap"
+                    style={{
+                      position: 'relative',
+                      width: `${vpWidth}px`,
+                      height: `${vpHeight}px`,
+                      margin: '0 auto',
+                      overflow: 'hidden',
+                      background: '#fff'
+                    }}
+                  >
+                    <webview
+                      ref={liveWebviewRef}
+                      src={liveUrl || sourceUrl}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        border: 'none',
+                        background: '#fff'
+                      }}
+                      allowpopups={true}
+                    />
+                  </div>
+                )}
 
                 {/* Figma Design Overlay — positioned to match iframe */}
                 {overlayImage && overlayVisible && canvasFrame && overlayMode === 'overlay' && (
@@ -3943,7 +4787,7 @@ export default function EditorWorkspace({
                       height: canvasFrame.height,
                     }}
                   >
-                    <div className="figma-overlay-side-label">Figma Design</div>
+                    <div className="figma-overlay-side-label">{overlayLabel}</div>
                     <img
                       src={overlayImage}
                       alt=""

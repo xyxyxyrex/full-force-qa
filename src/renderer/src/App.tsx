@@ -311,6 +311,7 @@ export default function App() {
                   key={tab.snapshotKey}
                   html={tab.snapshotHtml}
                   sourceUrl={tab.captureUrl}
+                  project={tab.activeProject}
                   onReset={handleReset}
                   onNewCapture={goToDashboard}
                 />

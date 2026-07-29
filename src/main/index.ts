@@ -4,6 +4,7 @@ import { join } from 'path'
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
 import { getProjects, saveProject, deleteProject } from './store'
+import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager'
 import type { Project, CaptureResult } from '../shared/types'
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
@@ -446,6 +447,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle('projects:list', () => getProjects())
   ipcMain.handle('projects:save', (_event, project: Project) => saveProject(project))
   ipcMain.handle('projects:delete', (_event, id: string) => deleteProject(id))
+
+  // Snapshots: CRUD
+  ipcMain.handle('snapshot:create', (_event, params) => createSnapshot(params))
+  ipcMain.handle('snapshot:list', (_event, projectId: string) => getSnapshots(projectId))
+  ipcMain.handle('snapshot:delete', (_event, snapshotId: string) => deleteSnapshot(snapshotId))
 }
 
 app.whenReady().then(() => {

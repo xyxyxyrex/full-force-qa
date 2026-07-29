@@ -383,7 +383,7 @@
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .panel-right {
@@ -394,12 +394,17 @@
 .accordion-section {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  flex: 0 0 auto;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .accordion-section.expanded {
-  flex: 1;
+  flex: 0 0 auto;
+}
+
+.accordion-section.expanded .accordion-content {
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .right-panel-accordion {
@@ -1512,7 +1517,7 @@
   width: 100%;
   height: auto;
   display: block;
-  object-fit: contain;
+  object-fit: fill;
   object-position: top left;
 }
 
@@ -1856,5 +1861,20 @@
 
 .panel-dock-btn.dock-bottom:hover {
   transform: translateX(-50%) scale(1.02);
+}
+
+/* Create Snapshot Monotone White Button */
+.create-snapshot-white-btn {
+  width: auto !important;
+  min-width: auto !important;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.create-snapshot-white-btn:hover {
+  background: #f4f4f5 !important;
+}
+
+.create-snapshot-arrow-btn:hover {
+  background: #d4d4d8 !important;
 }
 

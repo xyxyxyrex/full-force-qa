@@ -20,6 +20,20 @@ export interface Project {
   deletedAt?: number
 }
 
+export interface SnapshotItem {
+  id: string
+  projectId: string
+  title: string
+  type: 'image' | 'html'
+  timestamp: number
+  fileSizeBytes: number
+  fileSizeFormatted: string
+  dataUrl?: string
+  url: string
+  viewportWidth?: number
+  viewportHeight?: number
+}
+
 export interface ElectronAPI {
   login: (adminUrl: string) => Promise<void>
   mondayLogin: () => Promise<{ success: boolean; token?: string; error?: string }>
@@ -31,4 +45,17 @@ export interface ElectronAPI {
   openDetachedWindow: (url: string, title?: string) => Promise<void>
   figmaLoginWindow: (url?: string) => Promise<void>
   toggleMaximizeWindow: () => Promise<void>
+  createSnapshot: (params: {
+    projectId: string
+    url: string
+    type: 'image' | 'html'
+    title?: string
+    htmlContent?: string
+    dataUrl?: string
+    viewportWidth?: number
+    viewportHeight?: number
+  }) => Promise<{ success: boolean; snapshot?: SnapshotItem; error?: string }>
+  getSnapshots: (projectId: string) => Promise<SnapshotItem[]>
+  deleteSnapshot: (snapshotId: string) => Promise<{ success: boolean }>
 }
+

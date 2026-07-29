@@ -281,57 +281,53 @@ export default function SeoAuditRightPanel({
         </div>
       </div>
 
-      {/* ── Canvas Overlays Toggle Buttons (Layout Icon System) ────── */}
+      {/* ── Canvas Overlays Toggle Buttons (Icon-Only System) ────── */}
       <div className="seo-overlay-toggles-bar">
         <div className="seo-toggle-bar-title">Canvas Overlays</div>
         <div className="seo-toggle-btn-group">
           <button
             className={`seo-overlay-btn ${auditOverlays.showLinks ? 'active' : ''}`}
             onClick={() => toggleOverlay('showLinks')}
-            title="Show all link URLs overlay on canvas"
+            title="Show Links"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
-            <span>Show Links</span>
           </button>
 
           <button
             className={`seo-overlay-btn ${auditOverlays.showAltText ? 'active' : ''}`}
             onClick={() => toggleOverlay('showAltText')}
-            title="Show image ALT text and missing ALTs on canvas"
+            title="Show Alt Text"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
               <circle cx="8.5" cy="8.5" r="1.5" />
               <polyline points="21 15 16 10 5 21" />
             </svg>
-            <span>Show Alt Text</span>
           </button>
 
           <button
             className={`seo-overlay-btn ${auditOverlays.showHrefs ? 'active' : ''}`}
             onClick={() => toggleOverlay('showHrefs')}
-            title="Show button hrefs and click targets on canvas"
+            title="Show Hrefs"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="12" r="6" />
               <circle cx="12" cy="12" r="2" />
             </svg>
-            <span>Show Hrefs</span>
           </button>
 
           <button
             className={`seo-overlay-btn ${auditOverlays.showHeadings ? 'active' : ''}`}
             onClick={() => toggleOverlay('showHeadings')}
-            title="Show heading tag hierarchy (H1-H6) on canvas"
+            title="Show Headings"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 12h8m-8-6v12m8-12v12m5-6h3" />
             </svg>
-            <span>Show Headings</span>
           </button>
         </div>
       </div>
