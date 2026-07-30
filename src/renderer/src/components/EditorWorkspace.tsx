@@ -334,6 +334,11 @@ export default function EditorWorkspace({
     const trimmed = figmaInputVal.trim()
     localStorage.setItem('qa_figma_url', trimmed)
     setStoredFigmaUrl(trimmed)
+    setFigmaCardDismissed(false)
+    setFigmaSplitOpen(true)
+    setFigmaViewMode('live')
+    setOverlayMode('side-by-side')
+    setOverlayVisible(true)
     setFigmaModalOpen(false)
   }
 
@@ -2131,8 +2136,15 @@ export default function EditorWorkspace({
           if (!blob) return
           const reader = new FileReader()
           reader.onload = () => {
-            setOverlayImage(reader.result as string)
+            const imgData = reader.result as string
+            setFigmaImage(imgData)
+            setOverlayImageState(imgData)
+            setOverlayLabelState('Figma Design')
+            setFigmaCardDismissed(false)
+            setFigmaSplitOpen(true)
+            setFigmaViewMode('png')
             setOverlayVisible(true)
+            setOverlayMode('side-by-side')
             setOverlayPanelOpen(true)
           }
           reader.readAsDataURL(blob)
@@ -2143,7 +2155,7 @@ export default function EditorWorkspace({
 
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [])
+  }, [setFigmaImage])
 
   // Figma overlay file upload handler
   const handleOverlayFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2151,8 +2163,15 @@ export default function EditorWorkspace({
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
-      setOverlayImage(reader.result as string)
+      const imgData = reader.result as string
+      setFigmaImage(imgData)
+      setOverlayImageState(imgData)
+      setOverlayLabelState('Figma Design')
+      setFigmaCardDismissed(false)
+      setFigmaSplitOpen(true)
+      setFigmaViewMode('png')
       setOverlayVisible(true)
+      setOverlayMode('side-by-side')
       setOverlayPanelOpen(true)
     }
     reader.readAsDataURL(file)

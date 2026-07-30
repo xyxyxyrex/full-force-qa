@@ -7,7 +7,7 @@ app.commandLine.appendSwitch('lang', 'en-US')
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
 import { getProjects, saveProject, deleteProject } from './store'
-import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager'
+import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
 import type { Project, CaptureResult } from '../shared/types'
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
@@ -208,16 +208,16 @@ function registerIpcHandlers(): void {
 
       loginWindow.webContents.on('did-navigate', async (_e, url) => {
         if (url.includes('wp-admin') && !url.includes('wp-login')) {
-          try { await session.defaultSession.cookies.flushStore() } catch {}
+          try { await session.defaultSession.cookies.flushStore() } catch { }
           setTimeout(async () => {
-            try { await session.defaultSession.cookies.flushStore() } catch {}
+            try { await session.defaultSession.cookies.flushStore() } catch { }
             if (!loginWindow.isDestroyed()) loginWindow.close()
           }, 1000)
         }
       })
 
       loginWindow.on('closed', async () => {
-        try { await session.defaultSession.cookies.flushStore() } catch {}
+        try { await session.defaultSession.cookies.flushStore() } catch { }
         resolve()
       })
     })
@@ -257,10 +257,10 @@ function registerIpcHandlers(): void {
         if (url.includes('figma.com/file') || url.includes('figma.com/design') || url.includes('figma.com/files') || url.includes('figma.com/board')) {
           if (closeTimeout) clearTimeout(closeTimeout)
           closeTimeout = setTimeout(async () => {
-            try { await figmaSess.cookies.flushStore() } catch {}
+            try { await figmaSess.cookies.flushStore() } catch { }
             try {
               if (!loginWin.isDestroyed()) loginWin.close()
-            } catch {}
+            } catch { }
           }, 3000)
         }
       }
@@ -270,7 +270,7 @@ function registerIpcHandlers(): void {
 
       loginWin.on('closed', async () => {
         if (closeTimeout) clearTimeout(closeTimeout)
-        try { await figmaSess.cookies.flushStore() } catch {}
+        try { await figmaSess.cookies.flushStore() } catch { }
         resolve()
       })
     })
@@ -372,7 +372,7 @@ function registerIpcHandlers(): void {
               })
             }
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // 2. Hunspell Spelling Engine
@@ -406,7 +406,7 @@ function registerIpcHandlers(): void {
                 })
               }
             }
-          } catch (_) {}
+          } catch (_) { }
         })
       }
     }
@@ -549,13 +549,14 @@ function registerIpcHandlers(): void {
         console.error('[Monday Auth] Listen failed:', e)
       }
 
-      // Build OAuth authorization URL (omitting scope parameter so Monday uses pre-configured App scopes)
+      // Build OAuth authorization URL forcing existing account login
       const authUrl = new URL('https://auth.monday.com/oauth2/authorize')
       authUrl.searchParams.set('client_id', MONDAY_CLIENT_ID)
       authUrl.searchParams.set('redirect_uri', MONDAY_REDIRECT_URI)
       authUrl.searchParams.set('response_type', 'code')
       authUrl.searchParams.set('code_challenge', codeChallenge)
       authUrl.searchParams.set('code_challenge_method', 'S256')
+      authUrl.searchParams.set('force_existing_account', 'true')
 
       const url = authUrl.toString()
 
@@ -569,6 +570,7 @@ function registerIpcHandlers(): void {
         backgroundColor: '#1a1a1a',
         autoHideMenuBar: true,
         webPreferences: {
+          session: session.defaultSession,
           nodeIntegration: false,
           contextIsolation: true,
           webSecurity: false
@@ -580,6 +582,56 @@ function registerIpcHandlers(): void {
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
       )
 
+      // Auto-switch to Log In view whenever Monday attempts to navigate or load Sign Up page
+      const redirectIfSignUp = (targetUrl: string) => {
+        if (targetUrl.includes('/users/sign_up')) {
+          const loginUrl = targetUrl.replace('/users/sign_up', '/users/sign_in')
+          console.log('[Monday Auth] Intercepted /users/sign_up, redirecting to /users/sign_in:', loginUrl)
+          authWin?.loadURL(loginUrl).catch(() => { })
+          return true
+        }
+        return false
+      }
+
+      authWin.webContents.on('will-navigate', (event, navUrl) => {
+        if (redirectIfSignUp(navUrl)) {
+          event.preventDefault()
+        }
+      })
+
+      authWin.webContents.on('did-navigate', (_event, navUrl) => {
+        redirectIfSignUp(navUrl)
+      })
+
+      const injectLoginScript = () => {
+        authWin?.webContents.executeJavaScript(`
+          (() => {
+            try {
+              if (window.location.href.includes('/users/sign_up')) {
+                window.location.href = window.location.href.replace('/users/sign_up', '/users/sign_in');
+                return;
+              }
+              const textNodes = Array.from(document.querySelectorAll('a, button, span, div, p'));
+              const loginBtn = textNodes.find(el => {
+                const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+                return (text === 'log in' || text === 'login' || text.includes('already have an account')) && el.offsetParent !== null;
+              });
+              if (loginBtn) {
+                if (loginBtn.tagName === 'A' && loginBtn.href) {
+                  window.location.href = loginBtn.href;
+                } else if (typeof loginBtn.click === 'function') {
+                  console.log('[Monday Auth Helper] Auto clicking Log In link');
+                  loginBtn.click();
+                }
+              }
+            } catch(e) {}
+          })()
+        `).catch(() => { })
+      }
+
+      authWin.webContents.on('dom-ready', injectLoginScript)
+      authWin.webContents.on('did-finish-load', injectLoginScript)
+
       authWin.on('closed', () => {
         authWin = null
         if (!resolved) {
@@ -589,6 +641,9 @@ function registerIpcHandlers(): void {
           resolve({ success: false, error: 'Login window was closed' })
         }
       })
+
+      // Also open in system default browser for instant SSO if user is already logged into Monday in Chrome/Edge
+      shell.openExternal(url).catch(() => { })
 
       authWin.loadURL(url).catch((err) => {
         console.error('[Monday Auth] authWin loadURL error, falling back to default browser:', err)
