@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleMaximizeWindow(): Promise<void> {
     return ipcRenderer.invoke('app:toggleMaximizeWindow')
   },
+  selectSnapshotDirectory(): Promise<{ success: boolean; path?: string }> {
+    return ipcRenderer.invoke('settings:select-directory')
+  },
   createSnapshot(params: any): Promise<any> {
     return ipcRenderer.invoke('snapshot:create', params)
   },

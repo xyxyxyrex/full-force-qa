@@ -161,12 +161,140 @@ function getVerboseName(tag: string, id: string, classes: string[]): string {
   return result || tag || 'element'
 }
 
+function findGrapesComponentForNativeEl(wrapper: any, el: HTMLElement): any {
+  if (!wrapper || !el) return null
+
+  // 1. Try exact data-npath attribute
+  const npath = el.getAttribute('data-npath')
+  if (npath) {
+    try {
+      const found = wrapper.find(`[data-npath="${npath}"]`)?.[0]
+      if (found) return found
+    } catch {}
+  }
+
+  // 2. Try ID
+  if (el.id) {
+    try {
+      const found = wrapper.find(`#${CSS.escape(el.id)}`)?.[0]
+      if (found) return found
+    } catch {}
+  }
+
+  // Calculate sibling index among same-tag siblings in native DOM
+  const parentEl = el.parentElement
+  const sameTagSiblings = parentEl ? Array.from(parentEl.children).filter(c => c.tagName === el.tagName) : []
+  const sameTagIdx = sameTagSiblings.indexOf(el)
+
+  // 3. Try Tag + Classes
+  const tag = el.tagName.toLowerCase()
+  const classes = Array.from(el.classList).filter(c => c && !c.startsWith('__bd') && !c.startsWith('gjs')).map(c => `.${CSS.escape(c)}`).join('')
+  if (classes) {
+    try {
+      const candidates = wrapper.find(`${tag}${classes}`)
+      if (candidates && candidates.length > 0) {
+        const text = (el.innerText || '').trim().slice(0, 20)
+        if (text) {
+          const match = candidates.find((c: any) => {
+            const cText = (c.get('content') || '').trim()
+            return cText && (cText.includes(text) || text.includes(cText))
+          })
+          if (match) return match
+        }
+        const targetIdx = sameTagIdx >= 0 && sameTagIdx < candidates.length ? sameTagIdx : 0
+        return candidates[targetIdx]
+      }
+    } catch {}
+  }
+
+  // 4. Try Tag alone with sameTagIdx matching
+  try {
+    const candidates = wrapper.find(tag)
+    if (candidates && candidates.length > 0) {
+      const text = (el.innerText || '').trim().slice(0, 20)
+      if (text) {
+        const match = candidates.find((c: any) => {
+          const cText = (c.get('content') || '').trim()
+          return cText && (cText.includes(text) || text.includes(cText))
+        })
+        if (match) return match
+      }
+      const targetIdx = sameTagIdx >= 0 && sameTagIdx < candidates.length ? sameTagIdx : 0
+      return candidates[targetIdx]
+    }
+  } catch {}
+
+  return null
+}
+
+function findNativeElForGrapesComponent(doc: Document, comp: any): HTMLElement | null {
+  if (!doc || !comp) return null
+
+  // 1. Try exact data-npath attribute
+  const npath = comp.get ? comp.get('attributes')?.['data-npath'] : null
+  if (npath) {
+    try {
+      const found = doc.querySelector(`[data-npath="${npath}"]`) as HTMLElement
+      if (found) return found
+    } catch {}
+  }
+
+  // 2. Try ID
+  const attrs = comp.get ? comp.get('attributes') || {} : {}
+  if (attrs.id) {
+    try {
+      const found = doc.getElementById(attrs.id)
+      if (found) return found
+    } catch {}
+  }
+
+  // Get index among same-tag siblings in GrapesJS component tree
+  let compIdx = 0
+  if (comp.parent) {
+    const parent = comp.parent()
+    if (parent && parent.components) {
+      const sibs: any[] = []
+      parent.components().each((c: any) => {
+        if (c.get && c.get('tagName') === comp.get('tagName')) {
+          sibs.push(c)
+        }
+      })
+      compIdx = Math.max(0, sibs.indexOf(comp))
+    }
+  }
+
+  // 3. Try Tag + Classes
+  const tag = (comp.get('tagName') || 'div').toLowerCase()
+  const classes = comp.get('classes')?.toArray()?.map((c: any) => c.get ? c.get('name') : c) || []
+  if (classes.length > 0) {
+    const sel = `${tag}.${classes.map((c: string) => CSS.escape(c)).join('.')}`
+    try {
+      const candidates = doc.querySelectorAll(sel)
+      if (candidates.length > 0) {
+        const targetIdx = compIdx < candidates.length ? compIdx : 0
+        return candidates[targetIdx] as HTMLElement
+      }
+    } catch {}
+  }
+
+  // 4. Try Tag alone
+  try {
+    const candidates = doc.querySelectorAll(tag)
+    if (candidates.length > 0) {
+      const targetIdx = compIdx < candidates.length ? compIdx : 0
+      return candidates[targetIdx] as HTMLElement
+    }
+  } catch {}
+
+  return null
+}
+
 function updateLayersDisplayMode(editor: any, mode: 'minified' | 'verbose') {
   if (!editor) return
   const wrapper = editor.getWrapper()
   if (!wrapper) return
 
-  const processComponent = (comp: any) => {
+  const processComponent = (comp: any, depth = 0) => {
     const tag = (comp.get('tagName') || 'div').toLowerCase()
     const classes = comp.get('classes')?.toArray()?.map((c: any) => c.get ? c.get('name') : c) || []
     const id = comp.get('attributes')?.id || ''
@@ -177,12 +305,20 @@ function updateLayersDisplayMode(editor: any, mode: 'minified' | 'verbose') {
       comp.set('custom-name', getVerboseName(tag, id, classes))
     }
 
+    // Ensure element is visible in LayerManager
+    comp.set('layerable', true)
+
+    // Auto-expand top-level structural containers (main, header, section, wrapper)
+    if (depth <= 2 || ['main', 'header', 'section', 'body', 'wrapper', 'article'].includes(tag) || id.includes('page') || id.includes('main')) {
+      comp.set('open', true)
+    }
+
     if (comp.components) {
-      comp.components().each((child: any) => processComponent(child))
+      comp.components().each((child: any) => processComponent(child, depth + 1))
     }
   }
 
-  processComponent(wrapper)
+  processComponent(wrapper, 0)
 
   try {
     const lm = editor.LayerManager
@@ -231,8 +367,9 @@ export default function EditorWorkspace({
   sourceUrl,
   project,
   onReset,
-  onNewCapture
-}: Props) {
+  onNewCapture,
+  onOpenSettings
+}: Props & { onOpenSettings?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasWrapRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
@@ -254,7 +391,10 @@ export default function EditorWorkspace({
   const [loadingFonts, setLoadingFonts] = useState(false)
   const [fontsAttempted, setFontsAttempted] = useState(false)
 
-  const [storedFigmaUrl, setStoredFigmaUrl] = useState<string>(() => localStorage.getItem('qa_figma_url') || '')
+  // ── Snapshots & Project ID Scope ─────────────────
+  const activeProjectId = project?.id || (sourceUrl ? new URL(sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`).hostname.replace(/^www\./, '') : 'default_project')
+
+  const [storedFigmaUrl, setStoredFigmaUrl] = useState<string>(() => project?.figmaUrl || localStorage.getItem(`qa_${activeProjectId}_figma_url`) || '')
   const [figmaModalOpen, setFigmaModalOpen] = useState(false)
   const [figmaInputVal, setFigmaInputVal] = useState('')
   const [figmaModalTab, setFigmaModalTab] = useState<'live' | 'png' | 'monday'>('live')
@@ -326,13 +466,13 @@ export default function EditorWorkspace({
   }, [mondayTicketsList, mondaySearchQuery])
 
   const openFigmaModal = () => {
-    setFigmaInputVal(localStorage.getItem('qa_figma_url') || '')
+    setFigmaInputVal(project?.figmaUrl || localStorage.getItem(`qa_${activeProjectId}_figma_url`) || '')
     setFigmaModalOpen(true)
   }
 
   const saveFigmaModal = () => {
     const trimmed = figmaInputVal.trim()
-    localStorage.setItem('qa_figma_url', trimmed)
+    localStorage.setItem(`qa_${activeProjectId}_figma_url`, trimmed)
     setStoredFigmaUrl(trimmed)
     setFigmaCardDismissed(false)
     setFigmaSplitOpen(true)
@@ -340,13 +480,19 @@ export default function EditorWorkspace({
     setOverlayMode('side-by-side')
     setOverlayVisible(true)
     setFigmaModalOpen(false)
+    if (project) {
+      window.electronAPI.saveProject({ ...project, figmaUrl: trimmed })
+    }
   }
 
   const clearFigmaModal = () => {
-    localStorage.removeItem('qa_figma_url')
+    localStorage.removeItem(`qa_${activeProjectId}_figma_url`)
     setStoredFigmaUrl('')
     setFigmaInputVal('')
     setFigmaModalOpen(false)
+    if (project) {
+      window.electronAPI.saveProject({ ...project, figmaUrl: '' })
+    }
   }
 
   const handleFigmaButtonClick = () => {
@@ -385,15 +531,18 @@ export default function EditorWorkspace({
 
   // ── Bottom Sheet Tab & Google Sheets state ─────
   const [activeSheetTab, setActiveSheetTab] = useState<'mock' | 'google'>('mock')
-  const [googleSheetsUrl, setGoogleSheetsUrl] = useState(() => localStorage.getItem('qa_google_sheet_url') || '')
-  const [isEditingGoogleUrl, setIsEditingGoogleUrl] = useState(() => !localStorage.getItem('qa_google_sheet_url'))
+  const [googleSheetsUrl, setGoogleSheetsUrl] = useState(() => project?.googleSheetUrl || localStorage.getItem(`qa_${activeProjectId}_google_sheet_url`) || '')
+  const [isEditingGoogleUrl, setIsEditingGoogleUrl] = useState(() => !(project?.googleSheetUrl || localStorage.getItem(`qa_${activeProjectId}_google_sheet_url`)))
   const [tempGoogleUrl, setTempGoogleUrl] = useState(googleSheetsUrl)
 
   const handleSaveGoogleUrl = (urlToSave?: string) => {
     const target = (urlToSave !== undefined ? urlToSave : tempGoogleUrl).trim()
     setGoogleSheetsUrl(target)
-    localStorage.setItem('qa_google_sheet_url', target)
+    localStorage.setItem(`qa_${activeProjectId}_google_sheet_url`, target)
     setIsEditingGoogleUrl(false)
+    if (project) {
+      window.electronAPI.saveProject({ ...project, googleSheetUrl: target })
+    }
   }
 
   // Recalculate FortuneSheet grid layout whenever bottom sheet is opened or resized
@@ -493,16 +642,16 @@ export default function EditorWorkspace({
   const isSelectingRef = useRef(false)
   const selectingFromNativeRef = useRef(false)
 
-  // ── Design / Snapshot Overlay state ──
-  const [figmaImage, setFigmaImageState] = useState<string | null>(() => localStorage.getItem('qa_uploaded_figma_png') || null)
-  const [snapshotImage, setSnapshotImageState] = useState<string | null>(() => localStorage.getItem('qa_snapshot_overlay_image') || null)
-  const [snapshotLabel, setSnapshotLabelState] = useState<string>(() => localStorage.getItem('qa_snapshot_overlay_label') || 'Site Snapshot')
+  // ── Design / Snapshot Overlay state (project-scoped) ──
+  const [figmaImage, setFigmaImageState] = useState<string | null>(() => localStorage.getItem(`qa_${activeProjectId}_uploaded_figma_png`) || null)
+  const [snapshotImage, setSnapshotImageState] = useState<string | null>(() => localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_image`) || null)
+  const [snapshotLabel, setSnapshotLabelState] = useState<string>(() => localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_label`) || 'Site Snapshot')
 
   const [overlayImage, setOverlayImageState] = useState<string | null>(() => figmaImage || snapshotImage || null)
-  const [overlayLabel, setOverlayLabelState] = useState<string>(() => localStorage.getItem('qa_overlay_label') || 'Figma Design')
-  const [overlayOpacity, setOverlayOpacity] = useState<number>(() => Number(localStorage.getItem('qa_figma_overlay_opacity')) || 50)
-  const [overlayVisible, setOverlayVisible] = useState<boolean>(() => localStorage.getItem('qa_figma_overlay_visible') !== 'false')
-  const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>(() => (localStorage.getItem('qa_figma_overlay_mode') as any) || 'side-by-side')
+  const [overlayLabel, setOverlayLabelState] = useState<string>(() => localStorage.getItem(`qa_${activeProjectId}_overlay_label`) || 'Figma Design')
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(() => Number(localStorage.getItem(`qa_${activeProjectId}_figma_overlay_opacity`)) || 50)
+  const [overlayVisible, setOverlayVisible] = useState<boolean>(() => localStorage.getItem(`qa_${activeProjectId}_figma_overlay_visible`) !== 'false')
+  const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>(() => (localStorage.getItem(`qa_${activeProjectId}_figma_overlay_mode`) as any) || 'side-by-side')
   const [overlayPanelOpen, setOverlayPanelOpen] = useState(false)
   const [figmaCardDismissed, setFigmaCardDismissed] = useState(false)
   const [figmaViewMode, setFigmaViewMode] = useState<'live' | 'png'>('live')
@@ -510,23 +659,23 @@ export default function EditorWorkspace({
   const setFigmaImage = useCallback((img: string | null) => {
     setFigmaImageState(img)
     if (img) {
-      localStorage.setItem('qa_uploaded_figma_png', img)
+      localStorage.setItem(`qa_${activeProjectId}_uploaded_figma_png`, img)
     } else {
-      localStorage.removeItem('qa_uploaded_figma_png')
+      localStorage.removeItem(`qa_${activeProjectId}_uploaded_figma_png`)
     }
-  }, [])
+  }, [activeProjectId])
 
   const setSnapshotImage = useCallback((img: string | null, label: string = 'Site Snapshot') => {
     setSnapshotImageState(img)
     setSnapshotLabelState(label)
     if (img) {
-      localStorage.setItem('qa_snapshot_overlay_image', img)
-      localStorage.setItem('qa_snapshot_overlay_label', label)
+      localStorage.setItem(`qa_${activeProjectId}_snapshot_overlay_image`, img)
+      localStorage.setItem(`qa_${activeProjectId}_snapshot_overlay_label`, label)
     } else {
-      localStorage.removeItem('qa_snapshot_overlay_image')
-      localStorage.removeItem('qa_snapshot_overlay_label')
+      localStorage.removeItem(`qa_${activeProjectId}_snapshot_overlay_image`)
+      localStorage.removeItem(`qa_${activeProjectId}_snapshot_overlay_label`)
     }
-  }, [])
+  }, [activeProjectId])
 
   const setOverlayImage = useCallback((img: string | null, label: string = 'Figma Design') => {
     if (label === 'Figma Design') {
@@ -539,16 +688,39 @@ export default function EditorWorkspace({
   }, [setFigmaImage, setSnapshotImage])
 
   useEffect(() => {
-    localStorage.setItem('qa_figma_overlay_opacity', String(overlayOpacity))
-  }, [overlayOpacity])
+    localStorage.setItem(`qa_${activeProjectId}_figma_overlay_opacity`, String(overlayOpacity))
+  }, [activeProjectId, overlayOpacity])
 
   useEffect(() => {
-    localStorage.setItem('qa_figma_overlay_visible', String(overlayVisible))
-  }, [overlayVisible])
+    localStorage.setItem(`qa_${activeProjectId}_figma_overlay_visible`, String(overlayVisible))
+  }, [activeProjectId, overlayVisible])
 
   useEffect(() => {
-    localStorage.setItem('qa_figma_overlay_mode', overlayMode)
-  }, [overlayMode])
+    localStorage.setItem(`qa_${activeProjectId}_figma_overlay_mode`, overlayMode)
+  }, [activeProjectId, overlayMode])
+
+  // ── Dynamic Re-sync whenever active project changes ──
+  useEffect(() => {
+    if (!activeProjectId) return
+
+    const figUrl = project?.figmaUrl || localStorage.getItem(`qa_${activeProjectId}_figma_url`) || ''
+    const sheetUrl = project?.googleSheetUrl || localStorage.getItem(`qa_${activeProjectId}_google_sheet_url`) || ''
+    const figPng = localStorage.getItem(`qa_${activeProjectId}_uploaded_figma_png`) || null
+    const snapImg = localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_image`) || null
+    const snapLbl = localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_label`) || 'Site Snapshot'
+
+    setStoredFigmaUrl(figUrl)
+    setFigmaInputVal(figUrl)
+    setGoogleSheetsUrl(sheetUrl)
+    setTempGoogleUrl(sheetUrl)
+    setIsEditingGoogleUrl(!sheetUrl)
+
+    setFigmaImageState(figPng)
+    setSnapshotImageState(snapImg)
+    setSnapshotLabelState(snapLbl)
+    setOverlayImageState(figPng || snapImg || null)
+    setFigmaSplitOpen(!!figUrl || !!figPng)
+  }, [activeProjectId, project?.id, project?.figmaUrl, project?.googleSheetUrl])
 
   const figmaWebviewRef = useRef<any>(null)
 
@@ -586,7 +758,6 @@ export default function EditorWorkspace({
   }, [storedFigmaUrl, figmaSplitOpen, canvasFrame?.width, vpWidth])
 
   // ── Snapshots State & Helper Functions ─────────────
-  const activeProjectId = project?.id || (sourceUrl ? new URL(sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`).hostname.replace(/^www\./, '') : 'default_project')
   const [snapshots, setSnapshots] = useState<SnapshotItem[]>([])
   const [snapshotCategoryFilter, setSnapshotCategoryFilter] = useState<'all' | 'desktop' | 'tablet' | 'phone' | 'custom'>('all')
   const [snapshotsExpanded, setSnapshotsExpanded] = useState(true)
@@ -959,7 +1130,7 @@ export default function EditorWorkspace({
 
   const [interactionMode, setInteractionMode] = useState<'edit' | 'interact'>('edit')
   const [revealAnimations, setRevealAnimations] = useState(true)
-  const liveEditorRef = useRef<{ updateOptions: (opts: any) => void; setPaused: (p: boolean) => void; selectElement: (el: HTMLElement) => void } | null>(null)
+  const liveEditorRef = useRef<ReturnType<typeof attachLiveEditor> | null>(null)
 
   const toggleInteractionMode = (newMode: 'edit' | 'interact') => {
     setInteractionMode(newMode)
@@ -1327,32 +1498,40 @@ export default function EditorWorkspace({
     const live = attachLiveEditor(doc, {
       mode: interactionMode,
       revealAnimations,
+      zoom: zoomRef.current,
       onSelect: (_info, el) => {
         selectedNativeElRef.current = el
         setSelectedNativeEl(el)
         setNativeStyleRevision((r) => r + 1)
         if (el) {
           selectingFromNativeRef.current = true
-          const editor = editorRef.current
-          if (editor) {
-            // Find GrapesJS component by data-npath (stable DOM tree position)
-            const npath = el.getAttribute('data-npath')
-            let comp: any = null
-            if (npath) {
+            const editor = editorRef.current
+            if (editor) {
               const wrapper = editor.getWrapper()
-              if (wrapper) {
-                comp = wrapper.find(`[data-npath="${npath}"]`)?.[0] || null
+              const comp = findGrapesComponentForNativeEl(wrapper, el)
+              if (comp) {
+                // Walk up all parent components and set open: true so all parent layers expand in Layers panel
+                let curr = comp.parent ? comp.parent() : null
+                while (curr) {
+                  if (curr.set) curr.set('open', true)
+                  curr = curr.parent ? curr.parent() : null
+                }
+                editor.select(comp)
+
+                // Force LayerManager to re-render expanded tree and scroll selected layer into view
+                setTimeout(() => {
+                  try {
+                    if (editor.LayerManager && (editor.LayerManager as any).render) {
+                      ;(editor.LayerManager as any).render()
+                    }
+                  } catch {}
+                  const layerEl = document.querySelector('#layers-container .gjs-selected') as HTMLElement
+                  if (layerEl) {
+                    layerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                  }
+                }, 60)
               }
             }
-            if (comp) {
-              editor.select(comp)
-              // Scroll layer into view in the layers panel
-              setTimeout(() => {
-                const layerEl = document.querySelector('#layers-container .gjs-selected') as HTMLElement
-                if (layerEl) layerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-              }, 100)
-            }
-          }
           setTimeout(() => {
             selectingFromNativeRef.current = false
           }, 200)
@@ -1393,8 +1572,15 @@ export default function EditorWorkspace({
     const updateLayerCount = () => {
       try {
         const wrapper = editor.getWrapper()
-        const comps = wrapper?.components ? wrapper.components() : null
-        setLayerCount(comps?.length || 0)
+        let total = 0
+        const count = (c: any) => {
+          total++
+          if (c && c.components) {
+            c.components().each((child: any) => count(child))
+          }
+        }
+        if (wrapper) count(wrapper)
+        setLayerCount(total)
       } catch {
         setLayerCount(0)
       }
@@ -1439,13 +1625,21 @@ export default function EditorWorkspace({
         else if (comp.set) comp.set('attributes', { ...comp.get('attributes'), 'data-npath': prefix })
         const children = comp.components ? comp.components() : null
         if (children) {
-          children.each((child: any, i: number) => stampCompPaths(child, prefix + '/' + i))
+          let elemIdx = 0
+          children.each((child: any) => {
+            const isElem = child.get && child.get('tagName') && child.get('type') !== 'textnode'
+            if (isElem) {
+              stampCompPaths(child, prefix + '/' + elemIdx)
+              elemIdx++
+            } else {
+              stampCompPaths(child, prefix + '/t')
+            }
+          })
         }
       }
       const wrapper = editor.getWrapper()
       if (wrapper) {
-        const bodyChildren = wrapper.components()
-        if (bodyChildren) bodyChildren.each((child: any, i: number) => stampCompPaths(child, 'B/' + i))
+        stampCompPaths(wrapper, 'B')
       }
 
       // Reset History stack to clean Initial Snapshot state
@@ -1551,13 +1745,7 @@ export default function EditorWorkspace({
       const doc = liveIframeRef.current?.contentDocument
       if (!doc) return
 
-      // Find native element by data-npath (stable DOM tree position)
-      const npath = comp.get ? comp.get('attributes')?.['data-npath'] : null
-      let nativeEl: HTMLElement | null = null
-      if (npath) {
-        nativeEl = doc.querySelector(`[data-npath="${npath}"]`) as HTMLElement
-      }
-
+      const nativeEl = findNativeElForGrapesComponent(doc, comp)
       if (nativeEl) {
         selectedNativeElRef.current = nativeEl
         setSelectedNativeEl(nativeEl)
@@ -1777,6 +1965,8 @@ export default function EditorWorkspace({
     setZoom(clamped)
     editorRef.current?.Canvas?.setZoom(clamped)
     updateNativeTransform(panOffsetRef.current.x, panOffsetRef.current.y, clamped)
+    liveEditorRef.current?.setZoom(clamped)
+    bdRedrawRef.current?.()
   }, [updateNativeTransform])
 
   const applyZoomRef = useRef(applyZoom)
@@ -3119,7 +3309,8 @@ export default function EditorWorkspace({
       const d = iframeDoc.createElement('div')
       d.className = `__bd-label ${cls}`
       d.textContent = text
-      d.style.cssText = `position:absolute;left:${l}px;top:${t}px;pointer-events:none;z-index:999999;`
+      const invScale = 100 / Math.max(1, zoomRef.current)
+      d.style.cssText = `position:absolute;left:${l}px;top:${t}px;pointer-events:none;z-index:999999;transform:scale(${invScale});transform-origin:center center;`
       container.appendChild(d)
     }
 
@@ -3852,7 +4043,20 @@ export default function EditorWorkspace({
                 )}
               </div>
 
-              <div className="toolbar-divider" />
+              {/* Monotone Settings Button */}
+              {onOpenSettings && (
+                <button
+                  className="device-btn"
+                  onClick={onOpenSettings}
+                  title="Settings: Hotkeys, Snapshot Storage Directory, Theme Customization & Integrations"
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </button>
+              )}
 
               {/* Figma Design Overlay Dropdown */}
               <div className="ruler-dropdown-wrap" ref={overlayDropdownRef}>
@@ -4357,11 +4561,9 @@ export default function EditorWorkspace({
                   <span className="accordion-badge">{layerCount}</span>
                 </div>
               </div>
-              {layersExpanded && (
-                <div className="accordion-content">
-                  <div id="layers-container" className="panel-content" />
-                </div>
-              )}
+              <div className="accordion-content" style={{ display: layersExpanded ? 'block' : 'none' }}>
+                <div id="layers-container" className="panel-content" />
+              </div>
             </div>
 
             {/* Collapsible Snapshots Section */}
@@ -4408,8 +4610,8 @@ export default function EditorWorkspace({
                           justifyContent: 'space-between',
                           padding: '6px 8px',
                           borderRadius: 4,
-                          background: overlayImage === snap.dataUrl ? 'rgba(76, 139, 245, 0.18)' : '#1e1e1e',
-                          border: overlayImage === snap.dataUrl ? '1px solid rgba(76, 139, 245, 0.4)' : '1px solid rgba(255,255,255,0.06)',
+                          background: overlayImage === snap.dataUrl ? 'var(--accent-light)' : 'var(--bg-input)',
+                          border: overlayImage === snap.dataUrl ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
                           cursor: 'pointer'
                         }}
                         onClick={() => {
@@ -4426,10 +4628,10 @@ export default function EditorWorkspace({
                             <polyline points="21 15 16 10 5 21" />
                           </svg>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {formatSnapshotTitle(snap)}
                             </div>
-                            <div style={{ fontSize: 9.5, color: '#a1a1aa' }}>{snap.fileSizeFormatted}</div>
+                            <div style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>{snap.fileSizeFormatted}</div>
                           </div>
                         </div>
                         <button
@@ -5929,14 +6131,20 @@ export default function EditorWorkspace({
                             setGoogleSheetsUrl(targetUrl)
                             setTempGoogleUrl(targetUrl)
                             setIsEditingGoogleUrl(false)
-                            localStorage.setItem('qa_google_sheets_url', targetUrl)
+                            localStorage.setItem(`qa_${activeProjectId}_google_sheet_url`, targetUrl)
+                            if (project) {
+                              window.electronAPI.saveProject({ ...project, googleSheetUrl: targetUrl })
+                            }
                           } else {
                             setStoredFigmaUrl(targetUrl)
                             setFigmaInputVal(targetUrl)
-                            localStorage.setItem('qa_figma_url', targetUrl)
+                            localStorage.setItem(`qa_${activeProjectId}_figma_url`, targetUrl)
                             setFigmaViewMode('live')
                             setFigmaCardDismissed(false)
                             setOverlayMode('side-by-side')
+                            if (project) {
+                              window.electronAPI.saveProject({ ...project, figmaUrl: targetUrl })
+                            }
                           }
                           setMondayPickerOpen(false)
                         }
@@ -6159,10 +6367,13 @@ export default function EditorWorkspace({
                             if (link) {
                               setStoredFigmaUrl(link)
                               setFigmaInputVal(link)
-                              localStorage.setItem('qa_figma_url', link)
+                              localStorage.setItem(`qa_${activeProjectId}_figma_url`, link)
                               setFigmaViewMode('live')
                               setFigmaCardDismissed(false)
                               setOverlayMode('side-by-side')
+                              if (project) {
+                                window.electronAPI.saveProject({ ...project, figmaUrl: link })
+                              }
                             }
                           }}
                           style={{ opacity: link ? 1 : 0.4, cursor: link ? 'pointer' : 'not-allowed' }}

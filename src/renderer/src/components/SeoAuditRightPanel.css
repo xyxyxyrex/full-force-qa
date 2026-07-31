@@ -5,8 +5,8 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: #1e1e1e;
-  color: #e0e0e0;
+  background: var(--bg-card);
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   overflow: hidden;
 }
@@ -22,9 +22,9 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #707070;
-  background: #1e1e1e;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
@@ -37,10 +37,10 @@
 /* Action button matching GrapesJS - State - / + buttons */
 .gjs-btn-action {
   padding: 2px 7px;
-  background: #252525;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-  color: #a0a0a0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
   font-size: 10px;
   font-family: inherit;
   cursor: pointer;
@@ -48,9 +48,9 @@
 }
 
 .gjs-btn-action:hover {
-  background: #303030;
-  color: #e8e8e8;
-  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 /* Overview Score Row */
@@ -60,18 +60,18 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
-  background: #181818;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--bg-input);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
 .score-val-badge {
   font-size: 11px;
-  color: #888888;
+  color: var(--text-secondary);
 }
 
 .score-val-badge strong {
-  color: #e0e0e0;
+  color: var(--text-primary);
 }
 
 .score-counts-inline {
@@ -84,8 +84,8 @@
   font-size: 9px;
   font-weight: 600;
   padding: 1px 5px;
-  border-radius: 2px;
-  background: #252525;
+  border-radius: 3px;
+  background: var(--bg-elevated);
 }
 
 .tag-err { color: #ef4444; }
@@ -96,8 +96,8 @@
 
 .seo-overlay-toggles-bar {
   padding: 10px 14px;
-  background: #141414;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
@@ -105,7 +105,7 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: #71717a;
+  color: var(--text-muted);
   text-transform: uppercase;
   margin-bottom: 8px;
 }
@@ -121,10 +121,10 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  background: #27272a;
-  border: 1px solid #3f3f46;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -132,17 +132,17 @@
 }
 
 .seo-overlay-btn:hover {
-  background: #3f3f46;
-  color: #f4f4f5;
-  border-color: #52525b;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 .seo-overlay-btn.active {
-  background: #2563eb;
+  background: var(--accent-color);
   color: #ffffff;
-  border-color: #3b82f6;
+  border-color: var(--accent-color);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .seo-overlay-btn svg {
@@ -170,7 +170,7 @@
 /* Collapsible Sector (Matches GrapesJS TYPOGRAPHY / SPACING sectors) */
 
 .seo-sector {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .sector-header {
@@ -178,19 +178,19 @@
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  background: #1e1e1e;
+  background: var(--bg-card);
   cursor: pointer;
   user-select: none;
   transition: background 0.12s ease;
 }
 
 .sector-header:hover {
-  background: #232323;
+  background: var(--bg-card-hover);
 }
 
 .arrow-icon {
   font-size: 8px;
-  color: #606060;
+  color: var(--text-muted);
 }
 
 .sector-title {
@@ -198,7 +198,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #808080;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -214,11 +214,11 @@
 
 .sector-content {
   padding: 8px 14px 12px 14px;
-  background: #191919;
+  background: var(--bg-card);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.02);
+  border-top: 1px solid var(--border-color);
 }
 
 /* Field Rows & Inputs (Matching GrapesJS Form Inputs) */
@@ -237,20 +237,20 @@
 
 .field-lbl {
   font-size: 11px;
-  color: #707070;
+  color: var(--text-secondary);
 }
 
 .field-sub {
   font-size: 10px;
-  color: #505050;
+  color: var(--text-muted);
 }
 
 .field-input-box {
-  background: #141414;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
   padding: 5px 8px;
-  color: #d0d0d0;
+  color: var(--text-primary);
   font-size: 11px;
   font-family: inherit;
   word-break: break-all;
@@ -258,7 +258,7 @@
 }
 
 .text-muted {
-  color: #555555;
+  color: var(--text-muted);
   font-style: italic;
 }
 
@@ -270,13 +270,13 @@
 
 .selected-tag-info {
   font-size: 11px;
-  color: #707070;
+  color: var(--text-secondary);
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .selected-tag-info .tag-name {
-  color: #4C8BF5;
+  color: var(--accent-color);
   font-weight: 600;
   font-family: monospace;
 }
@@ -294,16 +294,16 @@
   flex-direction: column;
   gap: 2px;
   padding: 5px 8px;
-  background: #141414;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 3px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.12s ease;
 }
 
 .list-item-row:hover {
-  background: #202020;
-  border-color: rgba(76, 139, 245, 0.3);
+  background: var(--bg-card-hover);
+  border-color: var(--accent-color);
 }
 
 .list-item-row.row-warn {
@@ -315,8 +315,8 @@
   font-size: 9px;
   font-weight: 700;
   padding: 1px 4px;
-  background: #252525;
-  color: #4C8BF5;
+  background: var(--bg-elevated);
+  color: var(--accent-color);
   border-radius: 2px;
   width: max-content;
 }
@@ -331,7 +331,7 @@
 
 .item-text {
   font-size: 11px;
-  color: #c0c0c0;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -346,7 +346,7 @@
 
 .item-url {
   font-size: 10px;
-  color: #7dd3fc;
+  color: var(--accent-color);
   font-family: monospace;
   white-space: nowrap;
   overflow: hidden;
@@ -355,7 +355,7 @@
 
 .item-alt-sub {
   font-size: 10px;
-  color: #707070;
+  color: var(--text-muted);
 }
 
 /* Asset List Box */
@@ -370,9 +370,9 @@
 
 .asset-item {
   font-size: 10px;
-  color: #7dd3fc;
+  color: var(--accent-color);
   font-family: monospace;
-  background: #141414;
+  background: var(--bg-input);
   padding: 3px 6px;
   border-radius: 2px;
   word-break: break-all;

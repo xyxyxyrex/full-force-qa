@@ -4,6 +4,10 @@ import Dashboard from './components/Dashboard'
 import CaptureScreen from './components/CaptureScreen'
 import EditorWorkspace from './components/EditorWorkspace'
 import { fetchMondayTicketsApi } from './utils/mondayApi'
+import SettingsModal from './components/SettingsModal'
+import { loadSettings, applyTheme } from './theme/themeSystem'
+import type { AppSettings } from '../../shared/types'
+import './theme/themes.css'
 import './App.css'
 
 export type View = 'dashboard' | 'capture' | 'editor'
@@ -23,6 +27,13 @@ export interface TabState {
 
 export default function App() {
   const lastSyncRef = useRef<number>(0)
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Apply theme on initial mount and when theme changes
+  useEffect(() => {
+    applyTheme(settings.theme)
+  }, [settings.theme])
 
   const [tabs, setTabs] = useState<TabState[]>(() => {
     try {
@@ -314,12 +325,14 @@ export default function App() {
                   project={tab.activeProject}
                   onReset={handleReset}
                   onNewCapture={goToDashboard}
+                  onOpenSettings={() => setSettingsOpen(true)}
                 />
               ) : (
                 <>
                   <Dashboard
                     onNewProject={handleNewProject}
                     onOpenProject={handleOpenProject}
+                    onOpenSettings={() => setSettingsOpen(true)}
                   />
                   {tab.view === 'capture' && (
                     <CaptureScreen
@@ -336,6 +349,17 @@ export default function App() {
           )
         })}
       </div>
+
+      {/* Global Settings Modal */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        settings={settings}
+        onClose={() => setSettingsOpen(false)}
+        onSave={(newSettings) => {
+          setSettings(newSettings)
+          applyTheme(newSettings.theme)
+        }}
+      />
     </div>
   )
 }

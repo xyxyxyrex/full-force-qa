@@ -34,6 +34,30 @@ export interface SnapshotItem {
   viewportHeight?: number
 }
 
+export type AppTheme = 'dark' | 'light' | 'catppuccin-mocha' | 'nord' | 'cyberpunk-gold' | 'tokyo-night'
+
+export interface AppHotkeys {
+  quickSave: string
+  undo: string
+  redo: string
+  toggleRulers: string
+  toggleBoundaries: string
+  resetZoom: string
+  deselect: string
+  panMode: string
+}
+
+export interface AppSettings {
+  theme: AppTheme
+  snapshotDirectory: string
+  autoPurgeTrashDays: number
+  captureDpiScale: number
+  captureTimeoutMs: number
+  defaultViewport: string
+  mondaySyncIntervalMinutes: number
+  hotkeys: AppHotkeys
+}
+
 export interface ElectronAPI {
   login: (adminUrl: string) => Promise<void>
   mondayLogin: () => Promise<{ success: boolean; token?: string; error?: string }>
@@ -45,6 +69,7 @@ export interface ElectronAPI {
   openDetachedWindow: (url: string, title?: string) => Promise<void>
   figmaLoginWindow: (url?: string) => Promise<void>
   toggleMaximizeWindow: () => Promise<void>
+  selectSnapshotDirectory: () => Promise<{ success: boolean; path?: string }>
   createSnapshot: (params: {
     projectId: string
     url: string

@@ -1,0 +1,123 @@
+/* ── App Theme System CSS Tokens ───────────────────────── */
+
+:root,
+[data-theme="dark"] {
+  --bg-app: #121214;
+  --bg-card: #1c1c20;
+  --bg-card-hover: #24242a;
+  --bg-elevated: #2c2c36;
+  --bg-input: #2a2a34;
+  --border-color: #3f3f4e;
+  --border-hover: #525266;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent-color: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-light: rgba(59, 130, 246, 0.2);
+  --header-bg: #1c1c20;
+  --sidebar-bg: #121214;
+  --modal-bg: #1c1c20;
+}
+
+[data-theme="light"] {
+  --bg-app: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1f5f9;
+  --bg-elevated: #e2e8f0;
+  --bg-input: #e2e8f0;
+  --border-color: #cbd5e1;
+  --border-hover: #94a3b8;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --accent-color: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: rgba(37, 99, 235, 0.15);
+  --header-bg: #ffffff;
+  --sidebar-bg: #f8fafc;
+  --modal-bg: #ffffff;
+}
+
+[data-theme="catppuccin-mocha"] {
+  --bg-app: #1e1e2e;
+  --bg-card: #181825;
+  --bg-card-hover: #313244;
+  --bg-elevated: #313244;
+  --bg-input: #313244;
+  --border-color: #45475a;
+  --border-hover: #585b70;
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #7f849c;
+  --accent-color: #cba6f7;
+  --accent-hover: #b4befe;
+  --accent-light: rgba(203, 166, 247, 0.2);
+  --header-bg: #181825;
+  --sidebar-bg: #1e1e2e;
+  --modal-bg: #181825;
+}
+
+[data-theme="nord"] {
+  --bg-app: #2e3440;
+  --bg-card: #3b4252;
+  --bg-card-hover: #434c5e;
+  --bg-elevated: #4c566a;
+  --bg-input: #434c5e;
+  --border-color: #4c566a;
+  --border-hover: #5e6779;
+  --text-primary: #eceff4;
+  --text-secondary: #e5e9f0;
+  --text-muted: #d8dee9;
+  --accent-color: #88c0d0;
+  --accent-hover: #81a1c1;
+  --accent-light: rgba(136, 192, 208, 0.2);
+  --header-bg: #3b4252;
+  --sidebar-bg: #2e3440;
+  --modal-bg: #3b4252;
+}
+
+[data-theme="cyberpunk-gold"] {
+  --bg-app: #0f0f14;
+  --bg-card: #171721;
+  --bg-card-hover: #222233;
+  --bg-elevated: #2a2b3d;
+  --bg-input: #2a2b3d;
+  --border-color: #484962;
+  --border-hover: #eab308;
+  --text-primary: #fef08a;
+  --text-secondary: #fef9c3;
+  --text-muted: #ca8a04;
+  --accent-color: #eab308;
+  --accent-hover: #ca8a04;
+  --accent-light: rgba(234, 179, 8, 0.22);
+  --header-bg: #171721;
+  --sidebar-bg: #0f0f14;
+  --modal-bg: #171721;
+}
+
+[data-theme="tokyo-night"] {
+  --bg-app: #1a1b26;
+  --bg-card: #24283b;
+  --bg-card-hover: #2f354f;
+  --bg-elevated: #414868;
+  --bg-input: #2f354f;
+  --border-color: #414868;
+  --border-hover: #565f89;
+  --text-primary: #c0caf5;
+  --text-secondary: #a9b1d6;
+  --text-muted: #787c99;
+  --accent-color: #7aa2f7;
+  --accent-hover: #2ac3de;
+  --accent-light: rgba(122, 162, 247, 0.2);
+  --header-bg: #24283b;
+  --sidebar-bg: #1a1b26;
+  --modal-bg: #24283b;
+}
+
+/* Global body application */
+body {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}

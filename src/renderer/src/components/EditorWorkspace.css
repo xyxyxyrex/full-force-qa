@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #1a1a1a;
+  background: var(--bg-app);
 }
 
 /* ── Toolbar ─────────────────────────────────── */
@@ -13,8 +13,8 @@
   justify-content: space-between;
   height: 48px;
   padding: 0 12px;
-  background: #252525;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
@@ -69,9 +69,9 @@
 }
 
 .workspace-tab-btn.active {
-  background: #4C8BF5;
+  background: var(--accent-color);
   color: #ffffff;
-  box-shadow: 0 1px 4px rgba(76, 139, 245, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .toolbar-btn {
@@ -152,8 +152,8 @@
 }
 
 .device-btn.active {
-  background: rgba(76, 139, 245, 0.15);
-  color: #4C8BF5;
+  background: var(--accent-light);
+  color: var(--accent-color);
 }
 
 /* ── Dimension inputs ────────────────────────── */
@@ -374,7 +374,8 @@
 /* Side panels */
 .editor-panel {
   flex-shrink: 0;
-  background: #252525;
+  background: var(--bg-card);
+  color: var(--text-primary);
   overflow-y: auto;
   will-change: width;
 }
@@ -382,12 +383,12 @@
 .panel-left {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--border-color);
   overflow-y: auto;
 }
 
 .panel-right {
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 1px solid var(--border-color);
 }
 
 /* Accordion sections in left panel */
@@ -395,7 +396,7 @@
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .accordion-section.expanded {
@@ -409,7 +410,7 @@
 
 .right-panel-accordion {
   flex: 0 0 auto !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .right-panel-accordion .accordion-content {
@@ -426,15 +427,16 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #1e1e1e;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
   user-select: none;
   cursor: pointer;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border-color);
   transition: background 0.12s;
 }
 
 .accordion-header:hover {
-  background: #282828;
+  background: var(--bg-card-hover);
 }
 
 .accordion-header-left {
@@ -457,13 +459,13 @@
 }
 
 .accordion-chevron {
-  color: #707070;
+  color: var(--text-muted);
   transition: transform 0.18s ease-in-out;
 }
 
 .accordion-chevron.open {
   transform: rotate(90deg);
-  color: #4C8BF5;
+  color: var(--accent-color);
 }
 
 .accordion-badge {
@@ -471,8 +473,8 @@
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #808080;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
 }
 
 .accordion-header-right {
@@ -485,8 +487,8 @@
 .layer-mode-switch {
   display: flex;
   align-items: center;
-  background: #141414;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 2px;
   gap: 2px;
@@ -498,7 +500,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #707070;
+  color: var(--text-muted);
   background: transparent;
   border: none;
   border-radius: 3px;
@@ -507,13 +509,13 @@
 }
 
 .layer-mode-btn:hover:not(.active) {
-  color: #c0c0c0;
+  color: var(--text-primary);
 }
 
 .layer-mode-btn.active {
-  background: #004b76;
-  color: #4C8BF5;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  background: var(--accent-light);
+  color: var(--accent-color);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .accordion-content {
@@ -527,7 +529,7 @@
 /* ── Photoshop History Panel ─────────────────── */
 
 .history-content {
-  background: #1a1a1a;
+  background: var(--bg-card);
 }
 
 .history-list {
@@ -552,17 +554,17 @@
 }
 
 .history-item.active {
-  background: #004b76;
-  border-left-color: #4C8BF5;
+  background: var(--accent-light);
+  border-left-color: var(--accent-color);
 }
 
 .history-item.active .history-item-action {
-  color: #ffffff;
+  color: var(--accent-color);
   font-weight: 600;
 }
 
 .history-item.active .history-item-detail {
-  color: #b0d8ff;
+  color: var(--text-primary);
 }
 
 .history-item.future {
@@ -650,17 +652,18 @@
 /* ── CSS Inspector Panel ───────────────────────── */
 
 .css-inspector-content {
-  background: #1a1a1a;
+  background: var(--bg-card);
+  color: var(--text-primary);
   font-family: 'Consolas', 'SF Mono', 'Menlo', monospace;
   font-size: 11px;
 }
 
 .css-inspector-tag {
   padding: 6px 10px;
-  color: #7dd3fc;
+  color: var(--accent-color);
   font-size: 11px;
   font-weight: 600;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -676,7 +679,7 @@
 .css-inspector-rules pre {
   margin: 0;
   padding: 8px 10px;
-  color: #c9d1d9;
+  color: var(--text-primary);
   font-size: 10.5px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -685,13 +688,13 @@
 }
 
 .css-inspector-custom {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border-color);
   padding: 6px 8px;
 }
 
 .css-inspector-custom-label {
   font-size: 10px;
-  color: #8b949e;
+  color: var(--text-muted);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -703,9 +706,9 @@
   width: 100%;
   min-height: 80px;
   max-height: 200px;
-  background: #0d1117;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 8px;
   font-family: 'Consolas', 'SF Mono', 'Menlo', monospace;
@@ -718,8 +721,8 @@
 }
 
 .css-inspector-textarea:focus {
-  border-color: #58a6ff;
-  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.3);
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--accent-light);
 }
 
 .css-inspector-textarea::placeholder {
@@ -786,33 +789,35 @@
   z-index: 10000;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #2a2520;
-  border: 1px solid rgba(210, 153, 34, 0.3);
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  color: #d29922;
+  color: var(--text-primary);
   font-size: 12px;
   white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
 }
 
 .font-notice-text {
-  color: #c0b8a8;
+  color: var(--text-secondary);
 }
 
 .font-notice-text strong {
-  color: #e0d0b0;
+  color: var(--text-primary);
 }
 
 .font-notice-btn {
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
+  font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  padding: 4px 10px;
-  transition: background 0.12s, opacity 0.12s;
+  padding: 4px 12px;
+  transition: all 0.15s ease;
 }
 
 .font-notice-btn:disabled {
@@ -821,37 +826,37 @@
 }
 
 .font-notice-load {
-  background: #4C8BF5;
-  color: #fff;
+  background: var(--accent-color);
+  color: #ffffff;
 }
 
 .font-notice-load:hover:not(:disabled) {
-  background: #3a7ae0;
+  background: var(--accent-hover);
 }
 
 .font-notice-dismiss {
   background: transparent;
-  color: #807060;
+  color: var(--text-muted);
   font-size: 16px;
   padding: 2px 6px;
   line-height: 1;
 }
 
 .font-notice-dismiss:hover {
-  color: #c0b0a0;
+  color: var(--text-primary);
 }
 
 .font-notice-warn {
-  border-color: rgba(128, 128, 128, 0.3);
-  color: #909090;
+  border-color: var(--border-color);
+  color: var(--text-muted);
 }
 
 .font-notice-warn .font-notice-text {
-  color: #909090;
+  color: var(--text-muted);
 }
 
 .font-notice-warn .font-notice-text strong {
-  color: #b0b0b0;
+  color: var(--text-primary);
 }
 
 /* ── Canvas wrapper (holds GrapesJS + free-transform handles) ── */

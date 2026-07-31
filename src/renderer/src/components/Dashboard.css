@@ -3,10 +3,10 @@
 .dashboard {
   height: 100%;
   box-sizing: border-box;
-  background: #1a1a1a;
+  background: var(--bg-app);
   padding: 40px 32px 64px 32px;
   overflow-y: auto;
-  color: #e0e0e0;
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -32,7 +32,7 @@
 .dashboard-title-row h1 {
   font-size: 22px;
   font-weight: 700;
-  color: #f0f0f0;
+  color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
@@ -47,9 +47,9 @@
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #f0f0f0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
@@ -59,15 +59,15 @@
 }
 
 .figma-global-login-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
   transform: translateY(-1px);
 }
 
 .card-action-btn.pin-btn.pinned {
-  color: #38bdf8 !important;
-  background: rgba(56, 189, 248, 0.15) !important;
-  border-color: rgba(56, 189, 248, 0.3) !important;
+  color: var(--accent-color) !important;
+  background: var(--accent-light) !important;
+  border-color: var(--accent-color) !important;
 }
 
 .new-project-btn {
@@ -75,7 +75,7 @@
   align-items: center;
   gap: 8px;
   padding: 10px 20px;
-  background: #4C8BF5;
+  background: var(--accent-color);
   color: #ffffff;
   border: none;
   border-radius: 8px;
@@ -83,13 +83,13 @@
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(76, 139, 245, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
   transition: all 0.15s ease-in-out;
 }
 
 .new-project-btn:hover {
-  background: #3a7ae0;
-  box-shadow: 0 6px 18px rgba(76, 139, 245, 0.45);
+  background: var(--accent-hover);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
   transform: translateY(-1px);
 }
 
@@ -101,8 +101,8 @@
   gap: 16px;
   margin-bottom: 32px;
   padding: 8px 12px;
-  background: #222222;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
 }
 
@@ -117,17 +117,17 @@
 .search-icon {
   position: absolute;
   left: 12px;
-  color: #707070;
+  color: var(--text-muted);
   pointer-events: none;
 }
 
 .search-input {
   width: 100%;
   padding: 8px 32px 8px 36px;
-  background: #181818;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: #e0e0e0;
+  color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
   outline: none;
@@ -135,8 +135,8 @@
 }
 
 .search-input:focus {
-  border-color: #4C8BF5;
-  background: #141414;
+  border-color: var(--accent-color);
+  background: var(--bg-input);
 }
 
 .search-clear-btn {
@@ -144,7 +144,7 @@
   right: 10px;
   background: transparent;
   border: none;
-  color: #707070;
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -153,7 +153,7 @@
 }
 
 .search-clear-btn:hover {
-  color: #d0d0d0;
+  color: var(--text-primary);
 }
 
 .controls-right {
@@ -164,10 +164,10 @@
 
 .sort-select {
   padding: 7px 12px;
-  background: #181818;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: #c0c0c0;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   cursor: pointer;
@@ -175,15 +175,15 @@
 }
 
 .sort-select:hover {
-  border-color: rgba(255, 255, 255, 0.16);
-  color: #e0e0e0;
+  border-color: var(--border-hover);
+  color: var(--text-primary);
 }
 
 .view-mode-toggle {
   display: flex;
   align-items: center;
-  background: #141414;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 2px;
   gap: 2px;
@@ -197,18 +197,18 @@
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #707070;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.12s ease-in-out;
 }
 
 .view-mode-btn:hover:not(.active) {
-  color: #c0c0c0;
+  color: var(--text-primary);
 }
 
 .view-mode-btn.active {
-  background: #004b76;
-  color: #4C8BF5;
+  background: var(--accent-light);
+  color: var(--accent-color);
 }
 
 /* Sections */
@@ -266,8 +266,8 @@
 .project-card {
   display: flex;
   flex-direction: column;
-  background: #242424;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
@@ -277,8 +277,8 @@
 
 .project-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(76, 139, 245, 0.35);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  border-color: var(--accent-color);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .project-thumbnail {
@@ -336,16 +336,16 @@
   height: 28px;
   border-radius: 6px;
   border: none;
-  background: rgba(20, 20, 20, 0.75);
+  background: var(--bg-card);
   backdrop-filter: blur(6px);
-  color: #d0d0d0;
+  color: var(--text-primary);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .card-action-btn.edit-btn:hover {
-  background: #004b76;
-  color: #4C8BF5;
+  background: var(--accent-light);
+  color: var(--accent-color);
 }
 
 .card-action-btn.delete-btn:hover {
@@ -363,7 +363,7 @@
 .project-name {
   font-size: 14px;
   font-weight: 600;
-  color: #f0f0f0;
+  color: var(--text-primary);
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -372,7 +372,7 @@
 
 .project-url {
   font-size: 12px;
-  color: #808080;
+  color: var(--text-secondary);
   margin-bottom: 10px;
   white-space: nowrap;
   overflow: hidden;
@@ -388,7 +388,7 @@
 
 .project-meta {
   font-size: 11px;
-  color: #606060;
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -403,8 +403,8 @@
   display: flex;
   align-items: center;
   padding: 10px 16px;
-  background: #242424;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
@@ -412,8 +412,8 @@
 }
 
 .project-list-row:hover {
-  background: #2d2d2d;
-  border-color: rgba(76, 139, 245, 0.3);
+  background: var(--bg-card-hover);
+  border-color: var(--accent-color);
 }
 
 .list-col-thumb {
@@ -505,8 +505,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: #222222;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
   user-select: none;
@@ -514,7 +514,7 @@
 }
 
 .trash-section-header:hover {
-  background: #2a2a2a;
+  background: var(--bg-card-hover);
 }
 
 .trash-title {
@@ -525,7 +525,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #808080;
+  color: var(--text-primary);
 }
 
 .trash-chevron {
@@ -832,9 +832,9 @@
 }
 
 .monday-badge.connected {
-  background: rgba(0, 115, 234, 0.15);
-  color: #58a6ff;
-  border: 1px solid rgba(0, 115, 234, 0.3);
+  background: var(--accent-light);
+  color: var(--accent-color);
+  border: 1px solid var(--accent-color);
 }
 
 .monday-header-actions {
@@ -849,9 +849,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #222222;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #cccccc;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 600;
   padding: 5px 12px;
@@ -862,9 +862,9 @@
 
 .monday-connect-btn:hover,
 .monday-sync-btn:hover {
-  background: #0073ea;
-  color: #ffffff;
-  border-color: #0073ea;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 .monday-account-btn {
@@ -987,8 +987,8 @@
 }
 
 .monday-ticket-card {
-  background: #222222;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 16px;
   display: flex;
@@ -998,8 +998,8 @@
 }
 
 .monday-ticket-card:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  border-color: var(--border-hover);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
   transform: translateY(-2px);
 }
 
@@ -1016,21 +1016,21 @@
   border-radius: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  background: #1c1c1c;
-  color: #aaaaaa;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .monday-board-tag {
   font-size: 11px;
-  color: #777777;
+  color: var(--text-muted);
 }
 
 .monday-ticket-title {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #f0f0f0;
+  color: var(--text-primary);
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1052,12 +1052,12 @@
   gap: 6px;
   border-radius: 5px;
   padding: 4px 6px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-input);
   transition: background 0.12s ease;
 }
 
 .monday-link-row:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-card-hover);
 }
 
 .monday-link-main {
@@ -1073,7 +1073,7 @@
 
 .monday-link-icon {
   flex-shrink: 0;
-  color: #888;
+  color: var(--text-muted);
 }
 
 .monday-link-icon-img {
@@ -1086,14 +1086,14 @@
 .monday-link-label {
   font-size: 11px;
   font-weight: 600;
-  color: #c0c0c0;
+  color: var(--text-primary);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .monday-link-url {
   font-size: 10px;
-  color: #555;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1101,17 +1101,17 @@
 }
 
 .monday-link-row:hover .monday-link-url {
-  color: #777;
+  color: var(--text-primary);
 }
 
 .monday-link-copy {
   flex-shrink: 0;
   background: none;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 3px 5px;
   cursor: pointer;
-  color: #666;
+  color: var(--text-muted);
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
@@ -1121,8 +1121,8 @@
 }
 
 .monday-link-copy:hover {
-  color: #aaa;
-  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 .monday-card-footer {
@@ -1131,19 +1131,19 @@
   justify-content: space-between;
   margin-top: 4px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-color);
 }
 
 .monday-updated {
   font-size: 11px;
-  color: #666666;
+  color: var(--text-muted);
 }
 
 .launch-qa-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #0073ea;
+  background: var(--accent-color);
   color: #ffffff;
   border: none;
   padding: 6px 12px;
@@ -1155,9 +1155,9 @@
 }
 
 .launch-qa-btn:hover {
-  background: #0060c4;
+  background: var(--accent-hover);
   transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 115, 234, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .spin {
@@ -1173,9 +1173,9 @@
 .active-ticket-badge {
   font-size: 10px;
   font-weight: 700;
-  color: #e0e0e0;
-  background: #111111;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--accent-color);
+  background: var(--accent-light);
+  border: 1px solid var(--accent-color);
   padding: 2px 7px;
   border-radius: 4px;
   text-transform: uppercase;
@@ -1183,9 +1183,9 @@
 }
 
 .toggle-active-btn {
-  background: #1a1a1a;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #cccccc;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-size: 11px;
   font-weight: 600;
   padding: 4px 10px;
@@ -1195,13 +1195,13 @@
 }
 
 .toggle-active-btn:hover {
-  background: #333333;
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 .monday-ticket-card.is-active-ticket {
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: var(--accent-color);
 }
 
 /* Circular Monday Badge on Top-Right of Card Thumbnail with Status Ring */

@@ -356,7 +356,11 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
 
     // styleManager disabled — replaced by NativeStylePanel in EditorWorkspace
 
-    layerManager: { appendTo: '#layers-container' }
+    layerManager: {
+      appendTo: '#layers-container',
+      showTextable: true,
+      sortable: true
+    } as any
   })
 
   // ── After load: inject CSS, enable resize, discover + load fonts ──

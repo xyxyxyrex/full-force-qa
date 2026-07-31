@@ -1,117 +1,123 @@
-/*
- * GrapesJS Dark Theme — Figma-like (§7)
- *
- * Overrides GrapesJS's default light UI to match the design direction:
- * dark neutral workspace, blue accent, compact panels, flat/precise feel.
- */
-
-/* ── Base color tokens ───────────────────────── */
+/* ── Dynamic Theme Integration for GrapesJS UI & Right Panel ───────────────────────── */
 
 .gjs-one-bg {
-  background-color: #252525;
+  background-color: var(--bg-card) !important;
 }
 
 .gjs-two-color {
-  color: #e8e8e8;
+  color: var(--text-primary) !important;
 }
 
 .gjs-three-bg {
-  background-color: #2d2d2d;
+  background-color: var(--bg-elevated) !important;
 }
 
 .gjs-four-color,
 .gjs-four-color-h:hover {
-  color: #a0a0a0;
+  color: var(--text-secondary) !important;
+}
+
+/* ── Right Panel Containers ───────────────────── */
+
+#styles-container,
+#colors-container,
+#fonts-container,
+#selectors-container,
+.gjs-pn-views-container,
+.gjs-sm-sectors,
+.gjs-sm-sector,
+.gjs-sm-properties {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
 }
 
 /* ── Canvas ──────────────────────────────────── */
 
 .gjs-cv-canvas {
-  background-color: #1a1a1a;
+  background-color: var(--bg-app) !important;
   top: 0;
   width: 100%;
   height: 100%;
   overflow: auto !important;
 }
 
-/* The iframe wrapper — adds "page" feel */
 .gjs-frame-wrapper {
-  background: #fff;
-  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+  background: #ffffff;
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.25);
   margin: 24px auto;
 }
 
 /* ── Selection & highlight ───────────────────── */
 
 .gjs-selected {
-  outline: 2px solid #4C8BF5 !important;
+  outline: 2px solid var(--accent-color) !important;
   outline-offset: -1px;
 }
 
 .gjs-highlighter {
-  outline: 1px solid rgba(76, 139, 245, 0.5) !important;
+  outline: 1px solid var(--accent-color) !important;
+  opacity: 0.7;
 }
 
-/* Resize handles */
 .gjs-resizer-h {
-  border: 2px solid #4C8BF5;
+  border: 2px solid var(--accent-color);
   width: 8px !important;
   height: 8px !important;
-  background: #252525;
+  background: var(--bg-card);
   border-radius: 2px;
 }
 
-/* Toolbar that appears above selected element */
 .gjs-toolbar {
-  background: #333;
-  border-radius: 4px;
-  padding: 2px;
-  border: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  background: var(--bg-elevated) !important;
+  border-radius: 6px;
+  padding: 3px;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .gjs-toolbar-item {
   padding: 4px 6px;
-  color: #b0b0b0;
+  color: var(--text-secondary) !important;
   font-size: 12px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .gjs-toolbar-item:hover {
-  color: #fff;
-  background: rgba(76, 139, 245, 0.2);
+  color: var(--text-primary) !important;
+  background: var(--accent-light) !important;
 }
 
 /* ── Panels ──────────────────────────────────── */
 
 .gjs-pn-panel {
-  background: #252525;
+  background: var(--bg-card) !important;
   border: none;
 }
 
 .gjs-pn-btn {
-  color: #a0a0a0;
+  color: var(--text-secondary) !important;
   border-radius: 4px;
 }
 
 .gjs-pn-btn:hover {
-  color: #e8e8e8;
+  color: var(--text-primary) !important;
 }
 
 .gjs-pn-btn.gjs-pn-active {
-  color: #4C8BF5;
+  color: var(--accent-color) !important;
   box-shadow: none;
 }
 
-/* ── Style Manager ───────────────────────────── */
+/* ── Style Manager Sector & Titles ────────────── */
 
 .gjs-sm-sector {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border-color) !important;
 }
 
-.gjs-sm-sector .gjs-sm-sector-title {
-  background: transparent;
-  color: #909090;
+.gjs-sm-sector .gjs-sm-sector-title,
+.gjs-sm-sector-title {
+  background: transparent !important;
+  color: var(--text-secondary) !important;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -120,116 +126,142 @@
   border: none;
 }
 
-.gjs-sm-sector .gjs-sm-sector-title:hover {
-  color: #c0c0c0;
+.gjs-sm-sector .gjs-sm-sector-title:hover,
+.gjs-sm-sector-title:hover {
+  color: var(--text-primary) !important;
 }
 
 .gjs-sm-sector .gjs-sm-properties {
   padding: 4px 14px 12px;
 }
 
-/* Property rows */
 .gjs-sm-property {
   margin-bottom: 6px;
 }
 
-.gjs-sm-property .gjs-sm-label {
+.gjs-sm-property .gjs-sm-label,
+.gjs-sm-label {
   font-size: 11px;
-  color: #808080;
+  color: var(--text-secondary) !important;
   margin-bottom: 3px;
 }
 
-/* Inputs */
+/* ── High-Specificity Input & Field Styling for Right Panel ── */
+
+#styles-container .gjs-field,
+#styles-container .gjs-sm-field,
+#styles-container .gjs-fields .gjs-field,
+#styles-container .gjs-field-integer,
+#styles-container .gjs-field-select,
+#styles-container .gjs-field-color,
+#styles-container .gjs-field-composite,
+#styles-container .gjs-radio-item,
+#styles-container .gjs-radio-items,
+#styles-container .gjs-radio-item-label,
+#styles-container div[class*="field"],
+#styles-container input,
+#styles-container select,
+#styles-container textarea,
 .gjs-sm-property .gjs-field,
-.gjs-field {
-  background: #1a1a1a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-  color: #e8e8e8;
-  transition: border-color 0.12s;
+.gjs-field,
+.gjs-sm-field,
+.gjs-field-integer,
+.gjs-field-select,
+.gjs-field-color,
+.gjs-field-composite,
+.gjs-radio-item,
+.gjs-sm-composite .gjs-sm-property,
+.gjs-sm-composite .gjs-field,
+.gjs-sm-sector .gjs-field {
+  background-color: var(--bg-input) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 6px !important;
+  color: var(--text-primary) !important;
+  transition: border-color 0.12s, background-color 0.12s;
 }
 
-.gjs-field:focus-within {
-  border-color: #4C8BF5;
-}
-
+#styles-container input,
+#styles-container select,
+#styles-container textarea,
 .gjs-field input,
 .gjs-field select,
 .gjs-field textarea {
-  color: #e8e8e8;
-  font-size: 12px;
+  color: var(--text-primary) !important;
+  font-size: 12px !important;
+  background-color: transparent !important;
+}
+
+.gjs-field:focus-within,
+#styles-container .gjs-field:focus-within,
+#styles-container input:focus,
+#styles-container select:focus {
+  border-color: var(--accent-color) !important;
 }
 
 .gjs-field-arrows {
-  color: #606060;
+  color: var(--text-muted) !important;
 }
 
 .gjs-field-arrows:hover {
-  color: #a0a0a0;
+  color: var(--text-primary) !important;
 }
 
-/* Color picker field */
 .gjs-field-color .gjs-field-colorp {
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color) !important;
 }
 
-/* Composite / radio / select */
-.gjs-sm-composite .gjs-sm-property {
-  margin-bottom: 4px;
+/* ── Active Radio Buttons & Buttons in Style Manager ── */
+
+#styles-container .gjs-radio-item input:checked + label,
+#styles-container .gjs-radio-item input:checked + .gjs-radio-item-label,
+#styles-container .gjs-radio-item.gjs-selected,
+#styles-container .gjs-radio-item.active,
+#styles-container .gjs-radio-item-label.active,
+.gjs-radio-item input:checked + label,
+.gjs-radio-item input:checked + .gjs-radio-item-label,
+.gjs-radio-item.gjs-selected,
+.gjs-radio-item.active,
+.gjs-sm-property__text-align .gjs-radio-item input:checked + .gjs-radio-item-label,
+.gjs-sm-property__text-decoration .gjs-radio-item input:checked + .gjs-radio-item-label,
+.gjs-sm-property__text-transform .gjs-radio-item input:checked + .gjs-radio-item-label {
+  background-color: var(--accent-color) !important;
+  color: #ffffff !important;
 }
 
-.gjs-radio-item {
-  background: #2d2d2d;
-  border-color: rgba(255, 255, 255, 0.08);
-  color: #909090;
-}
-
-.gjs-radio-item:hover {
-  color: #c0c0c0;
-}
-
-.gjs-radio-item input:checked + .gjs-radio-item-label {
-  background: rgba(76, 139, 245, 0.15);
-  color: #4C8BF5;
-}
-
-/* Select dropdown */
-.gjs-sm-property select,
-.gjs-clm-select select,
-.gjs-field select {
-  background: #1a1a1a;
-  color: #e8e8e8;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-  padding: 4px 8px;
+.gjs-sm-property select option,
+.gjs-clm-select select option,
+.gjs-field select option {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
 }
 
 /* ── Selector / Class Manager ────────────────── */
 
 .gjs-clm-tags {
-  background: transparent;
+  background: transparent !important;
   padding: 8px 14px;
 }
 
 .gjs-clm-tag {
-  background: rgba(76, 139, 245, 0.12);
-  color: #7eb0f7;
-  border-radius: 3px;
-  padding: 2px 8px;
+  background: var(--accent-light) !important;
+  color: var(--accent-color) !important;
+  border-radius: 4px;
+  padding: 3px 8px;
   font-size: 11px;
+  font-weight: 500;
 }
 
 .gjs-clm-tag:hover {
-  background: rgba(76, 139, 245, 0.2);
+  background: var(--accent-light) !important;
 }
 
 .gjs-clm-tag-close {
-  color: #7eb0f7;
+  color: var(--accent-color) !important;
 }
 
 .gjs-clm-sels-info {
-  color: #606060;
+  color: var(--text-muted) !important;
   font-size: 11px;
   padding: 4px 14px;
 }
@@ -237,31 +269,33 @@
 /* ── Layer Manager ───────────────────────────── */
 
 .gjs-layers {
-  background: transparent;
+  background: transparent !important;
 }
 
 .gjs-layer {
-  background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--border-color) !important;
 }
 
 .gjs-layer:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-card-hover) !important;
 }
 
 .gjs-layer.gjs-selected {
-  background: rgba(76, 139, 245, 0.1) !important;
+  background: var(--accent-light) !important;
   outline: none !important;
 }
 
 .gjs-layer-title {
-  color: #b0b0b0;
+  color: var(--text-primary) !important;
   font-size: 12px;
   padding: 6px 8px;
 }
 
 .gjs-layer.gjs-selected .gjs-layer-title {
-  color: #e8e8e8;
+  color: var(--accent-color) !important;
+  font-weight: 600;
 }
 
 .gjs-layer-title-inn {
@@ -269,200 +303,50 @@
 }
 
 .gjs-layer-caret {
-  color: #606060;
+  color: var(--text-muted) !important;
   font-size: 8px;
 }
 
 .gjs-layer-vis {
-  color: #606060;
+  color: var(--text-muted) !important;
 }
 
 .gjs-layer-vis:hover {
-  color: #a0a0a0;
+  color: var(--text-primary) !important;
 }
 
-/* Layer nesting indentation */
 .gjs-layer-children {
-  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  border-left: 1px solid var(--border-color) !important;
   margin-left: 10px;
-}
-
-/* ── Scrollbars ──────────────────────────────── */
-
-.editor-panel::-webkit-scrollbar,
-.gjs-layers::-webkit-scrollbar,
-.gjs-sm-properties::-webkit-scrollbar {
-  width: 6px;
-}
-
-.editor-panel::-webkit-scrollbar-track,
-.gjs-layers::-webkit-scrollbar-track,
-.gjs-sm-properties::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.editor-panel::-webkit-scrollbar-thumb,
-.gjs-layers::-webkit-scrollbar-thumb,
-.gjs-sm-properties::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-}
-
-.editor-panel::-webkit-scrollbar-thumb:hover,
-.gjs-layers::-webkit-scrollbar-thumb:hover,
-.gjs-sm-properties::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.14);
 }
 
 /* ── Badge (component type indicator) ────────── */
 
 .gjs-badge {
-  background: #4C8BF5;
-  color: #fff;
+  background: var(--accent-color) !important;
+  color: #ffffff !important;
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 3px;
   font-weight: 500;
 }
 
-/* ── Typography icon radio buttons ──────────── */
-
-/* Text-align and text-decoration radios: compact icon-button style */
-.gjs-sm-property__text-align .gjs-radio-items,
-.gjs-sm-property__text-decoration .gjs-radio-items,
-.gjs-sm-property__text-transform .gjs-radio-items {
-  display: flex;
-  gap: 2px;
-}
-
-.gjs-sm-property__text-align .gjs-radio-item,
-.gjs-sm-property__text-decoration .gjs-radio-item,
-.gjs-sm-property__text-transform .gjs-radio-item {
-  flex: 0 0 auto;
-}
-
-.gjs-sm-property__text-align .gjs-radio-item-label,
-.gjs-sm-property__text-decoration .gjs-radio-item-label,
-.gjs-sm-property__text-transform .gjs-radio-item-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.gjs-sm-property__text-align .gjs-radio-item-label svg,
-.gjs-sm-property__text-decoration .gjs-radio-item-label svg {
-  width: 15px;
-  height: 15px;
-  display: block;
-}
-
-.gjs-sm-property__text-align .gjs-radio-item input:checked + .gjs-radio-item-label,
-.gjs-sm-property__text-decoration .gjs-radio-item input:checked + .gjs-radio-item-label,
-.gjs-sm-property__text-transform .gjs-radio-item input:checked + .gjs-radio-item-label {
-  background: rgba(76, 139, 245, 0.2);
-  color: #4C8BF5;
-}
-
-/* Color picker improvements */
-.gjs-field-color .sp-preview {
-  border-radius: 3px;
-}
-
-.gjs-field-color .sp-replacer {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  background: #1a1a1a;
-  padding: 2px;
-}
-
 .sp-container {
-  background: #2a2a2a !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
   border-radius: 8px !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
 }
 
 .sp-input {
-  background: #1a1a1a !important;
-  color: #e8e8e8 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-color) !important;
   border-radius: 4px !important;
   font-size: 12px !important;
 }
 
-.sp-button-container .sp-cancel,
 .sp-button-container .sp-choose {
-  background: rgba(255, 255, 255, 0.08);
-  color: #c0c0c0;
-  border: none;
-  border-radius: 4px;
-  font-size: 11px;
-  padding: 4px 10px;
-}
-
-.sp-button-container .sp-choose {
-  background: #4C8BF5;
-  color: #fff;
-}
-
-/* ── Misc cleanup ────────────────────────────── */
-
-/* Remove GrapesJS default borders and shadows */
-.gjs-cv-canvas .gjs-ghost,
-.gjs-cv-canvas .gjs-placeholder {
-  border-color: #4C8BF5;
-}
-
-/* Make the editor fill its container */
-.gjs-editor {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif !important;
-}
-
-.gjs-editor-cont {
-  height: 100% !important;
-}
-
-/* ── Sleek GrapesJS Panel Scrollbars ───────────── */
-.gjs-editor-cont ::-webkit-scrollbar,
-.gjs-pn-views-container ::-webkit-scrollbar,
-.gjs-sm-sectors ::-webkit-scrollbar,
-.gjs-blocks-c ::-webkit-scrollbar,
-.gjs-layers ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.gjs-editor-cont ::-webkit-scrollbar-track,
-.gjs-pn-views-container ::-webkit-scrollbar-track,
-.gjs-sm-sectors ::-webkit-scrollbar-track,
-.gjs-blocks-c ::-webkit-scrollbar-track,
-.gjs-layers ::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.gjs-editor-cont ::-webkit-scrollbar-thumb,
-.gjs-pn-views-container ::-webkit-scrollbar-thumb,
-.gjs-sm-sectors ::-webkit-scrollbar-thumb,
-.gjs-blocks-c ::-webkit-scrollbar-thumb,
-.gjs-layers ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
-}
-
-.gjs-editor-cont ::-webkit-scrollbar-thumb:hover,
-.gjs-pn-views-container ::-webkit-scrollbar-thumb:hover,
-.gjs-sm-sectors ::-webkit-scrollbar-thumb:hover,
-.gjs-blocks-c ::-webkit-scrollbar-thumb:hover,
-.gjs-layers ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--accent-color) !important;
+  color: #ffffff !important;
 }

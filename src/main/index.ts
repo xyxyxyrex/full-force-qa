@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { app, BrowserWindow, ipcMain, shell, session, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog } from 'electron'
 import { join } from 'path'
 
 // Force Chromium engine to use English locale
@@ -422,13 +422,13 @@ function registerIpcHandlers(): void {
     }
   })
 
-  // ── Monday.com OAuth: System browser + localhost callback + PKCE ───────
+  // ── Monday.com OAuth: System default browser + localhost callback + PKCE ───────
   ipcMain.handle('monday:login', async (): Promise<{ success: boolean; token?: string; error?: string }> => {
     // Guard: client ID must be configured
     if (!MONDAY_CLIENT_ID) {
       return {
         success: false,
-        error: 'MONDAY_CLIENT_ID is not configured. See setup guide in the artifact.'
+        error: 'MONDAY_CLIENT_ID is not configured.'
       }
     }
 
@@ -443,14 +443,6 @@ function registerIpcHandlers(): void {
 
     return new Promise((resolve) => {
       let resolved = false
-      let authWin: BrowserWindow | null = null
-
-      const closeAuthWin = () => {
-        if (authWin && !authWin.isDestroyed()) {
-          try { authWin.close() } catch { }
-          authWin = null
-        }
-      }
 
       // 1. Spin up a one-shot HTTP server to catch the OAuth redirect
       const server = createServer(async (req, res) => {
@@ -465,9 +457,8 @@ function registerIpcHandlers(): void {
         if (error || !code) {
           resolved = true
           res.writeHead(200, { 'Content-Type': 'text/html' })
-          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Login cancelled</h2><p>You can close this window.</p></body></html>')
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#a1a1aa"><h2 style="color:#ef4444">Login Cancelled</h2><p>You can close this tab and return to the app.</p></body></html>')
           activeOAuthServer = null
-          setTimeout(closeAuthWin, 1000)
           try { server.close() } catch { }
           resolve({ success: false, error: error || 'No authorization code received' })
           return
@@ -493,26 +484,23 @@ function registerIpcHandlers(): void {
           if (tokenData.access_token) {
             resolved = true
             res.writeHead(200, { 'Content-Type': 'text/html' })
-            res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#1a1a1a;color:#e0e0e0"><h2 style="color:#3fb950">✓ Connected to Monday.com</h2><p>You can close this tab and return to the app.</p></body></html>')
+            res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#f4f4f5"><h2 style="color:#10b981;font-size:24px">✓ Connected to Monday.com</h2><p style="color:#a1a1aa">Authentication successful! You can close this browser tab and return to the app.</p></body></html>')
             activeOAuthServer = null
-            setTimeout(closeAuthWin, 1000)
             try { server.close() } catch { }
             resolve({ success: true, token: tokenData.access_token })
           } else {
             resolved = true
             res.writeHead(200, { 'Content-Type': 'text/html' })
-            res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Token exchange failed</h2><p>Please try again.</p></body></html>')
+            res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#f4f4f5"><h2 style="color:#ef4444">Token Exchange Failed</h2><p>Please try again in the app.</p></body></html>')
             activeOAuthServer = null
-            setTimeout(closeAuthWin, 1500)
             try { server.close() } catch { }
             resolve({ success: false, error: tokenData.error || 'Token exchange failed' })
           }
         } catch (err) {
           resolved = true
           res.writeHead(200, { 'Content-Type': 'text/html' })
-          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>Connection error</h2></body></html>')
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#f4f4f5"><h2>Connection Error</h2></body></html>')
           activeOAuthServer = null
-          setTimeout(closeAuthWin, 1500)
           try { server.close() } catch { }
           resolve({ success: false, error: (err as Error).message })
         }
@@ -526,7 +514,6 @@ function registerIpcHandlers(): void {
         if (!resolved) {
           resolved = true
           activeOAuthServer = null
-          closeAuthWin()
           try { server.close() } catch { }
           if (err.code === 'EADDRINUSE') {
             resolve({
@@ -549,117 +536,26 @@ function registerIpcHandlers(): void {
         console.error('[Monday Auth] Listen failed:', e)
       }
 
-      // Build OAuth authorization URL forcing existing account login
+      // Build exact Monday OAuth Authorization URL
       const authUrl = new URL('https://auth.monday.com/oauth2/authorize')
       authUrl.searchParams.set('client_id', MONDAY_CLIENT_ID)
       authUrl.searchParams.set('redirect_uri', MONDAY_REDIRECT_URI)
       authUrl.searchParams.set('response_type', 'code')
       authUrl.searchParams.set('code_challenge', codeChallenge)
       authUrl.searchParams.set('code_challenge_method', 'S256')
-      authUrl.searchParams.set('force_existing_account', 'true')
 
       const url = authUrl.toString()
 
-      // Create dedicated in-app Electron auth popup window
-      authWin = new BrowserWindow({
-        width: 1020,
-        height: 760,
-        title: 'Authorize QA Snapshot Editor - Monday.com',
-        show: true,
-        center: true,
-        backgroundColor: '#1a1a1a',
-        autoHideMenuBar: true,
-        webPreferences: {
-          session: session.defaultSession,
-          nodeIntegration: false,
-          contextIsolation: true,
-          webSecurity: false
-        }
+      // Open in default system browser ONCE (uses active Monday.com session)
+      shell.openExternal(url).catch((err) => {
+        console.error('[Monday Auth] Failed to open external browser:', err)
       })
 
-      authWin.setMenu(null)
-      authWin.webContents.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-      )
-
-      // Auto-switch to Log In view whenever Monday attempts to navigate or load Sign Up page
-      const redirectIfSignUp = (targetUrl: string) => {
-        if (targetUrl.includes('/users/sign_up')) {
-          const loginUrl = targetUrl.replace('/users/sign_up', '/users/sign_in')
-          console.log('[Monday Auth] Intercepted /users/sign_up, redirecting to /users/sign_in:', loginUrl)
-          authWin?.loadURL(loginUrl).catch(() => { })
-          return true
-        }
-        return false
-      }
-
-      authWin.webContents.on('will-navigate', (event, navUrl) => {
-        if (redirectIfSignUp(navUrl)) {
-          event.preventDefault()
-        }
-      })
-
-      authWin.webContents.on('did-navigate', (_event, navUrl) => {
-        redirectIfSignUp(navUrl)
-      })
-
-      const injectLoginScript = () => {
-        authWin?.webContents.executeJavaScript(`
-          (() => {
-            try {
-              if (window.location.href.includes('/users/sign_up')) {
-                window.location.href = window.location.href.replace('/users/sign_up', '/users/sign_in');
-                return;
-              }
-              const textNodes = Array.from(document.querySelectorAll('a, button, span, div, p'));
-              const loginBtn = textNodes.find(el => {
-                const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-                return (text === 'log in' || text === 'login' || text.includes('already have an account')) && el.offsetParent !== null;
-              });
-              if (loginBtn) {
-                if (loginBtn.tagName === 'A' && loginBtn.href) {
-                  window.location.href = loginBtn.href;
-                } else if (typeof loginBtn.click === 'function') {
-                  console.log('[Monday Auth Helper] Auto clicking Log In link');
-                  loginBtn.click();
-                }
-              }
-            } catch(e) {}
-          })()
-        `).catch(() => { })
-      }
-
-      authWin.webContents.on('dom-ready', injectLoginScript)
-      authWin.webContents.on('did-finish-load', injectLoginScript)
-
-      authWin.on('closed', () => {
-        authWin = null
-        if (!resolved) {
-          resolved = true
-          activeOAuthServer = null
-          try { server.close() } catch { }
-          resolve({ success: false, error: 'Login window was closed' })
-        }
-      })
-
-      // Also open in system default browser for instant SSO if user is already logged into Monday in Chrome/Edge
-      shell.openExternal(url).catch(() => { })
-
-      authWin.loadURL(url).catch((err) => {
-        console.error('[Monday Auth] authWin loadURL error, falling back to default browser:', err)
-        shell.openExternal(url).catch(() => { })
-      })
-
-      try {
-        authWin.focus()
-      } catch { }
-
-      // Timeout: auto-close after 3 minutes if user never completes login
+      // Timeout: auto-close after 3 minutes if user never completes OAuth in browser
       setTimeout(() => {
         if (!resolved) {
           resolved = true
           activeOAuthServer = null
-          closeAuthWin()
           try { server.close() } catch { }
           resolve({ success: false, error: 'Login timed out' })
         }
@@ -694,6 +590,19 @@ function registerIpcHandlers(): void {
   ipcMain.handle('snapshot:create', (_event, params) => createSnapshot(params))
   ipcMain.handle('snapshot:list', (_event, projectId: string) => getSnapshots(projectId))
   ipcMain.handle('snapshot:delete', (_event, snapshotId: string) => deleteSnapshot(snapshotId))
+
+  // Settings: Select Directory Dialog
+  ipcMain.handle('settings:select-directory', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return { success: false }
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Snapshot Storage Directory',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (!res.canceled && res.filePaths.length > 0) {
+      return { success: true, path: res.filePaths[0] }
+    }
+    return { success: false }
+  })
 }
 
 app.whenReady().then(() => {

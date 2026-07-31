@@ -30,6 +30,7 @@ export interface SelectedElementInfo {
 export interface LiveEditorOptions {
   mode?: 'edit' | 'interact'
   revealAnimations?: boolean
+  zoom?: number
   onSelect: (info: SelectedElementInfo | null, el: HTMLElement | null) => void
   onChange: () => void
 }
@@ -37,11 +38,14 @@ export interface LiveEditorOptions {
 export function attachLiveEditor(
   doc: Document,
   options: LiveEditorOptions
-): { cleanup: () => void; updateOptions: (newOpts: Partial<LiveEditorOptions>) => void; setPaused: (p: boolean) => void; selectElement: (el: HTMLElement) => void } {
+): { cleanup: () => void; updateOptions: (newOpts: Partial<LiveEditorOptions>) => void; setPaused: (p: boolean) => void; selectElement: (el: HTMLElement) => void; setZoom: (z: number) => void } {
   let mode = options.mode || 'edit'
   let revealAnimations = options.revealAnimations ?? true
+  let currentZoom = options.zoom || 100
   let selectedEl: HTMLElement | null = null
   let hoverEl: HTMLElement | null = null
+  let toolbarOffsetX = 0
+  let toolbarOffsetY = 0
 
   // Inject editor highlight style into Document <head>
   const style = doc.createElement('style')
@@ -109,15 +113,18 @@ export function attachLiveEditor(
     const rect = selectedEl.getBoundingClientRect()
     const scrollX = doc.defaultView?.scrollX || 0
     const scrollY = doc.defaultView?.scrollY || 0
+    const invScale = 100 / Math.max(1, currentZoom)
 
-    // 1. Position Action Bar above the element
-    let barTop = rect.top + scrollY - 38
-    if (barTop < scrollY) barTop = rect.bottom + scrollY + 8
-    let barLeft = rect.left + scrollX
+    // 1. Position Action Bar above the element with drag offset
+    let barTop = rect.top + scrollY - 38 + toolbarOffsetY
+    if (barTop < scrollY && toolbarOffsetY === 0) barTop = rect.bottom + scrollY + 8
+    let barLeft = rect.left + scrollX + toolbarOffsetX
 
     if (barEl) {
       barEl.style.top = `${barTop}px`
       barEl.style.left = `${barLeft}px`
+      barEl.style.transform = `scale(${invScale})`
+      barEl.style.transformOrigin = 'bottom left'
     }
 
     // 2. Position Bounding Box & Transform Handles directly over element
@@ -126,11 +133,18 @@ export function attachLiveEditor(
       boxEl.style.left = `${rect.left + scrollX}px`
       boxEl.style.width = `${Math.max(1, rect.width)}px`
       boxEl.style.height = `${Math.max(1, rect.height)}px`
+
+      const handles = boxEl.querySelectorAll<HTMLElement>('.handle')
+      handles.forEach((h) => {
+        h.style.transform = `scale(${invScale})`
+      })
     }
 
-    // 3. Update Live Dimension Badge
+    // 3. Update Live Dimension Badge (counter-scaled)
     if (dimBadgeEl) {
       dimBadgeEl.textContent = `${Math.round(rect.width)} × ${Math.round(rect.height)} px`
+      dimBadgeEl.style.transform = `scale(${invScale})`
+      dimBadgeEl.style.transformOrigin = 'bottom right'
     }
   }
 
@@ -254,9 +268,8 @@ export function attachLiveEditor(
 
       .dim-badge {
         position: absolute;
-        bottom: -26px;
-        left: 50%;
-        transform: translateX(-50%);
+        bottom: -24px;
+        right: 8px;
         background: #18181b;
         color: #10b981;
         font-size: 10px;
@@ -359,20 +372,20 @@ export function attachLiveEditor(
     const bar = doc.createElement('div')
     bar.className = 'toolbar-bar'
 
-    // Tag Label Badge (also draggable)
+    // Tag Label Badge (draggable to move mini toolbar overlay)
     const tagLabel = doc.createElement('span')
     tagLabel.className = 'toolbar-tag'
     tagLabel.textContent = el.tagName.toLowerCase()
-    tagLabel.title = 'Click and drag to reposition element'
+    tagLabel.title = 'Click and drag tag label to move this mini toolbar overlay'
     tagLabel.style.cursor = 'grab'
     bar.appendChild(tagLabel)
 
-    // Move / Drag Handle ⣿
+    // Move / Drag Handle (6-dot SVG grip icon to drag/reorder element inside page)
     const dragBtn = doc.createElement('button')
     dragBtn.className = 'toolbar-btn'
     dragBtn.title = 'Click and drag to reposition element inside page'
     dragBtn.style.cursor = 'grab'
-    dragBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>'
+    dragBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.5"/><circle cx="16" cy="6" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="8" cy="18" r="1.5"/><circle cx="16" cy="18" r="1.5"/></svg>'
     bar.appendChild(dragBtn)
 
     // ── Drag & Drop reordering logic ──
@@ -384,7 +397,6 @@ export function attachLiveEditor(
 
       const draggedEl = el
       doc.body.style.cursor = 'grabbing'
-      tagLabel.style.cursor = 'grabbing'
       dragBtn.style.cursor = 'grabbing'
 
       let dropLine = doc.getElementById('live-drop-indicator') as HTMLElement
@@ -443,7 +455,6 @@ export function attachLiveEditor(
         const dot2 = dropLine.querySelector('.drop-dot-2') as HTMLElement
 
         if (isHorizontal) {
-          // Horizontal Layout: Left vs Right drop
           const midX = rect.left + rect.width / 2
           const isLeft = ev.clientX < midX
           dropTarget = { el: hoverTarget, position: isLeft ? 'before' : 'after' }
@@ -458,7 +469,6 @@ export function attachLiveEditor(
           if (dot1) { dot1.style.top = '-4px'; dot1.style.left = '-3.5px'; dot1.style.bottom = 'auto'; dot1.style.right = 'auto'; }
           if (dot2) { dot2.style.bottom = '-4px'; dot2.style.left = '-3.5px'; dot2.style.top = 'auto'; dot2.style.right = 'auto'; }
         } else {
-          // Vertical Layout: Top vs Bottom drop
           const midY = rect.top + rect.height / 2
           const isBefore = ev.clientY < midY
           dropTarget = { el: hoverTarget, position: isBefore ? 'before' : 'after' }
@@ -480,7 +490,6 @@ export function attachLiveEditor(
         ev.stopPropagation()
 
         doc.body.style.cursor = ''
-        tagLabel.style.cursor = 'grab'
         dragBtn.style.cursor = 'grab'
 
         if (dropLine) dropLine.style.display = 'none'
@@ -507,7 +516,42 @@ export function attachLiveEditor(
       doc.addEventListener('mouseup', onMouseUp, true)
     }
 
-    tagLabel.onmousedown = handleDragStart
+    // Drag mini toolbar overlay itself
+    const handleToolbarMove = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const startX = e.clientX
+      const startY = e.clientY
+      const startOffsetX = toolbarOffsetX
+      const startOffsetY = toolbarOffsetY
+
+      doc.body.style.cursor = 'grabbing'
+      tagLabel.style.cursor = 'grabbing'
+
+      const onMouseMove = (ev: MouseEvent) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+        const scaleFactor = Math.max(0.1, currentZoom / 100)
+        toolbarOffsetX = startOffsetX + (ev.clientX - startX) / scaleFactor
+        toolbarOffsetY = startOffsetY + (ev.clientY - startY) / scaleFactor
+        positionToolbar()
+      }
+
+      const onMouseUp = (ev: MouseEvent) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+        doc.body.style.cursor = ''
+        tagLabel.style.cursor = 'grab'
+        doc.removeEventListener('mousemove', onMouseMove, true)
+        doc.removeEventListener('mouseup', onMouseUp, true)
+      }
+
+      doc.addEventListener('mousemove', onMouseMove, true)
+      doc.addEventListener('mouseup', onMouseUp, true)
+    }
+
+    tagLabel.onmousedown = handleToolbarMove
     dragBtn.onmousedown = handleDragStart
 
     const div1 = doc.createElement('div')
@@ -1021,6 +1065,10 @@ export function attachLiveEditor(
       revealAnimations = newOpts.revealAnimations
       updateAnimStyle(revealAnimations)
     }
+    if (newOpts.zoom !== undefined) {
+      currentZoom = newOpts.zoom
+      positionToolbar()
+    }
   }
 
   let paused = false
@@ -1036,5 +1084,10 @@ export function attachLiveEditor(
     selectElement(el)
   }
 
-  return { cleanup, updateOptions, setPaused, selectElement: selectElementExternally }
+  const setZoom = (z: number) => {
+    currentZoom = z
+    positionToolbar()
+  }
+
+  return { cleanup, updateOptions, setPaused, selectElement: selectElementExternally, setZoom }
 }

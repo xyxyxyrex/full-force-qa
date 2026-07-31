@@ -8,6 +8,8 @@ interface Props {
   onBack: () => void
   initialAdminUrl?: string
   initialStagingUrl?: string
+  initialFigmaUrl?: string
+  initialSheetUrl?: string
   /** When true, attempt capture immediately (reopening a saved project) */
   autoCapture?: boolean
 }
@@ -127,12 +129,14 @@ export default function CaptureScreen({
   onBack,
   initialAdminUrl = '',
   initialStagingUrl = '',
+  initialFigmaUrl = '',
+  initialSheetUrl = '',
   autoCapture = false
 }: Props) {
   const [adminUrl, setAdminUrl] = useState(() => normalizeUrl(initialAdminUrl))
   const [stagingUrl, setStagingUrl] = useState(() => normalizeUrl(initialStagingUrl))
-  const [sheetsUrl, setSheetsUrl] = useState(() => normalizeUrl(localStorage.getItem('qa_google_sheet_url') || ''))
-  const [figmaUrl, setFigmaUrl] = useState(() => normalizeUrl(localStorage.getItem('qa_figma_url') || ''))
+  const [sheetsUrl, setSheetsUrl] = useState(() => normalizeUrl(initialSheetUrl))
+  const [figmaUrl, setFigmaUrl] = useState(() => normalizeUrl(initialFigmaUrl))
   const [loggedIn, setLoggedIn] = useState(false)
   const [loading, setLoading] = useState(autoCapture)
   const [status, setStatus] = useState(autoCapture ? 'Opening project snapshot...' : '')
@@ -177,10 +181,8 @@ export default function CaptureScreen({
     const norm = normalizeUrl(url)
     if (target === 'sheets') {
       setSheetsUrl(norm)
-      localStorage.setItem('qa_google_sheet_url', norm)
     } else if (target === 'figma') {
       setFigmaUrl(norm)
-      localStorage.setItem('qa_figma_url', norm)
     } else {
       setStagingUrl(norm)
     }
@@ -269,13 +271,6 @@ export default function CaptureScreen({
     const normStaging = normalizeUrl(stagingUrl)
     const normAdmin = normalizeUrl(adminUrl)
     setStagingUrl(normStaging)
-
-    if (sheetsUrl.trim()) {
-      localStorage.setItem('qa_google_sheet_url', normalizeUrl(sheetsUrl))
-    }
-    if (figmaUrl.trim()) {
-      localStorage.setItem('qa_figma_url', normalizeUrl(figmaUrl))
-    }
 
     setLoading(true)
     setStatus('Loading page & waiting for full rendering...')
@@ -499,15 +494,12 @@ export default function CaptureScreen({
               placeholder="https://docs.google.com/spreadsheets/d/.../edit"
               value={sheetsUrl}
               onChange={(e) => setSheetsUrl(e.target.value)}
-              onBlur={() => {
-                if (sheetsUrl.trim()) localStorage.setItem('qa_google_sheet_url', normalizeUrl(sheetsUrl))
-              }}
               disabled={loading}
             />
             {sheetsUrl.trim() && (
               <button
                 className="capture-btn btn-clear"
-                onClick={() => { setSheetsUrl(''); localStorage.removeItem('qa_google_sheet_url') }}
+                onClick={() => setSheetsUrl('')}
                 title="Clear"
               >
                 ✕
@@ -557,15 +549,12 @@ export default function CaptureScreen({
               placeholder="https://www.figma.com/design/..."
               value={figmaUrl}
               onChange={(e) => setFigmaUrl(e.target.value)}
-              onBlur={() => {
-                if (figmaUrl.trim()) localStorage.setItem('qa_figma_url', normalizeUrl(figmaUrl))
-              }}
               disabled={loading}
             />
             {figmaUrl.trim() && (
               <button
                 className="capture-btn btn-clear"
-                onClick={() => { setFigmaUrl(''); localStorage.removeItem('qa_figma_url') }}
+                onClick={() => setFigmaUrl('')}
                 title="Clear"
               >
                 ✕
