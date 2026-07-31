@@ -116,7 +116,7 @@ function createWindow(): void {
   })
 
   // Enforce English Accept-Language and spoof same-origin browser headers on outbound HTTP requests to bypass Cloudflare 403 blocks
-  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['http://*/*', 'https://*/*'] }, async (details, callback) => {
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
     const requestHeaders = { ...details.requestHeaders }
     requestHeaders['Accept-Language'] = 'en-US,en;q=0.9'
     requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -138,21 +138,8 @@ function createWindow(): void {
       } catch {}
     }
 
-    // Attach domain cookies from Electron session if present
-    if (!requestHeaders['Cookie']) {
-      try {
-        const cookies = await session.defaultSession.cookies.get({ url: details.url })
-        if (cookies && cookies.length > 0) {
-          const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join('; ')
-          if (cookieStr) {
-            requestHeaders['Cookie'] = cookieStr
-          }
-        }
-      } catch {}
-    }
-
     if (/\.(css|png|jpg|jpeg|gif|php|js)(\?|$)/i.test(details.url)) {
-      console.log(`[DEBUG NET SEND_HEADERS] Referer: ${requestHeaders['Referer']} | HasCookie: ${!!requestHeaders['Cookie']} | URL: ${details.url}`)
+      console.log(`[DEBUG NET SEND_HEADERS] Referer: ${requestHeaders['Referer']} | URL: ${details.url}`)
     }
 
     callback({ requestHeaders })
