@@ -146,49 +146,48 @@
   margin-bottom: 3px;
 }
 
-/* ── High-Specificity Input & Field Styling for Right Panel ── */
+/* ── HIGH-SPECIFICITY OVERRIDES TO DEFEAT INLINE STYLES ON GRAPESJS INPUTS ── */
 
-#styles-container .gjs-field,
-#styles-container .gjs-sm-field,
-#styles-container .gjs-fields .gjs-field,
-#styles-container .gjs-field-integer,
-#styles-container .gjs-field-select,
-#styles-container .gjs-field-color,
-#styles-container .gjs-field-composite,
-#styles-container .gjs-radio-item,
-#styles-container .gjs-radio-items,
-#styles-container .gjs-radio-item-label,
-#styles-container div[class*="field"],
 #styles-container input,
 #styles-container select,
 #styles-container textarea,
-.gjs-sm-property .gjs-field,
+#styles-container input[style],
+#styles-container select[style],
+#styles-container textarea[style],
+#fonts-container input,
+#fonts-container input[style],
+#colors-container input,
+#colors-container input[style],
+#selectors-container input,
+#selectors-container input[style],
 .gjs-field,
+.gjs-field[style],
+.gjs-field input,
+.gjs-field input[style],
+.gjs-field select,
+.gjs-field select[style],
+.gjs-field textarea,
+.gjs-field textarea[style],
 .gjs-sm-field,
+.gjs-sm-field[style],
+.gjs-sm-field input,
+.gjs-sm-field input[style],
+.gjs-sm-property input,
+.gjs-sm-property input[style],
+.gjs-sm-property select,
+.gjs-sm-property select[style],
+.gjs-radio-item,
+.gjs-radio-item[style],
 .gjs-field-integer,
 .gjs-field-select,
 .gjs-field-color,
-.gjs-field-composite,
-.gjs-radio-item,
-.gjs-sm-composite .gjs-sm-property,
-.gjs-sm-composite .gjs-field,
-.gjs-sm-sector .gjs-field {
+.gjs-field-composite {
+  background: var(--bg-input) !important;
   background-color: var(--bg-input) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: 6px !important;
   color: var(--text-primary) !important;
   transition: border-color 0.12s, background-color 0.12s;
-}
-
-#styles-container input,
-#styles-container select,
-#styles-container textarea,
-.gjs-field input,
-.gjs-field select,
-.gjs-field textarea {
-  color: var(--text-primary) !important;
-  font-size: 12px !important;
-  background-color: transparent !important;
 }
 
 .gjs-field:focus-within,
@@ -225,6 +224,7 @@
 .gjs-sm-property__text-align .gjs-radio-item input:checked + .gjs-radio-item-label,
 .gjs-sm-property__text-decoration .gjs-radio-item input:checked + .gjs-radio-item-label,
 .gjs-sm-property__text-transform .gjs-radio-item input:checked + .gjs-radio-item-label {
+  background: var(--accent-color) !important;
   background-color: var(--accent-color) !important;
   color: #ffffff !important;
 }

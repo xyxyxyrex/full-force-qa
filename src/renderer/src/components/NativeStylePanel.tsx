@@ -129,12 +129,12 @@ const IcoWordSpacing = () => <svg width="14" height="14" viewBox="0 0 14 14" fil
 // ─── Shared Styles ─────────────────────────────────────────
 
 const base = {
-  bg: '#18181b',
-  border: '#3f3f46',
-  text: '#e4e4e7',
-  muted: '#71717a',
-  dim: '#52525b',
-  accent: '#2563eb',
+  bg: 'var(--bg-input)',
+  border: 'var(--border-color)',
+  text: 'var(--text-primary)',
+  muted: 'var(--text-secondary)',
+  dim: 'var(--text-muted)',
+  accent: 'var(--accent-color)',
 }
 
 const inputBase: React.CSSProperties = {
@@ -151,7 +151,7 @@ function SectorHeader({ title, open, onToggle }: { title: string; open: boolean;
       <svg width="8" height="8" viewBox="0 0 8 8" style={{ transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : '', color: base.muted, flexShrink: 0 }}>
         <path d="M2 0.5 L6 4 L2 7.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
-      <span style={{ fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: '#a1a1aa' }}>{title}</span>
+      <span style={{ fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: base.muted }}>{title}</span>
     </div>
   )
 }
@@ -433,7 +433,7 @@ export default function NativeStylePanel({ selectedElement, onStyleChange, style
     return <div style={{ padding: '20px 16px', color: base.dim, fontSize: '11px', textAlign: 'center' }}>Select an element to inspect</div>
   }
 
-  const divider: React.CSSProperties = { borderBottom: '1px solid #27272a', paddingBottom: '10px' }
+  const divider: React.CSSProperties = { borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }
   const row2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }
 
   return (

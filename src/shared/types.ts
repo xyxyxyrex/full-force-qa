@@ -34,7 +34,23 @@ export interface SnapshotItem {
   viewportHeight?: number
 }
 
-export type AppTheme = 'dark' | 'light' | 'catppuccin-mocha' | 'nord' | 'cyberpunk-gold' | 'tokyo-night'
+export type AppTheme =
+  | 'dark'
+  | 'light'
+  | 'catppuccin-mocha'
+  | 'nord'
+  | 'cyberpunk-gold'
+  | 'tokyo-night'
+  | 'dracula'
+  | 'synthwave-84'
+  | 'github-dark'
+  | 'rose-pine'
+  | 'monokai-pro'
+  | 'gruvbox-dark'
+  | 'solarized-dark'
+  | 'emerald-abyss'
+  | 'one-dark-pro'
+  | 'sunset-crimson'
 
 export interface AppHotkeys {
   quickSave: string
