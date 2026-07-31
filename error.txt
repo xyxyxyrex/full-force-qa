@@ -1,0 +1,1701 @@
+Port 5173 is in use, trying another one...
+dev server running for the electron renderer process at:
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose
+
+starting electron app...
+
+
+[22164:0731/175056.645:ERROR:cache_util_win.cc(20)] Unable to move the cache: Access is denied. (0x5)
+[22164:0731/175056.645:ERROR:cache_util_win.cc(20)] Unable to move the cache: Access is denied. (0x5)
+[22164:0731/175056.645:ERROR:cache_util_win.cc(20)] Unable to move the cache: Access is denied. (0x5)
+[22164:0731/175056.647:ERROR:disk_cache.cc(216)] Unable to create cache
+[22164:0731/175056.647:ERROR:gpu_disk_cache.cc(711)] Gpu Cache Creation failed: -2
+[22164:0731/175056.647:ERROR:disk_cache.cc(216)] Unable to create cache
+[22164:0731/175056.647:ERROR:gpu_disk_cache.cc(711)] Gpu Cache Creation failed: -2
+[22164:0731/175056.647:ERROR:disk_cache.cc(216)] Unable to create cache
+[22164:0731/175056.647:ERROR:gpu_disk_cache.cc(711)] Gpu Cache Creation failed: -2
+[22164:0731/175059.541:ERROR:service_worker_storage.cc(1688)] Failed to delete the database: Database IO error
+[620:0731/175059.997:ERROR:cache_util_win.cc(20)] Unable to move the cache: Access is denied. (0x5)
+[620:0731/175059.997:ERROR:disk_cache.cc(216)] Unable to create cache
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/react.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/react-dom_client.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/App.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/react.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/chunk-CANBAPAS.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/chunk-5WRI5ZAA.js?v=e8582236
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=e8582236
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/react-dom_client.js?v=e8582236
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/App.css
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/chunk-OY5C42Z6.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/theme/themes.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/chunk-CANBAPAS.js?v=e8582236
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/chunk-5WRI5ZAA.js?v=e8582236
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/chunk-OY5C42Z6.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/components/CaptureScreen.css
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/components/SettingsModal.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/theme/themes.css
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/assets/figma.png?import
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/assets/sheets.png?import
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/components/Dashboard.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/assets/figma.png?import
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/assets/sheets.png?import
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/components/CaptureScreen.css
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/@fortune-sheet_react.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/@fortune-sheet/react/dist/index.css
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/components/EditorWorkspace.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/components/SettingsModal.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/components/Dashboard.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/@fortune-sheet/react/dist/index.css
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/grapesjs.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/grapesjs/dist/css/grapes.min.css
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/grapesjs/theme.css 
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/components/SeoAuditRightPanel.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/components/EditorWorkspace.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/grapesjs/theme.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/grapesjs/dist/css/grapes.min.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/components/SeoAuditRightPanel.css
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/@fortune-sheet_react.js?v=e8582236
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/@fs/C:/Users/SEO-LENOVO/full-force-qa/node_modules/.vite/deps/grapesjs.js?v=e8582236
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/assets/figma.png
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/assets/figma.png
+[DEBUG NET SEND_HEADERS] Referer: http://localhost:5174/ | URL: http://localhost:5174/src/assets/sheets.png
+[DEBUG NET HEADERS_RECV] 200 | http://localhost:5174/src/assets/sheets.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/jquery.min.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/jquery.min.js
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png  
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/dist/vendor/wp-polyfill.min.js?ver=3.15.0
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/dist/vendor/wp-polyfill.min.js?ver=3.15.0
+[DEBUG NET HEADERS_RECV] 200 | https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/jquery/jquery-migrate.min.js?ver=3.4.1
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png  
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/google-play-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png  
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png    
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/05/footer_logo.png 
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/08/PDAX-Inc.-NPC-Seal-of-Registration-2025.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://s0.wp.com/wp-content/js/bilmur.min.js?m=202631
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/plugins/gutenberg/build/scripts/hooks/index.min.js?ver=7496969728ca0f95732d
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/plugins/gutenberg/build/scripts/i18n/index.min.js?ver=125448662852c5e18937
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_96e7dc3f0e8559e4a3f3ca40b17ab9c3.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_2912c657d0592cc532dff73d0d2ce7bb.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_de1331e7908124fa069235e3f5fdffb1.php?ver=2.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_a9ea722cce7a43b5e5599864e865f296.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://www.google.com/recaptcha/api.js?render=6LdmWpYrAAAAANOuzAXMcsF48QLzqjbGrRiXg2oX&ver=3.0
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_ec0187677793456f98473f49d9e9b95f.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://stats.wp.com/e-202631.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/bootstrap.bundle.min.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/select2.min.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/owl.carousel.min.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_e4c19196c40a870a0ade24f18fb814a6.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/jquery/jquery-migrate.min.js?ver=3.4.1
+[DEBUG NET HEADERS_RECV] 200 | https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.js       
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/google-play-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET HEADERS_RECV] 200 | https://stats.wp.com/e-202631.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET HEADERS_RECV] 200 | https://www.google.com/recaptcha/api.js?render=6LdmWpYrAAAAANOuzAXMcsF48QLzqjbGrRiXg2oX&ver=3.0
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/05/footer_logo.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/08/PDAX-Inc.-NPC-Seal-of-Registration-2025.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/plugins/gutenberg/build/scripts/hooks/index.min.js?ver=7496969728ca0f95732d
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/plugins/gutenberg/build/scripts/i18n/index.min.js?ver=125448662852c5e18937
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_96e7dc3f0e8559e4a3f3ca40b17ab9c3.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_2912c657d0592cc532dff73d0d2ce7bb.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_de1331e7908124fa069235e3f5fdffb1.php?ver=2.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_a9ea722cce7a43b5e5599864e865f296.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_ec0187677793456f98473f49d9e9b95f.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/bootstrap.bundle.min.js
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/select2.min.js
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/js/owl.carousel.min.js
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_e4c19196c40a870a0ade24f18fb814a6.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET HEADERS_RECV] 200 | https://s0.wp.com/wp-content/js/bilmur.min.js?m=202631
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/recaptcha__en.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://pixel.wp.com/g.gif?v=ext&blog=234593695&post=3421&tz=8&srv=staging-3ee3-pdaxwrevamp.wpcomstaging.com&hp=atomic&ac=2&amp=0&j=1%3A16.1-a.5&host=staging-3ee3-pdaxwrevamp.wpcomstaging.com&ref=&fcp=0&rand=0.25738866647399594        
+[DEBUG NET HEADERS_RECV] 200 | https://pixel.wp.com/g.gif?v=ext&blog=234593695&post=3421&tz=8&srv=staging-3ee3-pdaxwrevamp.wpcomstaging.com&hp=atomic&ac=2&amp=0&j=1%3A16.1-a.5&host=staging-3ee3-pdaxwrevamp.wpcomstaging.com&ref=&fcp=0&rand=0.25738866647399594
+[DEBUG NET HEADERS_RECV] 200 | https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/recaptcha__en.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/wp-emoji-release.min.js?ver=7.0.2
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-includes/js/wp-emoji-release.min.js?ver=7.0.2
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://scripts.clarity.ms/0.8.67/clarity.js
+[DEBUG NET SEND_HEADERS] Referer: https://www.google.com/ | URL: https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/styles__ltr.css
+[DEBUG NET SEND_HEADERS] Referer: https://www.google.com/ | URL: https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/recaptcha__en.js
+[DEBUG NET HEADERS_RECV] 200 | https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/styles__ltr.css
+[DEBUG NET HEADERS_RECV] 200 | https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/recaptcha__en.js
+[DEBUG NET SEND_HEADERS] Referer: https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/styles__ltr.css | URL: https://www.gstatic.com/recaptcha/api2/logo_48.png
+[DEBUG NET HEADERS_RECV] 200 | https://www.gstatic.com/recaptcha/api2/logo_48.png
+[DEBUG NET HEADERS_RECV] 200 | https://scripts.clarity.ms/0.8.67/clarity.js
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://c.clarity.ms/c.gif
+[capture] Pure Chromium page loaded: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/
+[DEBUG NET HEADERS_RECV] 302 | https://c.clarity.ms/c.gif
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://c.bing.com/c.gif?ctsa=mr&CtsSyncId=59A823878FF5423C86E28585AADD7512&RedC=c.clarity.ms&MXFR=35D8720678B16BE6134265A17CB16569
+[DEBUG NET HEADERS_RECV] 302 | https://c.bing.com/c.gif?ctsa=mr&CtsSyncId=59A823878FF5423C86E28585AADD7512&RedC=c.clarity.ms&MXFR=35D8720678B16BE6134265A17CB16569
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://c.clarity.ms/c.gif?ctsa=mr&CtsSyncId=59A823878FF5423C86E28585AADD7512&MUID=3DC80B0451406E1E33111CA350116F37
+[DEBUG NET HEADERS_RECV] 200 | https://c.clarity.ms/c.gif?ctsa=mr&CtsSyncId=59A823878FF5423C86E28585AADD7512&MUID=3DC80B0451406E1E33111CA350116F37
+[capture] 3s post-load wait complete
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png  
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png   
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png  
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/google-play-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png  
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png    
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/05/footer_logo.png 
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/how-to-invest-online-philippines/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/08/PDAX-Inc.-NPC-Seal-of-Registration-2025.png
+[DEBUG CAPTURE] Pure HTML extracted length: 104189 | Found <link stylesheet> count: 6 | Found <style> count: 11
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET SEND_HEADERS] Referer: https://cdnjs.cloudflare.com/ | URL: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css
+[DEBUG NET HEADERS_RECV] 200 | https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET SEND_HEADERS] Referer: https://cdn.jsdelivr.net/ | URL: https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://cdn.jsdelivr.net/ | URL: https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET HEADERS_RECV] 200 | https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.css      
+[DEBUG NET HEADERS_RECV] 200 | https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.css      
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/google-play-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://pixel.wp.com/ | URL: https://pixel.wp.com/g.gif?v=ext&blog=234593695&post=3421&tz=8&srv=staging-3ee3-pdaxwrevamp.wpcomstaging.com&hp=atomic&ac=2&amp=0&j=1%3A16.1-a.5&host=staging-3ee3-pdaxwrevamp.wpcomstaging.com&ref=&fcp=0&rand=0.25738866647399594
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://pixel.wp.com/ | URL: https://pixel.wp.com/g.gif?v=ext&blog=234593695&post=3421&tz=8&srv=staging-3ee3-pdaxwrevamp.wpcomstaging.com&hp=atomic&ac=2&amp=0&j=1%3A16.1-a.5&host=staging-3ee3-pdaxwrevamp.wpcomstaging.com&ref=&fcp=0&rand=0.25738866647399594
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/google-play-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-check.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/investment-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/google-play-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/05/footer_logo.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/08/PDAX-Inc.-NPC-Seal-of-Registration-2025.png      
+[DEBUG NET SEND_HEADERS] Referer: https://pixel.wp.com/ | URL: https://pixel.wp.com/g.gif?v=ext&blog=234593695&post=3421&tz=8&srv=staging-3ee3-pdaxwrevamp.wpcomstaging.com&hp=atomic&ac=2&amp=0&j=1%3A16.1-a.5&host=staging-3ee3-pdaxwrevamp.wpcomstaging.com&ref=&fcp=0&rand=0.25738866647399594
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/cryptocurrency-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/time-is-money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/security-policy-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/shape-like-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/flag-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/user-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/verified-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/money-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/stock-market-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/google-play-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-gallery-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/app-store-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/bonds-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/altcoins-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/nft-icon.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/05/footer_logo.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/08/PDAX-Inc.-NPC-Seal-of-Registration-2025.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/Online-Investments-img.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2026/07/coin-icon.png
+[DEBUG NET SEND_HEADERS] Referer: https://www.google.com/ | URL: https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/styles__ltr.css
+[DEBUG NET SEND_HEADERS] Referer: https://www.google.com/ | URL: https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/recaptcha__en.js
+[DEBUG NET HEADERS_RECV] 200 | https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/recaptcha__en.js
+[DEBUG NET HEADERS_RECV] 200 | https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/styles__ltr.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET SEND_HEADERS] Referer: https://www.gstatic.com/recaptcha/releases/A7KpaEASfhDcK0nXxgQEyyYv/styles__ltr.css | URL: https://www.gstatic.com/recaptcha/api2/logo_48.png
+[DEBUG NET HEADERS_RECV] 200 | https://www.gstatic.com/recaptcha/api2/logo_48.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/uploads/2025/06/PDAX-full-logo-full-color-on-dark-transparent-1.png
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[22164:0731/175300.821:ERROR:CONSOLE(1)] "Request Autofill.enable failed. {"code":-32601,"message":"'Autofill.enable' wasn't found"}", source: devtools://devtools/bundled/core/protocol_client/protocol_client.js (1)    
+[22164:0731/175300.822:ERROR:CONSOLE(1)] "Request Autofill.setAddresses failed. {"code":-32601,"message":"'Autofill.setAddresses' wasn't found"}", source: devtools://devtools/bundled/core/protocol_client/protocol_client.js (1)
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/bootstrap.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/themes/pdax-revampt/inc/css/select2.min.css
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[22164:0731/175301.166:ERROR:CONSOLE(1)] "Request Autofill.enable failed. {"code":-32601,"message":"'Autofill.enable' wasn't found"}", source: devtools://devtools/bundled/core/protocol_client/protocol_client.js (1)    
+[22164:0731/175301.167:ERROR:CONSOLE(1)] "Request Autofill.setAddresses failed. {"code":-32601,"message":"'Autofill.setAddresses' wasn't found"}", source: devtools://devtools/bundled/core/protocol_client/protocol_client.js (1)
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET SEND_HEADERS] Referer: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/ | URL: https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php?ver=6.1.6
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+[DEBUG NET HEADERS_RECV] 403 | https://staging-3ee3-pdaxwrevamp.wpcomstaging.com/wp-content/cache/autoptimize/autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php
+
+[Monday] Fetched tickets: 5
+init.ts:181 [DEBUG GJS PARSE] Raw HTML length: 87959 | Extracted CSS links: 6 | Inline styles length: 11
+init.ts:183 [DEBUG GJS CSS LINKS] Array(6)
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "_blank"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbar-toggler"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "light"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbarsupportedcontent"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "menu-item-1484"" on <ul>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <ul>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "careers"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "home"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "transparent_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "green_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white-card"" on <img>
+(anonymous) @ init.ts:322
+6init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+2init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "c103574987"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "id1531246346"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "hero"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "copy"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-1"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-2"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-3"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-4"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "col-lg-8"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:367 [DEBUG GJS INIT] Plain CSS links count: 4 | Media CSS links count: 2
+init.ts:181 [DEBUG GJS PARSE] Raw HTML length: 87959 | Extracted CSS links: 6 | Inline styles length: 11
+init.ts:183 [DEBUG GJS CSS LINKS] Array(6)
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "_blank"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbar-toggler"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "light"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbarsupportedcontent"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "menu-item-1484"" on <ul>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <ul>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "careers"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "home"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "transparent_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "green_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white-card"" on <img>
+(anonymous) @ init.ts:322
+6init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+2init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "c103574987"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "id1531246346"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "hero"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "copy"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-1"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-2"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-3"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-4"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "col-lg-8"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:367 [DEBUG GJS INIT] Plain CSS links count: 4 | Media CSS links count: 2
+about:srcdoc:1 An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing.
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': 'owzte2wy#email' is not a valid attribute name.
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentsView2.addToCollection (grapesjs.js?v=e8582236:27875:25) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '#' is not a valid attribute name.
+    at HTMLImageElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLImageElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentImageView2.render (grapesjs.js?v=e8582236:34733:12)
+    at ComponentsView2.addToCollection (grapesjs.js?v=e8582236:27875:25) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=e8582236:35190:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+grapesjs.js?v=e8582236:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': 'anchor?ar' is not a valid attribute name.
+    at HTMLDivElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLDivElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at ComponentView2.render (grapesjs.js?v=e8582236:28373:12)
+    at ComponentFrameView2.render (grapesjs.js?v=e8582236:34608:31) Object
+(anonymous) @ grapesjs.js?v=e8582236:61520
+bootstrap.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+select2.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-full-logo-full-color-on-dark-transparent-1.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+bootstrap.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+select2.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-full-logo-full-color-on-dark-transparent-1.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-check.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+investment-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+coin-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+cryptocurrency-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+time-is-money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-policy-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+shape-like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+flag-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+verified-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+stock-market-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+google-play-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-gallery-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-store-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+bonds-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+altcoins-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+nft-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-full-logo-full-color-on-dark-transparent-1.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-check.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+investment-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+coin-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+cryptocurrency-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+time-is-money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-policy-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+shape-like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+flag-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+verified-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+stock-market-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-gallery-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-store-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+bonds-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+altcoins-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+nft-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-check.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+investment-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+coin-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+cryptocurrency-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+time-is-money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-policy-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+shape-like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+flag-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+verified-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+stock-market-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+google-play-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-gallery-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-store-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+bonds-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+altcoins-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+nft-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+footer_logo.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-Inc.-NPC-Seal-of-Registration-2025.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+coin-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+grapesjs.js?v=e8582236:16541 Uncaught InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': 'owzte2wy#email' is not a valid attribute name.
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=e8582236:16541:17)
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=e8582236:16428:27)
+    at each (grapesjs.js?v=e8582236:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=e8582236:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=e8582236:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=e8582236:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=e8582236:28367:12)
+    at triggerEvents (grapesjs.js?v=e8582236:777:57)
+    at triggerApi (grapesjs.js?v=e8582236:759:25)
+g.gif:1 
+            
+            
+           Failed to load resource: net::ERR_HTTP2_PROTOCOL_ERROR
+g.gif:1 
+            
+            
+           Failed to load resource: net::ERR_HTTP2_PROTOCOL_ERROR
+autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-full-logo-full-color-on-dark-transparent-1.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+init.ts:593 [DEBUG HAMBURGER] Found menu toggle elements count: 0
+6Chrome is moving towards a new experience that allows users to choose to browse without third-party cookies.
+bootstrap.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+bootstrap.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+select2.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+select2.min.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_c7e23353d3c0f912f31ebaa176940d51.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_b2b463a5bdb73833be2a6afbc1843ddd.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+autoptimize_single_18262aafe44c951bc59fe71f18e527e3.php:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()

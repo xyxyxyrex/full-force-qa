@@ -178,6 +178,10 @@ function parseSnapshotHtml(html: string): SnapshotParts {
   const scriptsMeta = html.match(/<meta[^>]*name=["']snapshot-preserved-scripts["'][^>]*content=["']([^"']*)["'][^>]*>/i)
   const widgetScripts = scriptsMeta ? scriptsMeta[1].split('|||').filter(s => s.trim()) : []
 
+  console.log(`[DEBUG GJS PARSE] Raw HTML length: ${html.length} | Extracted CSS links: ${cssLinks.length} | Inline styles length: ${inlineStyles.length}`)
+  if (cssLinks.length > 0) {
+    console.log('[DEBUG GJS CSS LINKS]', cssLinks)
+  }
   return { bodyHtml, cssLinks, inlineCss: inlineStyles.join('\n'), htmlClass, bodyClass, bodyStyle, htmlStyle, widgetScripts }
 }
 
@@ -305,10 +309,46 @@ async function injectAndLoadFonts(doc: Document, textFonts: string[], iconFonts:
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
 
+function sanitizeDomAttributeNames(html: string): string {
+  if (!html) return ''
+  try {
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    const all = doc.querySelectorAll('*')
+    all.forEach(el => {
+      const attrs = Array.from(el.attributes)
+      attrs.forEach(attr => {
+        if (/["'<>/\s]/.test(attr.name)) {
+          console.warn(`[DEBUG SANITIZE ATTR] Removing bad attribute "${attr.name}" on <${el.tagName.toLowerCase()}>`)
+          el.removeAttribute(attr.name)
+          const cleanName = attr.name.replace(/["'<>/\s]/g, '')
+          if (cleanName && !/^[0-9]/.test(cleanName)) {
+            try { el.setAttribute(cleanName, attr.value) } catch {}
+          }
+        }
+      })
+    })
+    return doc.body ? doc.body.innerHTML : html
+  } catch {
+    return html
+  }
+}
+
+function cleanInvalidHtmlAttributes(html: string): string {
+  if (!html) return ''
+  return html
+    .replace(/\s+([a-zA-Z0-9_\-]*["'`][a-zA-Z0-9_\-]*)=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s+([a-zA-Z0-9_\-]*["'`][a-zA-Z0-9_\-]*)(?=\s|>)/gi, '')
+    .replace(/\s+"(?=\s|>)/g, '')
+    .replace(/\s+"="[^"]*"/g, '')
+    .replace(/\s+''="[^"]*"/g, '')
+    .replace(/\s+""(?=\s|>)/g, '')
+}
+
 export function initEditor(container: HTMLElement, snapshotHtml: string, options?: InitEditorOptions): Editor {
   const { bodyHtml: rawBodyHtml, cssLinks: rawCssLinks, inlineCss, htmlClass, bodyClass, bodyStyle, htmlStyle, widgetScripts } = parseSnapshotHtml(snapshotHtml)
-  // Preserve rawBodyHtml 100% intact — DO NOT strip inline styles or non-content elements
-  const bodyHtml = rawBodyHtml
+  // Clean malformed attributes that trigger GrapesJS setAttribute InvalidCharacterError
+  const bodyHtml = sanitizeDomAttributeNames(cleanInvalidHtmlAttributes(rawBodyHtml))
   let fontsReady = false
 
   // Separate regular CSS links from media-constrained ones
@@ -323,6 +363,8 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       plainCssLinks.push(link)
     }
   }
+
+  console.log(`[DEBUG GJS INIT] Plain CSS links count: ${plainCssLinks.length} | Media CSS links count: ${mediaCssLinks.length}`)
 
   const editor = grapesjs.init({
     container,

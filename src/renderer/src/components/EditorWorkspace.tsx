@@ -1186,8 +1186,17 @@ export default function EditorWorkspace({
     }
   }, [])
 
-  const handleLiveReload = useCallback(() => {
-    if (liveWebviewRef.current && typeof liveWebviewRef.current.reload === 'function') {
+  const handleLiveReload = useCallback(async () => {
+    try {
+      if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.clearCache === 'function') {
+        await window.electronAPI.clearCache()
+      }
+    } catch {}
+    if (liveWebviewRef.current && typeof liveWebviewRef.current.reloadIgnoringCache === 'function') {
+      try { liveWebviewRef.current.reloadIgnoringCache() } catch {
+        try { liveWebviewRef.current.reload() } catch {}
+      }
+    } else if (liveWebviewRef.current && typeof liveWebviewRef.current.reload === 'function') {
       try { liveWebviewRef.current.reload() } catch {}
     } else {
       const iframe = liveIframeRef.current

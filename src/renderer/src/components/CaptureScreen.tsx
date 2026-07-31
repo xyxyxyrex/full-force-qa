@@ -14,24 +14,29 @@ interface Props {
   autoCapture?: boolean
 }
 
-/** Heuristics for detecting WP login, 404, or expired session in captured HTML */
+/** Accurate detection for true WP login page (wp-login.php) or true 404 error page */
 function looksLike404OrExpired(html: string): boolean {
   const lower = html.toLowerCase()
-  const isLogin = (
-    lower.includes('wp-login.php') ||
-    lower.includes('loginform') ||
-    lower.includes('name="log"') ||
-    (lower.includes('<form') && lower.includes('user_login'))
+
+  // True WordPress Login Page (actual <body class="login"> or page title "Log In ‹ My Site")
+  const isActualLoginPage = (
+    lower.includes('<body class="login') ||
+    lower.includes('<body class="login-action') ||
+    lower.includes('<title>log in') ||
+    lower.includes('<title>login ‹') ||
+    lower.includes('<title>user login')
   )
+
+  // True 404 error page
   const is404 = (
+    lower.includes('<title>404 page not found') ||
     lower.includes('<title>page not found') ||
     lower.includes('class="error404"') ||
-    lower.includes('class="page-not-found"') ||
-    lower.includes('oops! that page can’t be found') ||
+    lower.includes('class="error-404"') ||
     lower.includes('404_page_not_found')
   )
 
-  return isLogin || is404
+  return isActualLoginPage || is404
 }
 
 function normalizeUrl(url: string): string {
@@ -49,36 +54,127 @@ function normalizeUrl(url: string): string {
   return trimmed
 }
 
-interface TicketSearchItem {
+export interface TicketLinkItem {
+  url: string
+  label: string
+}
+
+export interface TicketSearchGroup {
   ticket: MondayTicket
-  targetUrl: string
-  targetLabel: string
+  links: TicketLinkItem[]
+}
+
+export function getAllStagingLinks(ticket: MondayTicket): TicketLinkItem[] {
+  const result: TicketLinkItem[] = []
+  const seen = new Set<string>()
+
+  if (ticket.stagingUrl) {
+    const norm = normalizeUrl(ticket.stagingUrl)
+    if (norm) {
+      seen.add(norm.toLowerCase())
+      result.push({ url: norm, label: 'Primary Staging URL' })
+    }
+  }
+
+  if (ticket.otherLinks && Array.isArray(ticket.otherLinks)) {
+    for (const link of ticket.otherLinks) {
+      if (!link.url) continue
+      const norm = normalizeUrl(link.url)
+      const lower = norm.toLowerCase()
+      if (seen.has(lower)) continue
+      if (lower.includes('docs.google.com') || lower.includes('sheets.google.com') || lower.includes('figma.com') || lower.includes('/wp-admin')) {
+        continue
+      }
+      seen.add(lower)
+      result.push({ url: norm, label: link.label || 'Staging Link' })
+    }
+  }
+
+  return result
+}
+
+export function getAllSheetLinks(ticket: MondayTicket): TicketLinkItem[] {
+  const result: TicketLinkItem[] = []
+  const seen = new Set<string>()
+
+  if (ticket.googleSheetUrl) {
+    const norm = normalizeUrl(ticket.googleSheetUrl)
+    if (norm) {
+      seen.add(norm.toLowerCase())
+      result.push({ url: norm, label: 'QA Tracker Sheet' })
+    }
+  }
+
+  if (ticket.otherLinks && Array.isArray(ticket.otherLinks)) {
+    for (const link of ticket.otherLinks) {
+      if (!link.url) continue
+      const norm = normalizeUrl(link.url)
+      const lower = norm.toLowerCase()
+      if (seen.has(lower)) continue
+      const isSheet = lower.includes('docs.google.com/spreadsheets') || lower.includes('sheets.google.com') || (link.label || '').toLowerCase().includes('sheet') || (link.label || '').toLowerCase().includes('tracker')
+      if (isSheet) {
+        seen.add(lower)
+        result.push({ url: norm, label: link.label || 'Google Sheet' })
+      }
+    }
+  }
+
+  return result
+}
+
+export function getAllFigmaLinks(ticket: MondayTicket): TicketLinkItem[] {
+  const result: TicketLinkItem[] = []
+  const seen = new Set<string>()
+
+  if (ticket.figmaUrl) {
+    const norm = normalizeUrl(ticket.figmaUrl)
+    if (norm) {
+      seen.add(norm.toLowerCase())
+      result.push({ url: norm, label: 'Figma Design' })
+    }
+  }
+
+  if (ticket.otherLinks && Array.isArray(ticket.otherLinks)) {
+    for (const link of ticket.otherLinks) {
+      if (!link.url) continue
+      const norm = normalizeUrl(link.url)
+      const lower = norm.toLowerCase()
+      if (seen.has(lower)) continue
+      if (lower.includes('figma.com')) {
+        seen.add(lower)
+        result.push({ url: norm, label: link.label || 'Figma Link' })
+      }
+    }
+  }
+
+  return result
 }
 
 function MondaySearchDropdown({
-  items,
-  onSelect,
-  placeholder = 'Search tickets...'
+  groups,
+  onSelectLink,
+  placeholder = 'Search tickets...',
+  direction = 'down'
 }: {
-  items: TicketSearchItem[]
-  onSelect: (item: TicketSearchItem) => void
+  groups: TicketSearchGroup[]
+  onSelectLink: (url: string) => void
   placeholder?: string
+  direction?: 'down' | 'up'
 }) {
   const [searchQuery, setSearchQuery] = useState('')
 
-  const filtered = items.filter(({ ticket, targetUrl, targetLabel }) => {
+  const filtered = groups.filter(({ ticket, links }) => {
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase().trim()
     return (
       ticket.name.toLowerCase().includes(q) ||
       ticket.status.toLowerCase().includes(q) ||
-      targetUrl.toLowerCase().includes(q) ||
-      targetLabel.toLowerCase().includes(q)
+      links.some(l => l.url.toLowerCase().includes(q) || l.label.toLowerCase().includes(q))
     )
   })
 
   return (
-    <div className="monday-search-dropdown-menu">
+    <div className={`monday-search-dropdown-menu ${direction === 'up' ? 'drop-up' : ''}`}>
       <div className="monday-search-input-wrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="2">
           <circle cx="11" cy="11" r="8" />
@@ -102,21 +198,32 @@ function MondaySearchDropdown({
         {filtered.length === 0 ? (
           <div className="monday-search-empty">No matching Monday tickets found</div>
         ) : (
-          filtered.map((item, idx) => (
-            <button
-              key={`${item.ticket.id}-${idx}`}
-              className="monday-search-item"
-              onClick={() => onSelect(item)}
-            >
+          filtered.map(({ ticket, links }, idx) => (
+            <div key={`${ticket.id}-${idx}`} className="monday-search-ticket-card">
               <div className="monday-search-item-header">
-                <span className="monday-search-status-tag">{item.ticket.status}</span>
-                <span className="monday-search-ticket-title">{item.ticket.name}</span>
+                <span className="monday-search-status-tag">{ticket.status}</span>
+                <span className="monday-search-ticket-title">{ticket.name}</span>
+                {links.length > 1 && (
+                  <span className="monday-multi-link-badge">{links.length} links</span>
+                )}
               </div>
-              <div className="monday-search-item-url-row">
-                <span className="monday-search-url-label">{item.targetLabel}:</span>
-                <span className="monday-search-url-text">{item.targetUrl}</span>
+              <div className="monday-search-links-list">
+                {links.map((link, lIdx) => (
+                  <button
+                    key={`${link.url}-${lIdx}`}
+                    className="monday-search-item-link-btn"
+                    onClick={() => onSelectLink(link.url)}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.7 }}>
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                    <span className="monday-search-link-label">{link.label}:</span>
+                    <span className="monday-search-url-text">{link.url}</span>
+                  </button>
+                ))}
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>
@@ -307,18 +414,23 @@ export default function CaptureScreen({
     }
   }, [autoCapture, initialStagingUrl])
 
-  // Build items for step search dropdowns
-  const stagingItems: TicketSearchItem[] = mondayTickets
-    .map(t => ({ ticket: t, targetUrl: getStagingUrlFromTicket(t), targetLabel: 'Staging' }))
-    .filter(i => !!i.targetUrl)
+  const [selectedTicketId, setSelectedTicketId] = useState<string>('')
 
-  const sheetsItems: TicketSearchItem[] = mondayTickets
-    .map(t => ({ ticket: t, targetUrl: getSheetUrlFromTicket(t), targetLabel: 'QA Sheet' }))
-    .filter(i => !!i.targetUrl)
+  // Build group items for step search dropdowns
+  const stagingGroups: TicketSearchGroup[] = mondayTickets
+    .map(t => ({ ticket: t, links: getAllStagingLinks(t) }))
+    .filter(g => g.links.length > 0)
 
-  const figmaItems: TicketSearchItem[] = mondayTickets
-    .map(t => ({ ticket: t, targetUrl: getFigmaUrlFromTicket(t), targetLabel: 'Figma' }))
-    .filter(i => !!i.targetUrl)
+  const sheetsGroups: TicketSearchGroup[] = mondayTickets
+    .map(t => ({ ticket: t, links: getAllSheetLinks(t) }))
+    .filter(g => g.links.length > 0)
+
+  const figmaGroups: TicketSearchGroup[] = mondayTickets
+    .map(t => ({ ticket: t, links: getAllFigmaLinks(t) }))
+    .filter(g => g.links.length > 0)
+
+  const selectedTicket = mondayTickets.find(t => t.id === selectedTicketId)
+  const selectedTicketStagingLinks = selectedTicket ? getAllStagingLinks(selectedTicket) : []
 
   // ── FIGMA-STYLE LOADING SCREEN OVERLAY ────────────────────────────────────
   if (loading) {
@@ -370,9 +482,11 @@ export default function CaptureScreen({
             </div>
             <select
               className="autofill-ticket-select"
-              defaultValue=""
+              value={selectedTicketId}
               onChange={(e) => {
-                const selected = mondayTickets.find(t => t.id === e.target.value)
+                const id = e.target.value
+                setSelectedTicketId(id)
+                const selected = mondayTickets.find(t => t.id === id)
                 if (selected) {
                   handleAutofillTicket(selected)
                 }
@@ -385,6 +499,25 @@ export default function CaptureScreen({
                 </option>
               ))}
             </select>
+
+            {selectedTicketStagingLinks.length > 1 && (
+              <div className="top-ticket-sub-staging-picker" style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#e4e4e7', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>Select Staging Page ({selectedTicketStagingLinks.length} found):</span>
+                </div>
+                <select
+                  className="autofill-ticket-select"
+                  value={stagingUrl}
+                  onChange={(e) => setStagingUrl(normalizeUrl(e.target.value))}
+                >
+                  {selectedTicketStagingLinks.map((link, idx) => (
+                    <option key={idx} value={link.url}>
+                      {link.label}: {link.url}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         )}
 
@@ -453,7 +586,7 @@ export default function CaptureScreen({
           </div>
 
           {/* Monday tickets quick-fill for staging */}
-          {stagingItems.length > 0 && (
+          {stagingGroups.length > 0 && (
             <div className="monday-quickfill" ref={dropdownRef}>
               <button
                 className="monday-quickfill-btn"
@@ -468,9 +601,9 @@ export default function CaptureScreen({
 
               {mondayDropdownOpen && (
                 <MondaySearchDropdown
-                  items={stagingItems}
+                  groups={stagingGroups}
                   placeholder="Search staging URLs..."
-                  onSelect={(item) => handleSelectTicketLink(item.targetUrl, 'staging')}
+                  onSelectLink={(url) => handleSelectTicketLink(url, 'staging')}
                 />
               )}
             </div>
@@ -508,7 +641,7 @@ export default function CaptureScreen({
           </div>
 
           {/* Monday tickets quick-fill for sheets */}
-          {sheetsItems.length > 0 && (
+          {sheetsGroups.length > 0 && (
             <div className="monday-quickfill" ref={sheetsDropdownRef}>
               <button
                 className="monday-quickfill-btn"
@@ -523,9 +656,10 @@ export default function CaptureScreen({
 
               {sheetsDropdownOpen && (
                 <MondaySearchDropdown
-                  items={sheetsItems}
+                  groups={sheetsGroups}
+                  direction="up"
                   placeholder="Search QA Sheets..."
-                  onSelect={(item) => handleSelectTicketLink(item.targetUrl, 'sheets')}
+                  onSelectLink={(url) => handleSelectTicketLink(url, 'sheets')}
                 />
               )}
             </div>
@@ -563,7 +697,7 @@ export default function CaptureScreen({
           </div>
 
           {/* Monday tickets quick-fill for figma */}
-          {figmaItems.length > 0 && (
+          {figmaGroups.length > 0 && (
             <div className="monday-quickfill" ref={figmaDropdownRef}>
               <button
                 className="monday-quickfill-btn"
@@ -578,9 +712,10 @@ export default function CaptureScreen({
 
               {figmaDropdownOpen && (
                 <MondaySearchDropdown
-                  items={figmaItems}
+                  groups={figmaGroups}
+                  direction="up"
                   placeholder="Search Figma links..."
-                  onSelect={(item) => handleSelectTicketLink(item.targetUrl, 'figma')}
+                  onSelectLink={(url) => handleSelectTicketLink(url, 'figma')}
                 />
               )}
             </div>

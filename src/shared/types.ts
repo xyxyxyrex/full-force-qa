@@ -81,6 +81,7 @@ export interface ElectronAPI {
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project) => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  clearCache: () => Promise<{ success: boolean }>
   openExternal: (url: string) => Promise<void>
   openDetachedWindow: (url: string, title?: string) => Promise<void>
   figmaLoginWindow: (url?: string) => Promise<void>

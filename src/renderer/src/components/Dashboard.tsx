@@ -129,7 +129,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     return () => window.removeEventListener('monday_tickets_updated', handleUpdate)
   }, [])
 
-  const toggleActiveTicket = (ticketId: string) => {
+  const toggleActiveTicket = async (ticketId: string) => {
+    const isActivating = !activeTicketIds.includes(ticketId)
     setActiveTicketIds((prev) => {
       const next = prev.includes(ticketId)
         ? prev.filter((id) => id !== ticketId)
@@ -137,6 +138,26 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       localStorage.setItem('active_monday_ticket_ids', JSON.stringify(next))
       return next
     })
+
+    if (isActivating) {
+      const targetTicket = mondayTickets.find((t) => t.id === ticketId)
+      if (targetTicket) {
+        const monId = 'monday-' + targetTicket.id
+        const newProject: Project = {
+          id: monId,
+          name: targetTicket.name,
+          stagingUrl: targetTicket.stagingUrl || '',
+          adminUrl: targetTicket.adminUrl || '',
+          createdAt: Date.now(),
+          lastOpenedAt: Date.now()
+        }
+        await window.electronAPI.saveProject(newProject)
+        setProjects((prev) => {
+          const exists = prev.some((p) => p.id === monId)
+          return exists ? prev.map((p) => (p.id === monId ? newProject : p)) : [...prev, newProject]
+        })
+      }
+    }
     setContextMenu(null)
   }
 

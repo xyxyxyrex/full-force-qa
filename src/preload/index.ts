@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteProject(id: string): Promise<void> {
     return ipcRenderer.invoke('projects:delete', id)
   },
+  clearCache(): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke('app:clear-cache')
+  },
   openExternal(url: string): Promise<void> {
     return ipcRenderer.invoke('app:openExternal', url)
   },

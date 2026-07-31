@@ -65,7 +65,7 @@ export async function captureUrl(rawUrl: string): Promise<string> {
             !!document.querySelector('.error-404, #error-404')
           ) : false;
           const titleHas404 = lowerTitle.includes('404 page not found') || lowerTitle.includes('page not found') || lowerTitle.includes('page cannot be found') || lowerTitle.startsWith('404 -') || lowerTitle === '404';
-          const isLoginPage = window.location.href.includes('wp-login.php') || !!document.querySelector('#loginform');
+          const isLoginPage = window.location.pathname.endsWith('wp-login.php') || (document.body && document.body.classList.contains('login'));
           if (isLoginPage) return { is404OrLogin: true, title, reason: 'WordPress Login Redirect' };
           if (is404Body || titleHas404) return { is404OrLogin: true, title, reason: '404 Page Not Found' };
           return { is404OrLogin: false, title, reason: '' };
@@ -103,8 +103,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
     `)
 
     // Convert all relative <link>, <script>, <img>, <a> URLs into absolute HTTPS URLs
-    // so every stylesheet (e.g. flooring-lp.css), image, font, and script loads
-    // 100% cleanly in the canvas iframe regardless of origin.
     await captureWindow.webContents.executeJavaScript(`
       (() => {
         try {
@@ -120,6 +118,38 @@ export async function captureUrl(rawUrl: string): Promise<string> {
           document.querySelectorAll('a[href]').forEach(el => {
             try { if (el.href) el.setAttribute('href', el.href); } catch(e) {}
           });
+        } catch(e) {}
+      })()
+    `)
+
+    // Fetch and inline all external CSS stylesheets into <style> tags so captured HTML is 100% self-contained
+    await captureWindow.webContents.executeJavaScript(`
+      (async () => {
+        try {
+          const links = Array.from(document.querySelectorAll('link[rel*="stylesheet"]'));
+          for (const link of links) {
+            try {
+              const href = link.href;
+              if (!href || href.startsWith('data:')) continue;
+              const res = await fetch(href, { credentials: 'include' });
+              if (res.ok) {
+                const cssText = await res.text();
+                if (cssText && cssText.trim()) {
+                  const style = document.createElement('style');
+                  style.setAttribute('data-captured-stylesheet', href);
+                  if (link.media) style.setAttribute('media', link.media);
+                  style.textContent = cssText;
+                  if (link.parentNode) {
+                    link.parentNode.replaceChild(style, link);
+                  } else if (document.head) {
+                    document.head.appendChild(style);
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('[capture] Could not fetch stylesheet to inline:', e);
+            }
+          }
         } catch(e) {}
       })()
     `)
@@ -145,7 +175,9 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       document.documentElement ? document.documentElement.outerHTML : ''
     `)
 
-    console.log('[capture] Pure HTML extracted successfully length:', html.length)
+    const linkCount = (html.match(/<link[^>]*rel=["']stylesheet["']/gi) || []).length
+    const styleCount = (html.match(/<style/gi) || []).length
+    console.log(`[DEBUG CAPTURE] Pure HTML extracted length: ${html.length} | Found <link stylesheet> count: ${linkCount} | Found <style> count: ${styleCount}`)
     return html || '<html><body></body></html>'
   } finally {
     captureWindow.destroy()

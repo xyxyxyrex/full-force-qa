@@ -103,19 +103,58 @@ function createWindow(): void {
   session.defaultSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
 
   // Strip X-Frame-Options and Content-Security-Policy to allow embedding Figma
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  session.defaultSession.webRequest.onHeadersReceived({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
     const responseHeaders = { ...details.responseHeaders }
     delete responseHeaders['x-frame-options']
     delete responseHeaders['X-Frame-Options']
     delete responseHeaders['content-security-policy']
     delete responseHeaders['Content-Security-Policy']
+    if (/\.(css|png|jpg|jpeg|gif|php|js)(\?|$)/i.test(details.url)) {
+      console.log(`[DEBUG NET HEADERS_RECV] ${details.statusCode} | ${details.url}`)
+    }
     callback({ responseHeaders })
   })
 
-  // Enforce English Accept-Language on all outbound HTTP requests (forces Google Sheets / OAuth to load in English)
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+  // Enforce English Accept-Language and spoof same-origin browser headers on outbound HTTP requests to bypass Cloudflare 403 blocks
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['http://*/*', 'https://*/*'] }, async (details, callback) => {
     const requestHeaders = { ...details.requestHeaders }
     requestHeaders['Accept-Language'] = 'en-US,en;q=0.9'
+    requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+    // Remove cross-origin identifiers that trigger Cloudflare/WordPress 403 WAF blocks
+    delete requestHeaders['Origin']
+    delete requestHeaders['origin']
+    delete requestHeaders['sec-fetch-site']
+    delete requestHeaders['Sec-Fetch-Site']
+    requestHeaders['Sec-Fetch-Site'] = 'same-origin'
+    requestHeaders['Sec-Fetch-Mode'] = 'no-cors'
+
+    if (!requestHeaders['Referer'] || requestHeaders['Referer'].includes('about:') || requestHeaders['Referer'].includes('localhost') || requestHeaders['Referer'].includes('127.0.0.1')) {
+      try {
+        const u = new URL(details.url)
+        if (u.protocol.startsWith('http')) {
+          requestHeaders['Referer'] = `${u.protocol}//${u.host}/`
+        }
+      } catch {}
+    }
+
+    // Attach domain cookies from Electron session if present
+    if (!requestHeaders['Cookie']) {
+      try {
+        const cookies = await session.defaultSession.cookies.get({ url: details.url })
+        if (cookies && cookies.length > 0) {
+          const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join('; ')
+          if (cookieStr) {
+            requestHeaders['Cookie'] = cookieStr
+          }
+        }
+      } catch {}
+    }
+
+    if (/\.(css|png|jpg|jpeg|gif|php|js)(\?|$)/i.test(details.url)) {
+      console.log(`[DEBUG NET SEND_HEADERS] Referer: ${requestHeaders['Referer']} | HasCookie: ${!!requestHeaders['Cookie']} | URL: ${details.url}`)
+    }
+
     callback({ requestHeaders })
   })
 
@@ -221,6 +260,21 @@ function registerIpcHandlers(): void {
         resolve()
       })
     })
+  })
+
+  // App: Clear Chromium disk & memory HTTP cache
+  ipcMain.handle('app:clear-cache', async (): Promise<{ success: boolean }> => {
+    try {
+      await session.defaultSession.clearCache()
+      await session.defaultSession.clearStorageData({
+        storages: ['serviceworkers', 'cachestorage', 'websql']
+      })
+      console.log('[Cache] Chromium defaultSession HTTP cache cleared successfully.')
+      return { success: true }
+    } catch (e) {
+      console.error('[Cache] Error clearing cache:', e)
+      return { success: false }
+    }
   })
 
   // Figma Login Window: Uses standard Chrome User-Agent so Google Accounts OAuth works cleanly inside Electron
