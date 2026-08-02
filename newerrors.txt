@@ -1,0 +1,1139 @@
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "_blank"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbar-toggler"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "light"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbarsupportedcontent"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "menu-item-1484"" on <ul>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <ul>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "careers"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "home"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "transparent_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "green_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white-card"" on <img>
+(anonymous) @ init.ts:322
+6init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+2init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "c103574987"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "id1531246346"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "hero"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "copy"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-1"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-2"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-3"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-4"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "col-lg-8"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:367 [DEBUG GJS INIT] Plain CSS links count: 0 | Media CSS links count: 0
+init.ts:181 [DEBUG GJS PARSE] Raw HTML length: 352158 | Extracted CSS links: 0 | Inline styles length: 17
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "_blank"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "button"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbar-toggler"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "light"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "navbarsupportedcontent"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "menu-item-1484"" on <ul>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <ul>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+4init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "careers"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "sub-menu"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "home"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <li>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "transparent_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "green_btn"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white-card"" on <img>
+(anonymous) @ init.ts:322
+6init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+2init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "wrapper"" on <section>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "c103574987"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "id1531246346"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "hero"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "copy"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "img-desktop"" on <img>
+(anonymous) @ init.ts:322
+3init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "card-content"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-1"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-2"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-3"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "accordion-3421-heading-4"" on <div>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "col-lg-8"" on <img>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "footer_logo.png"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "membership_and_accreditation"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "bonds"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute """ on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "link"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "05-pdax-wallet-partner-addendum-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "02-pdax-remittance-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "06-pdax-payout-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "10-pdax-fixed-income-securities-rules-as-of-january-2-2025.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "03-pdax-exchange-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "08-digital-collectible-rules-as-of-july-10-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "09-pdax-cash-in-rules-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "04-pdax-broker-dealer-rules-as-of-june-7-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "07-pdax-privacy-policy-as-of-january-11-2024.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "11-pdax-user-agreement-as-of-february-04-2026.pdf"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "contact-us"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "new"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "solutions"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "links"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "white"" on <path>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "svg"" on <a>
+(anonymous) @ init.ts:322
+init.ts:322 [DEBUG SANITIZE ATTR] Removing bad attribute "none"" on <a>
+(anonymous) @ init.ts:322
+init.ts:367 [DEBUG GJS INIT] Plain CSS links count: 0 | Media CSS links count: 0
+about:srcdoc:1 An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing.
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': 'owzte2wy#email' is not a valid attribute name.
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentsView2.addToCollection (grapesjs.js?v=db16905d:27875:25) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '#' is not a valid attribute name.
+    at HTMLImageElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLImageElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentImageView2.render (grapesjs.js?v=db16905d:34733:12)
+    at ComponentsView2.addToCollection (grapesjs.js?v=db16905d:27875:25) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2025' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': '2000' is not a valid attribute name.
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLAnchorElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentLinkView2.render (grapesjs.js?v=db16905d:35190:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+grapesjs.js?v=db16905d:61520 InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': 'anchor?ar' is not a valid attribute name.
+    at HTMLDivElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLDivElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at ComponentView2.render (grapesjs.js?v=db16905d:28373:12)
+    at ComponentFrameView2.render (grapesjs.js?v=db16905d:34608:31) Object
+(anonymous) @ grapesjs.js?v=db16905d:61520
+header.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-full-logo-full-color-on-dark-transparent-1.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+grapesjs.js?v=db16905d:16541 Uncaught InvalidCharacterError: Failed to execute 'setAttribute' on 'Element': 'owzte2wy#email' is not a valid attribute name.
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=db16905d:16541:17)
+    at HTMLLIElement.<anonymous> (grapesjs.js?v=db16905d:16428:27)
+    at each (grapesjs.js?v=db16905d:16421:24)
+    at __webpack_modules__.774.fn.each (grapesjs.js?v=db16905d:16427:9)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16540:23)
+    at __webpack_modules__.774.fn.attr (grapesjs.js?v=db16905d:16545:16)
+    at ComponentView2.updateAttributes (grapesjs.js?v=db16905d:28236:11)
+    at ComponentView2.renderAttributes (grapesjs.js?v=db16905d:28367:12)
+    at triggerEvents (grapesjs.js?v=db16905d:777:57)
+    at triggerApi (grapesjs.js?v=db16905d:759:25)
+PDAX-full-logo-full-color-on-dark-transparent-1.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+footer.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-full-logo-full-color-on-dark-transparent-1.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+google-play-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-check.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-check.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+2mondayApi.ts:330 [Monday] Fetched tickets: 5
+g.gif:1 
+            
+            
+           Failed to load resource: net::ERR_HTTP2_PROTOCOL_ERROR
+investment-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+coin-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+cryptocurrency-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+time-is-money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-policy-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+shape-like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+flag-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+verified-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+stock-market-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-gallery-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-store-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+bonds-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+altcoins-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+nft-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+google-play-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+footer_logo.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+PDAX-Inc.-NPC-Seal-of-Registration-2025.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+Online-Investments-img.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+investment-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+coin-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+time-is-money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+security-policy-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+shape-like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+flag-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+user-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+cryptocurrency-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+like-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+verified-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+money-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+stock-market-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-gallery-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+app-store-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+bonds-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+altcoins-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+g.gif:1 
+            
+            
+           Failed to load resource: net::ERR_HTTP2_PROTOCOL_ERROR
+init.ts:593 [DEBUG HAMBURGER] Found menu toggle elements count: 0
+nft-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+coin-icon.png:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+localhost/:1 Refused to apply style from 'https://fonts.googleapis.com/css2?family=Liberation+Sans:wght@400;500;600;700&display=swap' because its MIME type ('text/html') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+mondayApi.ts:330 [Monday] Fetched tickets: 5
+recaptcha__en.js:1509 Uncaught (in promise) Error: reCAPTCHA Timeout (j)
+    at recaptcha__en.js:1509:333
+26Chrome is moving towards a new experience that allows users to choose to browse without third-party cookies.
+header.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+footer.css:1 
+            
+            
+           Failed to load resource: the server responded with a status of 403 ()
+localhost/:1 Refused to apply style from 'https://fonts.googleapis.com/css2?family=Liberation+Sans:wght@400;500;600;700&display=swap' because its MIME type ('text/html') is not a supported stylesheet MIME type, and strict MIME checking is enabled.

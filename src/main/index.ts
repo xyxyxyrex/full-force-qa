@@ -102,33 +102,84 @@ function createWindow(): void {
   // Set standard Chrome User-Agent on default session so Google OAuth works in webviews
   session.defaultSession.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
 
-  // Strip X-Frame-Options and Content-Security-Policy to allow embedding Figma
+  // Strip X-Frame-Options, Content-Security-Policy, and inject permissive CORS
+  // so the native srcDoc iframe can load cross-origin stylesheets, fonts, and images
   session.defaultSession.webRequest.onHeadersReceived({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
     const responseHeaders = { ...details.responseHeaders }
     delete responseHeaders['x-frame-options']
     delete responseHeaders['X-Frame-Options']
     delete responseHeaders['content-security-policy']
     delete responseHeaders['Content-Security-Policy']
+    // Ensure all responses allow cross-origin access from the srcDoc iframe
+    responseHeaders['Access-Control-Allow-Origin'] = ['*']
     if (/\.(css|png|jpg|jpeg|gif|php|js)(\?|$)/i.test(details.url)) {
       console.log(`[DEBUG NET HEADERS_RECV] ${details.statusCode} | ${details.url}`)
     }
     callback({ responseHeaders })
   })
 
-  // Enforce English Accept-Language and spoof same-origin browser headers on outbound HTTP requests to bypass Cloudflare 403 blocks
+  // Enforce English Accept-Language and spoof browser headers on outbound HTTP requests
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
     const requestHeaders = { ...details.requestHeaders }
     requestHeaders['Accept-Language'] = 'en-US,en;q=0.9'
     requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
-    // Remove cross-origin identifiers that trigger Cloudflare/WordPress 403 WAF blocks
+    // Determine if this is a same-origin request by comparing Referer host with target URL host
+    let isSameOrigin = false
+    const referer = requestHeaders['Referer'] || requestHeaders['referer'] || ''
+    try {
+      const targetHost = new URL(details.url).host
+      if (referer && !referer.includes('localhost') && !referer.includes('127.0.0.1') && !referer.includes('about:')) {
+        const refHost = new URL(referer).host
+        isSameOrigin = refHost === targetHost
+      } else {
+        // If no valid Referer, assume same-origin for the target's own domain
+        isSameOrigin = true
+      }
+    } catch {}
+
+    // Only spoof same-origin headers for same-origin requests (WordPress staging WAF).
+    // Cross-origin requests (Google Fonts, CDNs, etc.) must NOT claim same-origin
+    // or the target service returns errors (e.g., Google Fonts returns HTML instead of CSS).
     delete requestHeaders['Origin']
     delete requestHeaders['origin']
     delete requestHeaders['sec-fetch-site']
     delete requestHeaders['Sec-Fetch-Site']
-    requestHeaders['Sec-Fetch-Site'] = 'same-origin'
-    requestHeaders['Sec-Fetch-Mode'] = 'no-cors'
+    if (isSameOrigin) {
+      requestHeaders['Sec-Fetch-Site'] = 'same-origin'
+    } else {
+      requestHeaders['Sec-Fetch-Site'] = 'cross-site'
+    }
 
+    // Set proper Sec-Fetch-Dest based on resource type — WordPress Atomic WAF
+    // validates this header and returns 403 when it's missing or mismatched
+    const urlLower = details.url.toLowerCase()
+    if (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame') {
+      requestHeaders['Sec-Fetch-Mode'] = 'navigate'
+      requestHeaders['Sec-Fetch-Dest'] = details.resourceType === 'mainFrame' ? 'document' : 'iframe'
+    } else if (details.resourceType === 'stylesheet' || /\.(css)([\?#]|$)/i.test(urlLower)) {
+      requestHeaders['Sec-Fetch-Mode'] = 'no-cors'
+      requestHeaders['Sec-Fetch-Dest'] = 'style'
+    } else if (details.resourceType === 'script' || /\.(js)([\?#]|$)/i.test(urlLower)) {
+      requestHeaders['Sec-Fetch-Mode'] = 'no-cors'
+      requestHeaders['Sec-Fetch-Dest'] = 'script'
+    } else if (details.resourceType === 'image' || /\.(png|jpg|jpeg|gif|webp|svg|ico)([\?#]|$)/i.test(urlLower)) {
+      requestHeaders['Sec-Fetch-Mode'] = 'no-cors'
+      requestHeaders['Sec-Fetch-Dest'] = 'image'
+    } else if (details.resourceType === 'font' || /\.(woff2?|ttf|otf|eot)([\?#]|$)/i.test(urlLower)) {
+      requestHeaders['Sec-Fetch-Mode'] = 'cors'
+      requestHeaders['Sec-Fetch-Dest'] = 'font'
+    } else if (/\.php([\?#]|$)/i.test(urlLower)) {
+      // Autoptimize serves CSS via .php endpoints — treat them as stylesheets
+      requestHeaders['Sec-Fetch-Mode'] = 'no-cors'
+      requestHeaders['Sec-Fetch-Dest'] = 'style'
+      requestHeaders['Accept'] = 'text/css,*/*;q=0.1'
+    } else {
+      requestHeaders['Sec-Fetch-Mode'] = 'no-cors'
+      requestHeaders['Sec-Fetch-Dest'] = 'empty'
+    }
+
+    // Fix Referer for requests from about:srcdoc / localhost iframes — set to target site origin
     if (!requestHeaders['Referer'] || requestHeaders['Referer'].includes('about:') || requestHeaders['Referer'].includes('localhost') || requestHeaders['Referer'].includes('127.0.0.1')) {
       try {
         const u = new URL(details.url)
@@ -139,7 +190,7 @@ function createWindow(): void {
     }
 
     if (/\.(css|png|jpg|jpeg|gif|php|js)(\?|$)/i.test(details.url)) {
-      console.log(`[DEBUG NET SEND_HEADERS] Referer: ${requestHeaders['Referer']} | URL: ${details.url}`)
+      console.log(`[DEBUG NET SEND_HEADERS] Referer: ${requestHeaders['Referer']} | Site: ${requestHeaders['Sec-Fetch-Site']} | Dest: ${requestHeaders['Sec-Fetch-Dest']} | URL: ${details.url}`)
     }
 
     callback({ requestHeaders })
