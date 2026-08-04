@@ -1671,7 +1671,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(function Ed
                 const [method, argument] = calls[action]
                 void call(method, ...((argument === undefined ? [] : [argument]) as any[]))
               }} />}
-              {comparisonVisible && !sideBySide && <img className="edit-beta-overlay" src={overlayImage!} alt={overlayLabel || 'Design comparison'} style={{ width: scaledWidth, height: scaledHeight, opacity: overlayOpacity / 100, mixBlendMode: overlayMode === 'diff' ? 'difference' : 'normal' }} />}
+              {comparisonVisible && !sideBySide && <div className="edit-beta-overlay-viewport" style={{ width: scaledWidth, height: scaledHeight, opacity: overlayOpacity / 100, mixBlendMode: overlayMode === 'diff' ? 'difference' : 'normal' }}>
+                <img className="edit-beta-overlay" src={overlayImage!} alt={overlayLabel || 'Design comparison'} style={{ width: scaledWidth, transform: `translateY(-${pageScrollY * scale}px)` }} />
+              </div>}
               {viewportMode === 'free' && <>
                 <button className="edit-beta-resize-handle edit-beta-resize-right" style={{ left: scaledWidth - 3 }} onMouseDown={(event) => beginResize(event, 'x')} aria-label="Resize viewport width" />
                 <button className="edit-beta-resize-handle edit-beta-resize-bottom" style={{ left: scaledWidth / 2 }} onMouseDown={(event) => beginResize(event, 'y')} aria-label="Resize viewport height" />

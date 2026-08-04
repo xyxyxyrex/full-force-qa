@@ -87,6 +87,13 @@ export interface ElectronAPI {
   openExternal: (url: string) => Promise<void>
   openDetachedWindow: (url: string, title?: string) => Promise<void>
   figmaLoginWindow: (url?: string) => Promise<void>
+  figmaTokenStatus: () => Promise<{ configured: boolean }>
+  setFigmaToken: (token: string) => Promise<{ success: boolean; configured: boolean; error?: string }>
+  listFigmaFrames: (url: string) => Promise<{ success: boolean; fileName?: string; lastModified?: string; requestedNodeId?: string; frames?: Array<{ id: string; name: string; type: string; pageName: string; width: number; height: number }>; error?: string }>
+  getFigmaFrame: (url: string, nodeId?: string) => Promise<{ success: boolean; node?: any; imageDataUrl?: string; error?: string }>
+  captureAutomatePage: (webContentsId: number, viewportWidth: number, viewportHeight: number) => Promise<{ success: boolean; dataUrl?: string; documentWidth?: number; documentHeight?: number; domNodes?: any[]; tiles?: number; mode?: string; error?: string; fallback?: boolean }>
+  compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string) => Promise<{ success: boolean; engine?: string; similarity?: number; changedPercent?: number; heatmapDataUrl?: string; regions?: Array<{ x: number; y: number; width: number; height: number; difference: number }>; anchors?: Array<{ designY: number; liveY: number; confidence: number }>; error?: string; fallback?: boolean }>
+  cancelVisualComparison: (jobId: string) => Promise<{ success: boolean }>
   toggleMaximizeWindow: () => Promise<void>
   selectSnapshotDirectory: () => Promise<{ success: boolean; path?: string }>
   createSnapshot: (params: {

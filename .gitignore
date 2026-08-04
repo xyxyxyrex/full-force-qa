@@ -5,6 +5,8 @@ dist/
 .DS_Store
 Thumbs.db
 .env
+.python-build/
+resources/visual-worker/visual-compare*
 *.rar
 *.zip
 *.7z

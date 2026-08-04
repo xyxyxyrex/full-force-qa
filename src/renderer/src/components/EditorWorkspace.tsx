@@ -8,6 +8,7 @@ import type { Editor } from 'grapesjs'
 import SeoAuditRightPanel from './SeoAuditRightPanel'
 import EditBetaWorkspace from './EditBetaWorkspace'
 import type { EditBetaWorkspaceHandle } from './EditBetaWorkspace'
+import AutomateWorkspace from './AutomateWorkspace'
 import NativeStylePanel from './NativeStylePanel'
 import CssInspectorEditor from './CssInspectorEditor'
 import { toggleCanvasDuplicates } from '../utils/seoCanvasOverlay'
@@ -99,7 +100,7 @@ interface Props {
 
 type DevicePreset = 'Desktop' | 'Tablet' | 'Mobile'
 type ViewportMode = 'preset' | 'free'
-type WorkspaceTab = 'editBeta' | 'layout' | 'live' | 'audit'
+type WorkspaceTab = 'editBeta' | 'layout' | 'live' | 'audit' | 'automate'
 
 interface Guide {
   axis: 'x' | 'y'
@@ -3925,12 +3926,26 @@ export default function EditorWorkspace({
             <button
               className={`workspace-tab-btn ${workspaceTab === 'audit' ? 'active' : ''}`}
               onClick={() => setWorkspaceTab('audit')}
+              title="Audit"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <circle cx="8" cy="8" r="6" />
                 <path d="M8 5v3l2 2" />
               </svg>
               Audit
+            </button>
+            <button
+              className={`workspace-tab-btn workspace-tab-icon-only ${workspaceTab === 'automate' ? 'active' : ''}`}
+              onClick={() => setWorkspaceTab('automate')}
+              title="Automate: compare the staging page with a live Figma frame"
+              aria-label="Automate"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                <path d="M14 6.5h3.5V10M10 17.5H6.5V14M17.5 10V8.5a2 2 0 0 0-2-2H14M6.5 14v1.5a2 2 0 0 0 2 2H10" />
+                <path d="m8 6 1.2 1.2L12 4.5" />
+              </svg>
             </button>
           </div>
 
@@ -4669,7 +4684,7 @@ export default function EditorWorkspace({
 
       {/* ── Editor body (Canvas stays central, right panel switches between Edit and SEO Audit tools) ──────── */}
       <div className="editor-body">
-        {leftPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && (
+        {leftPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && workspaceTab !== 'automate' && (
           <div className="editor-panel panel-left" style={{ width: leftPanelWidth }}>
             {/* Collapsible Layers Section */}
             <div className={`accordion-section ${layersExpanded ? 'expanded' : 'collapsed'}`}>
@@ -4978,7 +4993,7 @@ export default function EditorWorkspace({
 
           </div>
         )}
-        {leftPanelOpen && workspaceTab !== 'editBeta' && (
+        {leftPanelOpen && workspaceTab !== 'editBeta' && workspaceTab !== 'automate' && (
           <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('left', e)} />
         )}
 
@@ -5028,6 +5043,7 @@ export default function EditorWorkspace({
                 onThumbnailCaptured={project?.thumbnailUrl ? undefined : onThumbnailCaptured}
               />
             )}
+            {workspaceTab === 'automate' && <AutomateWorkspace sourceUrl={sourceUrl} figmaUrl={storedFigmaUrl} projectId={activeProjectId} />}
             {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar, Create Snapshot) */}
             {workspaceTab === 'live' && (
               <div
@@ -5328,7 +5344,7 @@ export default function EditorWorkspace({
               </div>
             )}
             {/* Floating edge dock buttons when panels are collapsed */}
-            {!leftPanelOpen && (
+            {!leftPanelOpen && workspaceTab !== 'automate' && (
               <button
                 className="panel-dock-btn dock-left"
                 onClick={() => setLeftPanelOpen(true)}
@@ -5342,7 +5358,7 @@ export default function EditorWorkspace({
               </button>
             )}
 
-            {!rightPanelOpen && (
+            {!rightPanelOpen && workspaceTab !== 'automate' && (
               <button
                 className="panel-dock-btn dock-right"
                 onClick={() => setRightPanelOpen(true)}
@@ -5356,7 +5372,7 @@ export default function EditorWorkspace({
               </button>
             )}
 
-            {!bottomSheetOpen && (
+            {!bottomSheetOpen && workspaceTab !== 'automate' && (
               <button
                 className="panel-dock-btn dock-bottom"
                 onClick={() => setBottomSheetOpen(true)}
@@ -6023,11 +6039,11 @@ export default function EditorWorkspace({
         </div>
 
 
-        {rightPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && (
+        {rightPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && workspaceTab !== 'automate' && (
           <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('right', e)} />
         )}
 
-        {rightPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && (
+        {rightPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && workspaceTab !== 'automate' && (
           <div className="editor-panel panel-right" style={{ width: workspaceTab === 'audit' ? Math.max(rightPanelWidth, 320) : rightPanelWidth }}>
           {/* Layout mode panel container — ALWAYS MOUNTED so GrapesJS never loses DOM container references */}
           <div className="layout-panel-wrap" style={{ display: workspaceTab === 'layout' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%', overflowY: 'auto' }}>

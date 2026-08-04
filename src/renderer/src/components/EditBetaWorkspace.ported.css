@@ -16,12 +16,20 @@
   height: auto;
 }
 
-.edit-beta-overlay {
+.edit-beta-overlay-viewport {
   position: absolute;
   inset: 0 auto auto 0;
   z-index: 7;
-  object-fit: fill;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.edit-beta-overlay {
+  display: block;
+  height: auto;
+  max-width: none;
+  transform-origin: top left;
+  user-select: none;
 }
 
 .edit-beta-site-stage {

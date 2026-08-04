@@ -32,6 +32,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   figmaLoginWindow(url?: string): Promise<void> {
     return ipcRenderer.invoke('app:figmaLoginWindow', url)
   },
+  figmaTokenStatus(): Promise<{ configured: boolean }> {
+    return ipcRenderer.invoke('figma:token-status')
+  },
+  setFigmaToken(token: string): Promise<{ success: boolean; configured: boolean; error?: string }> {
+    return ipcRenderer.invoke('figma:set-token', token)
+  },
+  listFigmaFrames(url: string): Promise<any> {
+    return ipcRenderer.invoke('figma:list-frames', url)
+  },
+  getFigmaFrame(url: string, nodeId?: string): Promise<any> {
+    return ipcRenderer.invoke('figma:get-frame', url, nodeId)
+  },
+  captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number): Promise<any> {
+    return ipcRenderer.invoke('automate:capture-page', webContentsId, viewportWidth, viewportHeight)
+  },
+  compareVisuals(jobId: string, designDataUrl: string, liveDataUrl: string): Promise<any> {
+    return ipcRenderer.invoke('automate:visual-compare', jobId, designDataUrl, liveDataUrl)
+  },
+  cancelVisualComparison(jobId: string): Promise<{ success: boolean }> {
+    return ipcRenderer.invoke('automate:visual-cancel', jobId)
+  },
   toggleMaximizeWindow(): Promise<void> {
     return ipcRenderer.invoke('app:toggleMaximizeWindow')
   },

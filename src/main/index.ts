@@ -1,6 +1,10 @@
 import 'dotenv/config'
-import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog, safeStorage, webContents as electronWebContents } from 'electron'
 import { join } from 'path'
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { spawn } from 'child_process'
+import sharp from 'sharp'
 
 // Force Chromium engine to use English locale
 app.commandLine.appendSwitch('lang', 'en-US')
@@ -12,6 +16,49 @@ import type { Project, CaptureResult } from '../shared/types'
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
 import nspell from 'nspell'
+
+function figmaTokenPath() {
+  return join(app.getPath('userData'), 'figma-api-token.bin')
+}
+
+function readFigmaToken(): string {
+  try {
+    const file = figmaTokenPath()
+    if (!existsSync(file) || !safeStorage.isEncryptionAvailable()) return ''
+    return safeStorage.decryptString(readFileSync(file))
+  } catch { return '' }
+}
+
+function writeFigmaToken(token: string) {
+  const file = figmaTokenPath()
+  if (!token) { if (existsSync(file)) unlinkSync(file); return }
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure credential storage is unavailable on this device.')
+  writeFileSync(file, safeStorage.encryptString(token.trim()))
+}
+
+function parseFigmaReference(rawUrl: string) {
+  const url = new URL(rawUrl)
+  const match = url.pathname.match(/\/(?:design|file|proto)\/([^/]+)/i)
+  if (!match) throw new Error('Enter a valid Figma design URL.')
+  const rawNode = url.searchParams.get('node-id') || ''
+  return { fileKey: match[1], nodeId: rawNode ? rawNode.replace(/-/g, ':') : '' }
+}
+
+async function figmaRequest(path: string) {
+  const token = readFigmaToken()
+  if (!token) throw new Error('Connect a Figma personal access token first.')
+  const response = await fetch(`https://api.figma.com/v1${path}`, { headers: { 'X-Figma-Token': token } })
+  if (!response.ok) {
+    const retryAfter = response.headers.get('retry-after')
+    const upgrade = response.headers.get('x-figma-upgrade-link')
+    let message = `Figma API returned ${response.status}`
+    try { message = (await response.json() as any)?.err || message } catch {}
+    if (retryAfter) message += `; retry after ${retryAfter}s`
+    if (upgrade) message += `; ${upgrade}`
+    throw new Error(message)
+  }
+  return response.json() as Promise<any>
+}
 
 // ── Main Process Hunspell & Harper Grammar Engines ────────────────────────
 let spellCheckerInstance: any = null
@@ -195,6 +242,125 @@ process.on('uncaughtException', (error) => {
   console.error('[Main process uncaught exception]:', error)
 })
 
+const AUTOMATE_DOM_EXPRESSION = `(() => {
+  const selectors = 'h1,h2,h3,h4,h5,h6,p,a,button,label,li,span,div,dt,dd,summary,figcaption,th,td,img,input,section,article,header,footer,nav,main';
+  const semanticTextSelector = 'h1,h2,h3,h4,h5,h6,p,a,button,label,li,span,dt,dd,summary,figcaption,th,td';
+  const directSemanticSelector = semanticTextSelector.split(',').map((selector) => ':scope > ' + selector).join(',');
+  const root = document.documentElement; const body = document.body;
+  const pageHeight = Math.max(root.scrollHeight, root.offsetHeight, body?.scrollHeight || 0, body?.offsetHeight || 0);
+  const pageWidth = Math.max(root.scrollWidth, body?.scrollWidth || 0);
+  const compact = (value) => String(value || '').trim().replace(/\\s+/g, ' ');
+  const directText = (element) => compact(Array.from(element.childNodes).filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent || '').join(' '));
+  const elementText = (element) => {
+    const accessible = compact(element.getAttribute('alt') || element.getAttribute('aria-label') || element.getAttribute('title') || '');
+    if (element.matches('img,input')) return accessible;
+    const own = directText(element); if (own) return own;
+    const semanticChildren = Array.from(element.querySelectorAll(directSemanticSelector));
+    if (element.matches('li') && semanticChildren.length === 1) return compact(semanticChildren[0].innerText || accessible);
+    if (!element.querySelector(semanticTextSelector)) return compact(element.innerText || accessible);
+    return accessible;
+  };
+  const contextFor = (element) => {
+    const container = element.closest('section,article,nav,header,footer,main') || element.parentElement;
+    const heading = container?.querySelector('h1,h2,h3,h4,h5,h6');
+    let previous = element.previousElementSibling;
+    while (previous && !previous.matches('h1,h2,h3,h4,h5,h6')) previous = previous.previousElementSibling;
+    return compact([container?.id, container?.getAttribute('aria-label'), heading?.textContent, previous?.textContent].filter(Boolean).join(' ')).slice(0, 320);
+  };
+  const pathFor = (element) => {
+    const parts = []; let current = element;
+    while (current && current !== document.body && parts.length < 6) {
+      const marker = current.id ? '#' + current.id : Array.from(current.classList || []).slice(0, 2).map((name) => '.' + name).join('');
+      parts.unshift(current.tagName.toLowerCase() + marker); current = current.parentElement;
+    }
+    return parts.join(' > ');
+  };
+  const nodes = Array.from(document.querySelectorAll(selectors)).map((element) => {
+    const rect = element.getBoundingClientRect(); const style = getComputedStyle(element);
+    const positioned = style.position === 'fixed' || style.position === 'sticky';
+    const pageX = positioned ? rect.left : rect.left + scrollX;
+    const pageY = positioned ? rect.top : rect.top + scrollY;
+    return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, position: style.position } };
+  }).filter((item) => item.rect.width > 1 && item.rect.height > 1 && item.rect.x > -item.rect.width && item.rect.x < pageWidth + item.rect.width && item.rect.y > -item.rect.height && item.rect.y < pageHeight + item.rect.height);
+  return { nodes, pageWidth: Math.ceil(pageWidth), pageHeight: Math.ceil(pageHeight) };
+})()`
+
+async function captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number) {
+  const target = electronWebContents.fromId(webContentsId)
+  if (!target || target.isDestroyed()) throw new Error('The staging capture browser is no longer available.')
+  const debug = target.debugger
+  const attachedHere = !debug.isAttached()
+  if (attachedHere) debug.attach('1.3')
+  try {
+    const width = Math.max(320, Math.round(viewportWidth))
+    // Keep the emulated surface below the host webview's physical height. Some
+    // Electron/Windows combinations return a blank tail when asked for 1200px.
+    const tileHeight = Math.max(320, Math.min(1000, Math.round(viewportHeight)))
+    await debug.sendCommand('Page.enable')
+    await debug.sendCommand('Emulation.setDeviceMetricsOverride', { width, height: tileHeight, deviceScaleFactor: 1, mobile: false, screenWidth: width, screenHeight: tileHeight })
+    await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const animations = document.getAnimations().map((animation) => ({ animation, playState: animation.playState })); for (const item of animations) item.animation.pause(); const positioned = []; for (const element of document.body?.querySelectorAll('*') || []) { const position = getComputedStyle(element).position; if (position === 'fixed' || position === 'sticky') positioned.push({ element, visibility: element.style.visibility }); } window.__qaAutomateAtomicState = { x: scrollX, y: scrollY, animations, positioned, scrollBehavior: document.documentElement.style.scrollBehavior }; document.documentElement.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,0); return document.readyState; })()`, awaitPromise: true })
+    await new Promise((resolve) => setTimeout(resolve, 220))
+    const measured = await debug.sendCommand('Runtime.evaluate', { expression: `(() => ({ width: Math.ceil(Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0)), height: Math.ceil(Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0)) }))()`, returnByValue: true })
+    const documentWidth = Math.max(width, Number(measured?.result?.value?.width || width)); const documentHeight = Math.max(tileHeight, Number(measured?.result?.value?.height || tileHeight))
+    if (width * documentHeight > 45_000_000 || documentHeight > 24000) throw new Error('The page exceeds the verified Chromium tile limit.')
+    const positions: number[] = []
+    const overlap = Math.min(180, Math.max(64, Math.round(tileHeight * .12)))
+    const stride = Math.max(1, tileHeight - overlap)
+    for (let y = 0; y < documentHeight; y += stride) positions.push(Math.min(y, Math.max(0, documentHeight - tileHeight)))
+    const uniquePositions = Array.from(new Set(positions)); const composites: Array<{ input: Buffer; top: number; left: number }> = []
+    let previousHash = ''; let consecutiveDuplicates = 0
+    for (let index = 0; index < uniquePositions.length; index++) {
+      const y = uniquePositions[index]
+      const positionedVisibility = y === 0 ? 'item.visibility' : "'hidden'"
+      const positioned = await debug.sendCommand('Runtime.evaluate', { expression: `(async () => { const state = window.__qaAutomateAtomicState; for (const item of state?.positioned || []) item.element.style.visibility = ${positionedVisibility}; document.documentElement.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,${y}); document.documentElement.scrollTop=${y}; if (document.body) document.body.scrollTop=${y}; await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))); return { y: scrollY, rootY: document.documentElement.scrollTop, bodyY: document.body?.scrollTop || 0 }; })()`, returnByValue: true, awaitPromise: true })
+      const actual = Math.max(Number(positioned?.result?.value?.y || 0), Number(positioned?.result?.value?.rootY || 0), Number(positioned?.result?.value?.bodyY || 0))
+      if (Math.abs(actual - y) > 3) throw new Error(`DevTools Chromium stopped at ${Math.round(actual)}px instead of tile ${index + 1} at ${y}px.`)
+      const screenshot = await debug.sendCommand('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false, optimizeForSpeed: true })
+      const tile = Buffer.from(screenshot.data, 'base64'); const hash = createHash('sha256').update(tile).digest('hex')
+      if (index > 0 && hash === previousHash) consecutiveDuplicates++; else consecutiveDuplicates = 0
+      if (consecutiveDuplicates >= 1) throw new Error(`Chromium returned a repeated DevTools tile at ${y}px.`)
+      previousHash = hash; composites.push({ input: tile, top: y, left: 0 })
+    }
+    // Scan only after the full scroll pass so lazy-rendered footer and below-fold
+    // elements participate in semantic matching. Coordinates are document-relative.
+    const semantic = await debug.sendCommand('Runtime.evaluate', { expression: AUTOMATE_DOM_EXPRESSION, returnByValue: true })
+    const stitched = await sharp({ create: { width, height: documentHeight, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).png({ compressionLevel: 6 }).toBuffer()
+    return { success: true, dataUrl: `data:image/png;base64,${stitched.toString('base64')}`, documentWidth, documentHeight, domNodes: semantic?.result?.value?.nodes || [], tiles: uniquePositions.length, mode: 'verified-cdp-tiles' }
+  } finally {
+    try {
+      await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) item.element.style.visibility = item.visibility; document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` })
+    } catch {}
+    try { await debug.sendCommand('Emulation.clearDeviceMetricsOverride') } catch {}
+    if (attachedHere && debug.isAttached()) debug.detach()
+  }
+}
+
+const activeVisualWorkers = new Map<string, ReturnType<typeof spawn>>()
+
+function runVisualWorker(jobId: string, designDataUrl: string, liveDataUrl: string): Promise<any> {
+  return new Promise((resolve) => {
+    const workDirectory = mkdtempSync(join(tmpdir(), 'qa-visual-'))
+    const designPath = join(workDirectory, 'design.png'); const livePath = join(workDirectory, 'live.png')
+    const decode = (dataUrl: string) => Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
+    writeFileSync(designPath, decode(designDataUrl)); writeFileSync(livePath, decode(liveDataUrl))
+    const packagedExecutable = join(process.resourcesPath, 'visual-worker', process.platform === 'win32' ? 'visual-compare.exe' : 'visual-compare')
+    const workerScript = join(app.getAppPath(), 'python', 'visual_compare.py')
+    const command = app.isPackaged && existsSync(packagedExecutable) ? packagedExecutable : (process.env.QA_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'))
+    const args = command === packagedExecutable ? ['--design', designPath, '--live', livePath] : [workerScript, '--design', designPath, '--live', livePath]
+    const child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    activeVisualWorkers.set(jobId, child)
+    let stdout = ''; let stderr = ''; let settled = false
+    const finish = (result: any) => { if (settled) return; settled = true; clearTimeout(timeout); if (activeVisualWorkers.get(jobId) === child) activeVisualWorkers.delete(jobId); try { rmSync(workDirectory, { recursive: true, force: true }) } catch {}; resolve(result) }
+    const timeout = setTimeout(() => { child.kill(); finish({ success: false, error: 'The OpenCV comparison worker exceeded 90 seconds.', fallback: true }) }, 90_000)
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString() })
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+    child.on('error', (error) => finish({ success: false, error: error.message, fallback: true }))
+    child.on('close', () => {
+      try { finish(JSON.parse(stdout.trim())) } catch { finish({ success: false, error: stderr.trim() || 'The visual worker returned an unreadable response.', fallback: true }) }
+    })
+  })
+}
+
 function registerIpcHandlers(): void {
   // Auth: open a visible window so the user can log into wp-admin
   ipcMain.handle('auth:login', async (_event, adminUrl: string): Promise<void> => {
@@ -297,6 +463,74 @@ function registerIpcHandlers(): void {
         resolve()
       })
     })
+  })
+
+  ipcMain.handle('figma:token-status', () => ({ configured: !!readFigmaToken() }))
+
+  ipcMain.handle('figma:set-token', async (_event, token: string) => {
+    try {
+      writeFigmaToken(token || '')
+      return { success: true, configured: !!token }
+    } catch (error: any) {
+      return { success: false, configured: false, error: error?.message || 'Unable to validate the Figma token.' }
+    }
+  })
+
+  ipcMain.handle('figma:list-frames', async (_event, rawUrl: string) => {
+    try {
+      const { fileKey, nodeId } = parseFigmaReference(rawUrl)
+      const file = await figmaRequest(`/files/${encodeURIComponent(fileKey)}?depth=2`)
+      const frames: any[] = []
+      for (const page of file.document?.children || []) {
+        for (const node of page.children || []) {
+          const box = node.absoluteBoundingBox || {}
+          if (['FRAME', 'COMPONENT', 'SECTION'].includes(node.type) && box.width && box.height) {
+            frames.push({ id: node.id, name: node.name || 'Untitled frame', type: node.type, pageName: page.name || '', width: Math.round(box.width), height: Math.round(box.height) })
+          }
+        }
+      }
+      return { success: true, fileName: file.name || 'Figma design', lastModified: file.lastModified || '', requestedNodeId: nodeId, frames }
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unable to load Figma frames.' }
+    }
+  })
+
+  ipcMain.handle('figma:get-frame', async (_event, rawUrl: string, selectedNodeId?: string) => {
+    try {
+      const { fileKey, nodeId } = parseFigmaReference(rawUrl)
+      const targetId = selectedNodeId || nodeId
+      if (!targetId) throw new Error('Select a Figma frame to compare.')
+      const [nodes, images] = await Promise.all([
+        figmaRequest(`/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(targetId)}`),
+        figmaRequest(`/images/${encodeURIComponent(fileKey)}?ids=${encodeURIComponent(targetId)}&format=png&scale=1`)
+      ])
+      const node = nodes.nodes?.[targetId]?.document
+      const imageUrl = images.images?.[targetId]
+      if (!node || !imageUrl) throw new Error('Figma could not render the selected frame.')
+      const imageResponse = await fetch(imageUrl)
+      if (!imageResponse.ok) throw new Error(`Unable to download the rendered Figma frame (${imageResponse.status}).`)
+      const mime = imageResponse.headers.get('content-type') || 'image/png'
+      const bytes = Buffer.from(await imageResponse.arrayBuffer())
+      return { success: true, node, imageDataUrl: `data:${mime};base64,${bytes.toString('base64')}` }
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unable to load the selected Figma frame.' }
+    }
+  })
+
+  ipcMain.handle('automate:capture-page', async (_event, webContentsId: number, viewportWidth: number, viewportHeight: number) => {
+    try { return await captureAutomatePage(Number(webContentsId), Number(viewportWidth), Number(viewportHeight)) }
+    catch (error: any) { return { success: false, error: error?.message || 'Atomic Chromium capture failed.', fallback: true } }
+  })
+
+  ipcMain.handle('automate:visual-compare', async (_event, jobId: string, designDataUrl: string, liveDataUrl: string) => {
+    if (!designDataUrl?.startsWith('data:image/') || !liveDataUrl?.startsWith('data:image/')) return { success: false, error: 'The visual worker requires two image data URLs.', fallback: true }
+    return runVisualWorker(jobId, designDataUrl, liveDataUrl)
+  })
+
+  ipcMain.handle('automate:visual-cancel', (_event, jobId: string) => {
+    const child = activeVisualWorkers.get(jobId)
+    if (child) { child.kill(); activeVisualWorkers.delete(jobId); return { success: true } }
+    return { success: false }
   })
 
   ipcMain.handle('app:toggleMaximizeWindow', async (): Promise<void> => {

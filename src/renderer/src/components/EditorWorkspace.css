@@ -2150,3 +2150,10 @@ body.is-panel-resizing {
   -webkit-user-select: none !important;
 }
 
+.workspace-tab-btn.workspace-tab-icon-only {
+  width: 31px;
+  min-width: 31px;
+  padding-right: 0;
+  padding-left: 0;
+  justify-content: center;
+}
