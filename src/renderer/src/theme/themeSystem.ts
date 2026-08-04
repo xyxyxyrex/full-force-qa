@@ -38,7 +38,27 @@ export const THEME_LIST: Array<{ id: AppTheme; name: string; description: string
   { id: 'solarized-dark', name: 'Solarized Dark', description: 'Precision cyan dark theme based on Solarized color science', previewBg: '#002b36', previewAccent: '#2aa198' },
   { id: 'emerald-abyss', name: 'Emerald Abyss', description: 'Deep oceanic dark theme with vibrant emerald green', previewBg: '#061e19', previewAccent: '#10b981' },
   { id: 'one-dark-pro', name: 'One Dark Pro', description: 'Atom classic dark theme with soft blue & magenta', previewBg: '#21252b', previewAccent: '#61afef' },
-  { id: 'sunset-crimson', name: 'Sunset Crimson', description: 'Vibrant velvet dark theme with ruby red & coral accents', previewBg: '#180d14', previewAccent: '#f43f5e' }
+  { id: 'sunset-crimson', name: 'Sunset Crimson', description: 'Vibrant velvet dark theme with ruby red & coral accents', previewBg: '#180d14', previewAccent: '#f43f5e' },
+  { id: 'oled-black', name: 'OLED Pitch Black', description: 'Pure true black palette with electric blue highlights', previewBg: '#000000', previewAccent: '#0066ff' },
+  { id: 'nord-deep', name: 'Nord Deep', description: 'Deeper midnight arctic navy & frosted blue', previewBg: '#1a1e24', previewAccent: '#81a1c1' },
+  { id: 'catppuccin-latte', name: 'Catppuccin Latte', description: 'Soothing warm pastel light theme', previewBg: '#eff1f5', previewAccent: '#8839ef' },
+  { id: 'rose-gold', name: 'Rose Gold', description: 'Luxury dark titanium with warm rose gold accents', previewBg: '#1c191a', previewAccent: '#e0a96d' },
+  { id: 'cyberpunk-neon', name: 'Cyberpunk Neon', description: 'High-voltage neon magenta and cyan night palette', previewBg: '#0c0b10', previewAccent: '#ff0055' },
+  { id: 'midnight-amethyst', name: 'Midnight Amethyst', description: 'Royal deep violet & glowing lavender palette', previewBg: '#140c1e', previewAccent: '#a855f7' },
+  { id: 'emerald-forest', name: 'Emerald Forest', description: 'Lush dark pine forest green palette', previewBg: '#081711', previewAccent: '#34d399' },
+  { id: 'cobalt-blue', name: 'Cobalt Blue', description: 'Deep rich navy blue with glowing cobalt highlights', previewBg: '#0a1428', previewAccent: '#38bdf8' },
+  { id: 'solarized-light', name: 'Solarized Light', description: 'Warm parchment precision light palette', previewBg: '#fdf6e3', previewAccent: '#b58900' },
+  { id: 'sepia-paper', name: 'Sepia Vintage', description: 'Classic warm sepia book paper palette', previewBg: '#f4ebd0', previewAccent: '#8c6d46' },
+  { id: 'ayu-dark', name: 'Ayu Dark', description: 'Sleek charcoal dark theme with bright orange accents', previewBg: '#0f1419', previewAccent: '#ffb454' },
+  { id: 'palenight', name: 'Palenight', description: 'Material soft indigo night palette', previewBg: '#292d3e', previewAccent: '#c792ea' },
+  { id: 'synthwave-neon', name: 'Synthwave Neon', description: 'Bright 80s arcade neon green & hot pink palette', previewBg: '#13111c', previewAccent: '#00ffcc' },
+  { id: 'horizon-dark', name: 'Horizon Dark', description: 'Warm reddish dark space palette with coral gold', previewBg: '#1c1e26', previewAccent: '#e95678' },
+  { id: 'dracula-vampire', name: 'Dracula Crimson', description: 'Ultra rich blood crimson dark gothic theme', previewBg: '#1a090d', previewAccent: '#ff2a5f' },
+  { id: 'github-light', name: 'GitHub Light', description: 'Official crisp high-contrast light theme from GitHub', previewBg: '#ffffff', previewAccent: '#0969da' },
+  { id: 'monochrome-dark', name: 'Monochrome Dark', description: 'Minimalist pure grayscale dark theme', previewBg: '#121212', previewAccent: '#e5e5e5' },
+  { id: 'monochrome-light', name: 'Monochrome Light', description: 'Minimalist pure grayscale light theme', previewBg: '#f5f5f5', previewAccent: '#171717' },
+  { id: 'ocean-breeze', name: 'Ocean Breeze', description: 'Cool cyan & turquoise aquatic dark theme', previewBg: '#0d1f2d', previewAccent: '#00f2fe' },
+  { id: 'amber-terminal', name: 'Amber CRT', description: 'Classic retro CRT amber phosphor dark theme', previewBg: '#100c00', previewAccent: '#ffb000' }
 ]
 
 export function loadSettings(): AppSettings {

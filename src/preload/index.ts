@@ -47,8 +47,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number): Promise<any> {
     return ipcRenderer.invoke('automate:capture-page', webContentsId, viewportWidth, viewportHeight)
   },
-  compareVisuals(jobId: string, designDataUrl: string, liveDataUrl: string): Promise<any> {
-    return ipcRenderer.invoke('automate:visual-compare', jobId, designDataUrl, liveDataUrl)
+  compareVisuals(jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: any, mode?: string): Promise<any> {
+    return ipcRenderer.invoke('automate:visual-compare', jobId, designDataUrl, liveDataUrl, anchors, mode)
   },
   cancelVisualComparison(jobId: string): Promise<{ success: boolean }> {
     return ipcRenderer.invoke('automate:visual-cancel', jobId)

@@ -200,55 +200,55 @@
 .theme-cards-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 
 .theme-card {
-  padding: 14px;
+  padding: 12px 14px;
   background-color: var(--bg-app);
-  border: 2px solid var(--border-color);
-  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .theme-card:hover {
   border-color: var(--border-hover);
+  background-color: var(--bg-card-hover, rgba(255, 255, 255, 0.03));
 }
 
 .theme-card.active {
   border-color: var(--accent-color);
   background-color: var(--accent-light);
-}
-
-.theme-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  box-shadow: 0 0 0 1px var(--accent-color);
 }
 
 .theme-card-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.theme-card-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.3;
+.theme-quadrant-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 2px 5px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
 }
 
-.theme-preview-swatch {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 4px;
+.theme-quadrant-circle span {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* Hotkeys Table */

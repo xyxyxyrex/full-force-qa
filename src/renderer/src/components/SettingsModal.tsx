@@ -222,16 +222,13 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
                       className={`theme-card ${formSettings.theme === t.id ? 'active' : ''}`}
                       onClick={() => handleThemeChange(t.id)}
                     >
-                      <div className="theme-card-header">
-                        <span className="theme-card-title">{t.name}</span>
-                        <div
-                          className="theme-preview-swatch"
-                          style={{ backgroundColor: t.previewBg, border: `1px solid ${t.previewAccent}` }}
-                        >
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: t.previewAccent }} />
-                        </div>
+                      <span className="theme-card-title">{t.name}</span>
+                      <div className="theme-quadrant-circle" title={`${t.name} color palette`}>
+                        <span style={{ backgroundColor: t.previewBg }} />
+                        <span style={{ backgroundColor: t.previewBg === '#f8fafc' ? '#e2e8f0' : '#2a2a34' }} />
+                        <span style={{ backgroundColor: t.previewAccent + '77' }} />
+                        <span style={{ backgroundColor: t.previewAccent }} />
                       </div>
-                      <span className="theme-card-desc">{t.description}</span>
                     </div>
                   ))}
                 </div>

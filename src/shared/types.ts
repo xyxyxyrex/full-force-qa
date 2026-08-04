@@ -53,6 +53,26 @@ export type AppTheme =
   | 'emerald-abyss'
   | 'one-dark-pro'
   | 'sunset-crimson'
+  | 'oled-black'
+  | 'nord-deep'
+  | 'catppuccin-latte'
+  | 'rose-gold'
+  | 'cyberpunk-neon'
+  | 'midnight-amethyst'
+  | 'emerald-forest'
+  | 'cobalt-blue'
+  | 'solarized-light'
+  | 'sepia-paper'
+  | 'ayu-dark'
+  | 'palenight'
+  | 'synthwave-neon'
+  | 'horizon-dark'
+  | 'dracula-vampire'
+  | 'github-light'
+  | 'monochrome-dark'
+  | 'monochrome-light'
+  | 'ocean-breeze'
+  | 'amber-terminal'
 
 export interface AppHotkeys {
   quickSave: string
@@ -92,7 +112,7 @@ export interface ElectronAPI {
   listFigmaFrames: (url: string) => Promise<{ success: boolean; fileName?: string; lastModified?: string; requestedNodeId?: string; frames?: Array<{ id: string; name: string; type: string; pageName: string; width: number; height: number }>; error?: string }>
   getFigmaFrame: (url: string, nodeId?: string) => Promise<{ success: boolean; node?: any; imageDataUrl?: string; error?: string }>
   captureAutomatePage: (webContentsId: number, viewportWidth: number, viewportHeight: number) => Promise<{ success: boolean; dataUrl?: string; documentWidth?: number; documentHeight?: number; domNodes?: any[]; tiles?: number; mode?: string; error?: string; fallback?: boolean }>
-  compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string) => Promise<{ success: boolean; engine?: string; similarity?: number; changedPercent?: number; heatmapDataUrl?: string; regions?: Array<{ x: number; y: number; width: number; height: number; difference: number }>; anchors?: Array<{ designY: number; liveY: number; confidence: number }>; error?: string; fallback?: boolean }>
+  compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: Array<{ designY: number; liveY: number; confidence?: number }>, mode?: string) => Promise<{ success: boolean; engine?: string; similarity?: number; changedPercent?: number; heatmapDataUrl?: string; regions?: Array<{ x: number; y: number; width: number; height: number; difference: number }>; anchors?: Array<{ designY: number; liveY: number; confidence: number }>; error?: string; fallback?: boolean }>
   cancelVisualComparison: (jobId: string) => Promise<{ success: boolean }>
   toggleMaximizeWindow: () => Promise<void>
   selectSnapshotDirectory: () => Promise<{ success: boolean; path?: string }>

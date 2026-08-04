@@ -175,7 +175,7 @@ function findGrapesComponentForNativeEl(wrapper: any, el: HTMLElement): any {
     try {
       const found = wrapper.find(`[data-npath="${npath}"]`)?.[0]
       if (found) return found
-    } catch {}
+    } catch { }
   }
 
   // 2. Try ID
@@ -183,7 +183,7 @@ function findGrapesComponentForNativeEl(wrapper: any, el: HTMLElement): any {
     try {
       const found = wrapper.find(`#${CSS.escape(el.id)}`)?.[0]
       if (found) return found
-    } catch {}
+    } catch { }
   }
 
   // Calculate sibling index among same-tag siblings in native DOM
@@ -209,7 +209,7 @@ function findGrapesComponentForNativeEl(wrapper: any, el: HTMLElement): any {
         const targetIdx = sameTagIdx >= 0 && sameTagIdx < candidates.length ? sameTagIdx : 0
         return candidates[targetIdx]
       }
-    } catch {}
+    } catch { }
   }
 
   // 4. Try Tag alone with sameTagIdx matching
@@ -227,7 +227,7 @@ function findGrapesComponentForNativeEl(wrapper: any, el: HTMLElement): any {
       const targetIdx = sameTagIdx >= 0 && sameTagIdx < candidates.length ? sameTagIdx : 0
       return candidates[targetIdx]
     }
-  } catch {}
+  } catch { }
 
   return null
 }
@@ -241,7 +241,7 @@ function findNativeElForGrapesComponent(doc: Document, comp: any): HTMLElement |
     try {
       const found = doc.querySelector(`[data-npath="${npath}"]`) as HTMLElement
       if (found) return found
-    } catch {}
+    } catch { }
   }
 
   // 2. Try ID
@@ -250,7 +250,7 @@ function findNativeElForGrapesComponent(doc: Document, comp: any): HTMLElement |
     try {
       const found = doc.getElementById(attrs.id)
       if (found) return found
-    } catch {}
+    } catch { }
   }
 
   // Get index among same-tag siblings in GrapesJS component tree
@@ -279,7 +279,7 @@ function findNativeElForGrapesComponent(doc: Document, comp: any): HTMLElement |
         const targetIdx = compIdx < candidates.length ? compIdx : 0
         return candidates[targetIdx] as HTMLElement
       }
-    } catch {}
+    } catch { }
   }
 
   // 4. Try Tag alone
@@ -289,7 +289,7 @@ function findNativeElForGrapesComponent(doc: Document, comp: any): HTMLElement |
       const targetIdx = compIdx < candidates.length ? compIdx : 0
       return candidates[targetIdx] as HTMLElement
     }
-  } catch {}
+  } catch { }
 
   return null
 }
@@ -330,13 +330,13 @@ function updateLayersDisplayMode(editor: any, mode: 'minified' | 'verbose') {
     if (lm && lm.render) {
       lm.render()
     }
-  } catch {}
+  } catch { }
 }
 
 const PRESETS: Record<DevicePreset, { w: number; h: number; label: string }> = {
   Desktop: { w: 1920, h: 1200, label: '1920×1200' },
-  Tablet:  { w: 1199, h: 768,  label: '1199×768' },
-  Mobile:  { w: 329,  h: 767,  label: '329×767' }
+  Tablet: { w: 1199, h: 768, label: '1199×768' },
+  Mobile: { w: 329, h: 767, label: '329×767' }
 }
 
 const DEVTOOLS_PRESETS: DevtoolsPreset[] = [
@@ -463,7 +463,7 @@ export default function EditorWorkspace({
           setMondayTicketsList(parsed)
           hasCached = true
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     if (!hasCached) {
@@ -800,11 +800,11 @@ export default function EditorWorkspace({
     const legacyLabel = localStorage.getItem(`qa_${activeProjectId}_overlay_label`)
     const activeSource = storedSource === 'snapshot' && snapImg ? 'snapshot'
       : storedSource === 'figma' && figPng ? 'figma'
-      : legacyLabel && legacyLabel !== 'Figma Design' && snapImg ? 'snapshot'
-      : legacyLabel === 'Figma Design' && figPng ? 'figma'
-      : snapImg ? 'snapshot'
-      : figPng ? 'figma'
-      : null
+        : legacyLabel && legacyLabel !== 'Figma Design' && snapImg ? 'snapshot'
+          : legacyLabel === 'Figma Design' && figPng ? 'figma'
+            : snapImg ? 'snapshot'
+              : figPng ? 'figma'
+                : null
 
     setStoredFigmaUrl(figUrl)
     setFigmaInputVal(figUrl)
@@ -835,8 +835,8 @@ export default function EditorWorkspace({
     const handleNewWindow = (e: any) => {
       if (e.url) {
         if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
-          ;(window.electronAPI as any).figmaLoginWindow(e.url).then(() => {
-            try { wv.reload() } catch {}
+          ; (window.electronAPI as any).figmaLoginWindow(e.url).then(() => {
+            try { wv.reload() } catch { }
           })
         } else {
           window.open(e.url, '_blank', 'width=1024,height=768')
@@ -849,7 +849,7 @@ export default function EditorWorkspace({
         if (typeof wv.setZoomFactor === 'function') {
           wv.setZoomFactor(scale)
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     wv.addEventListener('new-window', handleNewWindow)
     wv.addEventListener('dom-ready', handleDomReady)
@@ -858,7 +858,7 @@ export default function EditorWorkspace({
       try {
         wv.removeEventListener('new-window', handleNewWindow)
         wv.removeEventListener('dom-ready', handleDomReady)
-      } catch (e) {}
+      } catch (e) { }
     }
   }, [storedFigmaUrl, figmaSplitOpen, canvasFrame?.width, vpWidth])
 
@@ -1294,22 +1294,22 @@ export default function EditorWorkspace({
 
   const handleLiveBack = useCallback(() => {
     if (liveWebviewRef.current && typeof liveWebviewRef.current.goBack === 'function') {
-      try { liveWebviewRef.current.goBack() } catch {}
+      try { liveWebviewRef.current.goBack() } catch { }
     } else {
       const iframe = liveIframeRef.current
       if (iframe && iframe.contentWindow) {
-        try { iframe.contentWindow.history.back() } catch {}
+        try { iframe.contentWindow.history.back() } catch { }
       }
     }
   }, [])
 
   const handleLiveForward = useCallback(() => {
     if (liveWebviewRef.current && typeof liveWebviewRef.current.goForward === 'function') {
-      try { liveWebviewRef.current.goForward() } catch {}
+      try { liveWebviewRef.current.goForward() } catch { }
     } else {
       const iframe = liveIframeRef.current
       if (iframe && iframe.contentWindow) {
-        try { iframe.contentWindow.history.forward() } catch {}
+        try { iframe.contentWindow.history.forward() } catch { }
       }
     }
   }, [])
@@ -1319,17 +1319,17 @@ export default function EditorWorkspace({
       if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.clearCache === 'function') {
         await window.electronAPI.clearCache()
       }
-    } catch {}
+    } catch { }
     if (liveWebviewRef.current && typeof liveWebviewRef.current.reloadIgnoringCache === 'function') {
       try { liveWebviewRef.current.reloadIgnoringCache() } catch {
-        try { liveWebviewRef.current.reload() } catch {}
+        try { liveWebviewRef.current.reload() } catch { }
       }
     } else if (liveWebviewRef.current && typeof liveWebviewRef.current.reload === 'function') {
-      try { liveWebviewRef.current.reload() } catch {}
+      try { liveWebviewRef.current.reload() } catch { }
     } else {
       const iframe = liveIframeRef.current
       if (iframe && iframe.contentWindow) {
-        try { iframe.contentWindow.location.reload() } catch {}
+        try { iframe.contentWindow.location.reload() } catch { }
       }
     }
   }, [])
@@ -1342,7 +1342,7 @@ export default function EditorWorkspace({
     }
     setLiveUrl(target)
     if (liveWebviewRef.current && typeof liveWebviewRef.current.loadURL === 'function') {
-      try { liveWebviewRef.current.loadURL(target) } catch {}
+      try { liveWebviewRef.current.loadURL(target) } catch { }
     } else {
       const iframe = liveIframeRef.current
       if (iframe) {
@@ -1365,7 +1365,7 @@ export default function EditorWorkspace({
       try {
         webview.removeEventListener('did-navigate', handleNav)
         webview.removeEventListener('did-navigate-in-page', handleNav)
-      } catch {}
+      } catch { }
     }
   }, [workspaceTab])
 
@@ -1411,10 +1411,10 @@ export default function EditorWorkspace({
               lines.push('}')
               lines.push('')
             }
-          } catch {}
+          } catch { }
         }
       }
-    } catch {}
+    } catch { }
 
     setCssRules(lines.join('\n'))
   }, [])
@@ -1547,7 +1547,7 @@ export default function EditorWorkspace({
       try {
         iframe.contentWindow.dispatchEvent(new Event('scroll'))
         iframe.contentWindow.dispatchEvent(new Event('resize'))
-      } catch {}
+      } catch { }
     }
 
     // Hotkey handler inside native iframe: Ctrl+A, Spacebar panning, and Undo/Redo
@@ -1643,33 +1643,33 @@ export default function EditorWorkspace({
         setNativeStyleRevision((r) => r + 1)
         if (el) {
           selectingFromNativeRef.current = true
-            const editor = editorRef.current
-            if (editor) {
-              const wrapper = editor.getWrapper()
-              const comp = findGrapesComponentForNativeEl(wrapper, el)
-              if (comp) {
-                // Walk up all parent components and set open: true so all parent layers expand in Layers panel
-                let curr = comp.parent ? comp.parent() : null
-                while (curr) {
-                  if (curr.set) curr.set('open', true)
-                  curr = curr.parent ? curr.parent() : null
-                }
-                editor.select(comp)
-
-                // Force LayerManager to re-render expanded tree and scroll selected layer into view
-                setTimeout(() => {
-                  try {
-                    if (editor.LayerManager && (editor.LayerManager as any).render) {
-                      ;(editor.LayerManager as any).render()
-                    }
-                  } catch {}
-                  const layerEl = document.querySelector('#layers-container .gjs-selected') as HTMLElement
-                  if (layerEl) {
-                    layerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                  }
-                }, 60)
+          const editor = editorRef.current
+          if (editor) {
+            const wrapper = editor.getWrapper()
+            const comp = findGrapesComponentForNativeEl(wrapper, el)
+            if (comp) {
+              // Walk up all parent components and set open: true so all parent layers expand in Layers panel
+              let curr = comp.parent ? comp.parent() : null
+              while (curr) {
+                if (curr.set) curr.set('open', true)
+                curr = curr.parent ? curr.parent() : null
               }
+              editor.select(comp)
+
+              // Force LayerManager to re-render expanded tree and scroll selected layer into view
+              setTimeout(() => {
+                try {
+                  if (editor.LayerManager && (editor.LayerManager as any).render) {
+                    ; (editor.LayerManager as any).render()
+                  }
+                } catch { }
+                const layerEl = document.querySelector('#layers-container .gjs-selected') as HTMLElement
+                if (layerEl) {
+                  layerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                }
+              }, 60)
             }
+          }
           setTimeout(() => {
             selectingFromNativeRef.current = false
           }, 200)
@@ -1705,7 +1705,7 @@ export default function EditorWorkspace({
           setSelectedComponent(null)
         })
       }
-    } catch (_) {}
+    } catch (_) { }
 
     const updateLayerCount = () => {
       try {
@@ -1755,7 +1755,7 @@ export default function EditorWorkspace({
           frameWin.addEventListener('keydown', handleFrameEscape, true)
           if (frameDoc) frameDoc.addEventListener('keydown', handleFrameEscape, true)
         }
-      } catch (_) {}
+      } catch (_) { }
 
       // Stamp data-npath on GrapesJS components to match native iframe paths
       const stampCompPaths = (comp: any, prefix: string) => {
@@ -1811,7 +1811,7 @@ export default function EditorWorkspace({
         if (comp && comp.getStyle) {
           try {
             lastCompStyles.set(comp, JSON.stringify(comp.getStyle()))
-          } catch {}
+          } catch { }
         }
         isSelectingRef.current = false
       }, 350)
@@ -1857,7 +1857,7 @@ export default function EditorWorkspace({
       let currentStyleJson = '{}'
       try {
         currentStyleJson = JSON.stringify(comp.getStyle ? comp.getStyle() : {})
-      } catch {}
+      } catch { }
 
       const previousStyleJson = lastCompStyles.get(comp)
       if (previousStyleJson !== undefined && previousStyleJson === currentStyleJson) {
@@ -1893,7 +1893,7 @@ export default function EditorWorkspace({
         }
         try {
           nativeEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        } catch {}
+        } catch { }
       }
     })
 
@@ -2202,7 +2202,7 @@ export default function EditorWorkspace({
           if (gFrame && gFrame.contentWindow) {
             gFrame.contentWindow.getSelection()?.removeAllRanges()
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       return window.electronAPI.onGlobalEscape(handleEscape)
@@ -2263,7 +2263,7 @@ export default function EditorWorkspace({
             if (gFrame && gFrame.contentWindow) {
               gFrame.contentWindow.getSelection()?.removeAllRanges()
             }
-          } catch (_) {}
+          } catch (_) { }
         }
       }
 
@@ -2329,7 +2329,7 @@ export default function EditorWorkspace({
         iframeWin.addEventListener('keydown', onKeyDown)
         iframeWin.addEventListener('keyup', onKeyUp)
       }
-    } catch (_) {}
+    } catch (_) { }
 
     return () => {
       window.removeEventListener('keydown', onKeyDown)
@@ -2338,7 +2338,7 @@ export default function EditorWorkspace({
         try {
           iframeWin.removeEventListener('keydown', onKeyDown)
           iframeWin.removeEventListener('keyup', onKeyUp)
-        } catch (_) {}
+        } catch (_) { }
       }
     }
   }, [])
@@ -2577,7 +2577,7 @@ export default function EditorWorkspace({
             if (st > 0) return st
           }
         }
-      } catch {}
+      } catch { }
       return 0
     }
 
@@ -2600,7 +2600,7 @@ export default function EditorWorkspace({
 
       if (iframeWin) iframeWin.addEventListener('scroll', updateScroll, { passive: true })
       if (iframeDoc) iframeDoc.addEventListener('scroll', updateScroll, { passive: true })
-    } catch {}
+    } catch { }
 
     // Continuous animation frame loop to catch smooth scrolling, momentum, and dynamic script scrolls
     const loop = () => {
@@ -2614,7 +2614,7 @@ export default function EditorWorkspace({
       try {
         if (iframeWin) iframeWin.removeEventListener('scroll', updateScroll)
         if (iframeDoc) iframeDoc.removeEventListener('scroll', updateScroll)
-      } catch {}
+      } catch { }
     }
   }, [overlayImage, overlayVisible, html])
 
@@ -2630,7 +2630,7 @@ export default function EditorWorkspace({
       if (win) {
         try {
           win.scrollBy({ top: e.deltaY, behavior: 'auto' })
-        } catch {}
+        } catch { }
       }
     }
 
@@ -2748,7 +2748,7 @@ export default function EditorWorkspace({
     // Suppress pointer events on ALL iframes and webviews in the document during resize drag!
     const allIframes = document.querySelectorAll('iframe, webview')
     allIframes.forEach((el: any) => {
-      try { el.style.pointerEvents = 'none' } catch (_) {}
+      try { el.style.pointerEvents = 'none' } catch (_) { }
     })
 
     let rafId = 0
@@ -2831,7 +2831,7 @@ export default function EditorWorkspace({
       document.body.style.cursor = ''
 
       allIframes.forEach((el: any) => {
-        try { el.style.pointerEvents = '' } catch (_) {}
+        try { el.style.pointerEvents = '' } catch (_) { }
       })
 
       if (rafId) cancelAnimationFrame(rafId)
@@ -3156,7 +3156,7 @@ export default function EditorWorkspace({
     const existingTooltip = iframeDoc.querySelector('.__fi-tooltip')
     if (existingTooltip) existingTooltip.remove()
 
-    const TEXT_TAGS = ['H1','H2','H3','H4','H5','H6','P','SPAN','A','LI','BLOCKQUOTE','LABEL','BUTTON','TD','TH']
+    const TEXT_TAGS = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'SPAN', 'A', 'LI', 'BLOCKQUOTE', 'LABEL', 'BUTTON', 'TD', 'TH']
 
     // Inject badge style
     let styleEl = iframeDoc.querySelector('#__fi-styles') as HTMLStyleElement | null
@@ -3350,7 +3350,7 @@ export default function EditorWorkspace({
       if (style) style.remove()
       // Restore position:static
       iframeDoc.querySelectorAll('[data-fi-was-static]').forEach((el) => {
-        ;(el as HTMLElement).style.position = ''
+        ; (el as HTMLElement).style.position = ''
         el.removeAttribute('data-fi-was-static')
       })
     }
@@ -3885,14 +3885,12 @@ export default function EditorWorkspace({
       {/* ── Top toolbar ──────────────────────────── */}
       <div className="editor-toolbar">
         <div className="toolbar-left">
-          <button className="toolbar-btn" onClick={onNewCapture} title="Back to dashboard">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <button className="toolbar-btn back-dashboard-btn" onClick={onNewCapture} title="Back to Dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', height: 28, background: '#18181b', border: '1px solid #27272a', borderRadius: 6, color: '#e4e4e7', cursor: 'pointer' }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 3L5 8l5 5" />
             </svg>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.02em' }}>Back to Dashboard</span>
           </button>
-          <span className="toolbar-url" title={sourceUrl}>
-            {(() => { try { return new URL(sourceUrl).hostname } catch { return sourceUrl } })()}
-          </span>
         </div>
 
         {/* Center: primary workspaces and viewport controls */}
@@ -4129,8 +4127,8 @@ export default function EditorWorkspace({
                   title="Rulers & Guides"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="2" y="4" width="20" height="16" rx="1"/>
-                    <path d="M6 4v4M10 4v6M14 4v4M18 4v6"/>
+                    <rect x="2" y="4" width="20" height="16" rx="1" />
+                    <path d="M6 4v4M10 4v6M14 4v4M18 4v6" />
                   </svg>
                 </button>
                 {rulerDropdownOpen && (
@@ -4180,8 +4178,8 @@ export default function EditorWorkspace({
                   title="Boundaries"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="1"/>
-                    <rect x="7" y="7" width="10" height="10" rx="0.5" strokeDasharray="2 2"/>
+                    <rect x="3" y="3" width="18" height="18" rx="1" />
+                    <rect x="7" y="7" width="10" height="10" rx="0.5" strokeDasharray="2 2" />
                   </svg>
                 </button>
                 {boundariesDropdownOpen && (
@@ -4304,7 +4302,7 @@ export default function EditorWorkspace({
                             <path d="M13 2h4a3 3 0 0 1 3 3v4" />
                             <path d="M2 13v4a3 3 0 0 0 3 3h4" />
                           </svg>
-                          <span>Copy a layer as PNG in Figma,<br/>then <strong>Ctrl + V</strong> here</span>
+                          <span>Copy a layer as PNG in Figma,<br />then <strong>Ctrl + V</strong> here</span>
                         </div>
                         <div className="ruler-dd-divider" />
                         <button
@@ -4502,7 +4500,7 @@ export default function EditorWorkspace({
                           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                           <circle cx="12" cy="13" r="4" />
                         </svg>
-                        <span>No image snapshots yet.<br/>Use <strong>Create Snapshot</strong> to capture one.</span>
+                        <span>No image snapshots yet.<br />Use <strong>Create Snapshot</strong> to capture one.</span>
                       </div>
                     )}
 
@@ -5043,7 +5041,7 @@ export default function EditorWorkspace({
                 onThumbnailCaptured={project?.thumbnailUrl ? undefined : onThumbnailCaptured}
               />
             )}
-            {workspaceTab === 'automate' && <AutomateWorkspace sourceUrl={sourceUrl} figmaUrl={storedFigmaUrl} projectId={activeProjectId} />}
+            {workspaceTab === 'automate' && <AutomateWorkspace sourceUrl={sourceUrl} figmaUrl={storedFigmaUrl} projectId={activeProjectId} onOpenSettings={onOpenSettings} />}
             {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar, Create Snapshot) */}
             {workspaceTab === 'live' && (
               <div
@@ -5488,28 +5486,28 @@ export default function EditorWorkspace({
 
                 {/* Live stays mounted and shares the login/capture session. */}
                 <div
-                    className="live-browser-wrap"
+                  className="live-browser-wrap"
+                  style={{
+                    position: 'relative',
+                    width: `${vpWidth}px`,
+                    height: `${vpHeight}px`,
+                    margin: '0 auto',
+                    overflow: 'hidden',
+                    background: '#fff',
+                    display: workspaceTab === 'live' ? 'block' : 'none'
+                  }}
+                >
+                  <webview
+                    ref={liveWebviewRef}
+                    src={liveUrl || sourceUrl}
                     style={{
-                      position: 'relative',
-                      width: `${vpWidth}px`,
-                      height: `${vpHeight}px`,
-                      margin: '0 auto',
-                      overflow: 'hidden',
-                      background: '#fff',
-                      display: workspaceTab === 'live' ? 'block' : 'none'
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                      background: '#fff'
                     }}
-                  >
-                    <webview
-                      ref={liveWebviewRef}
-                      src={liveUrl || sourceUrl}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        border: 'none',
-                        background: '#fff'
-                      }}
-                      allowpopups={true}
-                    />
+                    allowpopups={true}
+                  />
                 </div>
 
                 {/* ── IN-CANVAS 3-WAY SIDE-BY-SIDE / OVERLAY / DIFF ── */}
@@ -5586,7 +5584,7 @@ export default function EditorWorkspace({
                                       if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
                                         await (window.electronAPI as any).figmaLoginWindow(storedFigmaUrl)
                                         setTimeout(() => {
-                                          try { figmaWebviewRef.current?.reload() } catch {}
+                                          try { figmaWebviewRef.current?.reload() } catch { }
                                         }, 500)
                                       } else {
                                         window.open(storedFigmaUrl || 'https://figma.com/login', '_blank', 'width=1024,height=768')
@@ -6045,172 +6043,172 @@ export default function EditorWorkspace({
 
         {rightPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && workspaceTab !== 'automate' && (
           <div className="editor-panel panel-right" style={{ width: workspaceTab === 'audit' ? Math.max(rightPanelWidth, 320) : rightPanelWidth }}>
-          {/* Layout mode panel container — ALWAYS MOUNTED so GrapesJS never loses DOM container references */}
-          <div className="layout-panel-wrap" style={{ display: workspaceTab === 'layout' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%', overflowY: 'auto' }}>
-            {/* 1. Collapsible Colors Section (Top of Right Panel) */}
-            <div className={`accordion-section right-panel-accordion ${colorsExpanded ? 'expanded' : 'collapsed'}`}>
-              <div className="accordion-header">
-                <div
-                  className="accordion-header-left"
-                  onClick={() => setColorsExpanded((p) => !p)}
-                  title="Click to toggle Colors"
-                  style={{ cursor: 'pointer' }}
-                >
-                  <svg
-                    className={`accordion-chevron ${colorsExpanded ? 'open' : ''}`}
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+            {/* Layout mode panel container — ALWAYS MOUNTED so GrapesJS never loses DOM container references */}
+            <div className="layout-panel-wrap" style={{ display: workspaceTab === 'layout' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%', overflowY: 'auto' }}>
+              {/* 1. Collapsible Colors Section (Top of Right Panel) */}
+              <div className={`accordion-section right-panel-accordion ${colorsExpanded ? 'expanded' : 'collapsed'}`}>
+                <div className="accordion-header">
+                  <div
+                    className="accordion-header-left"
+                    onClick={() => setColorsExpanded((p) => !p)}
+                    title="Click to toggle Colors"
+                    style={{ cursor: 'pointer' }}
                   >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                  <span className="accordion-title">Colors</span>
-                </div>
-                <div className="accordion-header-right" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <button className="color-scan-btn" onClick={scanPageColors} title="Rescan page colors">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M1 4v6h6" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    <svg
+                      className={`accordion-chevron ${colorsExpanded ? 'open' : ''}`}
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
                     </svg>
-                  </button>
-                  {selectedColors.size > 0 && (
-                    <button className="color-clear-btn" onClick={() => setSelectedColors(new Set())} title="Clear selection">
-                      Clear
+                    <span className="accordion-title">Colors</span>
+                  </div>
+                  <div className="accordion-header-right" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button className="color-scan-btn" onClick={scanPageColors} title="Rescan page colors">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 4v6h6" />
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                      </svg>
                     </button>
-                  )}
-                  <span className="accordion-badge">{pageColors.length}</span>
+                    {selectedColors.size > 0 && (
+                      <button className="color-clear-btn" onClick={() => setSelectedColors(new Set())} title="Clear selection">
+                        Clear
+                      </button>
+                    )}
+                    <span className="accordion-badge">{pageColors.length}</span>
+                  </div>
                 </div>
+                {colorsExpanded && (
+                  <div className="accordion-content color-palette-content" style={{ padding: '8px' }}>
+                    {pageColors.length === 0 ? (
+                      <div className="color-palette-empty">No colors detected yet</div>
+                    ) : (
+                      <div className="color-palette-grid">
+                        {pageColors.map(({ hex, count }) => (
+                          <button
+                            key={hex}
+                            className={`color-swatch-btn ${selectedColors.has(hex) ? 'active' : ''}`}
+                            onClick={() => toggleColorSelection(hex)}
+                            title={`${hex} (${count} uses)`}
+                          >
+                            <span className="color-swatch-preview" style={{ background: hex }} />
+                            <span className="color-swatch-hex">{hex}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              {colorsExpanded && (
-                <div className="accordion-content color-palette-content" style={{ padding: '8px' }}>
-                  {pageColors.length === 0 ? (
-                    <div className="color-palette-empty">No colors detected yet</div>
-                  ) : (
-                    <div className="color-palette-grid">
-                      {pageColors.map(({ hex, count }) => (
-                        <button
-                          key={hex}
-                          className={`color-swatch-btn ${selectedColors.has(hex) ? 'active' : ''}`}
-                          onClick={() => toggleColorSelection(hex)}
-                          title={`${hex} (${count} uses)`}
-                        >
-                          <span className="color-swatch-preview" style={{ background: hex }} />
-                          <span className="color-swatch-hex">{hex}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
 
-            {/* 2. Collapsible Detected Fonts Section (Below Colors) */}
-            <div className={`accordion-section right-panel-accordion ${fontsExpanded ? 'expanded' : 'collapsed'}`}>
-              <div className="accordion-header">
-                <div
-                  className="accordion-header-left"
-                  onClick={() => setFontsExpanded((p) => !p)}
-                  title="Click to toggle Fonts"
-                  style={{ cursor: 'pointer' }}
-                >
-                  <svg
-                    className={`accordion-chevron ${fontsExpanded ? 'open' : ''}`}
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+              {/* 2. Collapsible Detected Fonts Section (Below Colors) */}
+              <div className={`accordion-section right-panel-accordion ${fontsExpanded ? 'expanded' : 'collapsed'}`}>
+                <div className="accordion-header">
+                  <div
+                    className="accordion-header-left"
+                    onClick={() => setFontsExpanded((p) => !p)}
+                    title="Click to toggle Fonts"
+                    style={{ cursor: 'pointer' }}
                   >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                  <span className="accordion-title">Fonts</span>
-                </div>
-                <div className="accordion-header-right" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <button className="color-scan-btn" onClick={scanPageFonts} title="Rescan page fonts">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M1 4v6h6" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    <svg
+                      className={`accordion-chevron ${fontsExpanded ? 'open' : ''}`}
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
                     </svg>
-                  </button>
-                  {selectedFonts.size > 0 && (
-                    <button className="color-clear-btn" onClick={() => setSelectedFonts(new Set())} title="Clear selection">
-                      Clear
+                    <span className="accordion-title">Fonts</span>
+                  </div>
+                  <div className="accordion-header-right" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button className="color-scan-btn" onClick={scanPageFonts} title="Rescan page fonts">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M1 4v6h6" />
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                      </svg>
                     </button>
-                  )}
-                  <span className="accordion-badge">{pageFonts.length}</span>
+                    {selectedFonts.size > 0 && (
+                      <button className="color-clear-btn" onClick={() => setSelectedFonts(new Set())} title="Clear selection">
+                        Clear
+                      </button>
+                    )}
+                    <span className="accordion-badge">{pageFonts.length}</span>
+                  </div>
                 </div>
+                {fontsExpanded && (
+                  <div className="accordion-content font-palette-content" style={{ padding: '8px' }}>
+                    {pageFonts.length === 0 ? (
+                      <div className="color-palette-empty">No web fonts detected yet</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {pageFonts.map(({ family, count }) => (
+                          <button
+                            key={family}
+                            className={`font-swatch-btn ${selectedFonts.has(family) ? 'active' : ''}`}
+                            onClick={() => toggleFontSelection(family)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              background: selectedFonts.has(family) ? 'var(--accent-color)' : 'var(--bg-input)',
+                              color: selectedFonts.has(family) ? '#ffffff' : 'var(--text-primary)',
+                              border: selectedFonts.has(family) ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              padding: '5px 8px',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <span style={{ fontWeight: 600, fontFamily: `"${family}", sans-serif` }}>{family}</span>
+                            <span style={{ fontSize: '10px', opacity: 0.7 }}>{count} uses</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              {fontsExpanded && (
-                <div className="accordion-content font-palette-content" style={{ padding: '8px' }}>
-                  {pageFonts.length === 0 ? (
-                    <div className="color-palette-empty">No web fonts detected yet</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {pageFonts.map(({ family, count }) => (
-                        <button
-                          key={family}
-                          className={`font-swatch-btn ${selectedFonts.has(family) ? 'active' : ''}`}
-                          onClick={() => toggleFontSelection(family)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            background: selectedFonts.has(family) ? 'var(--accent-color)' : 'var(--bg-input)',
-                            color: selectedFonts.has(family) ? '#ffffff' : 'var(--text-primary)',
-                            border: selectedFonts.has(family) ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
-                            borderRadius: '4px',
-                            padding: '5px 8px',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <span style={{ fontWeight: 600, fontFamily: `"${family}", sans-serif` }}>{family}</span>
-                          <span style={{ fontSize: '10px', opacity: 0.7 }}>{count} uses</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+
+              {/* 3. Selectors */}
+              <div className="panel-header">Selectors</div>
+              <div id="selector-container" className="panel-content" />
+
+              {/* 4. Style Inspector */}
+              <div className="panel-header">Style</div>
+              <div className="panel-content">
+                <NativeStylePanel
+                  selectedElement={selectedNativeEl}
+                  onStyleChange={handleNativeStyleChange}
+                  styleRevision={nativeStyleRevision}
+                />
+              </div>
             </div>
 
-            {/* 3. Selectors */}
-            <div className="panel-header">Selectors</div>
-            <div id="selector-container" className="panel-content" />
-
-            {/* 4. Style Inspector */}
-            <div className="panel-header">Style</div>
-            <div className="panel-content">
-              <NativeStylePanel
-                selectedElement={selectedNativeEl}
-                onStyleChange={handleNativeStyleChange}
-                styleRevision={nativeStyleRevision}
-              />
-            </div>
+            {workspaceTab === 'audit' && (
+              <div className="audit-panel-wrap" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+                <SeoAuditRightPanel
+                  html={html}
+                  sourceUrl={sourceUrl}
+                  editor={editorRef.current}
+                  selectedComponent={selectedComponent}
+                  iframeRef={liveIframeRef}
+                />
+              </div>
+            )}
           </div>
-
-          {workspaceTab === 'audit' && (
-            <div className="audit-panel-wrap" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-              <SeoAuditRightPanel
-                html={html}
-                sourceUrl={sourceUrl}
-                editor={editorRef.current}
-                selectedComponent={selectedComponent}
-                iframeRef={liveIframeRef}
-              />
-            </div>
-          )}
-        </div>
-      )}
+        )}
       </div>
 
       {/* Add Guides dialog */}
@@ -6422,7 +6420,7 @@ export default function EditorWorkspace({
                 className={`figma-tab-btn ${figmaModalTab === 'live' ? 'active' : ''}`}
                 onClick={() => setFigmaModalTab('live')}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                 <span>Live Web URL</span>
               </button>
 
@@ -6430,7 +6428,7 @@ export default function EditorWorkspace({
                 className={`figma-tab-btn ${figmaModalTab === 'png' ? 'active' : ''}`}
                 onClick={() => setFigmaModalTab('png')}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
                 <span>PNG Image</span>
               </button>
 
@@ -6453,7 +6451,7 @@ export default function EditorWorkspace({
                   FIGMA LIVE APP WEB URL
                 </label>
                 <div className="figma-input-wrap">
-                  <svg className="figma-input-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <svg className="figma-input-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                   <input
                     type="url"
                     className="figma-input-field"
@@ -6476,9 +6474,9 @@ export default function EditorWorkspace({
                 <label style={{ fontSize: 11, fontWeight: 600, color: '#a1a1aa', display: 'block', marginBottom: 8 }}>
                   UPLOAD FIGMA DESIGN SCREENSHOT (PNG / WEBP)
                 </label>
-                
+
                 <label className="figma-dropzone" style={{ display: 'block' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.5" style={{ marginBottom: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.5" style={{ marginBottom: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e7' }}>
                     {figmaImage ? 'Change Attached PNG Reference' : 'Click or Drag PNG Image Here'}
                   </div>
@@ -6528,7 +6526,7 @@ export default function EditorWorkspace({
                 <label style={{ fontSize: 11, fontWeight: 600, color: '#a1a1aa', display: 'block', marginBottom: 8 }}>
                   PULL FIGMA REFERENCE FROM MONDAY TICKET
                 </label>
-                
+
                 {/* Search Bar with Auto-Focus */}
                 <div style={{ position: 'relative', marginBottom: 10 }}>
                   <svg

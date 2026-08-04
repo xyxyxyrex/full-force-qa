@@ -254,10 +254,11 @@ const AUTOMATE_DOM_EXPRESSION = `(() => {
   const elementText = (element) => {
     const accessible = compact(element.getAttribute('alt') || element.getAttribute('aria-label') || element.getAttribute('title') || '');
     if (element.matches('img,input')) return accessible;
-    const own = directText(element); if (own) return own;
-    const semanticChildren = Array.from(element.querySelectorAll(directSemanticSelector));
-    if (element.matches('li') && semanticChildren.length === 1) return compact(semanticChildren[0].innerText || accessible);
-    if (!element.querySelector(semanticTextSelector)) return compact(element.innerText || accessible);
+    const isLeaf = element.matches('h1,h2,h3,h4,h5,h6,p,a,button,label,li,span,dt,dd,summary,figcaption,th,td');
+    if (isLeaf) return compact(element.innerText || element.textContent || accessible);
+    const own = directText(element);
+    if (own) return own;
+    if (!element.querySelector(semanticTextSelector)) return compact(element.innerText || element.textContent || accessible);
     return accessible;
   };
   const contextFor = (element) => {
@@ -280,7 +281,7 @@ const AUTOMATE_DOM_EXPRESSION = `(() => {
     const positioned = style.position === 'fixed' || style.position === 'sticky';
     const pageX = positioned ? rect.left : rect.left + scrollX;
     const pageY = positioned ? rect.top : rect.top + scrollY;
-    return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, position: style.position } };
+    return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, position: style.position } };
   }).filter((item) => item.rect.width > 1 && item.rect.height > 1 && item.rect.x > -item.rect.width && item.rect.x < pageWidth + item.rect.width && item.rect.y > -item.rect.height && item.rect.y < pageHeight + item.rect.height);
   return { nodes, pageWidth: Math.ceil(pageWidth), pageHeight: Math.ceil(pageHeight) };
 })()`
@@ -337,16 +338,25 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
 
 const activeVisualWorkers = new Map<string, ReturnType<typeof spawn>>()
 
-function runVisualWorker(jobId: string, designDataUrl: string, liveDataUrl: string): Promise<any> {
+function runVisualWorker(jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: Array<{ designY: number; liveY: number; confidence?: number }>, mode: string = 'visual-surface'): Promise<any> {
   return new Promise((resolve) => {
     const workDirectory = mkdtempSync(join(tmpdir(), 'qa-visual-'))
     const designPath = join(workDirectory, 'design.png'); const livePath = join(workDirectory, 'live.png')
     const decode = (dataUrl: string) => Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
     writeFileSync(designPath, decode(designDataUrl)); writeFileSync(livePath, decode(liveDataUrl))
+    
+    let anchorsPath = ''
+    if (Array.isArray(anchors) && anchors.length > 0) {
+      anchorsPath = join(workDirectory, 'anchors.json')
+      writeFileSync(anchorsPath, JSON.stringify(anchors))
+    }
+
     const packagedExecutable = join(process.resourcesPath, 'visual-worker', process.platform === 'win32' ? 'visual-compare.exe' : 'visual-compare')
     const workerScript = join(app.getAppPath(), 'python', 'visual_compare.py')
     const command = app.isPackaged && existsSync(packagedExecutable) ? packagedExecutable : (process.env.QA_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'))
-    const args = command === packagedExecutable ? ['--design', designPath, '--live', livePath] : [workerScript, '--design', designPath, '--live', livePath]
+    const args = command === packagedExecutable
+      ? (anchorsPath ? ['--design', designPath, '--live', livePath, '--anchors', anchorsPath, '--mode', mode] : ['--design', designPath, '--live', livePath, '--mode', mode])
+      : (anchorsPath ? [workerScript, '--design', designPath, '--live', livePath, '--anchors', anchorsPath, '--mode', mode] : [workerScript, '--design', designPath, '--live', livePath, '--mode', mode])
     const child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     activeVisualWorkers.set(jobId, child)
     let stdout = ''; let stderr = ''; let settled = false
@@ -399,11 +409,11 @@ function registerIpcHandlers(): void {
   // App: Clear Chromium disk & memory HTTP cache
   ipcMain.handle('app:clear-cache', async (): Promise<{ success: boolean }> => {
     try {
-      const storageOptions = { storages: ['serviceworkers', 'cachestorage', 'websql'] as const }
-
       await Promise.all([
         session.defaultSession.clearCache(),
-        session.defaultSession.clearStorageData(storageOptions)
+        session.defaultSession.clearStorageData({
+          storages: ['serviceworkers', 'cachestorage']
+        })
       ])
       return { success: true }
     } catch (e) {
@@ -522,9 +532,9 @@ function registerIpcHandlers(): void {
     catch (error: any) { return { success: false, error: error?.message || 'Atomic Chromium capture failed.', fallback: true } }
   })
 
-  ipcMain.handle('automate:visual-compare', async (_event, jobId: string, designDataUrl: string, liveDataUrl: string) => {
+  ipcMain.handle('automate:visual-compare', async (_event, jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: Array<{ designY: number; liveY: number; confidence?: number }>, mode?: string) => {
     if (!designDataUrl?.startsWith('data:image/') || !liveDataUrl?.startsWith('data:image/')) return { success: false, error: 'The visual worker requires two image data URLs.', fallback: true }
-    return runVisualWorker(jobId, designDataUrl, liveDataUrl)
+    return runVisualWorker(jobId, designDataUrl, liveDataUrl, anchors, mode)
   })
 
   ipcMain.handle('automate:visual-cancel', (_event, jobId: string) => {
