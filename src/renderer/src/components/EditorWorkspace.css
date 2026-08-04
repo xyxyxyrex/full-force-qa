@@ -57,8 +57,12 @@
   border: none;
   border-radius: 6px;
   color: #a0a0a0;
-  font-size: 13px;
-  font-weight: 600;
+  font-family:
+    "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   cursor: pointer;
   transition: all 0.12s ease;
 }
@@ -86,7 +90,9 @@
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .toolbar-btn:hover {
@@ -144,7 +150,9 @@
   background: transparent;
   color: #707070;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .device-btn:hover {
@@ -198,7 +206,7 @@
 }
 
 .dim-input:focus {
-  border-color: #4C8BF5;
+  border-color: #4c8bf5;
 }
 
 .dim-swap {
@@ -214,7 +222,9 @@
   cursor: pointer;
   margin: 0 1px;
   padding: 0;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .dim-swap:hover {
@@ -235,13 +245,15 @@
   color: #707070;
   cursor: pointer;
   margin-left: 1px;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .dim-caret-btn:hover,
 .dim-caret-btn.active {
   background: #282828;
-  color: #4C8BF5;
+  color: #4c8bf5;
   border-color: rgba(76, 139, 245, 0.4);
 }
 
@@ -258,14 +270,16 @@
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
   z-index: 9999;
   padding: 4px 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
 }
 
 .devtools-dd-header {
   padding: 6px 12px;
   font-size: 13px;
   font-weight: 600;
-  color: #4C8BF5;
+  color: #4c8bf5;
   background: rgba(76, 139, 245, 0.08);
 }
 
@@ -293,7 +307,9 @@
   font-size: 12px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
 }
 
 .devtools-dd-item:hover {
@@ -336,7 +352,9 @@
   background: transparent;
   color: #707070;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .zoom-btn:hover {
@@ -355,7 +373,9 @@
   font-family: inherit;
   text-align: center;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .zoom-level:hover {
@@ -546,7 +566,10 @@
   border-left: 3px solid transparent;
   cursor: pointer;
   user-select: none;
-  transition: background 0.1s, border-color 0.1s, opacity 0.1s;
+  transition:
+    background 0.1s,
+    border-color 0.1s,
+    opacity 0.1s;
 }
 
 .history-item:hover {
@@ -635,7 +658,9 @@
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .history-revert-btn:hover:not(:disabled) {
@@ -654,7 +679,7 @@
 .css-inspector-content {
   background: var(--bg-card);
   color: var(--text-primary);
-  font-family: 'Consolas', 'SF Mono', 'Menlo', monospace;
+  font-family: "Consolas", "SF Mono", "Menlo", monospace;
   font-size: 11px;
 }
 
@@ -699,7 +724,8 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 4px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .css-inspector-textarea {
@@ -711,7 +737,7 @@
   border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 8px;
-  font-family: 'Consolas', 'SF Mono', 'Menlo', monospace;
+  font-family: "Consolas", "SF Mono", "Menlo", monospace;
   font-size: 11px;
   line-height: 1.5;
   resize: vertical;
@@ -734,7 +760,8 @@
   color: #484f58;
   font-size: 11px;
   text-align: center;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 /* Panel resize handles */
@@ -749,7 +776,7 @@
 }
 
 .panel-resize-handle::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -2px;
@@ -1008,7 +1035,7 @@
 .ruler-dd-check input[type="checkbox"] {
   width: 14px;
   height: 14px;
-  accent-color: #4C8BF5;
+  accent-color: #4c8bf5;
   cursor: pointer;
   margin: 0;
 }
@@ -1088,7 +1115,7 @@
 }
 
 .add-guides-row input:focus {
-  border-color: #4C8BF5;
+  border-color: #4c8bf5;
 }
 
 .add-guides-check {
@@ -1104,7 +1131,7 @@
 .add-guides-check input[type="checkbox"] {
   width: 14px;
   height: 14px;
-  accent-color: #4C8BF5;
+  accent-color: #4c8bf5;
   cursor: pointer;
   margin: 0;
 }
@@ -1138,7 +1165,7 @@
 }
 
 .add-guides-ok {
-  background: #4C8BF5;
+  background: #4c8bf5;
   color: #fff;
 }
 
@@ -1162,12 +1189,14 @@
 
 /* Visible bar — always shown */
 .ft-handle::after {
-  content: '';
+  content: "";
   position: absolute;
-  background: #4C8BF5;
+  background: #4c8bf5;
   border-radius: 3px;
   opacity: 0.5;
-  transition: opacity 0.12s, background 0.12s;
+  transition:
+    opacity 0.12s,
+    background 0.12s;
 }
 
 .ft-handle:hover::after {
@@ -1271,7 +1300,9 @@
   background: transparent;
   color: #707070;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
   padding: 0;
 }
 
@@ -1284,7 +1315,7 @@
   border: none;
   border-radius: 4px;
   background: rgba(76, 139, 245, 0.15);
-  color: #4C8BF5;
+  color: #4c8bf5;
   font-size: 10px;
   font-family: inherit;
   padding: 2px 8px;
@@ -1322,7 +1353,9 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 4px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
   font-family: inherit;
 }
 
@@ -1348,7 +1381,7 @@
 .color-swatch-hex {
   font-size: 10px;
   color: #909090;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: "Consolas", "Monaco", monospace;
   letter-spacing: -0.02em;
 }
 
@@ -1382,7 +1415,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: repeating-conic-gradient(#2a2a2a 0% 25%, #222 0% 50%) 50% / 12px 12px;
+  background: repeating-conic-gradient(#2a2a2a 0% 25%, #222 0% 50%) 50% / 12px
+    12px;
 }
 
 .overlay-dd-preview img {
@@ -1443,7 +1477,7 @@
 .overlay-slider-val {
   font-size: 11px;
   color: #909090;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: "Consolas", "Monaco", monospace;
   min-width: 32px;
   text-align: right;
 }
@@ -1884,7 +1918,9 @@ iframe.google-sheets-iframe,
 .create-snapshot-white-btn {
   width: auto !important;
   min-width: auto !important;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .create-snapshot-white-btn:hover {
@@ -1928,10 +1964,13 @@ iframe.google-sheets-iframe,
   padding: 24px;
   width: 100%;
   max-width: 520px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
   animation: figmaModalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   color: #f4f4f5;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .figma-modal-header {
@@ -2021,7 +2060,7 @@ iframe.google-sheets-iframe,
   background: #27272a;
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 .figma-tab-content {
