@@ -1,0 +1,15 @@
+.smooth-color-picker { position: relative; min-width: 0; }
+.smooth-color-trigger { width: 100%; height: 25px; display: flex; align-items: center; gap: 6px; padding: 3px 6px; border: 1px solid #3f3f46; border-radius: 3px; background: #27272a; color: #d4d4d8; cursor: pointer; }
+.smooth-color-trigger > i { width: 15px; height: 15px; flex: 0 0 auto; border: 1px solid #ffffff35; border-radius: 3px; }
+.smooth-color-trigger code { overflow: hidden; font: 10px ui-monospace, monospace; text-overflow: ellipsis; }
+.smooth-color-picker.compact .smooth-color-trigger { width: 30px; justify-content: center; padding: 2px 5px; font: 600 13px Georgia, serif; }
+.smooth-color-picker.compact .smooth-color-trigger > i { position: absolute; right: 5px; bottom: 3px; left: 5px; width: auto; height: 2px; border: 0; border-radius: 1px; }
+.smooth-color-popover { position: absolute; z-index: 1000; top: calc(100% + 6px); right: 0; width: 210px; padding: 8px; border: 1px solid #3f3f46; border-radius: 7px; background: #18181b; box-shadow: 0 12px 30px #000a; }
+.smooth-color-plane { position: relative; height: 132px; overflow: hidden; border-radius: 4px; cursor: crosshair; touch-action: none; background-image: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent); }
+.smooth-color-plane > i { position: absolute; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #0008; transform: translate(-50%, -50%); pointer-events: none; }
+.smooth-color-hue { width: 100%; height: 14px; margin: 8px 0 6px; appearance: none; border-radius: 8px; background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); cursor: ew-resize; }
+.smooth-color-hue::-webkit-slider-thumb { width: 10px; height: 18px; appearance: none; border: 2px solid #fff; border-radius: 3px; background: transparent; box-shadow: 0 0 0 1px #0008; }
+.smooth-color-hex-row { height: 28px; display: grid; grid-template-columns: 18px 10px 1fr; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid #3f3f46; border-radius: 4px; background: #09090b; color: #71717a; }
+.smooth-color-hex-row > i { width: 14px; height: 14px; border: 1px solid #ffffff35; border-radius: 3px; }
+.smooth-color-hex-row input { min-width: 0; border: 0; outline: 0; background: transparent; color: #e4e4e7; font: 11px ui-monospace, monospace; text-transform: uppercase; }
+

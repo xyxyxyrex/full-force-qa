@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import SmoothColorPicker from './SmoothColorPicker'
 
 /* ═══════════════════════════════════════════════════════════
    NativeStylePanel — Figma-style compact style inspector
@@ -8,6 +9,7 @@ interface Props {
   selectedElement: HTMLElement | null
   onStyleChange: (property: string, value: string, isFinalCommit?: boolean) => void
   styleRevision?: number
+  computedStyles?: Record<string, string> | null
 }
 
 // ─── Constants ─────────────────────────────────────────────
@@ -205,21 +207,8 @@ function IconDimRow({ icon, title, value, units, onChange }: {
 function ColorInput({ value, onChange, onLiveChange }: {
   value: string; onChange: (v: string) => void; onLiveChange?: (v: string) => void
 }) {
-  const display = value === 'transparent' ? '' : value
-  const swatch = value === 'transparent' || value === 'none' ? '#000000' : (value.startsWith('#') ? value : '#000000')
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-      <input type="color" value={swatch}
-        onInput={(e) => onLiveChange?.((e.target as HTMLInputElement).value)}
-        onChange={(e) => onChange(e.target.value)}
-        style={{ width: '24px', height: '24px', border: `1px solid ${base.border}`, background: base.bg, borderRadius: '3px', cursor: 'pointer', padding: '1px', flexShrink: 0 }}
-      />
-      <input type="text" value={display} placeholder="transparent"
-        onChange={(e) => onChange(e.target.value)}
-        style={{ ...inputBase, borderRadius: '3px', padding: '4px 6px', flex: 1, minWidth: 0 }}
-      />
-    </div>
-  )
+  const swatch = value === 'transparent' || value === 'none' ? '#000000' : value
+  return <SmoothColorPicker value={swatch} onPreview={onLiveChange} onCommit={onChange} />
 }
 
 /** Icon button group (like Figma toggle bar) */
@@ -378,11 +367,31 @@ const DEFAULT: StyleState = {
 
 // ─── Main Component ────────────────────────────────────────
 
-export default function NativeStylePanel({ selectedElement, onStyleChange, styleRevision }: Props) {
+export default function NativeStylePanel({ selectedElement, onStyleChange, styleRevision, computedStyles }: Props) {
   const [styles, setStyles] = useState<StyleState>(DEFAULT)
   const [sectors, setSectors] = useState({ typography: true, spacing: true, size: true, appearance: false })
 
   useEffect(() => {
+    if (computedStyles) {
+      const value = (property: string, fallback: string) => computedStyles[property] || fallback
+      setStyles({
+        fontFamily: value('font-family', ''), fontSize: value('font-size', '16px'),
+        fontWeight: value('font-weight', '400'), letterSpacing: value('letter-spacing', 'normal'),
+        lineHeight: value('line-height', 'normal'), color: rgbToHex(value('color', '#000000')),
+        textAlign: value('text-align', 'left'), textDecoration: value('text-decoration-line', value('text-decoration', 'none')),
+        textTransform: value('text-transform', 'none'), textIndent: value('text-indent', '0px'), wordSpacing: value('word-spacing', 'normal'),
+        marginTop: value('margin-top', '0px'), marginRight: value('margin-right', '0px'), marginBottom: value('margin-bottom', '0px'), marginLeft: value('margin-left', '0px'),
+        paddingTop: value('padding-top', '0px'), paddingRight: value('padding-right', '0px'), paddingBottom: value('padding-bottom', '0px'), paddingLeft: value('padding-left', '0px'),
+        gap: value('gap', '0px'), width: value('width', 'auto'), minWidth: value('min-width', 'auto'), maxWidth: value('max-width', 'none'),
+        height: value('height', 'auto'), minHeight: value('min-height', 'auto'), maxHeight: value('max-height', 'none'),
+        backgroundColor: rgbToHex(value('background-color', 'transparent')), borderWidth: value('border-top-width', value('border-width', '0px')),
+        borderStyle: value('border-top-style', value('border-style', 'none')), borderColor: rgbToHex(value('border-top-color', value('border-color', '#000000'))),
+        borderTopLeftRadius: value('border-top-left-radius', '0px'), borderTopRightRadius: value('border-top-right-radius', '0px'),
+        borderBottomLeftRadius: value('border-bottom-left-radius', '0px'), borderBottomRightRadius: value('border-bottom-right-radius', '0px'),
+        boxShadow: value('box-shadow', 'none'), opacity: value('opacity', '1')
+      })
+      return
+    }
     if (!selectedElement) return
     const win = selectedElement.ownerDocument.defaultView
     if (!win) return
@@ -417,7 +426,7 @@ export default function NativeStylePanel({ selectedElement, onStyleChange, style
       boxShadow: cs.boxShadow === 'none' ? 'none' : cs.boxShadow || 'none',
       opacity: cs.opacity || '1',
     })
-  }, [selectedElement, styleRevision])
+  }, [computedStyles, selectedElement, styleRevision])
 
   const apply = useCallback((p: string, v: string) => onStyleChange(p, v, true), [onStyleChange])
   const preview = useCallback((p: string, v: string) => onStyleChange(p, v, false), [onStyleChange])
@@ -429,7 +438,7 @@ export default function NativeStylePanel({ selectedElement, onStyleChange, style
 
   const toggle = (k: keyof typeof sectors) => setSectors(s => ({ ...s, [k]: !s[k] }))
 
-  if (!selectedElement) {
+  if (!selectedElement && !computedStyles) {
     return <div style={{ padding: '20px 16px', color: base.dim, fontSize: '11px', textAlign: 'center' }}>Select an element to inspect</div>
   }
 

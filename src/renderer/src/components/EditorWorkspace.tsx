@@ -6,6 +6,8 @@ import { initEditor, loadMissingFonts } from '../grapesjs/init'
 import { attachLiveEditor } from '../utils/liveEditorBridge'
 import type { Editor } from 'grapesjs'
 import SeoAuditRightPanel from './SeoAuditRightPanel'
+import EditBetaWorkspace from './EditBetaWorkspace'
+import type { EditBetaWorkspaceHandle } from './EditBetaWorkspace'
 import NativeStylePanel from './NativeStylePanel'
 import CssInspectorEditor from './CssInspectorEditor'
 import { toggleCanvasDuplicates } from '../utils/seoCanvasOverlay'
@@ -91,11 +93,13 @@ interface Props {
   project?: Project | null
   onReset: () => void
   onNewCapture: () => void
+  onPersistHtml?: (html: string) => void
+  onThumbnailCaptured?: (dataUrl: string) => void
 }
 
 type DevicePreset = 'Desktop' | 'Tablet' | 'Mobile'
 type ViewportMode = 'preset' | 'free'
-type WorkspaceTab = 'layout' | 'live' | 'audit'
+type WorkspaceTab = 'editBeta' | 'layout' | 'live' | 'audit'
 
 interface Guide {
   axis: 'x' | 'y'
@@ -362,20 +366,60 @@ const ZOOM_MIN = 25
 const ZOOM_MAX = 200
 const ZOOM_STEP = 10
 
+function serializeWorkspaceHtml(doc: Document): string {
+  const root = doc.documentElement.cloneNode(true) as HTMLElement
+  const hadColorHighlightOverlay = !!root.querySelector('#__color-highlight-overlay')
+  const transientSelectors = [
+    '#live-editor-overlay-style',
+    '#live-editor-anim-reveal-style',
+    '#live-mini-toolbar-host',
+    '#live-drop-indicator',
+    '#__fi-styles',
+    '.__fi-badge',
+    '.__fi-tooltip',
+    '#__bd-styles',
+    '.__bd-container',
+    '#__color-highlight-overlay',
+    '#seo-audit-canvas-styles',
+    '.seo-duplicate-badge',
+    '#__audit-overlay-container'
+  ]
+  root.querySelectorAll(transientSelectors.join(',')).forEach((el) => el.remove())
+
+  root.querySelectorAll<HTMLElement>('[data-live-selected], [data-live-hover], [contenteditable], [data-npath]').forEach((el) => {
+    el.removeAttribute('data-live-selected')
+    el.removeAttribute('data-live-hover')
+    el.removeAttribute('contenteditable')
+    el.removeAttribute('data-npath')
+  })
+  root.querySelectorAll<HTMLElement>('.seo-duplicate-highlight').forEach((el) => el.classList.remove('seo-duplicate-highlight'))
+  root.querySelectorAll<HTMLElement>('[data-fi-was-static]').forEach((el) => {
+    el.style.removeProperty('position')
+    el.removeAttribute('data-fi-was-static')
+  })
+  root.querySelectorAll<HTMLElement>('[data-gs-img]').forEach((el) => el.removeAttribute('data-gs-img'))
+  if (hadColorHighlightOverlay) root.querySelector('body')?.style.removeProperty('filter')
+
+  return root.outerHTML
+}
+
 export default function EditorWorkspace({
   html,
   sourceUrl,
   project,
   onReset,
   onNewCapture,
-  onOpenSettings
+  onOpenSettings,
+  onPersistHtml,
+  onThumbnailCaptured
 }: Props & { onOpenSettings?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasWrapRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
+  const onPersistHtmlRef = useRef(onPersistHtml)
   const devtoolsDropdownRef = useRef<HTMLDivElement>(null)
 
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('layout')
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('editBeta')
   const [selectedComponent, setSelectedComponent] = useState<any>(null)
   const [activePreset, setActivePreset] = useState<DevicePreset>('Desktop')
   const [mode, setMode] = useState<ViewportMode>('preset')
@@ -383,6 +427,7 @@ export default function EditorWorkspace({
   const [vpHeight, setVpHeight] = useState(1200)
   const vpWidthRef = useRef(1920)
   const vpHeightRef = useRef(1200)
+  const editBetaRef = useRef<EditBetaWorkspaceHandle>(null)
   const [devtoolsDropdownOpen, setDevtoolsDropdownOpen] = useState(false)
   const [zoom, setZoom] = useState(100)
   const [resetting, setResetting] = useState(false)
@@ -647,8 +692,17 @@ export default function EditorWorkspace({
   const [snapshotImage, setSnapshotImageState] = useState<string | null>(() => localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_image`) || null)
   const [snapshotLabel, setSnapshotLabelState] = useState<string>(() => localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_label`) || 'Site Snapshot')
 
-  const [overlayImage, setOverlayImageState] = useState<string | null>(() => figmaImage || snapshotImage || null)
-  const [overlayLabel, setOverlayLabelState] = useState<string>(() => localStorage.getItem(`qa_${activeProjectId}_overlay_label`) || 'Figma Design')
+  const [overlayImage, setOverlayImageState] = useState<string | null>(() => {
+    const source = localStorage.getItem(`qa_${activeProjectId}_active_reference`)
+    if (source === 'snapshot') return snapshotImage
+    if (source === 'figma') return figmaImage
+    return snapshotImage || figmaImage || null
+  })
+  const [overlayLabel, setOverlayLabelState] = useState<string>(() => {
+    const source = localStorage.getItem(`qa_${activeProjectId}_active_reference`)
+    if (source === 'snapshot') return localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_label`) || 'Site Snapshot'
+    return 'Figma Design'
+  })
   const [overlayOpacity, setOverlayOpacity] = useState<number>(() => Number(localStorage.getItem(`qa_${activeProjectId}_figma_overlay_opacity`)) || 50)
   const [overlayVisible, setOverlayVisible] = useState<boolean>(() => localStorage.getItem(`qa_${activeProjectId}_figma_overlay_visible`) !== 'false')
   const [overlayMode, setOverlayMode] = useState<'overlay' | 'side-by-side' | 'diff'>(() => (localStorage.getItem(`qa_${activeProjectId}_figma_overlay_mode`) as any) || 'side-by-side')
@@ -662,6 +716,19 @@ export default function EditorWorkspace({
       localStorage.setItem(`qa_${activeProjectId}_uploaded_figma_png`, img)
     } else {
       localStorage.removeItem(`qa_${activeProjectId}_uploaded_figma_png`)
+      if (localStorage.getItem(`qa_${activeProjectId}_active_reference`) === 'figma') {
+        const fallback = localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_image`)
+        const fallbackLabel = localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_label`) || 'Site Snapshot'
+        setOverlayImageState(fallback)
+        setOverlayLabelState(fallback ? fallbackLabel : 'Figma Design')
+        if (fallback) {
+          localStorage.setItem(`qa_${activeProjectId}_active_reference`, 'snapshot')
+          localStorage.setItem(`qa_${activeProjectId}_overlay_label`, fallbackLabel)
+        } else {
+          localStorage.removeItem(`qa_${activeProjectId}_active_reference`)
+          localStorage.removeItem(`qa_${activeProjectId}_overlay_label`)
+        }
+      }
     }
   }, [activeProjectId])
 
@@ -674,18 +741,38 @@ export default function EditorWorkspace({
     } else {
       localStorage.removeItem(`qa_${activeProjectId}_snapshot_overlay_image`)
       localStorage.removeItem(`qa_${activeProjectId}_snapshot_overlay_label`)
+      if (localStorage.getItem(`qa_${activeProjectId}_active_reference`) === 'snapshot') {
+        const fallback = localStorage.getItem(`qa_${activeProjectId}_uploaded_figma_png`)
+        setOverlayImageState(fallback)
+        setOverlayLabelState('Figma Design')
+        if (fallback) {
+          localStorage.setItem(`qa_${activeProjectId}_active_reference`, 'figma')
+          localStorage.setItem(`qa_${activeProjectId}_overlay_label`, 'Figma Design')
+        } else {
+          localStorage.removeItem(`qa_${activeProjectId}_active_reference`)
+          localStorage.removeItem(`qa_${activeProjectId}_overlay_label`)
+        }
+      }
     }
   }, [activeProjectId])
 
   const setOverlayImage = useCallback((img: string | null, label: string = 'Figma Design') => {
-    if (label === 'Figma Design') {
+    const source = label === 'Figma Design' ? 'figma' : 'snapshot'
+    if (!img) {
+      if ((localStorage.getItem(`qa_${activeProjectId}_active_reference`) || source) === 'figma') setFigmaImage(null)
+      else setSnapshotImage(null)
+      return
+    }
+    if (source === 'figma') {
       setFigmaImage(img)
     } else {
       setSnapshotImage(img, label)
     }
     setOverlayImageState(img)
     setOverlayLabelState(label)
-  }, [setFigmaImage, setSnapshotImage])
+    localStorage.setItem(`qa_${activeProjectId}_active_reference`, source)
+    localStorage.setItem(`qa_${activeProjectId}_overlay_label`, label)
+  }, [activeProjectId, setFigmaImage, setSnapshotImage])
 
   useEffect(() => {
     localStorage.setItem(`qa_${activeProjectId}_figma_overlay_opacity`, String(overlayOpacity))
@@ -708,6 +795,15 @@ export default function EditorWorkspace({
     const figPng = localStorage.getItem(`qa_${activeProjectId}_uploaded_figma_png`) || null
     const snapImg = localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_image`) || null
     const snapLbl = localStorage.getItem(`qa_${activeProjectId}_snapshot_overlay_label`) || 'Site Snapshot'
+    const storedSource = localStorage.getItem(`qa_${activeProjectId}_active_reference`)
+    const legacyLabel = localStorage.getItem(`qa_${activeProjectId}_overlay_label`)
+    const activeSource = storedSource === 'snapshot' && snapImg ? 'snapshot'
+      : storedSource === 'figma' && figPng ? 'figma'
+      : legacyLabel && legacyLabel !== 'Figma Design' && snapImg ? 'snapshot'
+      : legacyLabel === 'Figma Design' && figPng ? 'figma'
+      : snapImg ? 'snapshot'
+      : figPng ? 'figma'
+      : null
 
     setStoredFigmaUrl(figUrl)
     setFigmaInputVal(figUrl)
@@ -718,7 +814,15 @@ export default function EditorWorkspace({
     setFigmaImageState(figPng)
     setSnapshotImageState(snapImg)
     setSnapshotLabelState(snapLbl)
-    setOverlayImageState(figPng || snapImg || null)
+    setOverlayImageState(activeSource === 'snapshot' ? snapImg : activeSource === 'figma' ? figPng : null)
+    setOverlayLabelState(activeSource === 'snapshot' ? snapLbl : 'Figma Design')
+    if (activeSource) {
+      localStorage.setItem(`qa_${activeProjectId}_active_reference`, activeSource)
+      localStorage.setItem(`qa_${activeProjectId}_overlay_label`, activeSource === 'snapshot' ? snapLbl : 'Figma Design')
+    } else {
+      localStorage.removeItem(`qa_${activeProjectId}_active_reference`)
+      localStorage.removeItem(`qa_${activeProjectId}_overlay_label`)
+    }
     setFigmaSplitOpen(!!figUrl || !!figPng)
   }, [activeProjectId, project?.id, project?.figmaUrl, project?.googleSheetUrl])
 
@@ -860,7 +964,6 @@ export default function EditorWorkspace({
       active: true,
       message: `Capturing ${type === 'image' ? 'Visual Image' : 'Interactive HTML'} Snapshot (${vpWidth}×${vpHeight})...`
     })
-    console.log('[Snapshot Debug - Renderer] Starting snapshot creation:', { type, vpWidth, vpHeight, liveUrl, sourceUrl, activeProjectId })
     try {
       const targetUrl = liveUrl || sourceUrl
       const currentHtml = liveIframeRef.current?.contentDocument?.documentElement?.outerHTML || html
@@ -875,7 +978,6 @@ export default function EditorWorkspace({
         viewportHeight: vpHeight,
         htmlContent: type === 'html' ? currentHtml : undefined
       })
-      console.log('[Snapshot Debug - Renderer] Received IPC result:', res)
       if (res.success && res.snapshot) {
         setSnapshots((prev) => [res.snapshot!, ...prev])
         if (res.snapshot.type === 'image' && res.snapshot.dataUrl) {
@@ -974,8 +1076,10 @@ export default function EditorWorkspace({
 
   const handleDeleteSnapshot = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation()
+    const removed = snapshots.find((snapshot) => snapshot.id === id)
     await window.electronAPI.deleteSnapshot(id)
-    setSnapshots((prev) => prev.filter((s) => s.id !== id))
+    setSnapshots((prev) => prev.filter((snapshot) => snapshot.id !== id))
+    if (removed?.dataUrl && removed.dataUrl === snapshotImage) setSnapshotImage(null)
   }
 
   // Close dropdowns on outside click
@@ -1127,9 +1231,32 @@ export default function EditorWorkspace({
   }
 
   const liveIframeRef = useRef<HTMLIFrameElement | null>(null)
+  const nativeIframeLoadedRef = useRef(false)
+
+  useEffect(() => {
+    onPersistHtmlRef.current = onPersistHtml
+  }, [onPersistHtml])
+
+  // Inactive application tabs are unmounted to release their iframe,
+  // GrapesJS instance, webviews, listeners, and animation loops. Persist the
+  // latest edited DOM before React tears down this workspace.
+  useEffect(() => {
+    return () => {
+      const currentDoc = liveIframeRef.current?.contentDocument
+      // A newly-created iframe initially exposes an empty about:blank document.
+      // Never persist it before srcDoc has emitted its load event.
+      if (nativeIframeLoadedRef.current && currentDoc?.documentElement) {
+        onPersistHtmlRef.current?.(serializeWorkspaceHtml(currentDoc))
+      }
+    }
+  }, [])
 
   const [interactionMode, setInteractionMode] = useState<'edit' | 'interact'>('edit')
-  const [revealAnimations, setRevealAnimations] = useState(true)
+  // Preserve the captured page's visibility and transforms by default.
+  // Revealing animation targets is an explicit inspection aid because forcing
+  // hidden/animated nodes visible can expose responsive duplicates and alter
+  // the site's original layout.
+  const [revealAnimations, setRevealAnimations] = useState(false)
   const liveEditorRef = useRef<ReturnType<typeof attachLiveEditor> | null>(null)
 
   const toggleInteractionMode = (newMode: 'edit' | 'interact') => {
@@ -1396,6 +1523,7 @@ export default function EditorWorkspace({
     const iframe = liveIframeRef.current
     if (!iframe || !iframe.contentDocument) return
     const doc = iframe.contentDocument
+    nativeIframeLoadedRef.current = true
 
     // Mark editor as ready & store initial DOM snapshot for Undo/Redo
     isEditorReadyRef.current = true
@@ -1853,7 +1981,21 @@ export default function EditorWorkspace({
     return () => {
       isEditorReadyRef.current = false
       clearTimeout(timer)
-      editor.destroy()
+      // Invalidate the shared reference before destroy() tears down the model.
+      // Children must never observe an editor whose wrapper no longer exists.
+      if (editorRef.current === editor) {
+        editorRef.current = null
+      }
+      try {
+        editor.destroy()
+      } finally {
+        // GrapesJS 0.23.x leaves a debounced ClassTagsView check queued after
+        // destroy(). It calls these public methods after the internal model has
+        // been released, so leave safe tombstone methods on this stale object.
+        const staleEditor = editor as any
+        staleEditor.getSelected = () => undefined
+        staleEditor.getSelectedAll = () => []
+      }
     }
   }, [html])
 
@@ -2018,7 +2160,6 @@ export default function EditorWorkspace({
         const ed: any = editorRef.current
         if (ed) {
           try {
-            console.log('[Native Global Escape IPC] Deselecting GrapesJS component...')
             const sel: any = ed.getSelected()
             if (sel) {
               if (typeof sel.set === 'function') {
@@ -2070,6 +2211,7 @@ export default function EditorWorkspace({
   // Handle Spacebar key state, Escape key deselect, & Ctrl+A override
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('.edit-beta-root')) return
       const target = e.target as HTMLElement
       const isEditable = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.tagName === 'SELECT')
 
@@ -2079,7 +2221,6 @@ export default function EditorWorkspace({
           const ed: any = editorRef.current
           if (ed) {
             try {
-              console.log('[Escape Key] Triggering GrapesJS deselection...')
               const sel: any = ed.getSelected()
               if (sel) {
                 if (typeof sel.set === 'function') {
@@ -2166,6 +2307,7 @@ export default function EditorWorkspace({
     }
 
     const onKeyUp = (e: KeyboardEvent) => {
+      if (document.querySelector('.edit-beta-root')) return
       if (e.code === 'Space') {
         isSpacePressedRef.current = false
         document.body.style.cursor = ''
@@ -2211,8 +2353,11 @@ export default function EditorWorkspace({
     // Kill any leaked previous session first
     if (panSessionRef.current) panSessionRef.current.cleanup()
 
-    const startX = e.clientX
-    const startY = e.clientY
+    // screenX/screenY share one coordinate space across the parent window and
+    // same-origin iframe. clientX/clientY do not, which caused a jump and
+    // intermittent drag loss when a pan began inside the rendered page.
+    const startX = e.screenX
+    const startY = e.screenY
     const startPanX = panOffsetRef.current.x
     const startPanY = panOffsetRef.current.y
 
@@ -2225,8 +2370,8 @@ export default function EditorWorkspace({
 
     const onMove = (ev: MouseEvent) => {
       ev.preventDefault()
-      const dx = ev.clientX - startX
-      const dy = ev.clientY - startY
+      const dx = ev.screenX - startX
+      const dy = ev.screenY - startY
       updateCanvasPanTransform(startPanX + dx, startPanY + dy)
     }
 
@@ -2266,6 +2411,11 @@ export default function EditorWorkspace({
       const isSpaceLeftClick = e.button === 0 && isSpacePressedRef.current
 
       if (!isMiddleMouse && !isSpaceLeftClick) return
+
+      // Edit owns one pan transform for both its host canvas and its
+      // out-of-process webview. Let that workspace handle the gesture instead
+      // of starting the legacy Layout/Live pan session against hidden frames.
+      if ((e.target as Element | null)?.closest?.('.edit-beta-root')) return
 
       // Don't intercept middle-click on panel inputs (used for scrub-to-adjust values)
       if (isMiddleMouse && !isSpaceLeftClick) {
@@ -2336,9 +2486,7 @@ export default function EditorWorkspace({
           const reader = new FileReader()
           reader.onload = () => {
             const imgData = reader.result as string
-            setFigmaImage(imgData)
-            setOverlayImageState(imgData)
-            setOverlayLabelState('Figma Design')
+            setOverlayImage(imgData, 'Figma Design')
             setFigmaCardDismissed(false)
             setFigmaSplitOpen(true)
             setFigmaViewMode('png')
@@ -2354,7 +2502,7 @@ export default function EditorWorkspace({
 
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [setFigmaImage])
+  }, [setOverlayImage])
 
   // Figma overlay file upload handler
   const handleOverlayFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2363,9 +2511,7 @@ export default function EditorWorkspace({
     const reader = new FileReader()
     reader.onload = () => {
       const imgData = reader.result as string
-      setFigmaImage(imgData)
-      setOverlayImageState(imgData)
-      setOverlayLabelState('Figma Design')
+      setOverlayImage(imgData, 'Figma Design')
       setFigmaCardDismissed(false)
       setFigmaSplitOpen(true)
       setFigmaViewMode('png')
@@ -3748,21 +3894,19 @@ export default function EditorWorkspace({
           </span>
         </div>
 
-        {/* Center: top tab switcher (Layout | Audit) & viewport controls */}
+        {/* Center: primary workspaces and viewport controls */}
         <div className="toolbar-center">
           <div className="workspace-tab-switcher">
             <button
-              className={`workspace-tab-btn ${workspaceTab === 'layout' ? 'active' : ''}`}
-              onClick={() => {
-                setWorkspaceTab('layout')
-                toggleInteractionMode('edit')
-              }}
+              className={`workspace-tab-btn ${workspaceTab === 'editBeta' ? 'active' : ''}`}
+              onClick={() => setWorkspaceTab('editBeta')}
+              title="Edit the authenticated staging page directly in Chromium"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="2" y="2" width="12" height="12" rx="2" />
-                <path d="M2 6h12M6 6v8" />
+                <path d="M3 13h3l7-7-3-3-7 7v3z" />
+                <path d="M9 4l3 3" />
               </svg>
-              Layout
+              Edit
             </button>
             <button
               className={`workspace-tab-btn ${workspaceTab === 'live' ? 'active' : ''}`}
@@ -3790,7 +3934,7 @@ export default function EditorWorkspace({
             </button>
           </div>
 
-          {(workspaceTab === 'layout' || workspaceTab === 'live' || workspaceTab === 'audit') && (
+          {(workspaceTab === 'editBeta' || workspaceTab === 'layout' || workspaceTab === 'live' || workspaceTab === 'audit') && (
             <div className="viewport-controls">
               {/* Interaction Mode Toggle: Edit Mode vs Interact Mode */}
               <div className="device-switcher" style={{ marginRight: 4 }}>
@@ -4091,7 +4235,11 @@ export default function EditorWorkspace({
                       className="ruler-dd-item"
                       style={{ background: figmaSplitOpen ? '#7c3aed' : '#27272a', color: '#ffffff', fontWeight: 600, padding: '6px 10px', borderRadius: 6, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}
                       onClick={() => {
-                        setFigmaSplitOpen((p) => !p)
+                        setFigmaSplitOpen((p) => {
+                          const next = !p
+                          if (next) setFigmaCardDismissed(false)
+                          return next
+                        })
                         setOverlayVisible(true)
                         setOverlayMode('side-by-side')
                         setOverlayPanelOpen(false)
@@ -4463,15 +4611,15 @@ export default function EditorWorkspace({
         <div className="toolbar-right">
           <button
             className="toolbar-btn refresh-btn"
-            onClick={handleReset}
-            disabled={resetting}
+            onClick={() => workspaceTab === 'editBeta' ? editBetaRef.current?.reload() : handleReset()}
+            disabled={workspaceTab !== 'editBeta' && resetting}
             title="Hard refresh (F5)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M1 4v6h6" />
               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
             </svg>
-            <span>{resetting ? 'Refreshing...' : 'Refresh'}</span>
+            <span>{workspaceTab !== 'editBeta' && resetting ? 'Refreshing...' : 'Refresh'}</span>
           </button>
         </div>
       </div>
@@ -4519,9 +4667,9 @@ export default function EditorWorkspace({
         </div>
       )}
 
-      {/* ── Editor body (Canvas stays central, right panel switches between Layout tools & SEO Audit tools) ──────── */}
+      {/* ── Editor body (Canvas stays central, right panel switches between Edit and SEO Audit tools) ──────── */}
       <div className="editor-body">
-        {leftPanelOpen && workspaceTab !== 'live' && (
+        {leftPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && (
           <div className="editor-panel panel-left" style={{ width: leftPanelWidth }}>
             {/* Collapsible Layers Section */}
             <div className={`accordion-section ${layersExpanded ? 'expanded' : 'collapsed'}`}>
@@ -4830,7 +4978,7 @@ export default function EditorWorkspace({
 
           </div>
         )}
-        {leftPanelOpen && (
+        {leftPanelOpen && workspaceTab !== 'editBeta' && (
           <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('left', e)} />
         )}
 
@@ -4838,6 +4986,48 @@ export default function EditorWorkspace({
         <div className="editor-canvas-wrap" ref={canvasWrapRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           {/* Top Canvas Viewport area */}
           <div className="canvas-viewport-area" style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {workspaceTab === 'editBeta' && (
+              <EditBetaWorkspace
+                ref={editBetaRef}
+                sourceUrl={sourceUrl}
+                width={vpWidth}
+                height={vpHeight}
+                zoom={zoom}
+                interactionMode={interactionMode}
+                revealAnimations={revealAnimations}
+                fontInspectorOn={fontInspectorOn}
+                boundaries={{ enabled: boundariesOn, showMargins, showPaddings, showDimensions, showGaps }}
+                leftPanelOpen={leftPanelOpen}
+                rightPanelOpen={rightPanelOpen}
+                rulersOn={rulersOn}
+                guidesOn={guidesOn}
+                guidesAlwaysVisible={guidesAlwaysVisible}
+                guides={guides}
+                viewportMode={mode}
+                onViewportResize={(nextWidth, nextHeight) => {
+                  vpWidthRef.current = nextWidth
+                  vpHeightRef.current = nextHeight
+                  setVpWidth(nextWidth)
+                  setVpHeight(nextHeight)
+                }}
+                overlayImage={overlayImage}
+                overlayVisible={overlayVisible}
+                overlayOpacity={overlayOpacity}
+                overlayMode={overlayMode}
+                overlayLabel={overlayLabel}
+                figmaImage={figmaImage}
+                figmaUrl={storedFigmaUrl}
+                figmaViewMode={figmaViewMode}
+                figmaPanelVisible={!figmaCardDismissed && figmaSplitOpen}
+                snapshotImage={snapshotImage}
+                snapshotLabel={snapshotLabel}
+                onFigmaViewModeChange={setFigmaViewMode}
+                onOpenFigmaSettings={openFigmaModal}
+                onCloseFigmaPanel={() => { setFigmaSplitOpen(false); setFigmaCardDismissed(true) }}
+                onCloseSnapshotPanel={() => setSnapshotImage(null)}
+                onThumbnailCaptured={project?.thumbnailUrl ? undefined : onThumbnailCaptured}
+              />
+            )}
             {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar, Create Snapshot) */}
             {workspaceTab === 'live' && (
               <div
@@ -5261,7 +5451,7 @@ export default function EditorWorkspace({
                     height: vpHeight,
                     margin: '0 auto',
                     overflow: 'hidden',
-                    display: workspaceTab === 'live' ? 'none' : 'block'
+                    display: workspaceTab === 'live' || workspaceTab === 'editBeta' ? 'none' : 'block'
                   }}
                 >
                   <iframe
@@ -5280,9 +5470,8 @@ export default function EditorWorkspace({
                   />
                 </div>
 
-                {/* Independent Live Browser Webview — dedicated clean instance for Live tab */}
-                {workspaceTab === 'live' && (
-                  <div
+                {/* Live stays mounted and shares the login/capture session. */}
+                <div
                     className="live-browser-wrap"
                     style={{
                       position: 'relative',
@@ -5290,7 +5479,8 @@ export default function EditorWorkspace({
                       height: `${vpHeight}px`,
                       margin: '0 auto',
                       overflow: 'hidden',
-                      background: '#fff'
+                      background: '#fff',
+                      display: workspaceTab === 'live' ? 'block' : 'none'
                     }}
                   >
                     <webview
@@ -5304,8 +5494,7 @@ export default function EditorWorkspace({
                       }}
                       allowpopups={true}
                     />
-                  </div>
-                )}
+                </div>
 
                 {/* ── IN-CANVAS 3-WAY SIDE-BY-SIDE / OVERLAY / DIFF ── */}
                 {canvasFrame && (
@@ -5634,7 +5823,7 @@ export default function EditorWorkspace({
           </div>
 
           {/* Bottom Resizable QA Spreadsheet (Mock Sheets & Google Mastersheet) */}
-          {bottomSheetOpen && (workspaceTab === 'layout' || workspaceTab === 'audit') && (
+          {bottomSheetOpen && (workspaceTab === 'editBeta' || workspaceTab === 'layout' || workspaceTab === 'audit') && (
             <>
               <div
                 className="panel-resize-handle-v"
@@ -5834,11 +6023,11 @@ export default function EditorWorkspace({
         </div>
 
 
-        {rightPanelOpen && workspaceTab !== 'live' && (
+        {rightPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && (
           <div className="panel-resize-handle" onMouseDown={(e) => onPanelResizeStart('right', e)} />
         )}
 
-        {rightPanelOpen && workspaceTab !== 'live' && (
+        {rightPanelOpen && workspaceTab !== 'live' && workspaceTab !== 'editBeta' && (
           <div className="editor-panel panel-right" style={{ width: workspaceTab === 'audit' ? Math.max(rightPanelWidth, 320) : rightPanelWidth }}>
           {/* Layout mode panel container — ALWAYS MOUNTED so GrapesJS never loses DOM container references */}
           <div className="layout-panel-wrap" style={{ display: workspaceTab === 'layout' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%', overflowY: 'auto' }}>
@@ -5993,15 +6182,17 @@ export default function EditorWorkspace({
             </div>
           </div>
 
-          <div className="audit-panel-wrap" style={{ display: workspaceTab === 'audit' ? 'flex' : 'none', flexDirection: 'column', height: '100%', width: '100%' }}>
-            <SeoAuditRightPanel
-              html={html}
-              sourceUrl={sourceUrl}
-              editor={editorRef.current}
-              selectedComponent={selectedComponent}
-              iframeRef={liveIframeRef}
-            />
-          </div>
+          {workspaceTab === 'audit' && (
+            <div className="audit-panel-wrap" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+              <SeoAuditRightPanel
+                html={html}
+                sourceUrl={sourceUrl}
+                editor={editorRef.current}
+                selectedComponent={selectedComponent}
+                iframeRef={liveIframeRef}
+              />
+            </div>
+          )}
         </div>
       )}
       </div>
@@ -6288,7 +6479,7 @@ export default function EditorWorkspace({
                       reader.onload = (evt) => {
                         const dataUrl = evt.target?.result as string
                         if (dataUrl) {
-                          setFigmaImage(dataUrl)
+                          setOverlayImage(dataUrl, 'Figma Design')
                           setFigmaViewMode('png')
                           setFigmaCardDismissed(false)
                           setOverlayMode('side-by-side')

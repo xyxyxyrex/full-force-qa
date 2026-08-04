@@ -25,6 +25,17 @@ export interface TabState {
   skipAutoCapture: boolean
 }
 
+function isRenderableSnapshot(html: string | null): html is string {
+  if (!html || !html.trim()) return false
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const body = doc.body
+    return !!body && (body.children.length > 0 || !!body.textContent?.trim())
+  } catch {
+    return false
+  }
+}
+
 export default function App() {
   const lastSyncRef = useRef<number>(0)
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
@@ -42,7 +53,11 @@ export default function App() {
         const parsed: TabState[] = JSON.parse(saved)
         if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((t) => {
-            const tabHtml = sessionStorage.getItem(`fullforce_snapshot_html_${t.id}`) || sessionStorage.getItem('fullforce_captured_html')
+            const savedTabHtml = sessionStorage.getItem(`fullforce_snapshot_html_${t.id}`)
+            const legacyHtml = sessionStorage.getItem('fullforce_captured_html')
+            const tabHtml = isRenderableSnapshot(savedTabHtml)
+              ? savedTabHtml
+              : isRenderableSnapshot(legacyHtml) ? legacyHtml : null
             return {
               ...t,
               snapshotHtml: t.view === 'editor' ? (tabHtml || null) : null
@@ -200,6 +215,13 @@ export default function App() {
   }
 
   const handleOpenProject = (project: Project, forceForm: boolean = false) => {
+    if (!forceForm) {
+      const existingTab = tabs.find((tab) => tab.activeProject?.id === project.id && tab.view !== 'dashboard')
+      if (existingTab) {
+        setActiveTabId(existingTab.id)
+        return
+      }
+    }
     updateActiveTab(t => ({
       ...t,
       prefillAdmin: project.adminUrl || '',
@@ -226,6 +248,7 @@ export default function App() {
         }
 
     await window.electronAPI.saveProject(project)
+    window.dispatchEvent(new CustomEvent('qa_projects_updated'))
     const tabId = activeTabId
     sessionStorage.setItem(`fullforce_snapshot_html_${tabId}`, html)
     sessionStorage.setItem('fullforce_captured_html', html)
@@ -239,6 +262,16 @@ export default function App() {
       view: 'editor',
       title: project.name || deriveProjectName(url)
     }))
+  }
+
+  const handleProjectThumbnailCaptured = async (dataUrl: string) => {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId)
+    const project = activeTab?.activeProject
+    if (!project || project.thumbnailUrl || !dataUrl.startsWith('data:image/')) return
+    const updatedProject: Project = { ...project, thumbnailUrl: dataUrl }
+    await window.electronAPI.saveProject(updatedProject)
+    window.dispatchEvent(new CustomEvent('qa_projects_updated'))
+    updateActiveTab((tab) => ({ ...tab, activeProject: tab.activeProject?.id === updatedProject.id ? updatedProject : tab.activeProject }))
   }
 
   const handleReset = async () => {
@@ -269,6 +302,35 @@ export default function App() {
         ;(window.electronAPI as any).toggleMaximizeWindow()
       }
     }
+  }
+
+  useEffect(() => {
+    const syncOpenProjects = () => {
+      void window.electronAPI.getProjects().then((projects) => {
+        const byId = new Map(projects.map((project) => [project.id, project]))
+        setTabs((current) => current.map((tab) => tab.activeProject && byId.has(tab.activeProject.id) ? { ...tab, activeProject: byId.get(tab.activeProject.id)! } : tab))
+      })
+    }
+    window.addEventListener('qa_projects_updated', syncOpenProjects)
+    return () => window.removeEventListener('qa_projects_updated', syncOpenProjects)
+  }, [])
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0]
+
+  const persistTabHtml = (tabId: string, mountedSnapshotKey: number, updatedHtml: string) => {
+    // Reject an iframe's transient about:blank document. Persisting that value
+    // would replace the capture and remount GrapesJS with an empty Body.
+    if (!isRenderableSnapshot(updatedHtml)) return
+    setTabs((prev) => {
+      const currentTab = prev.find((tab) => tab.id === tabId)
+      // Ignore teardown from an editor that was replaced by a newer recapture.
+      if (!currentTab || currentTab.snapshotKey !== mountedSnapshotKey) return prev
+      try {
+        sessionStorage.setItem(`fullforce_snapshot_html_${tabId}`, updatedHtml)
+        sessionStorage.setItem('fullforce_captured_html', updatedHtml)
+      } catch {}
+      return prev.map((tab) => tab.id === tabId ? { ...tab, snapshotHtml: updatedHtml } : tab)
+    })
   }
 
   return (
@@ -306,48 +368,40 @@ export default function App() {
 
       {/* Tab Workspaces Render Area */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', height: 'calc(100vh - 38px)' }}>
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTabId
-          return (
-            <div
-              key={tab.id}
-              style={{
-                display: isActive ? 'block' : 'none',
-                height: '100%',
-                width: '100%'
-              }}
-            >
-              {tab.view === 'editor' && tab.snapshotHtml ? (
-                <EditorWorkspace
-                  key={tab.snapshotKey}
-                  html={tab.snapshotHtml}
-                  sourceUrl={tab.captureUrl}
-                  project={tab.activeProject}
-                  onReset={handleReset}
-                  onNewCapture={goToDashboard}
+        {activeTab && (
+          <div key={activeTab.id} style={{ height: '100%', width: '100%' }}>
+            {activeTab.view === 'editor' && activeTab.snapshotHtml ? (
+              <EditorWorkspace
+                key={`${activeTab.id}:${activeTab.snapshotKey}`}
+                html={activeTab.snapshotHtml}
+                sourceUrl={activeTab.captureUrl}
+                project={activeTab.activeProject}
+                onReset={handleReset}
+                onNewCapture={goToDashboard}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onPersistHtml={(updatedHtml) => persistTabHtml(activeTab.id, activeTab.snapshotKey, updatedHtml)}
+                onThumbnailCaptured={handleProjectThumbnailCaptured}
+              />
+            ) : (
+              <>
+                <Dashboard
+                  onNewProject={handleNewProject}
+                  onOpenProject={handleOpenProject}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
-              ) : (
-                <>
-                  <Dashboard
-                    onNewProject={handleNewProject}
-                    onOpenProject={handleOpenProject}
-                    onOpenSettings={() => setSettingsOpen(true)}
+                {activeTab.view === 'capture' && (
+                  <CaptureScreen
+                    onCapture={handleCapture}
+                    onBack={goToDashboard}
+                    initialAdminUrl={activeTab.prefillAdmin}
+                    initialStagingUrl={activeTab.prefillStaging}
+                    autoCapture={activeTab.skipAutoCapture ? false : !!(activeTab.activeProject && activeTab.activeProject.stagingUrl && activeTab.activeProject.adminUrl)}
                   />
-                  {tab.view === 'capture' && (
-                    <CaptureScreen
-                      onCapture={handleCapture}
-                      onBack={goToDashboard}
-                      initialAdminUrl={tab.prefillAdmin}
-                      initialStagingUrl={tab.prefillStaging}
-                      autoCapture={tab.skipAutoCapture ? false : !!(tab.activeProject && tab.activeProject.stagingUrl && tab.activeProject.adminUrl)}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          )
-        })}
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Global Settings Modal */}

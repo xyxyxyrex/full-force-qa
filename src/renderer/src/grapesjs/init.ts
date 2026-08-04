@@ -27,9 +27,11 @@ const SYSTEM_FONTS = new Set([
   'lucida sans', 'lucida sans unicode', 'palatino', 'palatino linotype',
   'garamond', 'bookman', 'book antiqua', 'segoe ui', 'calibri', 'cambria',
   'microsoft sans serif', 'consolas', 'monaco', 'menlo',
-  '-apple-system', 'blinkmacsystemfont', 'sf pro', 'sf pro text',
+  '-apple-system', 'apple-system', 'blinkmacsystemfont', 'sf pro', 'sf pro text',
   'sf pro display', 'apple color emoji', 'segoe ui emoji',
-  'segoe ui symbol', 'noto color emoji', 'brush script mt'
+  'segoe ui symbol', 'noto color emoji', 'brush script mt',
+  'liberation sans', 'liberation serif', 'liberation mono',
+  'dejavu sans', 'dejavu serif', 'cantarell', 'fira sans', 'droid sans', 'ubuntu'
 ])
 
 
@@ -178,10 +180,6 @@ function parseSnapshotHtml(html: string): SnapshotParts {
   const scriptsMeta = html.match(/<meta[^>]*name=["']snapshot-preserved-scripts["'][^>]*content=["']([^"']*)["'][^>]*>/i)
   const widgetScripts = scriptsMeta ? scriptsMeta[1].split('|||').filter(s => s.trim()) : []
 
-  console.log(`[DEBUG GJS PARSE] Raw HTML length: ${html.length} | Extracted CSS links: ${cssLinks.length} | Inline styles length: ${inlineStyles.length}`)
-  if (cssLinks.length > 0) {
-    console.log('[DEBUG GJS CSS LINKS]', cssLinks)
-  }
   return { bodyHtml, cssLinks, inlineCss: inlineStyles.join('\n'), htmlClass, bodyClass, bodyStyle, htmlStyle, widgetScripts }
 }
 
@@ -314,19 +312,28 @@ function sanitizeDomAttributeNames(html: string): string {
   try {
     const parser = new DOMParser()
     const doc = parser.parseFromString(html, 'text/html')
+    const attributeProbe = doc.createElement('div')
     const all = doc.querySelectorAll('*')
     all.forEach(el => {
+      // Remove hardcoded inline height from heading elements (h1-h6) so multi-line titles expand naturally without overlapping paragraph text
+      if (/^H[1-6]$/i.test(el.tagName) && el instanceof HTMLElement) {
+        if (el.style.height) {
+          el.style.height = ''
+        }
+      }
       const attrs = Array.from(el.attributes)
       attrs.forEach(attr => {
-        if (/["'<>/\s]/.test(attr.name)) {
-          console.warn(`[DEBUG SANITIZE ATTR] Removing bad attribute "${attr.name}" on <${el.tagName.toLowerCase()}>`)
-          el.removeAttribute(attr.name)
-          const cleanName = attr.name.replace(/["'<>/\s]/g, '')
-          if (cleanName && !/^[0-9]/.test(cleanName)) {
-            try { el.setAttribute(cleanName, attr.value) } catch {}
-          }
+        try {
+          attributeProbe.setAttribute(attr.name, '')
+          attributeProbe.removeAttribute(attr.name)
+        } catch {
+          try { el.removeAttributeNode(attr) } catch {}
         }
       })
+      const srcset = el.getAttribute('srcset')
+      if (srcset && /(?:^|,)\s*data:/i.test(srcset)) {
+        el.removeAttribute('srcset')
+      }
     })
     return doc.body ? doc.body.innerHTML : html
   } catch {
@@ -334,21 +341,10 @@ function sanitizeDomAttributeNames(html: string): string {
   }
 }
 
-function cleanInvalidHtmlAttributes(html: string): string {
-  if (!html) return ''
-  return html
-    .replace(/\s+([a-zA-Z0-9_\-]*["'`][a-zA-Z0-9_\-]*)=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/\s+([a-zA-Z0-9_\-]*["'`][a-zA-Z0-9_\-]*)(?=\s|>)/gi, '')
-    .replace(/\s+"(?=\s|>)/g, '')
-    .replace(/\s+"="[^"]*"/g, '')
-    .replace(/\s+''="[^"]*"/g, '')
-    .replace(/\s+""(?=\s|>)/g, '')
-}
-
 export function initEditor(container: HTMLElement, snapshotHtml: string, options?: InitEditorOptions): Editor {
   const { bodyHtml: rawBodyHtml, cssLinks: rawCssLinks, inlineCss, htmlClass, bodyClass, bodyStyle, htmlStyle, widgetScripts } = parseSnapshotHtml(snapshotHtml)
-  // Clean malformed attributes that trigger GrapesJS setAttribute InvalidCharacterError
-  const bodyHtml = sanitizeDomAttributeNames(cleanInvalidHtmlAttributes(rawBodyHtml))
+  // DOM-based validation preserves valid SVG, srcset, apostrophes, and data URIs.
+  const bodyHtml = sanitizeDomAttributeNames(rawBodyHtml)
   let fontsReady = false
 
   // Separate regular CSS links from media-constrained ones
@@ -363,8 +359,6 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       plainCssLinks.push(link)
     }
   }
-
-  console.log(`[DEBUG GJS INIT] Plain CSS links count: ${plainCssLinks.length} | Media CSS links count: ${mediaCssLinks.length}`)
 
   const editor = grapesjs.init({
     container,
@@ -413,7 +407,6 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     try {
       if ((editor as any).Keymaps) {
         (editor as any).Keymaps.add('core:deselect-component', 'escape', (ed: any) => {
-          console.log('[GrapesJS Keymap Escape] Deselecting active component...')
           const sel: any = ed.getSelected()
           if (sel) {
             if (typeof sel.set === 'function') {
@@ -445,7 +438,6 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
           const target = e.target as HTMLElement
           const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.tagName === 'SELECT')
           if (!isInput) {
-            console.log('[Iframe Canvas Escape] Intercepted Escape key, clearing selection...')
             e.preventDefault()
             e.stopPropagation()
             const sel: any = editor.getSelected()
@@ -568,41 +560,8 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
         doc.head.insertBefore(varsStyle, doc.head.firstChild)
       }
 
-      // Inject global canvas reset stylesheet to eliminate whitespace gaps and fix responsive layout
-      const resetStyle = doc.createElement('style')
-      resetStyle.setAttribute('data-canvas-reset', 'true')
-      resetStyle.textContent = `
-        html, body {
-          margin: 0 !important;
-          padding: 0 !important;
-          width: 100% !important;
-          max-width: 100% !important;
-          overflow-x: hidden !important;
-          box-sizing: border-box !important;
-        }
-        *, *:before, *:after {
-          box-sizing: border-box;
-        }
-      `
-      doc.head.insertBefore(resetStyle, doc.head.firstChild)
-      doc.body.style.margin = '0'
+      // No custom CSS injection — the captured site's own CSS should render 1:1
 
-      // Debug log hamburger elements
-      setTimeout(() => {
-        const hamburgs = doc.querySelectorAll('.elementskit-menu-hamburger, .elementskit-menu-toggler, .elementor-menu-toggle, [class*="hamburger"], [class*="burger"]')
-        console.log('[DEBUG HAMBURGER] Found menu toggle elements count:', hamburgs.length)
-        hamburgs.forEach((el, idx) => {
-          const htmlEl = el as HTMLElement
-          const cs = doc.defaultView?.getComputedStyle(htmlEl)
-          console.log(`[DEBUG HAMBURGER] #${idx} tag=${el.tagName} class="${el.className}" innerHTML="${el.innerHTML.slice(0, 200)}"`)
-          console.log(`[DEBUG HAMBURGER] #${idx} style="${htmlEl.getAttribute('style')}" display=${cs?.display} visibility=${cs?.visibility} color=${cs?.color} bg=${cs?.backgroundColor} w=${cs?.width} h=${cs?.height}`)
-          Array.from(el.children).forEach((child, cidx) => {
-            const cEl = child as HTMLElement
-            const cCs = doc.defaultView?.getComputedStyle(cEl)
-            console.log(`  [CHILD #${cidx}] tag=${child.tagName} class="${child.className}" style="${cEl.getAttribute('style')}" display=${cCs?.display} bg=${cCs?.backgroundColor} w=${cCs?.width} h=${cCs?.height}`)
-          })
-        })
-      }, 500)
     }
 
     // Inject captured CSSOM at the BEGINNING of <head>.

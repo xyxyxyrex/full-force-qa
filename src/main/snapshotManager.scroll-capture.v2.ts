@@ -33,7 +33,7 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 
 async function preparePositionedElementsForCapture(win: BrowserWindow): Promise<void> {
   try {
-    const result: { fixedCount: number; stickyCount: number } = await win.webContents.executeJavaScript(`
+    await win.webContents.executeJavaScript(`
       (() => {
         window.scrollTo(0, 0);
         if (document.body) document.body.scrollTop = 0;
@@ -91,7 +91,6 @@ async function preparePositionedElementsForCapture(win: BrowserWindow): Promise<
       })()
     `)
 
-    console.log('[Snapshot Main Debug] Positioned-element audit:', result)
   } catch (error) {
     console.warn('[Snapshot Main Debug] Failed to audit fixed/sticky elements:', error)
   }
@@ -253,13 +252,6 @@ async function captureFullPageWithScrollAndStitch(
   const tiles: Array<{ input: Buffer; top: number; left: number }> = []
   let previousActualY = -1
 
-  console.log('[Snapshot Main Debug] Starting GoFullPage-style scroll capture:', {
-    captureWidth,
-    captureHeight,
-    overlap,
-    tiles: positions.length
-  })
-
   for (let index = 0; index < positions.length; index++) {
     const requestedY = positions[index]
     const isFirstTile = index === 0
@@ -296,16 +288,6 @@ async function captureFullPageWithScrollAndStitch(
     await wait(250)
 
     const visibleHeight = Math.min(captureHeight, totalHeight - actualY)
-    const tileNumber = index + 1
-
-    console.log(`[Snapshot Main Debug] Capturing scroll tile ${tileNumber}/${positions.length}:`, {
-      requestedY,
-      actualY,
-      height: visibleHeight,
-      topFixed: isFirstTile,
-      bottomFixed: isLastTile
-    })
-
     const nativeTile = await win.webContents.capturePage(
       { x: 0, y: 0, width: captureWidth, height: visibleHeight },
       { stayHidden: true, stayAwake: true }
@@ -368,8 +350,6 @@ export async function createSnapshot(params: {
   viewportWidth?: number
   viewportHeight?: number
 }): Promise<{ success: boolean; snapshot?: SnapshotItem; error?: string }> {
-  console.log('[Snapshot Main Debug] GOFULLPAGE SCROLL CAPTURE BUILD V2 2026-07-30')
-  console.log('[Snapshot Main Debug] createSnapshot called with params:', params)
   try {
     const { projectId, url, type, title, htmlContent, dataUrl: directDataUrl, viewportWidth, viewportHeight } = params
     const snapshotsDir = getSnapshotsDir(projectId)
@@ -379,8 +359,6 @@ export async function createSnapshot(params: {
     const initialHeight = viewportHeight || 1200
     const timeStr = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     const name = title || `${targetWidth}x${initialHeight} • ${timeStr}`
-    console.log('[Snapshot Main Debug] target dimensions:', { targetWidth, initialHeight })
-
     let dataUrl = ''
     let fileSizeBytes = 0
     const itemPath = join(snapshotsDir, `${id}.json`)
@@ -388,7 +366,6 @@ export async function createSnapshot(params: {
 
     if (type === 'image') {
       if (directDataUrl) {
-        console.log('[Snapshot Main Debug] Using direct dataUrl provided by renderer')
         dataUrl = directDataUrl
         const extension = getDataUrlExtension(directDataUrl)
         dataPath = join(snapshotsDir, `${id}.${extension}`)
@@ -397,7 +374,6 @@ export async function createSnapshot(params: {
         writeFileSync(dataPath, imageBuffer)
         fileSizeBytes = imageBuffer.length
       } else {
-        console.log('[Snapshot Main Debug] Creating hidden BrowserWindow with defaultSession for capture...')
         // Create hidden window forced to targetWidth CSS content size with shared defaultSession (login cookies)
         const win = new BrowserWindow({
           width: targetWidth,
@@ -424,7 +400,6 @@ export async function createSnapshot(params: {
           }
 
           if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-            console.log('[Snapshot Main Debug] Loading target URL in hidden window:', url)
             try {
               await Promise.race([
                 win.loadURL(url),
@@ -434,7 +409,6 @@ export async function createSnapshot(params: {
               console.warn('[Snapshot Main Debug] loadURL timeout/error:', e)
             }
           } else if (htmlContent) {
-            console.log('[Snapshot Main Debug] Loading provided htmlContent in hidden window...')
             let baseHtml = htmlContent
             if (url && !baseHtml.toLowerCase().includes('<base ')) {
               baseHtml = baseHtml.replace(/<head>/i, `<head><base href="${url}">`)
@@ -516,8 +490,6 @@ export async function createSnapshot(params: {
               ? document.fonts.ready.then(() => true).catch(() => true)
               : Promise.resolve(true)
           `).catch(() => {})
-
-          console.log('[Snapshot Main Debug] DOM ready & stylesheets applied, running Asset Preloader & Safety Net...')
 
           // Step 1: Force load ALL lazy images, resolve data-src/srcset, force-reveal onscroll elements & wait for all images to complete loading
           await win.webContents.executeJavaScript(`
@@ -667,8 +639,6 @@ export async function createSnapshot(params: {
           `)
 
           const totalH = Math.max(fullHeightCSS, initialHeight)
-          console.log('[Snapshot Main Debug] Measured stable full document height:', fullHeightCSS, 'full capture dimensions:', { targetWidth, totalH })
-
           // Step 3: Capture each visible viewport while scrolling, then stitch the frames.
           // This mirrors the method used by full-page screenshot browser extensions.
           const captured = await captureFullPageWithScrollAndStitch(
@@ -682,15 +652,8 @@ export async function createSnapshot(params: {
           dataPath = join(snapshotsDir, `${id}.${captured.extension}`)
           dataUrl = `data:${captured.mimeType};base64,${captured.buffer.toString('base64')}`
 
-          console.log('[Snapshot Main Debug] Scroll-and-stitch capture successful:', {
-            height: captured.height,
-            bytes: imageBuffer.length,
-            format: captured.extension
-          })
-
           writeFileSync(dataPath, imageBuffer)
           fileSizeBytes = imageBuffer.length
-          console.log('[Snapshot Main Debug] Snapshot saved successfully to disk:', dataPath, 'Bytes:', fileSizeBytes)
         } finally {
           win.destroy()
         }

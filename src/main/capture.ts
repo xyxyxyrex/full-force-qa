@@ -19,30 +19,25 @@ export function sanitizeUrl(rawUrl: string): string {
 async function netFetchWithHeaders(
   href: string,
   refererUrl: string,
-  accept: string = 'text/css,*/*;q=0.1',
-  dest: string = 'style'
+  accept: string = 'text/css,*/*;q=0.1'
 ): Promise<string | null> {
-  const headerSets = [
-    // Primary: full browser-like headers
+  const headerSets: Record<string, string>[] = [
+    // Preserve Electron Chromium's native UA and Fetch Metadata. Supplying a
+    // different Chrome version here creates a contradictory WAF fingerprint.
     {
       'Accept': accept,
       'Referer': refererUrl,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Sec-Fetch-Dest': dest,
-      'Sec-Fetch-Mode': 'no-cors',
-      'Sec-Fetch-Site': 'same-origin',
       'Accept-Language': 'en-US,en;q=0.9'
     },
-    // Fallback: minimal headers (some WAFs are stricter about header combinations)
+    // Minimal fallback for CDNs that reject a synthetic Referer.
     {
-      'Accept': accept,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      'Accept': accept
     }
   ]
 
   for (const headers of headerSets) {
     try {
-      const response = await net.fetch(href, { credentials: 'include', headers })
+      const response = await net.fetch(href, { credentials: 'include', cache: 'no-store', headers })
       if (response.ok) {
         const text = await response.text()
         if (text && text.trim().length > 5) return text
@@ -120,7 +115,6 @@ async function resolveImports(
     }
     visited.add(absoluteHref)
 
-    console.log(`[capture] Resolving @import: ${absoluteHref}`)
     const importedCss = await netFetchWithHeaders(absoluteHref, pageUrl)
     if (importedCss) {
       // Resolve url() references relative to the imported stylesheet's URL
@@ -133,7 +127,6 @@ async function resolveImports(
         ? `/* resolved @import: ${absoluteHref} */\n@media ${imp.media} {\n${processed}\n}`
         : `/* resolved @import: ${absoluteHref} */\n${processed}`
       result = result.replace(imp.full, replacement)
-      console.log(`[capture] @import resolved: ${absoluteHref} (${processed.length} chars)`)
     } else {
       console.warn(`[capture] @import failed to fetch: ${absoluteHref}`)
       // Leave the @import as-is so it can try to load at render time
@@ -166,6 +159,7 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       webSecurity: false
     }
   })
+  captureWindow.webContents.setBackgroundThrottling(false)
 
   try {
     let httpStatusCode = 200
@@ -173,9 +167,13 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       if (httpResponseCode) httpStatusCode = httpResponseCode
     })
 
-    await captureWindow.loadURL(url)
-    console.log('[capture] Pure Chromium page loaded:', url)
+    try {
+      await captureWindow.webContents.session.clearCache()
+    } catch {}
 
+    await captureWindow.loadURL(url, {
+      extraHeaders: 'pragma: no-cache\r\ncache-control: no-cache\r\n'
+    })
     // Wait for page load + extra 3s for dynamic JS rendering
     await captureWindow.webContents.executeJavaScript(`
       new Promise((resolve) => {
@@ -187,8 +185,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
         }
       })
     `)
-    console.log('[capture] 3s post-load wait complete')
-
     // Detect 404 Page Not Found or WP Login Redirect (session expired)
     const pageCheck: { is404OrLogin: boolean; title: string; reason: string } = await captureWindow.webContents.executeJavaScript(`
       (() => {
@@ -215,24 +211,108 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       console.warn(`[capture] ⚠ Session Expired / 404 Warning: ${pageCheck.reason} ("${pageCheck.title}") - URL: ${captureWindow.webContents.getURL()}`)
     }
 
-    // Scroll through page to trigger lazy loading of images & below-the-fold content
+    // Scroll slowly enough for IntersectionObserver-based lazy loading and
+    // entrance animations to settle before scripts are frozen.
     await captureWindow.webContents.executeJavaScript(`
       new Promise((resolve) => {
         try {
-          const scrollHeight = document.body ? document.body.scrollHeight : 5000;
           const viewportH = window.innerHeight || 1080;
-          const steps = Math.ceil(scrollHeight / viewportH);
-          let i = 0;
-          function step() {
-            if (i <= steps) {
-              window.scrollTo(0, i * viewportH);
-              i++;
-              requestAnimationFrame(step);
-            } else {
-              window.scrollTo(0, 0);
-              setTimeout(resolve, 1000);
+          const distance = Math.max(320, Math.floor(viewportH * 0.65));
+          const revealStates = new Map();
+          const revealCandidates = new Map();
+          const revealHint = /(reveal|animat|aos|sal|wow|motion|appear|fade|slide|scroll|viewport|intersect|entrance|transition)/i;
+          const positiveState = /(^|[-_\\s])(is[-_])?(visible|shown|show|active|in[-_]?view|inview|entered|revealed|animated|loaded)(?=$|[-_\\s])/i;
+          const strongPositiveState = /(^|[-_\\s])(is[-_])?(visible|shown|in[-_]?view|inview|entered|revealed|animated)(?=$|[-_\\s])/i;
+          const negativeState = /(^|[-_\\s])(is[-_])?(hidden|invisible|inactive|exited|unrevealed|before[-_]?enter)(?=$|[-_\\s])/i;
+          const rootScrollBehavior = document.documentElement.style.scrollBehavior;
+          const bodyScrollBehavior = document.body ? document.body.style.scrollBehavior : '';
+          document.documentElement.style.scrollBehavior = 'auto';
+          if (document.body) document.body.style.scrollBehavior = 'auto';
+
+          function discoverRevealCandidates() {
+            for (const el of Array.from(document.body ? document.body.querySelectorAll('*') : [])) {
+              if (revealCandidates.has(el)) continue;
+              try {
+                const className = el.getAttribute('class') || '';
+                const style = el.getAttribute('style') || '';
+                const animationData = Array.from(el.attributes || [])
+                  .filter(attr => attr.name.startsWith('data-') && revealHint.test(attr.name + ' ' + attr.value))
+                  .map(attr => attr.name + '=' + attr.value)
+                  .join(' ');
+                const hasRevealHint = revealHint.test(className + ' ' + animationData);
+                const startsExplicitlyHidden = negativeState.test(className) || /(?:opacity\\s*:\\s*0|visibility\\s*:\\s*hidden)/i.test(style);
+                if (!hasRevealHint && !startsExplicitlyHidden && !strongPositiveState.test(className)) continue;
+                revealCandidates.set(el, { className, style, startsExplicitlyHidden });
+              } catch(e) {}
             }
           }
+
+          function rememberRevealedStates() {
+            discoverRevealCandidates();
+            const viewportW = window.innerWidth || 1920;
+            for (const [el, initial] of revealCandidates) {
+              try {
+                if (!el.isConnected) continue;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > viewportH || rect.right < 0 || rect.left > viewportW) continue;
+                const className = el.getAttribute('class') || '';
+                const style = el.getAttribute('style') || '';
+                const cs = getComputedStyle(el);
+                const rendered = cs.display !== 'none' && cs.visibility === 'visible' && Number.parseFloat(cs.opacity || '1') >= 0.9;
+                const gainedPositiveState = positiveState.test(className) && !negativeState.test(className);
+                const removedNegativeState = initial.startsExplicitlyHidden && !negativeState.test(className) && !/(?:opacity\\s*:\\s*0|visibility\\s*:\\s*hidden)/i.test(style);
+                const animationDataRevealed = Array.from(el.attributes || []).some(attr =>
+                  attr.name.startsWith('data-') && /(^|[-_\\s])(in|visible|shown|active|entered|revealed|animated)(?=$|[-_\\s])/i.test(attr.value)
+                );
+                const isRevealed = rendered && (gainedPositiveState || removedNegativeState || animationDataRevealed);
+                if (!isRevealed) continue;
+                revealStates.set(el, {
+                  className: className || null,
+                  style: style || null
+                });
+              } catch(e) {}
+            }
+          }
+
+          function restoreRevealedStates() {
+            for (const [el, state] of revealStates) {
+              try {
+                if (!el.isConnected) continue;
+                if (state.className == null) el.removeAttribute('class'); else el.setAttribute('class', state.className);
+                if (state.style == null) el.removeAttribute('style'); else el.setAttribute('style', state.style);
+              } catch(e) {}
+            }
+            document.documentElement.style.scrollBehavior = rootScrollBehavior;
+            if (document.body) document.body.style.scrollBehavior = bodyScrollBehavior;
+          }
+
+          let y = 0;
+          let steps = 0;
+          function step() {
+            const scrollHeight = Math.max(
+              document.body ? document.body.scrollHeight : 0,
+              document.documentElement ? document.documentElement.scrollHeight : 0
+            );
+            if (y <= scrollHeight && steps < 100) {
+              window.scrollTo(0, y);
+              window.dispatchEvent(new Event('scroll'));
+              y += distance;
+              steps++;
+              setTimeout(() => {
+                rememberRevealedStates();
+                step();
+              }, 260);
+            } else {
+              window.scrollTo(0, 0);
+              window.dispatchEvent(new Event('scroll'));
+              setTimeout(() => {
+                restoreRevealedStates();
+                resolve();
+              }, 350);
+            }
+          }
+          discoverRevealCandidates();
+          rememberRevealedStates();
           step();
         } catch(e) { resolve(); }
       })
@@ -325,11 +405,8 @@ export async function captureUrl(rawUrl: string): Promise<string> {
         return { inlined, remaining, inlinedSources };
       })()
     `)
-    console.log(`[capture] CSSOM extraction: inlined ${cssomResult.inlined} stylesheets, ${cssomResult.remaining.length} remaining`)
-
     // ── STEP 2: Fetch remaining stylesheets via Electron's net module (Node-side) ──
     // Uses the session's cookies and proper headers — bypasses WAF restrictions that block in-page fetch()
-    const netFetchedSources: string[] = []
     if (cssomResult.remaining.length > 0) {
       for (const href of cssomResult.remaining) {
         try {
@@ -364,8 +441,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
                 } catch(e) {}
               })()
             `)
-            netFetchedSources.push(href)
-            console.log(`[capture] net.fetch inlined: ${href} (${processed.length} chars)`)
           } else {
             console.warn(`[capture] net.fetch failed for: ${href}`)
           }
@@ -439,7 +514,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
     `)
 
     if (importInfo.length > 0) {
-      console.log(`[capture] Found ${importInfo.length} <style> tags with @import rules to resolve`)
       for (const info of importInfo) {
         const baseUrl = info.source || url
         const resolved = await resolveImports(info.cssText, baseUrl, url)
@@ -461,7 +535,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
               } catch(e) {}
             })()
           `)
-          console.log(`[capture] Resolved @imports in <style> tag #${idx}`)
         }
       }
     }
@@ -521,7 +594,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
     `)
 
     if (imgUrls.length > 0) {
-      console.log(`[capture] Attempting to inline ${imgUrls.length} same-host images as data URIs`)
       const imageCache = new Map<string, string>()
       for (const imgSrc of imgUrls) {
         try {
@@ -529,11 +601,7 @@ export async function captureUrl(rawUrl: string): Promise<string> {
             credentials: 'include',
             headers: {
               'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-              'Referer': url,
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Sec-Fetch-Dest': 'image',
-              'Sec-Fetch-Mode': 'no-cors',
-              'Sec-Fetch-Site': 'same-origin'
+              'Referer': url
             }
           })
           if (response.ok) {
@@ -551,7 +619,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       }
 
       if (imageCache.size > 0) {
-        console.log(`[capture] Successfully fetched ${imageCache.size}/${imgUrls.length} images for inlining`)
         // Build a mapping object and inject it in one pass
         const mapping = Object.fromEntries(imageCache)
         await captureWindow.webContents.executeJavaScript(`
@@ -615,6 +682,37 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       })()
     `)
 
+    // ── STEP 7.5: Persist CSS rules created only through the CSSOM ──
+    // Libraries such as CookieConsent create an empty <style> element and then
+    // call sheet.insertRule(). Those rules affect the live page but are absent
+    // from outerHTML, so the frozen document otherwise loses its generated
+    // palette (for example, the black banner and green consent button).
+    // Materialize only empty, DOM-backed style sheets to avoid duplicating
+    // ordinary authored <style> content.
+    await captureWindow.webContents.executeJavaScript(`
+      (() => {
+        let materialized = 0;
+        try {
+          for (const sheet of Array.from(document.styleSheets)) {
+            try {
+              if (sheet.href) continue;
+              const owner = sheet.ownerNode;
+              if (!owner || owner.tagName !== 'STYLE') continue;
+              if ((owner.textContent || '').trim()) continue;
+
+              const rules = Array.from(sheet.cssRules || []).map(rule => rule.cssText);
+              if (rules.length === 0) continue;
+              owner.textContent = rules.join('\\n');
+              owner.setAttribute('data-captured-dynamic-cssom', 'true');
+              materialized += rules.length;
+            } catch(e) {
+              // Ignore inaccessible or browser-owned style sheets.
+            }
+          }
+        } catch(e) {}
+        return materialized;
+      })()
+    `)
     // Inject <base href="URL"> into <head> as fallback for any remaining relative URLs
     await captureWindow.webContents.executeJavaScript(`
       (() => {
@@ -658,10 +756,6 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       document.documentElement ? document.documentElement.outerHTML : ''
     `)
 
-    const linkCount = (html.match(/<link[^>]*rel=["']stylesheet["']/gi) || []).length
-    const styleCount = (html.match(/<style/gi) || []).length
-    const importCount = (html.match(/@import\s/gi) || []).length
-    console.log(`[DEBUG CAPTURE] Pure HTML extracted length: ${html.length} | <link stylesheet>: ${linkCount} | <style>: ${styleCount} | @import remaining: ${importCount}`)
     return html || '<html><body></body></html>'
   } finally {
     captureWindow.destroy()

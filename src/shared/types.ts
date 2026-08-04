@@ -18,6 +18,8 @@ export interface Project {
   thumbnailUrl?: string
   inTrash?: boolean
   deletedAt?: number
+  folderId?: string
+  mondayTicketId?: string
 }
 
 export interface SnapshotItem {

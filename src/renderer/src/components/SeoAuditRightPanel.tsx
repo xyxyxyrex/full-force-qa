@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { runSeoAudit, type SeoAuditReport } from '../utils/seoAudit'
 import { runGrammarSpellAudit, type GrammarSpellReport, type TextIssue } from '../utils/grammarSpellAudit'
 import type { Editor } from 'grapesjs'
@@ -34,6 +34,7 @@ export default function SeoAuditRightPanel({
 
   const [copied, setCopied] = useState(false)
   const [grammarFilter, setGrammarFilter] = useState<'all' | 'spelling' | 'grammar'>('all')
+  const auditRequestRef = useRef(0)
 
   const [auditOverlays, setAuditOverlays] = useState({
     showLinks: false,
@@ -57,8 +58,13 @@ export default function SeoAuditRightPanel({
       return iframeRef.current.contentDocument
     }
     if (editor && typeof editor.Canvas?.getDocument === 'function') {
-      const doc = editor.Canvas.getDocument()
-      if (doc && doc.body) return doc
+      try {
+        const doc = editor.Canvas.getDocument()
+        if (doc && doc.body) return doc
+      } catch {
+        // The editor can be torn down while React is switching projects.
+        // Fall through to the native iframe/raw HTML sources below.
+      }
     }
     const gjsIframe = document.querySelector('iframe.gjs-frame') as HTMLIFrameElement
     if (gjsIframe?.contentDocument?.body) {
@@ -74,21 +80,29 @@ export default function SeoAuditRightPanel({
   })
 
   const runAuditScan = useCallback(() => {
+    const requestId = ++auditRequestRef.current
     const targetDoc = getIframeDoc()
-    const content = targetDoc || (editor ? editor.getHtml() : html)
+    // Do not serialize through GrapesJS here. During project switches its model
+    // may already be destroyed, and the native document/raw capture is also the
+    // more accurate source for an SEO audit.
+    const content = targetDoc || html
     import('../utils/grammarSpellAudit').then(({ runGrammarSpellAuditAsync }) => {
       runGrammarSpellAuditAsync(content).then((res) => {
-        if (res) {
+        if (res && requestId === auditRequestRef.current) {
           setGrammarReport(res)
         }
       })
     })
-  }, [html, editor, getIframeDoc])
+  }, [html, getIframeDoc])
 
   useEffect(() => {
     runAuditScan()
     const timer = setInterval(runAuditScan, 3000)
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(timer)
+      // Invalidates an audit promise that completes after this panel unmounts.
+      auditRequestRef.current += 1
+    }
   }, [runAuditScan])
 
   const filteredGrammarIssues = useMemo(() => {

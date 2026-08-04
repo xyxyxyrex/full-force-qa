@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import type { Project } from '../../../shared/types'
 import mondayLogo from '../assets/monday-icon-svgrepo-com.svg'
 import figmaIcon from '../assets/figma.png'
@@ -24,6 +24,10 @@ interface ContextMenuState {
   isActive: boolean
 }
 
+interface ProjectFolder { id: string; name: string; createdAt: number }
+interface ProjectContextMenuState { x: number; y: number; project: Project }
+interface FolderEditorState { mode: 'create' | 'rename'; name: string; folderId?: string; projectId?: string }
+
 const GRADIENTS = [
   'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
   'linear-gradient(135deg, #1f1c2c 0%, #928dab 100%)',
@@ -32,6 +36,16 @@ const GRADIENTS = [
   'linear-gradient(135deg, #1e130c 0%, #4a2511 100%)',
   'linear-gradient(135deg, #11292b 0%, #1e5254 100%)'
 ]
+
+function GenericProjectThumbnail({ compact = false }: { compact?: boolean }) {
+  return <span className={`generic-project-thumbnail ${compact ? 'compact' : ''}`} aria-hidden="true">
+    <svg viewBox="0 0 32 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="3" width="27" height="18" rx="2.5" />
+      <path d="M3 8h26" /><circle cx="6" cy="5.6" r=".7" fill="currentColor" stroke="none" /><circle cx="8.7" cy="5.6" r=".7" fill="currentColor" stroke="none" />
+      <rect x="6" y="11" width="8" height="6.5" rx="1" /><path d="M17 11h8M17 14h6M17 17h7" />
+    </svg>
+  </span>
+}
 
 function getGradientForId(id: string) {
   let hash = 0
@@ -65,6 +79,22 @@ function getDomain(urlStr: string): string {
   }
 }
 
+function getTicketStagingLinks(ticket: MondayTicket): MondayLink[] {
+  const links: MondayLink[] = []
+  const seen = new Set<string>()
+  const add = (url: string | undefined, label: string) => {
+    const value = url?.trim()
+    if (!value || seen.has(value.toLowerCase())) return
+    const lower = value.toLowerCase()
+    if (lower.includes('figma.com') || lower.includes('docs.google.com') || lower.includes('sheets.google.com') || lower.includes('/wp-admin')) return
+    seen.add(lower)
+    links.push({ url: value, label })
+  }
+  add(ticket.stagingUrl, 'Primary Staging URL')
+  ticket.otherLinks?.forEach((link) => add(link.url, link.label || 'Staging Page'))
+  return links
+}
+
 export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings }: Props) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -72,6 +102,14 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [sortBy, setSortBy] = useState<SortOption>('recent')
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
   const [trashExpanded, setTrashExpanded] = useState(false)
+  const [folders, setFolders] = useState<ProjectFolder[]>(() => {
+    try { return JSON.parse(localStorage.getItem('qa_project_folders') || '[]') } catch { return [] }
+  })
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
+  const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(null)
+  const [folderEditor, setFolderEditor] = useState<FolderEditorState | null>(null)
+  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null)
 
   // Monday.com state
   const [mondayConnected, setMondayConnected] = useState(() => !!localStorage.getItem('monday_api_token'))
@@ -105,10 +143,47 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
 
   // Close context menu on outside click
   useEffect(() => {
-    const handleClose = () => setContextMenu(null)
+    const handleClose = () => { setContextMenu(null); setProjectContextMenu(null) }
     window.addEventListener('click', handleClose)
     return () => window.removeEventListener('click', handleClose)
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem('qa_project_folders', JSON.stringify(folders))
+    window.dispatchEvent(new CustomEvent('qa_folders_updated', { detail: folders }))
+  }, [folders])
+
+  const reloadProjects = useCallback(() => { void window.electronAPI.getProjects().then(setProjects) }, [])
+  const notifyProjectsChanged = () => window.dispatchEvent(new CustomEvent('qa_projects_updated'))
+
+  useEffect(() => {
+    const onProjectsUpdated = () => reloadProjects()
+    const onFoldersUpdated = (event: Event) => {
+      const next = (event as CustomEvent<ProjectFolder[]>).detail
+      if (!Array.isArray(next)) return
+      setFolders((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next)
+    }
+    const onFocus = () => reloadProjects()
+    const onActiveTicketsUpdated = (event: Event) => {
+      const next = (event as CustomEvent<string[]>).detail
+      if (Array.isArray(next)) setActiveTicketIds(next)
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'qa_project_folders') {
+        try { const next = JSON.parse(event.newValue || '[]'); if (Array.isArray(next)) setFolders(next) } catch {}
+      }
+      if (event.key === 'active_monday_ticket_ids') {
+        try { const next = JSON.parse(event.newValue || '[]'); if (Array.isArray(next)) setActiveTicketIds(next) } catch {}
+      }
+      reloadProjects()
+    }
+    window.addEventListener('qa_projects_updated', onProjectsUpdated)
+    window.addEventListener('qa_folders_updated', onFoldersUpdated)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('qa_active_ticket_ids_updated', onActiveTicketsUpdated)
+    window.addEventListener('storage', onStorage)
+    return () => { window.removeEventListener('qa_projects_updated', onProjectsUpdated); window.removeEventListener('qa_folders_updated', onFoldersUpdated); window.removeEventListener('focus', onFocus); window.removeEventListener('qa_active_ticket_ids_updated', onActiveTicketsUpdated); window.removeEventListener('storage', onStorage) }
+  }, [reloadProjects])
 
   useEffect(() => {
     window.electronAPI.getProjects().then((list) => {
@@ -136,6 +211,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         ? prev.filter((id) => id !== ticketId)
         : [...prev, ticketId]
       localStorage.setItem('active_monday_ticket_ids', JSON.stringify(next))
+      queueMicrotask(() => window.dispatchEvent(new CustomEvent('qa_active_ticket_ids_updated', { detail: next })))
       return next
     })
 
@@ -145,6 +221,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         const monId = 'monday-' + targetTicket.id
         const newProject: Project = {
           id: monId,
+          mondayTicketId: targetTicket.id,
           name: targetTicket.name,
           stagingUrl: targetTicket.stagingUrl || '',
           adminUrl: targetTicket.adminUrl || '',
@@ -152,6 +229,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           lastOpenedAt: Date.now()
         }
         await window.electronAPI.saveProject(newProject)
+        notifyProjectsChanged()
         setProjects((prev) => {
           const exists = prev.some((p) => p.id === monId)
           return exists ? prev.map((p) => (p.id === monId ? newProject : p)) : [...prev, newProject]
@@ -207,6 +285,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [editName, setEditName] = useState('')
   const [editAdminUrl, setEditAdminUrl] = useState('')
   const [editStagingUrl, setEditStagingUrl] = useState('')
+  const [editMondayTicketId, setEditMondayTicketId] = useState('')
 
   // Manual Monday API token fallback state
   const [showTokenFallbackModal, setShowTokenFallbackModal] = useState(false)
@@ -290,7 +369,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       localStorage.setItem('qa_google_sheet_url', ticket.googleSheetUrl)
     }
     const project: Project = {
-      id: 'monday-' + ticket.id,
+      id: crypto.randomUUID(),
+      mondayTicketId: ticket.id,
       name: ticket.name,
       stagingUrl: ticket.stagingUrl || '',
       adminUrl: ticket.adminUrl || '',
@@ -316,9 +396,11 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       ...editingProject,
       name: editName.trim() || editingProject.name,
       adminUrl: editAdminUrl.trim(),
-      stagingUrl: editStagingUrl.trim()
+      stagingUrl: editStagingUrl.trim(),
+      mondayTicketId: editMondayTicketId || editingProject.mondayTicketId
     }
     await window.electronAPI.saveProject(updated)
+    notifyProjectsChanged()
     setProjects((prev) => {
       const exists = prev.some((p) => p.id === updated.id)
       return exists ? prev.map((p) => (p.id === updated.id ? updated : p)) : [...prev, updated]
@@ -330,6 +412,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const handleMoveToTrash = async (project: Project) => {
     const updated: Project = { ...project, inTrash: true, deletedAt: Date.now() }
     await window.electronAPI.saveProject(updated)
+    notifyProjectsChanged()
     setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)))
     setDeleteConfirmProject(null)
   }
@@ -340,14 +423,104 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     const updated: Project = { ...project, inTrash: false }
     delete updated.deletedAt
     await window.electronAPI.saveProject(updated)
+    notifyProjectsChanged()
     setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)))
   }
 
   // Permanent Delete from Disk
   const handlePermanentDelete = async (projectId: string) => {
     await window.electronAPI.deleteProject(projectId)
+    notifyProjectsChanged()
     setProjects((prev) => prev.filter((p) => p.id !== projectId))
     setPermanentDeleteProject(null)
+  }
+  const openProjectEditor = (project: Project) => {
+    setEditingProject(project)
+    setEditName(project.name)
+    setEditAdminUrl(project.adminUrl || '')
+    setEditStagingUrl(project.stagingUrl || '')
+    setEditMondayTicketId(project.mondayTicketId || (project.id.startsWith('monday-') ? project.id.slice(7) : ''))
+  }
+
+  const autofillEditFromMonday = (ticketId: string) => {
+    const ticket = mondayTickets.find((item) => item.id === ticketId)
+    if (!ticket) return
+    const stagingLinks = getTicketStagingLinks(ticket)
+    const adminUrl = ticket.adminUrl || ticket.otherLinks?.find((link) => link.url.toLowerCase().includes('/wp-admin'))?.url || ''
+    setEditMondayTicketId(ticket.id)
+    setEditName(ticket.name)
+    if (stagingLinks[0]?.url) setEditStagingUrl(stagingLinks[0].url)
+    if (adminUrl) setEditAdminUrl(adminUrl)
+  }
+
+  const moveProjectToFolder = async (project: Project, folderId?: string) => {
+    const updated = { ...project, folderId: folderId || undefined }
+    await window.electronAPI.saveProject(updated)
+    notifyProjectsChanged()
+    setProjects((current) => current.some((item) => item.id === updated.id) ? current.map((item) => item.id === updated.id ? updated : item) : current.concat(updated))
+    setProjectContextMenu(null)
+  }
+
+  const beginProjectDrag = (event: React.DragEvent, project: Project) => {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-fullforce-project', project.id)
+    event.dataTransfer.setData('text/plain', project.id)
+    setDraggingProjectId(project.id)
+  }
+
+  const dropProjectInFolder = async (event: React.DragEvent, folderId?: string) => {
+    event.preventDefault()
+    const projectId = event.dataTransfer.getData('application/x-fullforce-project') || event.dataTransfer.getData('text/plain') || draggingProjectId
+    setDragOverFolderId(null); setDraggingProjectId(null)
+    if (!projectId) return
+    const project = projects.find((item) => item.id === projectId) || activeProjects.find((item) => item.id === projectId)
+    if (project) await moveProjectToFolder(project, folderId)
+  }
+
+  const createSiblingProject = async (source: Project) => {
+    const sibling: Project = {
+      ...source,
+      id: crypto.randomUUID(),
+      name: `${source.name} — New Page`,
+      stagingUrl: '',
+      inTrash: false,
+      deletedAt: undefined,
+      thumbnailUrl: undefined,
+      createdAt: Date.now(),
+      lastOpenedAt: Date.now()
+    }
+    await window.electronAPI.saveProject(sibling)
+    notifyProjectsChanged()
+    setProjects((current) => current.concat(sibling))
+    setProjectContextMenu(null)
+    onOpenProject(sibling, true)
+  }
+
+  const submitFolderEditor = async () => {
+    if (!folderEditor) return
+    const name = folderEditor.name.trim()
+    if (!name) return
+    if (folderEditor.mode === 'rename' && folderEditor.folderId) {
+      setFolders((current) => current.map((folder) => folder.id === folderEditor.folderId ? { ...folder, name } : folder))
+    } else {
+      const folder: ProjectFolder = { id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, createdAt: Date.now() }
+      setFolders((current) => current.concat(folder))
+      if (folderEditor.projectId) {
+        const project = projects.find((item) => item.id === folderEditor.projectId) || activeProjects.find((item) => item.id === folderEditor.projectId) || projectContextMenu?.project
+        if (project) await moveProjectToFolder(project, folder.id)
+      }
+    }
+    setFolderEditor(null)
+  }
+
+  const deleteFolder = async (folder: ProjectFolder) => {
+    if (!window.confirm(`Delete “${folder.name}”? Projects will be moved back to Active Projects.`)) return
+    const affected = projects.filter((project) => project.folderId === folder.id)
+    const updated = affected.map((project) => ({ ...project, folderId: undefined }))
+    await Promise.all(updated.map((project) => window.electronAPI.saveProject(project)))
+    notifyProjectsChanged()
+    setProjects((current) => current.map((project) => project.folderId === folder.id ? { ...project, folderId: undefined } : project))
+    setFolders((current) => current.filter((item) => item.id !== folder.id))
   }
 
   const formatDate = (ts: number) => {
@@ -392,24 +565,22 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       if (!activeTicketIds.includes(ticket.id)) continue
       const monId = 'monday-' + ticket.id
 
-      // Check if user has already captured or saved this ticket into a local project
-      const existingLocal = localActive.find(
-        (p) => p.id === monId || (p.stagingUrl && ticket.stagingUrl && p.stagingUrl.replace(/\/$/, '') === ticket.stagingUrl.replace(/\/$/, ''))
-      )
+      const ticketProjects = localActive.filter((project) => project.mondayTicketId === ticket.id || project.id === monId)
+      const legacyProject = !ticketProjects.length ? localActive.find((project) => project.stagingUrl && ticket.stagingUrl && project.stagingUrl.replace(/\/$/, '') === ticket.stagingUrl.replace(/\/$/, '')) : null
+      if (legacyProject) ticketProjects.push(legacyProject)
 
-      if (existingLocal) {
-        if (!seenIds.has(existingLocal.id)) {
-          seenIds.add(existingLocal.id)
-          result.push({
-            ...existingLocal,
-            mondayTicket: ticket
-          })
+      if (ticketProjects.length) {
+        for (const project of ticketProjects) {
+          if (seenIds.has(project.id)) continue
+          seenIds.add(project.id)
+          result.push({ ...project, mondayTicket: ticket })
         }
       } else {
         if (!seenIds.has(monId)) {
           seenIds.add(monId)
           result.push({
             id: monId,
+            mondayTicketId: ticket.id,
             name: ticket.name,
             stagingUrl: ticket.stagingUrl || '',
             adminUrl: ticket.adminUrl || '',
@@ -476,12 +647,14 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   }
 
   const pinnedProjects = useMemo(() => {
-    return activeProjects.filter((p) => pinnedProjectIds.includes(p.id))
+    return activeProjects.filter((p) => pinnedProjectIds.includes(p.id) && !p.folderId)
   }, [activeProjects, pinnedProjectIds])
 
   const unpinnedActiveProjects = useMemo(() => {
-    return activeProjects.filter((p) => !pinnedProjectIds.includes(p.id))
+    return activeProjects.filter((p) => !pinnedProjectIds.includes(p.id) && !p.folderId)
   }, [activeProjects, pinnedProjectIds])
+
+  const folderGroups = useMemo(() => folders.map((folder) => ({ folder, projects: activeProjects.filter((project) => project.folderId === folder.id) })), [activeProjects, folders])
 
   // Trash Projects
   const trashProjects = useMemo(() => {
@@ -576,6 +749,10 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           </div>
 
           <div className="controls-right">
+            <button className="dashboard-new-folder-btn" onClick={() => setFolderEditor({ mode: 'create', name: '' })}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14h6" /></svg>
+              New Folder
+            </button>
             {/* Sort Dropdown */}
             <div className="sort-dropdown-wrap">
               <select
@@ -622,6 +799,38 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           </div>
         </div>
 
+        {/* Project folders */}
+        {!loading && folderGroups.length > 0 && <div className="dashboard-folders">
+          {folderGroups.map(({ folder, projects: folderProjects }) => {
+            const collapsed = collapsedFolders.has(folder.id)
+            return <section className={`dashboard-folder ${dragOverFolderId === folder.id ? 'drag-over' : ''}`} key={folder.id} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId(folder.id) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverFolderId(null) }} onDrop={(event) => void dropProjectInFolder(event, folder.id)}>
+              <div className="dashboard-folder-header">
+                <button className="dashboard-folder-toggle" onClick={() => setCollapsedFolders((current) => { const next = new Set(current); next.has(folder.id) ? next.delete(folder.id) : next.add(folder.id); return next })}>
+                  <span className="dashboard-folder-chevron">{collapsed ? '›' : '⌄'}</span>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+                  <strong>{folder.name}</strong><small>{folderProjects.length}</small>
+                </button>
+                <div className="dashboard-folder-actions">
+                  <button onClick={() => setFolderEditor({ mode: 'rename', folderId: folder.id, name: folder.name })} title="Rename folder">Rename</button>
+                  <button onClick={() => void deleteFolder(folder)} title="Delete folder">Delete</button>
+                </div>
+              </div>
+              {!collapsed && <div className="dashboard-folder-projects">
+                {folderProjects.length ? folderProjects.map((project) => <button key={project.id} draggable onDragStart={(event) => beginProjectDrag(event, project)} onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }} className={`dashboard-folder-project ${draggingProjectId === project.id ? 'dragging' : ''}`} onClick={() => onOpenProject(project)} onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}>
+                  <span className="folder-project-preview" style={{ background: project.thumbnailUrl ? 'var(--bg-elevated)' : getGradientForId(project.id) }}>
+                    {project.thumbnailUrl ? <img src={project.thumbnailUrl} alt="" /> : <GenericProjectThumbnail />}
+                  </span>
+                  <span className="folder-project-content">
+                    <b title={project.name}>{project.name}</b>
+                    <small title={project.stagingUrl}>{getDomain(project.stagingUrl)}</small>
+                    <span className="folder-project-meta"><em>{formatDate(project.lastOpenedAt)}</em>{project.mondayTicket?.status && <i>{project.mondayTicket.status}</i>}</span>
+                  </span>
+                </button>) : <div className="dashboard-folder-empty">No projects in this folder. Right-click a project and choose Move.</div>}
+              </div>}
+            </section>
+          })}
+        </div>}
+
         {/* 1. PINNED PROJECTS SECTION (Top priority if any project is pinned) */}
         {!loading && pinnedProjects.length > 0 && (
           <div className="dashboard-section pinned-section" style={{ marginBottom: 28 }}>
@@ -645,6 +854,9 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                     <div
                       key={project.id}
                       className={`project-card ${isMonday ? 'has-monday-badge' : ''} is-pinned-card`}
+                      draggable
+                      onDragStart={(event) => beginProjectDrag(event, project)}
+                      onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }}
                       onClick={() => {
                         if (isMonday && !project.adminUrl) {
                           handleLaunchTicket(project.mondayTicket!)
@@ -652,14 +864,13 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                           onOpenProject(project)
                         }
                       }}
+                      onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}
                     >
                       <div className="project-thumbnail" style={{ background: project.thumbnailUrl ? 'none' : getGradientForId(project.id) }}>
                         {project.thumbnailUrl ? (
                           <img src={project.thumbnailUrl} alt={project.name} className="thumbnail-img" />
                         ) : (
-                          <div className="gradient-badge">
-                            {getDomain(project.stagingUrl || project.name).charAt(0).toUpperCase()}
-                          </div>
+                          <div className="gradient-badge"><GenericProjectThumbnail /></div>
                         )}
                         {isMonday && (
                           <div className="monday-circle-badge" style={{ borderColor: statusColor }} title={`Monday Ticket: ${project.mondayTicket?.status}`}>
@@ -705,7 +916,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         )}
 
         {/* 2. ACTIVE PROJECTS SECTION */}
-        <div className="dashboard-section" style={{ marginBottom: 28 }}>
+        <div className={`dashboard-section active-project-dropzone ${dragOverFolderId === '__active__' ? 'drag-over' : ''}`} style={{ marginBottom: 28 }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId('__active__') }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverFolderId(null) }} onDrop={(event) => void dropProjectInFolder(event)}>
           <div className="section-label-row">
             <h2 className="section-label">ACTIVE PROJECTS ({unpinnedActiveProjects.length})</h2>
           </div>
@@ -737,6 +948,9 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                       <div
                         key={project.id}
                         className={`project-card ${isMonday ? 'has-monday-badge' : ''}`}
+                        draggable
+                        onDragStart={(event) => beginProjectDrag(event, project)}
+                        onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }}
                         onClick={() => {
                           if (isMonday && !project.adminUrl) {
                             handleLaunchTicket(project.mondayTicket!)
@@ -745,19 +959,15 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                           }
                         }}
                         onContextMenu={(e) => {
-                          if (isMonday) {
-                            e.preventDefault()
-                            setContextMenu({ x: e.clientX, y: e.clientY, ticket: project.mondayTicket!, isActive: true })
-                          }
+                          e.preventDefault()
+                          setProjectContextMenu({ x: e.clientX, y: e.clientY, project })
                         }}
                       >
                         <div className="project-thumbnail" style={{ background: project.thumbnailUrl ? 'none' : getGradientForId(project.id) }}>
                           {project.thumbnailUrl ? (
                             <img src={project.thumbnailUrl} alt={project.name} className="thumbnail-img" />
                           ) : (
-                            <div className="gradient-badge">
-                              {getDomain(project.stagingUrl || project.name).charAt(0).toUpperCase()}
-                            </div>
+                            <div className="gradient-badge"><GenericProjectThumbnail /></div>
                           )}
                           {isMonday && (
                             <div className="monday-circle-badge" style={{ borderColor: statusColor }} title={`Monday Ticket: ${project.mondayTicket?.status}`}>
@@ -835,6 +1045,10 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                       <div
                         key={project.id}
                         className="list-row"
+                        draggable
+                        onDragStart={(event) => beginProjectDrag(event, project)}
+                        onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }}
+                        onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}
                         onClick={() => {
                           if (isMonday && !project.adminUrl) {
                             handleLaunchTicket(project.mondayTicket!)
@@ -1148,7 +1362,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                   {trashProjects.map((project) => (
                     <div key={project.id} className="project-card trash-card">
                       <div className="project-thumbnail trash-thumb" style={{ background: getGradientForId(project.id) }}>
-                        <div className="gradient-badge">{getDomain(project.stagingUrl).charAt(0).toUpperCase()}</div>
+                        <div className="gradient-badge"><GenericProjectThumbnail /></div>
                         <div className="trash-overlay-tag">TRASHED</div>
                       </div>
                       <div className="project-card-body">
@@ -1191,6 +1405,79 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
 
 
       {/* ── MOVE TO TRASH CONFIRMATION MODAL ───────────────────────── */}
+      {editingProject && (
+        <div className="modal-overlay project-edit-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingProject(null) }}>
+          <div className="modal-dialog project-edit-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="project-edit-header">
+              <div className="project-edit-heading">
+                <div className="project-edit-logo" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+                    <path d="m13.5 6.5 4 4" />
+                  </svg>
+                </div>
+                <div>
+                  <h3>Rename / Edit Project</h3>
+                  <p>Update this page without changing its folder or Monday ticket.</p>
+                </div>
+              </div>
+              <button className="modal-close-btn project-edit-close" onClick={() => setEditingProject(null)} aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="project-edit-body">
+              {mondayTickets.length > 0 && (
+                <div className="project-edit-monday">
+                  <div className="project-edit-monday-label">
+                    <img src={mondayLogo} alt="" width="16" height="16" />
+                    <span>Autofill all fields from Monday Ticket:</span>
+                  </div>
+                  <select
+                    className="project-edit-select"
+                    value={editMondayTicketId}
+                    onChange={(event) => autofillEditFromMonday(event.target.value)}
+                  >
+                    <option value="">-- Select a Monday Ticket --</option>
+                    {mondayTickets.map((ticket) => (
+                      <option key={ticket.id} value={ticket.id}>[{ticket.status}] {ticket.name}</option>
+                    ))}
+                  </select>
+                  {editMondayTicketId && getTicketStagingLinks(mondayTickets.find((ticket) => ticket.id === editMondayTicketId)!).length > 1 && (
+                    <div className="project-edit-page-picker">
+                      <label htmlFor="edit-ticket-page">Select staging page</label>
+                      <select id="edit-ticket-page" className="project-edit-select" value={editStagingUrl} onChange={(event) => setEditStagingUrl(event.target.value)}>
+                        {getTicketStagingLinks(mondayTickets.find((ticket) => ticket.id === editMondayTicketId)!).map((link, index) => (
+                          <option key={`${link.url}-${index}`} value={link.url}>{link.label}: {link.url}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="project-edit-section">
+                <label className="project-edit-label" htmlFor="edit-project-name"><span className="project-edit-step">1</span>Project name</label>
+                <p className="project-edit-hint">The name displayed on the dashboard and in its folder</p>
+                <input id="edit-project-name" autoFocus className="project-edit-input" value={editName} onChange={(event) => setEditName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void handleSaveEdit() }} />
+              </div>
+              <div className="project-edit-section">
+                <label className="project-edit-label" htmlFor="edit-staging-url"><span className="project-edit-step">2</span>Staging Page URL</label>
+                <p className="project-edit-hint">The page opened by this project</p>
+                <input id="edit-staging-url" className="project-edit-input" value={editStagingUrl} onChange={(event) => setEditStagingUrl(event.target.value)} placeholder="https://staging.example.com/page/" />
+              </div>
+              <div className="project-edit-section">
+                <label className="project-edit-label" htmlFor="edit-admin-url"><span className="project-edit-step">3</span>WordPress Admin URL <span className="project-edit-optional">Optional</span></label>
+                <p className="project-edit-hint">Used to restore the authenticated WordPress session</p>
+                <input id="edit-admin-url" className="project-edit-input" value={editAdminUrl} onChange={(event) => setEditAdminUrl(event.target.value)} placeholder="https://staging.example.com/wp-admin" />
+              </div>
+            </div>
+            <div className="project-edit-footer">
+              <button className="project-edit-btn project-edit-btn-secondary" onClick={() => setEditingProject(null)}>Cancel</button>
+              <button className="project-edit-btn project-edit-btn-primary" disabled={!editName.trim()} onClick={() => void handleSaveEdit()}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {deleteConfirmProject && (
         <div className="modal-overlay" onClick={() => setDeleteConfirmProject(null)}>
           <div className="modal-dialog modal-dialog-sm" onClick={(e) => e.stopPropagation()}>
@@ -1318,6 +1605,35 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       )}
 
       {/* ── MONDAY TICKET RIGHT-CLICK CONTEXT MENU ─────────────────── */}
+      {projectContextMenu && <div className="project-context-menu" style={{ top: projectContextMenu.y, left: projectContextMenu.x }} onClick={(event) => event.stopPropagation()}>
+        <div className="project-context-title"><b>{projectContextMenu.project.name}</b><small>{getDomain(projectContextMenu.project.stagingUrl)}</small></div>
+        <div className="project-context-divider" />
+        <div className="project-context-move">
+          <button><span>Move</span><span>›</span></button>
+          <div className="project-context-submenu">
+            {projectContextMenu.project.folderId && <button onClick={() => void moveProjectToFolder(projectContextMenu.project)}><span>Active Projects</span></button>}
+            {folders.map((folder) => <button key={folder.id} className={projectContextMenu.project.folderId === folder.id ? 'active' : ''} onClick={() => void moveProjectToFolder(projectContextMenu.project, folder.id)}><span>{folder.name}</span>{projectContextMenu.project.folderId === folder.id && <em>✓</em>}</button>)}
+            <div className="project-context-divider" />
+            <button onClick={() => { setFolderEditor({ mode: 'create', name: '', projectId: projectContextMenu.project.id }); setProjectContextMenu(null) }}><span>New folder…</span></button>
+          </div>
+        </div>
+        {(projectContextMenu.project.mondayTicketId || projectContextMenu.project.id.startsWith('monday-')) && <button onClick={() => void createSiblingProject(projectContextMenu.project)}>Create another page</button>}
+        <button onClick={() => { const project = projectContextMenu.project; setProjectContextMenu(null); openProjectEditor(project) }}>Rename / Edit</button>
+        <button onClick={() => { togglePinProject(projectContextMenu.project.id); setProjectContextMenu(null) }}>{pinnedProjectIds.includes(projectContextMenu.project.id) ? 'Unpin' : 'Pin'}</button>
+        <div className="project-context-divider" />
+        <button className="danger" onClick={() => { setDeleteConfirmProject(projectContextMenu.project); setProjectContextMenu(null) }}>Move to Trash</button>
+      </div>}
+
+      {folderEditor && <div className="folder-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFolderEditor(null) }}>
+        <div className="folder-modal">
+          <div className="folder-modal-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></div>
+          <h3>{folderEditor.mode === 'rename' ? 'Rename folder' : 'Create folder'}</h3>
+          <p>{folderEditor.projectId ? 'The selected project will be moved into this folder.' : 'Group related staging pages and projects.'}</p>
+          <input autoFocus value={folderEditor.name} placeholder="Folder name" onChange={(event) => setFolderEditor({ ...folderEditor, name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') void submitFolderEditor(); if (event.key === 'Escape') setFolderEditor(null) }} />
+          <div className="folder-modal-actions"><button onClick={() => setFolderEditor(null)}>Cancel</button><button className="primary" disabled={!folderEditor.name.trim()} onClick={() => void submitFolderEditor()}>{folderEditor.mode === 'rename' ? 'Save' : 'Create'}</button></div>
+        </div>
+      </div>}
+
       {contextMenu && (
         <div
           className="monday-context-menu"

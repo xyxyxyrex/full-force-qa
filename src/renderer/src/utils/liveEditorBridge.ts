@@ -40,7 +40,7 @@ export function attachLiveEditor(
   options: LiveEditorOptions
 ): { cleanup: () => void; updateOptions: (newOpts: Partial<LiveEditorOptions>) => void; setPaused: (p: boolean) => void; selectElement: (el: HTMLElement) => void; setZoom: (z: number) => void } {
   let mode = options.mode || 'edit'
-  let revealAnimations = options.revealAnimations ?? true
+  let revealAnimations = options.revealAnimations ?? false
   let currentZoom = options.zoom || 100
   let selectedEl: HTMLElement | null = null
   let hoverEl: HTMLElement | null = null
@@ -53,15 +53,16 @@ export function attachLiveEditor(
   style.textContent = `
     [data-live-hover="true"]:not([data-live-selected="true"]) {
       outline: 1.5px dashed #3b82f6 !important;
-      outline-offset: -1px !important;
+      outline-offset: -2px !important;
       cursor: pointer !important;
     }
     [data-live-selected="true"] {
       outline: 2px solid #2563eb !important;
-      outline-offset: -1px !important;
+      outline-offset: -2px !important;
     }
     [contenteditable="true"] {
       outline: 2px solid #10b981 !important;
+      outline-offset: -2px !important;
       cursor: text !important;
     }
   `
@@ -111,14 +112,12 @@ export function attachLiveEditor(
       return
     }
     const rect = selectedEl.getBoundingClientRect()
-    const scrollX = doc.defaultView?.scrollX || 0
-    const scrollY = doc.defaultView?.scrollY || 0
     const invScale = 100 / Math.max(1, currentZoom)
 
     // 1. Position Action Bar above the element with drag offset
-    let barTop = rect.top + scrollY - 38 + toolbarOffsetY
-    if (barTop < scrollY && toolbarOffsetY === 0) barTop = rect.bottom + scrollY + 8
-    let barLeft = rect.left + scrollX + toolbarOffsetX
+    let barTop = rect.top - 38 + toolbarOffsetY
+    if (barTop < 0 && toolbarOffsetY === 0) barTop = rect.bottom + 8
+    let barLeft = rect.left + toolbarOffsetX
 
     if (barEl) {
       barEl.style.top = `${barTop}px`
@@ -129,8 +128,8 @@ export function attachLiveEditor(
 
     // 2. Position Bounding Box & Transform Handles directly over element
     if (boxEl) {
-      boxEl.style.top = `${rect.top + scrollY}px`
-      boxEl.style.left = `${rect.left + scrollX}px`
+      boxEl.style.top = `${rect.top}px`
+      boxEl.style.left = `${rect.left}px`
       boxEl.style.width = `${Math.max(1, rect.width)}px`
       boxEl.style.height = `${Math.max(1, rect.height)}px`
 
@@ -152,10 +151,12 @@ export function attachLiveEditor(
     removeToolbar()
     if (mode === 'interact') return
 
-    // Host element (positioned at 0,0 of page document)
+    // Keep editor chrome in a fixed viewport overlay. Absolute descendants with
+    // resize handles outside a full-width element otherwise expand the page's
+    // scrollable overflow and create a horizontal scrollbar.
     const host = doc.createElement('div')
     host.id = 'live-mini-toolbar-host'
-    host.style.cssText = 'position:absolute;top:0;left:0;z-index:999999;pointer-events:none;user-select:none;'
+    host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;overflow:visible;z-index:999999;pointer-events:none;user-select:none;'
     
     // Attach Shadow Root for 100% CSS Isolation
     const shadow = host.attachShadow({ mode: 'open' })

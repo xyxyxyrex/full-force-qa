@@ -327,7 +327,6 @@ export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket
       })
 
       const fetched = Array.from(itemMap.values())
-      console.log('[Monday] Fetched tickets:', fetched.length)
       localStorage.setItem('monday_tickets', JSON.stringify(fetched))
       return fetched
     }
