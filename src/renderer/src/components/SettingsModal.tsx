@@ -170,8 +170,8 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
                   >
                     <option value="Desktop (1920×1200)">Desktop (1920×1200)</option>
                     <option value="Laptop (1440×900)">Laptop (1440×900)</option>
-                    <option value="Tablet (1199×768)">Tablet (1199×768)</option>
-                    <option value="Mobile (329×767)">Mobile (329×767)</option>
+                    <option value="Tablet (1180×820)">Tablet (1180×820)</option>
+                    <option value="Mobile (430×932)">Mobile (430×932)</option>
                   </select>
                 </div>
               </div>

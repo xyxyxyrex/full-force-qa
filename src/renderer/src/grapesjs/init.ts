@@ -382,8 +382,8 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     deviceManager: {
       devices: [
         { name: 'Desktop', width: '1920px', height: '1200px', widthMedia: '' },
-        { name: 'Tablet', width: '1199px', height: '768px', widthMedia: '1199px' },
-        { name: 'Mobile', width: '329px', height: '767px', widthMedia: '329px' },
+        { name: 'Tablet', width: '1180px', height: '820px', widthMedia: '1180px' },
+        { name: 'Mobile', width: '430px', height: '932px', widthMedia: '430px' },
         { name: 'Custom', width: '1920px', height: '1200px', widthMedia: '' }
       ]
     },

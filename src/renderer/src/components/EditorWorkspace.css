@@ -1059,7 +1059,8 @@
 .add-guides-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
   z-index: 100001;
   display: flex;
   align-items: center;
@@ -1067,110 +1068,145 @@
 }
 
 .add-guides-dialog {
-  background: #2a2a2a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 20px 24px;
-  min-width: 280px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  padding: 24px;
+  width: 360px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  color: #e4e4e7;
+  font-family: Inter, system-ui, monospace, sans-serif;
+}
+
+.add-guides-header {
+  margin-bottom: 18px;
 }
 
 .add-guides-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #e0e0e0;
-  margin-bottom: 16px;
+  font: 700 14px/1.2 monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f4f4f5;
+  margin-bottom: 4px;
 }
 
-.add-guides-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.add-guides-subtitle {
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.add-guides-section {
+  background: #111113;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.add-guides-section-title {
+  font: 700 10px monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #a1a1aa;
   margin-bottom: 10px;
 }
 
-.add-guides-row label {
-  font-size: 12px;
-  color: #a0a0a0;
+.add-guides-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
-.add-guides-row input {
-  width: 72px;
-  padding: 5px 8px;
-  background: #1a1a1a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  color: #d0d0d0;
-  font-size: 12px;
-  font-family: inherit;
-  text-align: center;
+.add-guides-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.add-guides-field.full-width {
+  width: 100%;
+}
+
+.add-guides-field label {
+  font-size: 11px;
+  color: #a1a1aa;
+  font-family: monospace;
+}
+
+.add-guides-field input {
+  height: 30px;
+  padding: 0 10px;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 5px;
+  color: #f4f4f5;
+  font: 11px/30px monospace;
   outline: none;
-  -moz-appearance: textfield;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.add-guides-row input::-webkit-inner-spin-button,
-.add-guides-row input::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.add-guides-row input:focus {
-  border-color: #4c8bf5;
+.add-guides-field input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 .add-guides-check {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 14px 0;
-  font-size: 12px;
-  color: #a0a0a0;
+  margin: 14px 0 18px;
+  font-size: 11px;
+  color: #a1a1aa;
   cursor: pointer;
+  user-select: none;
 }
 
 .add-guides-check input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  accent-color: #4c8bf5;
+  width: 15px;
+  height: 15px;
+  accent-color: #2563eb;
+  border-radius: 3px;
   cursor: pointer;
-  margin: 0;
 }
 
 .add-guides-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 18px;
+  gap: 10px;
 }
 
 .add-guides-cancel,
 .add-guides-ok {
-  padding: 6px 16px;
-  border: none;
+  height: 32px;
+  padding: 0 16px;
   border-radius: 6px;
-  font-size: 12px;
-  font-family: inherit;
+  font: 600 12px monospace;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: all 0.15s ease;
 }
 
 .add-guides-cancel {
-  background: rgba(255, 255, 255, 0.06);
-  color: #a0a0a0;
+  background: #27272a;
+  color: #d4d4d8;
+  border: 1px solid #3f3f46;
 }
 
 .add-guides-cancel:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #d0d0d0;
+  background: #3f3f46;
+  color: #ffffff;
 }
 
 .add-guides-ok {
-  background: #4c8bf5;
-  color: #fff;
+  background: #2563eb;
+  color: #ffffff;
+  border: 1px solid #3b82f6;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
 }
 
 .add-guides-ok:hover {
-  background: #3a7ae0;
+  background: #1d4ed8;
+  border-color: #2563eb;
 }
 
 /* ── Free-transform overlay + drag handles ───── */

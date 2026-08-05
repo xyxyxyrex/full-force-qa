@@ -1,10 +1,35 @@
+.edit-beta-guide {
+  position: absolute;
+  z-index: 20;
+  pointer-events: auto;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
 .edit-beta-guide-x {
   left: 0;
   right: 0;
   top: auto;
   bottom: auto;
   width: auto;
+  height: 9px;
+  margin-top: -4px;
+  cursor: row-resize;
+}
+
+.edit-beta-guide-x::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: 0;
   height: 1px;
+  background: #38bdf8;
+  box-shadow: 0 0 2px rgba(56, 189, 248, 0.6);
+  pointer-events: none;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .edit-beta-guide-y {
@@ -12,8 +37,28 @@
   bottom: 0;
   left: auto;
   right: auto;
-  width: 1px;
+  width: 9px;
   height: auto;
+  margin-left: -4px;
+  cursor: col-resize;
+}
+
+.edit-beta-guide-y::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #38bdf8;
+  box-shadow: 0 0 2px rgba(56, 189, 248, 0.6);
+  pointer-events: none;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.edit-beta-guide:hover::after {
+  background: #60a5fa;
+  box-shadow: 0 0 6px #60a5fa;
 }
 
 .edit-beta-overlay-viewport {
@@ -118,6 +163,12 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(12px);
   font: 500 10px/1.2 system-ui, sans-serif;
+  cursor: grab;
+  user-select: none;
+}
+
+.edit-beta-compare-label:active {
+  cursor: grabbing;
 }
 
 .edit-beta-compare-label > span {
@@ -1257,6 +1308,7 @@
 }
 
 .edit-beta-canvas {
+  position: relative;
   background: var(--bg-app);
   padding-top: 44px;
   scrollbar-color: var(--border-color) transparent;
@@ -1264,6 +1316,48 @@
 
 .edit-beta-canvas.has-snapshot-side {
   padding-top: 44px;
+}
+
+.edit-beta-canvas-rulers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.edit-beta-ruler-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  background: #18181b;
+  border-right: 1px solid #3f3f46;
+  border-bottom: 1px solid #3f3f46;
+  z-index: 42;
+  pointer-events: auto;
+}
+
+.edit-beta-ruler-canvas-top {
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 0;
+  height: 24px;
+  width: calc(100% - 24px);
+  z-index: 41;
+  pointer-events: auto;
+}
+
+.edit-beta-ruler-canvas-left {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  bottom: 0;
+  width: 24px;
+  height: calc(100% - 24px);
+  z-index: 41;
+  pointer-events: auto;
 }
 
 .edit-beta-stage {
@@ -1290,6 +1384,63 @@
 .edit-beta-compare-label button.active {
   background: var(--bg-card-hover);
   color: var(--text-primary);
+}
+
+.edit-beta-ruler-drag-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.edit-beta-guide-drag-line {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9998;
+}
+
+.edit-beta-guide-drag-line.edit-beta-guide-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #38bdf8;
+  box-shadow: 0 0 4px #38bdf8;
+}
+
+.edit-beta-guide-drag-line.edit-beta-guide-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #38bdf8;
+  box-shadow: 0 0 4px #38bdf8;
+}
+
+.edit-beta-ruler-pixel-badge {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: rgba(20, 20, 26, 0.95);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  border-radius: 4px;
+  font: 700 11px/1 monospace;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  letter-spacing: 0.04em;
+  transform: translate(6px, 6px);
+}
+
+.edit-beta-ruler-pixel-badge .badge-axis {
+  color: #94a3b8;
+}
+
+.edit-beta-ruler-pixel-badge .badge-value {
+  color: #38bdf8;
+  font-weight: 700;
 }
 
 .edit-beta-palette,
