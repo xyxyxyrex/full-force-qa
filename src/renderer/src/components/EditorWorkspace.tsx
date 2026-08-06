@@ -530,6 +530,15 @@ function updateLayersDisplayMode(editor: any, mode: "minified" | "verbose") {
   } catch {}
 }
 
+export interface DeviceFrame {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  deviceType: "desktop" | "tablet" | "mobile" | "custom";
+  enabled: boolean;
+}
+
 const PRESETS: Record<DevicePreset, { w: number; h: number; label: string }> = {
   Desktop: { w: 1920, h: 1200, label: "1920×1200" },
   Tablet: { w: 1180, h: 820, label: "1180×820" },
@@ -636,6 +645,46 @@ export default function EditorWorkspace({
   const [mode, setMode] = useState<ViewportMode>("preset");
   const [vpWidth, setVpWidth] = useState(1920);
   const [vpHeight, setVpHeight] = useState(1200);
+
+  // ── Multi-device Viewport Canvas State ─────────────────
+  const [canvasViewMode, setCanvasViewMode] = useState<"single" | "multi">("single");
+  const [activeFrameId, setActiveFrameId] = useState<string>("desktop-default");
+  const [activeFrames, setActiveFrames] = useState<DeviceFrame[]>([
+    { id: "desktop-default", name: "Desktop", width: 1920, height: 1200, deviceType: "desktop", enabled: true },
+    { id: "tablet-default", name: "Tablet", width: 1180, height: 820, deviceType: "tablet", enabled: true },
+    { id: "mobile-default", name: "Mobile", width: 430, height: 932, deviceType: "mobile", enabled: true },
+  ]);
+
+  const toggleFrameEnabled = (frameId: string) => {
+    setActiveFrames((prev) =>
+      prev.map((f) => (f.id === frameId ? { ...f, enabled: !f.enabled } : f))
+    );
+  };
+
+  const removeFrame = (frameId: string) => {
+    setActiveFrames((prev) => prev.filter((f) => f.id !== frameId));
+  };
+
+  const addPresetFrame = (preset: DevtoolsPreset) => {
+    const existing = activeFrames.find((f) => f.width === preset.w && f.height === preset.h);
+    if (existing) {
+      setActiveFrames((prev) =>
+        prev.map((f) => (f.id === existing.id ? { ...f, enabled: true } : f))
+      );
+    } else {
+      const type: "desktop" | "tablet" | "mobile" | "custom" =
+        preset.w >= 1400 ? "desktop" : preset.w >= 700 ? "tablet" : "mobile";
+      const newFrame: DeviceFrame = {
+        id: `frame-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: preset.name.split(" (")[0],
+        width: preset.w,
+        height: preset.h,
+        deviceType: type,
+        enabled: true,
+      };
+      setActiveFrames((prev) => [...prev, newFrame]);
+    }
+  };
   const vpWidthRef = useRef(1920);
   const vpHeightRef = useRef(1200);
   const editBetaRef = useRef<EditBetaWorkspaceHandle>(null);
@@ -5161,11 +5210,67 @@ export default function EditorWorkspace({
 
               <div className="toolbar-divider" />
 
+              {/* Viewport View Mode Switcher: Single vs Multi-Device Canvas */}
+              <div
+                className="canvas-mode-switcher"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  background: "rgba(0,0,0,0.35)",
+                  padding: "2px",
+                  borderRadius: "6px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  marginRight: 4,
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  className={`device-btn ${canvasViewMode === "single" ? "active" : ""}`}
+                  onClick={() => setCanvasViewMode("single")}
+                  title="Single Viewport Mode"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                  </svg>
+                </button>
+                <button
+                  className={`device-btn ${canvasViewMode === "multi" ? "active" : ""}`}
+                  onClick={() => setCanvasViewMode("multi")}
+                  title="Multi-Device Viewport Mode (Desktop + Tablet + Mobile side-by-side on canvas)"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="2" y="3" width="5" height="18" rx="1" />
+                    <rect x="9.5" y="3" width="5" height="18" rx="1" />
+                    <rect x="17" y="3" width="5" height="18" rx="1" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="toolbar-divider" />
+
               {/* Device presets */}
               <div className="device-switcher">
                 <button
-                  className={`device-btn ${mode === "preset" && activePreset === "Desktop" ? "active" : ""}`}
-                  onClick={() => switchPreset("Desktop")}
+                  className={`device-btn ${
+                    canvasViewMode === "multi"
+                      ? activeFrames.some((f) => f.deviceType === "desktop" && f.enabled)
+                        ? "active"
+                        : ""
+                      : mode === "preset" && activePreset === "Desktop"
+                        ? "active"
+                        : ""
+                  }`}
+                  onClick={() => {
+                    if (canvasViewMode === "multi") {
+                      const desktopFrame = activeFrames.find((f) => f.deviceType === "desktop");
+                      if (desktopFrame) toggleFrameEnabled(desktopFrame.id);
+                      else {
+                        addPresetFrame({ name: "Desktop (1920×1200)", w: 1920, h: 1200, category: "Standard" });
+                      }
+                    } else {
+                      switchPreset("Desktop");
+                    }
+                  }}
                   title={`Desktop (${PRESETS.Desktop.label})`}
                 >
                   <svg
@@ -5183,8 +5288,26 @@ export default function EditorWorkspace({
                   </svg>
                 </button>
                 <button
-                  className={`device-btn ${mode === "preset" && activePreset === "Tablet" ? "active" : ""}`}
-                  onClick={() => switchPreset("Tablet")}
+                  className={`device-btn ${
+                    canvasViewMode === "multi"
+                      ? activeFrames.some((f) => f.deviceType === "tablet" && f.enabled)
+                        ? "active"
+                        : ""
+                      : mode === "preset" && activePreset === "Tablet"
+                        ? "active"
+                        : ""
+                  }`}
+                  onClick={() => {
+                    if (canvasViewMode === "multi") {
+                      const tabletFrame = activeFrames.find((f) => f.deviceType === "tablet");
+                      if (tabletFrame) toggleFrameEnabled(tabletFrame.id);
+                      else {
+                        addPresetFrame({ name: "Tablet (1180×820)", w: 1180, h: 820, category: "Standard" });
+                      }
+                    } else {
+                      switchPreset("Tablet");
+                    }
+                  }}
                   title={`Tablet (${PRESETS.Tablet.label})`}
                 >
                   <svg
@@ -5202,8 +5325,26 @@ export default function EditorWorkspace({
                   </svg>
                 </button>
                 <button
-                  className={`device-btn ${mode === "preset" && activePreset === "Mobile" ? "active" : ""}`}
-                  onClick={() => switchPreset("Mobile")}
+                  className={`device-btn ${
+                    canvasViewMode === "multi"
+                      ? activeFrames.some((f) => f.deviceType === "mobile" && f.enabled)
+                        ? "active"
+                        : ""
+                      : mode === "preset" && activePreset === "Mobile"
+                        ? "active"
+                        : ""
+                  }`}
+                  onClick={() => {
+                    if (canvasViewMode === "multi") {
+                      const mobileFrame = activeFrames.find((f) => f.deviceType === "mobile");
+                      if (mobileFrame) toggleFrameEnabled(mobileFrame.id);
+                      else {
+                        addPresetFrame({ name: "Mobile (430×932)", w: 430, h: 932, category: "Standard" });
+                      }
+                    } else {
+                      switchPreset("Mobile");
+                    }
+                  }}
                   title={`Mobile (${PRESETS.Mobile.label})`}
                 >
                   <svg
@@ -5292,21 +5433,49 @@ export default function EditorWorkspace({
                     <div className="devtools-dd-header">Responsive</div>
                     <div className="devtools-dd-subheader">Standard</div>
                     <div className="devtools-dd-list">
-                      {DEVTOOLS_PRESETS.map((preset, idx) => (
-                        <button
-                          key={idx}
-                          className={`devtools-dd-item ${vpWidth === preset.w && vpHeight === preset.h ? "active" : ""}`}
-                          onClick={() => {
-                            selectDevtoolsPreset(preset);
-                            setDevtoolsDropdownOpen(false);
-                          }}
-                        >
-                          <span className="preset-name">{preset.name}</span>
-                          <span className="preset-dims">
-                            {preset.w} × {preset.h}
-                          </span>
-                        </button>
-                      ))}
+                      {DEVTOOLS_PRESETS.map((preset, idx) => {
+                        const isFrameActive = activeFrames.some(
+                          (f) => f.width === preset.w && f.height === preset.h && f.enabled
+                        );
+                        return (
+                          <button
+                            key={idx}
+                            className={`devtools-dd-item ${
+                              canvasViewMode === "multi"
+                                ? isFrameActive ? "active" : ""
+                                : vpWidth === preset.w && vpHeight === preset.h ? "active" : ""
+                            }`}
+                            onClick={() => {
+                              if (canvasViewMode === "multi") {
+                                addPresetFrame(preset);
+                              } else {
+                                selectDevtoolsPreset(preset);
+                              }
+                              setDevtoolsDropdownOpen(false);
+                            }}
+                          >
+                            <span className="preset-name">{preset.name}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span className="preset-dims">
+                                {preset.w} × {preset.h}
+                              </span>
+                              {canvasViewMode === "multi" && (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    padding: "1px 5px",
+                                    borderRadius: 3,
+                                    background: isFrameActive ? "rgba(34, 197, 94, 0.2)" : "rgba(255, 255, 255, 0.1)",
+                                    color: isFrameActive ? "#4ade80" : "#a1a1aa",
+                                  }}
+                                >
+                                  {isFrameActive ? "Active" : "+ Add"}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -7019,7 +7188,12 @@ export default function EditorWorkspace({
                   setVpWidth(nextWidth);
                   setVpHeight(nextHeight);
                 }}
-                overlayImage={overlayImage}
+                canvasViewMode={canvasViewMode}
+                activeFrames={activeFrames}
+                activeFrameId={activeFrameId}
+                onSelectActiveFrame={setActiveFrameId}
+                onToggleFrameEnabled={toggleFrameEnabled}
+                onRemoveFrame={removeFrame}
                 overlayVisible={overlayVisible}
                 overlayOpacity={overlayOpacity}
                 overlayMode={overlayMode}

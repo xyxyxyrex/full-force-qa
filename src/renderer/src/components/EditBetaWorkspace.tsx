@@ -11,6 +11,7 @@ import "./EditBetaWorkspace.ported.css";
 import NativeStylePanel from "./NativeStylePanel";
 import SmoothColorPicker from "./SmoothColorPicker";
 import figmaIcon from "../assets/figma.png";
+import type { DeviceFrame } from "./EditorWorkspace";
 
 interface Props {
   sourceUrl: string;
@@ -51,6 +52,12 @@ interface Props {
   onCloseFigmaPanel?: () => void;
   onCloseSnapshotPanel?: () => void;
   onThumbnailCaptured?: (dataUrl: string) => void;
+  canvasViewMode?: "single" | "multi";
+  activeFrames?: DeviceFrame[];
+  activeFrameId?: string;
+  onSelectActiveFrame?: (frameId: string) => void;
+  onToggleFrameEnabled?: (frameId: string) => void;
+  onRemoveFrame?: (frameId: string) => void;
 }
 
 export interface EditBetaWorkspaceHandle {
@@ -831,9 +838,17 @@ function installEditBetaBridge() {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+    if ((window as any).__fullForceFrameId) {
+      console.info(`__FULLFORCE_FRAME_CLICK__${(window as any).__fullForceFrameId}`);
+    }
     select(target);
     beginInlineEdit(target, event.clientX, event.clientY);
   };
+  document.addEventListener("pointerdown", () => {
+    if ((window as any).__fullForceFrameId) {
+      console.info(`__FULLFORCE_FRAME_CLICK__${(window as any).__fullForceFrameId}`);
+    }
+  }, true);
   document.addEventListener("mousemove", onMove, true);
   document.addEventListener("mouseleave", onMouseLeave, true);
   document.addEventListener("click", onClick, true);
@@ -2530,10 +2545,17 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       onCloseFigmaPanel,
       onCloseSnapshotPanel,
       onThumbnailCaptured,
+      canvasViewMode = "single",
+      activeFrames = [],
+      activeFrameId,
+      onSelectActiveFrame,
+      onToggleFrameEnabled,
+      onRemoveFrame,
     },
     ref,
   ) {
     const webviewRef = useRef<any>(null);
+    const webviewsMapRef = useRef<Record<string, any>>({});
     const figmaWebviewRef = useRef<any>(null);
     const canvasRef = useRef<HTMLElement>(null);
     const panRef = useRef({ x: 0, y: 0 });
@@ -2683,6 +2705,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const topRulerRef = useRef<HTMLCanvasElement | null>(null);
     const leftRulerRef = useRef<HTMLCanvasElement | null>(null);
     const liveFrameRef = useRef<HTMLDivElement | null>(null);
+    const [multiFrameOffsets, setMultiFrameOffsets] = useState<Record<string, { x: number; y: number }>>({});
 
     const [localGuides, setLocalGuides] = useState<
       Array<{ id: string; axis: "x" | "y"; position: number }>
@@ -3274,7 +3297,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     );
 
     const execute = useCallback(async (expression: string) => {
-      const view = webviewRef.current;
+      const view = webviewRef.current || Object.values(webviewsMapRef.current)[0];
       if (!view || typeof view.executeJavaScript !== "function") return null;
       try {
         return await view.executeJavaScript(expression, true);
@@ -3282,6 +3305,23 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         return null;
       }
     }, []);
+
+    const executeAll = useCallback(async (expression: string) => {
+      const views = Object.values(webviewsMapRef.current).filter(Boolean);
+      if (views.length === 0) return execute(expression);
+      const results = await Promise.all(
+        views.map(async (view) => {
+          try {
+            if (view && typeof view.executeJavaScript === "function") {
+              return await view.executeJavaScript(expression, true);
+            }
+          } catch {
+            return null;
+          }
+        })
+      );
+      return results[0];
+    }, [execute]);
 
     const captureProjectThumbnail = useCallback(async () => {
       const view = webviewRef.current;
@@ -3402,66 +3442,121 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     }, [execute, refreshLayers, sourceUrl]);
 
     useEffect(() => {
-      const view = webviewRef.current;
-      if (!view) return;
-      const onLoad = () => {
-        setReady(false);
+      const cleanups: Array<() => void> = [];
+
+      const bindWebview = (frameId: string, view: any) => {
+        if (!view) return;
+
+        const onLoad = async () => {
+          setReady(false);
+          try {
+            const currentUrl = typeof view.getURL === "function" ? view.getURL() : "";
+            if (currentUrl && (frameId === activeFrameId || !activeFrameId)) setUrl(currentUrl);
+          } catch {}
+
+          const pageUrl = (typeof view.getURL === "function" ? view.getURL() : "") || sourceUrl;
+          patchStorageKeyRef.current = `fullforce_edit_beta_patches:${pageUrl}`;
+          try {
+            const saved = sessionStorage.getItem(patchStorageKeyRef.current);
+            patchesRef.current = saved ? JSON.parse(saved) : [];
+          } catch {
+            patchesRef.current = [];
+          }
+
+          try {
+            const ok = await view.executeJavaScript(`(${installEditBetaBridge.toString()})()`, true);
+            if (ok) {
+              await view.executeJavaScript(`window.__fullForceFrameId = ${JSON.stringify(frameId)}`, true);
+              if (patchesRef.current.length) {
+                await view.executeJavaScript(`window.__fullForceEditBeta.applyPatches(${JSON.stringify(patchesRef.current)})`, true);
+              }
+              await view.executeJavaScript(`window.__fullForceEditBeta.setMode(${JSON.stringify(modeRef.current)})`, true);
+              await view.executeJavaScript(`window.__fullForceEditBeta.setOptions(${JSON.stringify(optionsRef.current)})`, true);
+            }
+          } catch {}
+          setReady(true);
+          void refreshLayers();
+        };
+
+        const onNavigate = (event: any) => {
+          if (event.url && (frameId === activeFrameId || !activeFrameId)) setUrl(event.url);
+        };
+
+        const onFinishedLoad = () => {
+          if (frameId === activeFrameId || !activeFrameId) {
+            window.setTimeout(() => void captureProjectThumbnail(), 180);
+          }
+        };
+
+        const onConsoleMessage = (event: any) => {
+          const message = String(event.message || "");
+          if (message.startsWith("__FULLFORCE_FRAME_CLICK__")) {
+            const clickedId = message.slice("__FULLFORCE_FRAME_CLICK__".length).trim();
+            if (clickedId && onSelectActiveFrame && canvasViewMode === "multi") {
+              onSelectActiveFrame(clickedId);
+            }
+            return;
+          }
+          if (!message.startsWith("__FULLFORCE_PAN__")) return;
+          event.preventDefault?.();
+          try {
+            const payload = JSON.parse(message.slice("__FULLFORCE_PAN__".length));
+            const session = bridgePanRef.current;
+            const sequence = Number(payload.sequence || 0);
+            if (sequence <= session.lastSequence) return;
+            session.lastSequence = sequence;
+            if (payload.active && !session.active) {
+              session.active = true;
+              session.startX = Number(payload.screenX || 0);
+              session.startY = Number(payload.screenY || 0);
+              session.startPanX = panRef.current.x;
+              session.startPanY = panRef.current.y;
+              setPanning(true);
+            } else if (payload.active && session.active) {
+              const next = constrainPan(
+                session.startPanX + Number(payload.screenX || 0) - session.startX,
+                session.startPanY + Number(payload.screenY || 0) - session.startY,
+              );
+              panRef.current = next;
+              setPan(next);
+            } else {
+              session.active = false;
+              setPanning(false);
+            }
+          } catch {}
+        };
+
+        view.addEventListener("dom-ready", onLoad);
+        view.addEventListener("did-finish-load", onFinishedLoad);
+        view.addEventListener("did-navigate", onNavigate);
+        view.addEventListener("did-navigate-in-page", onNavigate);
+        view.addEventListener("console-message", onConsoleMessage);
+
         try {
-          const currentUrl =
-            typeof view.getURL === "function" ? view.getURL() : "";
-          if (currentUrl) setUrl(currentUrl);
-        } catch {}
-        void install();
-      };
-      const onNavigate = (event: any) => {
-        if (event.url) setUrl(event.url);
-      };
-      const onFinishedLoad = () => {
-        window.setTimeout(() => void captureProjectThumbnail(), 180);
-      };
-      const onConsoleMessage = (event: any) => {
-        const message = String(event.message || "");
-        if (!message.startsWith("__FULLFORCE_PAN__")) return;
-        event.preventDefault?.();
-        try {
-          const payload = JSON.parse(message.slice("__FULLFORCE_PAN__".length));
-          const session = bridgePanRef.current;
-          const sequence = Number(payload.sequence || 0);
-          if (sequence <= session.lastSequence) return;
-          session.lastSequence = sequence;
-          if (payload.active && !session.active) {
-            session.active = true;
-            session.startX = Number(payload.screenX || 0);
-            session.startY = Number(payload.screenY || 0);
-            session.startPanX = panRef.current.x;
-            session.startPanY = panRef.current.y;
-            setPanning(true);
-          } else if (payload.active && session.active) {
-            const next = constrainPan(
-              session.startPanX + Number(payload.screenX || 0) - session.startX,
-              session.startPanY + Number(payload.screenY || 0) - session.startY,
-            );
-            panRef.current = next;
-            setPan(next);
-          } else {
-            session.active = false;
-            setPanning(false);
+          if (typeof view.getURL === "function" && view.getURL()) {
+            void onLoad();
           }
         } catch {}
+
+        cleanups.push(() => {
+          try {
+            view.removeEventListener("dom-ready", onLoad);
+            view.removeEventListener("did-finish-load", onFinishedLoad);
+            view.removeEventListener("did-navigate", onNavigate);
+            view.removeEventListener("did-navigate-in-page", onNavigate);
+            view.removeEventListener("console-message", onConsoleMessage);
+          } catch {}
+        });
       };
-      view.addEventListener("dom-ready", onLoad);
-      view.addEventListener("did-finish-load", onFinishedLoad);
-      view.addEventListener("did-navigate", onNavigate);
-      view.addEventListener("did-navigate-in-page", onNavigate);
-      view.addEventListener("console-message", onConsoleMessage);
+
+      Object.entries(webviewsMapRef.current).forEach(([frameId, view]) => {
+        bindWebview(frameId, view);
+      });
+
       return () => {
-        view.removeEventListener("dom-ready", onLoad);
-        view.removeEventListener("did-finish-load", onFinishedLoad);
-        view.removeEventListener("did-navigate", onNavigate);
-        view.removeEventListener("did-navigate-in-page", onNavigate);
-        view.removeEventListener("console-message", onConsoleMessage);
+        cleanups.forEach((c) => c());
       };
-    }, [captureProjectThumbnail, constrainPan, install, sourceUrl]);
+    }, [activeFrameId, activeFrames, captureProjectThumbnail, canvasViewMode, constrainPan, onSelectActiveFrame, refreshLayers, sourceUrl]);
 
     useEffect(() => {
       if (!ready) return;
@@ -3603,10 +3698,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     );
 
     const call = async (method: string, ...args: any[]) => {
-      const result = await execute(
+      const result = await executeAll(
         `window.__fullForceEditBeta?.[${JSON.stringify(method)}](...${JSON.stringify(args)})`,
       );
-      if (["duplicate", "remove", "move", "undo", "redo"].includes(method))
+      if (["duplicate", "remove", "move", "undo", "redo", "applyPatches", "reorder", "commitStyle"].includes(method))
         void refreshLayers();
       return result;
     };
@@ -3885,6 +3980,52 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       startOffsetX: number;
       startOffsetY: number;
     } | null>(null);
+
+    const beginMultiDeviceFrameDrag = useCallback(
+      (frameId: string, event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0) return;
+        if ((event.target as HTMLElement | null)?.closest("button, input, select")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {}
+
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const currentOffset = multiFrameOffsets[frameId] || { x: 0, y: 0 };
+        const startOffsetX = currentOffset.x;
+        const startOffsetY = currentOffset.y;
+
+        document.body.style.cursor = "grabbing";
+
+        const onMove = (moveEvent: PointerEvent) => {
+          if (moveEvent.pointerId !== event.pointerId) return;
+          const deltaX = (moveEvent.clientX - startX) / scale;
+          const deltaY = (moveEvent.clientY - startY) / scale;
+          setMultiFrameOffsets((prev) => ({
+            ...prev,
+            [frameId]: { x: startOffsetX + deltaX, y: startOffsetY + deltaY },
+          }));
+        };
+
+        const onUp = (upEvent: PointerEvent) => {
+          if (upEvent.pointerId !== event.pointerId) return;
+          document.body.style.cursor = "default";
+          try {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          } catch {}
+          window.removeEventListener("pointermove", onMove, true);
+          window.removeEventListener("pointerup", onUp, true);
+          window.removeEventListener("pointercancel", onUp, true);
+        };
+
+        window.addEventListener("pointermove", onMove, true);
+        window.addEventListener("pointerup", onUp, true);
+        window.addEventListener("pointercancel", onUp, true);
+      },
+      [multiFrameOffsets, scale]
+    );
 
     const beginFrameDrag = useCallback(
       (
@@ -4579,228 +4720,347 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                 </div>
               )}
 
-              <div
-                ref={liveFrameRef}
-                className="edit-beta-site-stage"
-                style={{
-                  left: liveFrameLeft,
-                  top: liveFrameTop,
-                  width: scaledWidth,
-                  height: scaledHeight,
-                }}
-              >
-                <div
-                  className="edit-beta-compare-label"
-                  style={{
-                    width: scaledWidth,
-                  }}
-                  onPointerDown={(event) => beginFrameDrag("live", event)}
-                >
-                  <span>
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                      <path d="M7 3v18" />
-                      <path d="M3 7h18" />
-                    </svg>
-                    Live Site
-                  </span>
-                </div>
-                {frameSnapGuide.active && frameSnapGuide.x != null && (
-                  <div
-                    className="edit-beta-position-guide guide-top"
-                    style={{
-                      left: `${frameSnapGuide.x}px`,
-                      top: 0,
-                      height: `${scaledHeight}px`,
-                    }}
-                  >
-                    <span>Snap</span>
-                  </div>
-                )}
+              {/* Multi-Device Canvas & Stage Rendering */}
+              {(() => {
+                const enabledFrames = activeFrames.filter((f) => f.enabled);
+                const isMulti = canvasViewMode === "multi" && enabledFrames.length > 0;
+                
+                // Active frame for editing (default to matching activeFrameId or first enabled frame)
+                const activeFrame = isMulti
+                  ? (enabledFrames.find((f) => f.id === activeFrameId) || enabledFrames[0])
+                  : null;
 
-                {(guidesOn || guidesAlwaysVisible) && (
+                let currentLeft = liveFrameLeft;
+
+                return (
                   <>
-                    {guides.map((guide, index) => (
+                    {enabledFrames.length === 0 && isMulti ? (
                       <div
-                        key={`prop-guide-${guide.axis}-${guide.position}-${index}`}
-                        className={`edit-beta-guide edit-beta-guide-${guide.axis}`}
-                        style={
-                          guide.axis === "x"
-                            ? { top: `${guide.position * 100}%` }
-                            : { left: `${guide.position * 100}%` }
+                        style={{
+                          position: "absolute",
+                          left: liveFrameLeft,
+                          top: liveFrameTop,
+                          color: "#a1a1aa",
+                          fontSize: 13,
+                          padding: "20px 24px",
+                          background: "rgba(24, 24, 27, 0.8)",
+                          borderRadius: 8,
+                          border: "1px solid rgba(255, 255, 255, 0.1)",
+                        }}
+                      >
+                        No active frames enabled. Click <strong>Desktop</strong>, <strong>Tablet</strong>, or <strong>Mobile</strong> in the toolbar to enable device frames on canvas.
+                      </div>
+                    ) : (
+                      (isMulti ? enabledFrames : [{ id: "single-default", name: "Live Site", width, height, deviceType: "desktop", enabled: true } as any]).map((frame) => {
+                        const isActive = !isMulti || frame.id === activeFrame?.id;
+                        const fWidth = isMulti ? frame.width : width;
+                        const fHeight = isMulti ? frame.height : height;
+                        const fScaledWidth = fWidth * scale;
+                        const fScaledHeight = fHeight * scale;
+                        
+                        const frameOffset = isMulti ? (multiFrameOffsets[frame.id] || { x: 0, y: 0 }) : { x: 0, y: 0 };
+                        const thisLeft = (isMulti ? currentLeft : liveFrameLeft) + frameOffset.x * scale;
+                        const thisTop = liveFrameTop + frameOffset.y * scale;
+
+                        if (isMulti) {
+                          currentLeft += fScaledWidth + 48;
                         }
-                        onMouseEnter={(e) => {
-                          const px =
-                            guide.axis === "x"
-                              ? Math.round(guide.position * height)
-                              : Math.round(guide.position * width);
-                          setHoveredGuideInfo({
-                            axis: guide.axis,
-                            px,
-                            screenX: e.clientX,
-                            screenY: e.clientY,
-                          });
-                        }}
-                        onMouseMove={(e) => {
-                          const px =
-                            guide.axis === "x"
-                              ? Math.round(guide.position * height)
-                              : Math.round(guide.position * width);
-                          setHoveredGuideInfo({
-                            axis: guide.axis,
-                            px,
-                            screenX: e.clientX,
-                            screenY: e.clientY,
-                          });
-                        }}
-                        onMouseLeave={() => setHoveredGuideInfo(null)}
-                      />
-                    ))}
-                    {localGuides.map((guide) => (
-                      <div
-                        key={guide.id}
-                        className={`edit-beta-guide edit-beta-guide-${guide.axis}`}
-                        style={
-                          guide.axis === "x"
-                            ? { top: `${guide.position * 100}%` }
-                            : { left: `${guide.position * 100}%` }
-                        }
-                        onPointerDown={(event) =>
-                          beginExistingGuideDrag(guide.id, guide.axis, event)
-                        }
-                        onMouseEnter={(e) => {
-                          const px =
-                            guide.axis === "x"
-                              ? Math.round(guide.position * height)
-                              : Math.round(guide.position * width);
-                          setHoveredGuideInfo({
-                            axis: guide.axis,
-                            px,
-                            screenX: e.clientX,
-                            screenY: e.clientY,
-                          });
-                        }}
-                        onMouseMove={(e) => {
-                          const px =
-                            guide.axis === "x"
-                              ? Math.round(guide.position * height)
-                              : Math.round(guide.position * width);
-                          setHoveredGuideInfo({
-                            axis: guide.axis,
-                            px,
-                            screenX: e.clientX,
-                            screenY: e.clientY,
-                          });
-                        }}
-                        onMouseLeave={() => setHoveredGuideInfo(null)}
-                      />
-                    ))}
+
+                        return (
+                          <div
+                            key={frame.id}
+                            ref={isActive ? liveFrameRef : undefined}
+                            className={`edit-beta-site-stage ${isMulti ? "edit-beta-multi-stage" : ""}`}
+                            style={{
+                              left: thisLeft,
+                              top: thisTop,
+                              width: fScaledWidth,
+                              height: fScaledHeight,
+                              position: "absolute",
+                              boxShadow: isMulti && isActive ? "0 0 0 2px #3b82f6, 0 8px 24px rgba(0,0,0,0.5)" : undefined,
+                              borderRadius: isMulti ? 8 : undefined,
+                              transition: "box-shadow 0.15s ease",
+                            }}
+                            onPointerDownCapture={() => {
+                              if (isMulti && !isActive && onSelectActiveFrame) {
+                                onSelectActiveFrame(frame.id);
+                              }
+                            }}
+                          >
+                            <div
+                              className="edit-beta-compare-label"
+                              style={{
+                                width: fScaledWidth,
+                                height: 30,
+                                minHeight: 30,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                flexWrap: "nowrap",
+                                padding: "0 8px",
+                                boxSizing: "border-box",
+                                background: isMulti && isActive ? "rgba(59, 130, 246, 0.18)" : undefined,
+                                borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                                cursor: "grab",
+                              }}
+                              onPointerDown={(event) =>
+                                isMulti ? beginMultiDeviceFrameDrag(frame.id, event) : beginFrameDrag("live", event)
+                              }
+                            >
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, flexShrink: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {frame.deviceType === "desktop" ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                                    <rect x="2" y="3" width="20" height="14" rx="2" />
+                                    <line x1="8" y1="21" x2="16" y2="21" />
+                                  </svg>
+                                ) : frame.deviceType === "tablet" ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                                    <rect x="4" y="2" width="16" height="20" rx="2" />
+                                  </svg>
+                                ) : (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                                    <rect x="6" y="2" width="12" height="20" rx="2" />
+                                  </svg>
+                                )}
+                                <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{frame.name}</strong>
+                                <span style={{ opacity: 0.65, fontSize: 11, flexShrink: 0 }}>• {frame.width}×{frame.height}</span>
+                                {isMulti && isActive && (
+                                  <span
+                                    title="Active Editing Frame"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      width: 18,
+                                      height: 18,
+                                      background: "#3b82f6",
+                                      color: "#ffffff",
+                                      borderRadius: 4,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                      <path d="M12 20h9" />
+                                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                                    </svg>
+                                  </span>
+                                )}
+                              </span>
+                              {isMulti ? (
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                                  {!isActive && (
+                                    <button
+                                      onClick={() => onSelectActiveFrame?.(frame.id)}
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        width: 20,
+                                        height: 20,
+                                        background: "rgba(255,255,255,0.08)",
+                                        border: "1px solid rgba(255,255,255,0.15)",
+                                        color: "#e4e4e7",
+                                        borderRadius: 4,
+                                        cursor: "pointer",
+                                      }}
+                                      title="Click to edit this device frame"
+                                    >
+                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polygon points="3 11 22 2 13 21 11 13 3 11" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => onRemoveFrame?.(frame.id)}
+                                    style={{
+                                      background: "transparent",
+                                      border: "none",
+                                      color: "#a1a1aa",
+                                      cursor: "pointer",
+                                      padding: "2px 4px",
+                                      fontSize: 14,
+                                      lineHeight: 1,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      borderRadius: 3,
+                                    }}
+                                    title="Remove device frame"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {isActive && frameSnapGuide.active && frameSnapGuide.x != null && (
+                              <div
+                                className="edit-beta-position-guide guide-top"
+                                style={{
+                                  left: `${frameSnapGuide.x}px`,
+                                  top: 0,
+                                  height: `${fScaledHeight}px`,
+                                }}
+                              >
+                                <span>Snap</span>
+                              </div>
+                            )}
+
+                            {isActive && (guidesOn || guidesAlwaysVisible) && (
+                              <>
+                                {guides.map((guide, index) => (
+                                  <div
+                                    key={`prop-guide-${guide.axis}-${guide.position}-${index}`}
+                                    className={`edit-beta-guide edit-beta-guide-${guide.axis}`}
+                                    style={
+                                      guide.axis === "x"
+                                        ? { top: `${guide.position * 100}%` }
+                                        : { left: `${guide.position * 100}%` }
+                                    }
+                                    onMouseEnter={(e) => {
+                                      const px =
+                                        guide.axis === "x"
+                                          ? Math.round(guide.position * fHeight)
+                                          : Math.round(guide.position * fWidth);
+                                      setHoveredGuideInfo({
+                                        axis: guide.axis,
+                                        px,
+                                        screenX: e.clientX,
+                                        screenY: e.clientY,
+                                      });
+                                    }}
+                                    onMouseMove={(e) => {
+                                      const px =
+                                        guide.axis === "x"
+                                          ? Math.round(guide.position * fHeight)
+                                          : Math.round(guide.position * fWidth);
+                                      setHoveredGuideInfo({
+                                        axis: guide.axis,
+                                        px,
+                                        screenX: e.clientX,
+                                        screenY: e.clientY,
+                                      });
+                                    }}
+                                    onMouseLeave={() => setHoveredGuideInfo(null)}
+                                  />
+                                ))}
+                              </>
+                            )}
+
+                            <div
+                              className="edit-beta-frame"
+                              style={{
+                                width: fWidth,
+                                height: fHeight,
+                                transform: `scale(${scale})`,
+                                transformOrigin: "top left",
+                                pointerEvents: "auto",
+                              }}
+                            >
+                              <webview
+                                ref={(el) => {
+                                  if (el) {
+                                    webviewsMapRef.current[frame.id] = el;
+                                    if (isActive) {
+                                      webviewRef.current = el;
+                                    }
+                                  } else {
+                                    delete webviewsMapRef.current[frame.id];
+                                  }
+                                }}
+                                src={sourceUrl}
+                                allowpopups={true}
+                              />
+                            </div>
+
+                            {isActive && mode === "edit" && selected && (
+                              <SelectionOverlay
+                                selected={selected}
+                                scale={scale}
+                                boundaries={boundaries}
+                                fontFamilies={pageFonts.map((font) => font.family)}
+                                onResize={handleElementDragStyle}
+                                onBoxChange={(property, value) =>
+                                  handleElementDragStyle({ [property]: `${value}px` }, true)
+                                }
+                                onTextStyle={(values, isFinal = true) =>
+                                  handleElementDragStyle(values, isFinal)
+                                }
+                                onReorder={(targetPath, placement) => {
+                                  void call("reorder", targetPath, placement);
+                                  void refreshLayers();
+                                }}
+                                onAction={(action) => {
+                                  const calls = {
+                                    parent: ["selectParent"],
+                                    up: ["move", -1],
+                                    down: ["move", 1],
+                                    duplicate: ["duplicate"],
+                                    delete: ["remove"],
+                                  } as const;
+                                  const [method, argument] = calls[action];
+                                  void call(
+                                    method,
+                                    ...((argument === undefined
+                                      ? []
+                                      : [argument]) as any[]),
+                                  );
+                                }}
+                              />
+                            )}
+
+                            {isActive && comparisonVisible && !sideBySide && (
+                              <div
+                                className="edit-beta-overlay-viewport"
+                                style={{
+                                  width: fScaledWidth,
+                                  height: fScaledHeight,
+                                  opacity: overlayOpacity / 100,
+                                  mixBlendMode:
+                                    overlayMode === "diff" ? "difference" : "normal",
+                                }}
+                              >
+                                <img
+                                  className="edit-beta-overlay"
+                                  src={overlayImage!}
+                                  alt={overlayLabel || "Design comparison"}
+                                  style={{
+                                    width: fScaledWidth,
+                                    transform: `translateY(-${pageScrollY * scale}px)`,
+                                  }}
+                                />
+                              </div>
+                            )}
+
+                            {isActive && viewportMode === "free" && !isMulti && (
+                              <>
+                                <button
+                                  className="edit-beta-resize-handle edit-beta-resize-right"
+                                  style={{ left: fScaledWidth - 3 }}
+                                  onMouseDown={(event) => beginResize(event, "x")}
+                                  aria-label="Resize viewport width"
+                                />
+                                <button
+                                  className="edit-beta-resize-handle edit-beta-resize-bottom"
+                                  style={{ left: fScaledWidth / 2 }}
+                                  onMouseDown={(event) => beginResize(event, "y")}
+                                  aria-label="Resize viewport height"
+                                />
+                                <button
+                                  className="edit-beta-resize-handle edit-beta-resize-corner"
+                                  style={{ left: fScaledWidth - 5 }}
+                                  onMouseDown={(event) => beginResize(event, "both")}
+                                  aria-label="Resize viewport"
+                                />
+                              </>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
                   </>
-                )}
-                <div
-                  className="edit-beta-frame"
-                  style={{
-                    width,
-                    height,
-                    transform: `scale(${scale})`,
-                    pointerEvents: "auto",
-                  }}
-                >
-                  <webview
-                    ref={webviewRef}
-                    src={sourceUrl}
-                    allowpopups={true}
-                  />
-                </div>
-                {mode === "edit" && selected && (
-                  <SelectionOverlay
-                    selected={selected}
-                    scale={scale}
-                    boundaries={boundaries}
-                    fontFamilies={pageFonts.map((font) => font.family)}
-                    onResize={handleElementDragStyle}
-                    onBoxChange={(property, value) =>
-                      handleElementDragStyle({ [property]: `${value}px` }, true)
-                    }
-                    onTextStyle={(values, isFinal = true) =>
-                      handleElementDragStyle(values, isFinal)
-                    }
-                    onReorder={(targetPath, placement) => {
-                      void call("reorder", targetPath, placement);
-                      void refreshLayers();
-                    }}
-                    onAction={(action) => {
-                      const calls = {
-                        parent: ["selectParent"],
-                        up: ["move", -1],
-                        down: ["move", 1],
-                        duplicate: ["duplicate"],
-                        delete: ["remove"],
-                      } as const;
-                      const [method, argument] = calls[action];
-                      void call(
-                        method,
-                        ...((argument === undefined
-                          ? []
-                          : [argument]) as any[]),
-                      );
-                    }}
-                  />
-                )}
-                {comparisonVisible && !sideBySide && (
-                  <div
-                    className="edit-beta-overlay-viewport"
-                    style={{
-                      width: scaledWidth,
-                      height: scaledHeight,
-                      opacity: overlayOpacity / 100,
-                      mixBlendMode:
-                        overlayMode === "diff" ? "difference" : "normal",
-                    }}
-                  >
-                    <img
-                      className="edit-beta-overlay"
-                      src={overlayImage!}
-                      alt={overlayLabel || "Design comparison"}
-                      style={{
-                        width: scaledWidth,
-                        transform: `translateY(-${pageScrollY * scale}px)`,
-                      }}
-                    />
-                  </div>
-                )}
-                {viewportMode === "free" && (
-                  <>
-                    <button
-                      className="edit-beta-resize-handle edit-beta-resize-right"
-                      style={{ left: scaledWidth - 3 }}
-                      onMouseDown={(event) => beginResize(event, "x")}
-                      aria-label="Resize viewport width"
-                    />
-                    <button
-                      className="edit-beta-resize-handle edit-beta-resize-bottom"
-                      style={{ left: scaledWidth / 2 }}
-                      onMouseDown={(event) => beginResize(event, "y")}
-                      aria-label="Resize viewport height"
-                    />
-                    <button
-                      className="edit-beta-resize-handle edit-beta-resize-corner"
-                      style={{ left: scaledWidth - 5 }}
-                      onMouseDown={(event) => beginResize(event, "both")}
-                      aria-label="Resize viewport"
-                    />
-                  </>
-                )}
-              </div>
+                );
+              })()}
 
               {snapshotSideVisible && (
                 <div
