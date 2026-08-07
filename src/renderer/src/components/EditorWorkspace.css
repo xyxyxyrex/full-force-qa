@@ -12,47 +12,156 @@
   align-items: center;
   justify-content: space-between;
   height: 48px;
-  padding: 0 12px;
+  padding: 0 10px;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+  gap: 8px;
+  position: relative;
+  z-index: 1000;
+  overflow: visible;
 }
 
-.toolbar-left,
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 140px;
-}
-
-.toolbar-right {
   justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .toolbar-center {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: visible;
+  justify-content: center;
 }
 
-/* ── Workspace Top Tab Switcher (Layout | Audit) ── */
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e4e4e7;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Record Button Styles ── */
+
+.record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  height: 28px;
+  background: rgba(255, 0, 85, 0.08);
+  border: 1px solid rgba(255, 0, 85, 0.3);
+  border-radius: 6px;
+  color: #ff0055;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+}
+
+.record-btn:hover {
+  background: rgba(255, 0, 85, 0.18);
+  border-color: rgba(255, 0, 85, 0.5);
+  color: #ffffff;
+}
+
+.record-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff0055;
+  box-shadow: 0 0 8px #ff0055;
+}
+
+.record-btn.recording {
+  background: #ff0055;
+  border-color: #ff0055;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 0, 85, 0.4);
+  animation: recordPulse 1.5s infinite;
+}
+
+.record-btn.recording .record-dot {
+  background: #ffffff;
+  box-shadow: 0 0 6px #ffffff;
+  animation: recordBlink 1s infinite;
+}
+
+@keyframes recordPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 0, 85, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 0, 85, 0);
+  }
+}
+
+@keyframes recordBlink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ── Workspace Top Tab Switcher ── */
 
 .workspace-tab-switcher {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: rgba(0, 0, 0, 0.25);
-  padding: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
 }
 
 .workspace-tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 14px;
+  gap: 5px;
+  padding: 4px 10px;
+  height: 26px;
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -61,9 +170,10 @@
     "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.12s ease;
 }
 
@@ -82,14 +192,16 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 5px 10px;
+  height: 30px;
   background: transparent;
   border: none;
   border-radius: 6px;
   color: #a0a0a0;
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
   cursor: pointer;
+  white-space: nowrap;
   transition:
     background 0.12s,
     color 0.12s;
@@ -105,51 +217,44 @@
   cursor: not-allowed;
 }
 
-.toolbar-url {
-  font-size: 13px;
-  color: #707070;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reset-btn span {
-  font-size: 13px;
-}
-
 /* ── Viewport controls row ───────────────────── */
 
 .viewport-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: visible;
 }
 
 .toolbar-divider {
   width: 1px;
-  height: 20px;
+  height: 18px;
   background: rgba(255, 255, 255, 0.08);
-  margin: 0 2px;
+  margin: 0 1px;
+  flex-shrink: 0;
 }
 
 /* Device preset buttons */
 .device-switcher {
   display: flex;
-  gap: 2px;
+  gap: 1px;
+  flex-shrink: 0;
 }
 
 .device-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 30px;
+  width: 30px;
+  height: 28px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: #707070;
   cursor: pointer;
+  flex-shrink: 0;
   transition:
     background 0.12s,
     color 0.12s;
@@ -157,12 +262,66 @@
 
 .device-btn:hover {
   color: #b0b0b0;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .device-btn.active {
   background: var(--accent-light);
   color: var(--accent-color);
 }
+
+/* ── Responsive Compression Media Queries ── */
+
+@media (max-width: 1366px) {
+  .editor-toolbar {
+    padding: 0 6px;
+    gap: 4px;
+  }
+  .toolbar-center {
+    gap: 3px;
+  }
+  .viewport-controls {
+    gap: 3px;
+  }
+  .toolbar-divider {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .back-dashboard-btn span {
+    display: none;
+  }
+  .refresh-btn span {
+    display: none;
+  }
+  .back-dashboard-btn,
+  .refresh-btn {
+    padding: 4px 8px;
+  }
+  .workspace-tab-btn span {
+    display: none;
+  }
+  .workspace-tab-btn {
+    padding: 4px 6px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .dim-label {
+    display: none;
+  }
+  .dim-input {
+    width: 44px;
+    padding: 2px 4px;
+    font-size: 11px;
+  }
+  .device-btn {
+    width: 26px;
+    height: 26px;
+  }
+}
+
 
 /* ── Dimension inputs ────────────────────────── */
 

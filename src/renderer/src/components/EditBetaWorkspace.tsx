@@ -65,6 +65,8 @@ export interface EditBetaWorkspaceHandle {
   undo: () => void;
   redo: () => void;
   refreshLayers: () => void;
+  captureViewport: () => Promise<string | null>;
+  getPatches: () => Promise<any[]>;
 }
 
 interface PaletteColor {
@@ -733,6 +735,7 @@ function installEditBetaBridge() {
       ? el.removeAttribute("contenteditable")
       : el.setAttribute("contenteditable", originalEditable);
     if (save && afterHtml !== beforeHtml) {
+      const rect = el.getBoundingClientRect();
       const redo = () => {
         el.innerHTML = afterHtml;
       };
@@ -741,7 +744,21 @@ function installEditBetaBridge() {
       };
       commit(
         { label: "Edit text inline", undo, redo },
-        { type: "html", path, value: afterHtml },
+        {
+          type: "html",
+          path,
+          value: afterHtml,
+          beforeValue: beforeHtml,
+          rect: {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            vw: window.innerWidth || document.documentElement.clientWidth || 1920,
+            vh: window.innerHeight || document.documentElement.clientHeight || 1080,
+          },
+          tag: el.tagName.toLowerCase(),
+        },
       );
     } else if (!save) el.innerHTML = beforeHtml;
     positionOverlay();
@@ -1231,6 +1248,12 @@ function installEditBetaBridge() {
       const beforePriority =
         pending?.beforePriority ?? el.style.getPropertyPriority(property);
       const after = value || "";
+      const computed = getComputedStyle(el);
+      const beforeVal = before || computed.getPropertyValue(property) || "";
+      const rBefore = el.getBoundingClientRect();
+      const vw = window.innerWidth || document.documentElement.clientWidth || 1920;
+      const vh = window.innerHeight || document.documentElement.clientHeight || 1080;
+
       const redo = () =>
         after
           ? el.style.setProperty(property, after, "important")
@@ -1240,6 +1263,8 @@ function installEditBetaBridge() {
           ? el.style.setProperty(property, before, beforePriority)
           : el.style.removeProperty(property);
       redo();
+      const rAfter = el.getBoundingClientRect();
+
       stylePreviews.delete(previewKey);
       commit(
         {
@@ -1252,7 +1277,25 @@ function installEditBetaBridge() {
           path: getPath(el),
           property,
           value: after,
+          beforeValue: beforeVal,
           priority: after ? "important" : "",
+          rectBefore: {
+            left: Math.round(rBefore.left),
+            top: Math.round(rBefore.top),
+            width: Math.round(rBefore.width),
+            height: Math.round(rBefore.height),
+            vw,
+            vh,
+          },
+          rectAfter: {
+            left: Math.round(rAfter.left),
+            top: Math.round(rAfter.top),
+            width: Math.round(rAfter.width),
+            height: Math.round(rAfter.height),
+            vw,
+            vh,
+          },
+          tag: el.tagName.toLowerCase(),
         },
       );
       positionOverlay();
@@ -1352,6 +1395,7 @@ function installEditBetaBridge() {
       if (!selected) return false;
       if (inlineEditing) finishInlineEdit(true);
       const el = selected;
+      const rect = el.getBoundingClientRect();
       const before = el.textContent || "";
       const redo = () => {
         el.textContent = value;
@@ -1362,7 +1406,21 @@ function installEditBetaBridge() {
       redo();
       commit(
         { label: `${el.tagName.toLowerCase()} · text updated`, undo, redo },
-        { type: "text", path: getPath(el), value },
+        {
+          type: "text",
+          path: getPath(el),
+          value,
+          beforeValue: before,
+          rect: {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            vw: window.innerWidth || document.documentElement.clientWidth || 1920,
+            vh: window.innerHeight || document.documentElement.clientHeight || 1080,
+          },
+          tag: el.tagName.toLowerCase(),
+        },
       );
       positionOverlay();
       return true;
@@ -1371,6 +1429,7 @@ function installEditBetaBridge() {
       if (!selected) return false;
       if (inlineEditing) finishInlineEdit(true);
       const el = selected;
+      const rect = el.getBoundingClientRect();
       const before = el.innerHTML;
       const redo = () => {
         el.innerHTML = value;
@@ -1385,7 +1444,21 @@ function installEditBetaBridge() {
           undo,
           redo,
         },
-        { type: "html", path: getPath(el), value },
+        {
+          type: "html",
+          path: getPath(el),
+          value,
+          beforeValue: before,
+          rect: {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            vw: window.innerWidth || document.documentElement.clientWidth || 1920,
+            vh: window.innerHeight || document.documentElement.clientHeight || 1080,
+          },
+          tag: el.tagName.toLowerCase(),
+        },
       );
       positionOverlay();
       return true;
@@ -1393,6 +1466,7 @@ function installEditBetaBridge() {
     setAttribute(name: string, value: string | null) {
       if (!selected || !name) return false;
       const el = selected;
+      const rect = el.getBoundingClientRect();
       const path = getPath(el);
       const before = el.getAttribute(name);
       const redo = () =>
@@ -1406,11 +1480,26 @@ function installEditBetaBridge() {
       redo();
       commit(
         {
-          label: `${el.tagName.toLowerCase()} · ${name} attribute`,
+          label: `${el.tagName.toLowerCase()} · attribute ${name}`,
           undo,
           redo,
         },
-        { type: "attribute", path, name, value },
+        {
+          type: "attribute",
+          path,
+          name,
+          value: value || "",
+          beforeValue: before || "",
+          rect: {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            vw: window.innerWidth || document.documentElement.clientWidth || 1920,
+            vh: window.innerHeight || document.documentElement.clientHeight || 1080,
+          },
+          tag: el.tagName.toLowerCase(),
+        },
       );
       return true;
     },
@@ -1570,6 +1659,25 @@ function installEditBetaBridge() {
       cursorStyle.remove();
       host.remove();
       delete guestWindow.__fullForceEditBeta;
+    },
+    getPatches() {
+      const activePatches = (history || [])
+        .slice(0, historyIndex + 1)
+        .map((item: any) => item?.patch)
+        .filter(Boolean);
+      const all = (basePatches || []).concat(activePatches);
+      return all.map((p: any) => ({
+        type: p.type,
+        path: p.path,
+        property: p.property,
+        value: p.value,
+        beforeValue: p.beforeValue,
+        name: p.name,
+        rectBefore: p.rectBefore || p.rect,
+        rectAfter: p.rectAfter || p.rect,
+        rect: p.rectAfter || p.rect,
+        tag: p.tag,
+      }));
     },
   };
   guestWindow.__fullForceEditBeta = api;
@@ -3871,6 +3979,23 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         },
         refreshLayers: () => {
           void refreshLayers();
+        },
+        captureViewport: async () => {
+          const view = webviewRef.current;
+          if (!view || typeof view.capturePage !== "function") return null;
+          try {
+            const image = await view.capturePage();
+            if (!image) return null;
+            const dataUrl = typeof image.toDataURL === "function" ? image.toDataURL() : null;
+            return typeof dataUrl === "string" && dataUrl.startsWith("data:image/") ? dataUrl : null;
+          } catch (err) {
+            console.error("Error capturing viewport:", err);
+            return null;
+          }
+        },
+        getPatches: async () => {
+          const result = await execute("window.__fullForceEditBeta?.getPatches() || []");
+          return Array.isArray(result) ? result : [];
         },
       }),
       [hardReload, refreshLayers],

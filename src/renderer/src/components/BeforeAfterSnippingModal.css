@@ -1,0 +1,566 @@
+/* ── Before & After Snipping Modal Styles ── */
+
+.snipping-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999999;
+  background: rgba(9, 9, 11, 0.85);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 16px;
+  animation: snippingFadeIn 0.2s ease-out;
+}
+
+@keyframes snippingFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.snipping-modal-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1440px;
+  height: 100%;
+  max-height: 92vh;
+  background: #121215;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+
+/* ── Top Header Toolbar ── */
+
+.snipping-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 16px;
+  background: #18181c;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.snipping-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.snipping-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: rgba(255, 0, 85, 0.15);
+  border: 1px solid rgba(255, 0, 85, 0.3);
+  border-radius: 6px;
+  color: #ff0055;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.snipping-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.snipping-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.snipping-mode-btn,
+.snipping-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 10px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.snipping-mode-btn:hover,
+.snipping-tool-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.snipping-mode-btn.active,
+.snipping-tool-btn.active {
+  background: var(--accent-color, #ff0055);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.snipping-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.snipping-color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.snipping-color-swatch.active {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.snipping-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  height: 32px;
+  background: #27272a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.snipping-action-btn:hover {
+  background: #3f3f46;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.snipping-action-btn.primary {
+  background: #ff0055;
+  border-color: #ff0055;
+}
+
+.snipping-action-btn.primary:hover {
+  background: #e0004c;
+}
+
+.snipping-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.snipping-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+/* ── Main Work Area ── */
+
+.snipping-workspace {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #09090b;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Side-by-Side View */
+.snipping-side-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 12px;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.snipping-side-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #18181c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.snipping-pane-header {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.snipping-image-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.snipping-pane-image {
+  display: block;
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+}
+
+/* Wipe Slider View */
+.snipping-wipe-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.snipping-wipe-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.snipping-wipe-image {
+  display: block;
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+}
+
+.snipping-wipe-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.snipping-wipe-image.overlay-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none !important;
+  max-height: 80vh !important;
+  object-fit: fill;
+}
+
+.snipping-wipe-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ff0055;
+  box-shadow: 0 0 10px rgba(255, 0, 85, 0.8);
+  cursor: ew-resize;
+  z-index: 30;
+}
+
+.snipping-wipe-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  background: #ff0055;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+/* Annotation Canvas Layer */
+.snipping-annotation-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+  cursor: crosshair;
+}
+
+/* Image Overlay Change Highlights & Badges */
+.snipping-image-change-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.snipping-change-box {
+  position: absolute;
+  border-radius: 4px;
+  box-sizing: border-box;
+  animation: snippingBoxPulse 2s infinite ease-in-out;
+}
+
+@keyframes snippingBoxPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 0, 85, 0);
+  }
+}
+
+.snipping-element-outline {
+  position: absolute;
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 24;
+}
+
+.snipping-change-box.padding-margin {
+  border: 2px dashed #ff0055;
+  background: rgba(255, 0, 85, 0.28);
+  box-shadow: 0 0 14px rgba(255, 0, 85, 0.4);
+}
+
+.snipping-change-box.font-text {
+  border: 2px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.snipping-change-box.dimension-layout {
+  border: 2px solid #22c55e;
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.snipping-change-badge {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  white-space: nowrap;
+  padding: 3px 8px;
+  background: #121215;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: monospace;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 30;
+}
+
+.snipping-change-box.padding-margin .snipping-change-badge {
+  border: 1px solid #ff0055;
+  color: #ff0055;
+}
+
+.snipping-change-box.font-text .snipping-change-badge {
+  border: 1px solid #f59e0b;
+  color: #f59e0b;
+}
+
+.snipping-change-box.dimension-layout .snipping-change-badge {
+  border: 1px solid #22c55e;
+  color: #22c55e;
+}
+
+/* Recorded Changes / Adjustments (PX) Panel */
+.snipping-changes-panel {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 40;
+  width: 280px;
+  max-height: 260px;
+  background: rgba(24, 24, 28, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: snippingChangesIn 0.2s ease-out;
+}
+
+@keyframes snippingChangesIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.snipping-changes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 0, 85, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.snipping-changes-close {
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.snipping-changes-close:hover {
+  color: #ffffff;
+}
+
+.snipping-changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  overflow-y: auto;
+  max-height: 210px;
+}
+
+.snipping-change-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.snipping-change-item:hover {
+  background: rgba(255, 0, 85, 0.15);
+  border-color: rgba(255, 0, 85, 0.3);
+}
+
+.change-property {
+  color: #a1a1aa;
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.change-value {
+  color: #ff0055;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.change-add-icon {
+  font-size: 10px;
+  color: #71717a;
+  text-transform: uppercase;
+}
+
+.snipping-change-item:hover .change-add-icon {
+  color: #ffffff;
+}
+
+/* Floating Toast Notification */
+.snipping-toast {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 8px 16px;
+  background: #18181b;
+  border: 1px solid #22c55e;
+  border-radius: 6px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: snippingToastIn 0.15s ease-out;
+}
+
+@keyframes snippingToastIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

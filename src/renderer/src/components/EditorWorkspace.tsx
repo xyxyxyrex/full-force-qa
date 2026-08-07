@@ -17,6 +17,7 @@ import type { EditBetaWorkspaceHandle } from "./EditBetaWorkspace";
 import AutomateWorkspace from "./AutomateWorkspace";
 import NativeStylePanel from "./NativeStylePanel";
 import CssInspectorEditor from "./CssInspectorEditor";
+import BeforeAfterSnippingModal from "./BeforeAfterSnippingModal";
 import { toggleCanvasDuplicates } from "../utils/seoCanvasOverlay";
 import figmaIcon from "../assets/figma.png";
 import mondayIcon from "../assets/monday-icon-svgrepo-com.svg";
@@ -700,6 +701,47 @@ export default function EditorWorkspace({
   const [missingFonts, setMissingFonts] = useState<string[]>([]);
   const [loadingFonts, setLoadingFonts] = useState(false);
   const [fontsAttempted, setFontsAttempted] = useState(false);
+
+  // ── Viewport Recording & Snipping Studio State ──
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingBeforeImage, setRecordingBeforeImage] = useState<string | null>(null);
+  const [recordingAfterImage, setRecordingAfterImage] = useState<string | null>(null);
+  const [recordingTimerSeconds, setRecordingTimerSeconds] = useState(0);
+  const [isSnippingModalOpen, setIsSnippingModalOpen] = useState(false);
+  const [recordedChanges, setRecordedChanges] = useState<any[]>([]);
+  const startPatchesCountRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!isRecording) {
+      setRecordingTimerSeconds(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setRecordingTimerSeconds((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
+  const handleStartRecording = async () => {
+    if (isRecording) return;
+    const img = await editBetaRef.current?.captureViewport();
+    const patches = (await editBetaRef.current?.getPatches()) || [];
+    startPatchesCountRef.current = patches.length;
+    setRecordingBeforeImage(img || null);
+    setIsRecording(true);
+  };
+
+  const handleStopRecording = async () => {
+    if (!isRecording) return;
+    const img = await editBetaRef.current?.captureViewport();
+    const currentPatches = (await editBetaRef.current?.getPatches()) || [];
+    const startIndex = startPatchesCountRef.current;
+    const delta = currentPatches.slice(startIndex);
+    setRecordedChanges(delta.length > 0 ? delta : currentPatches);
+    setRecordingAfterImage(img || null);
+    setIsRecording(false);
+    setIsSnippingModalOpen(true);
+  };
 
   // ── Snapshots & Project ID Scope ─────────────────
   const activeProjectId =
@@ -5167,6 +5209,24 @@ export default function EditorWorkspace({
                 </button>
               </div>
 
+              {/* Viewport Record Button */}
+              <button
+                className={`record-btn ${isRecording ? "recording" : ""}`}
+                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                title={
+                  isRecording
+                    ? "Stop recording & open Before/After Snipping Studio"
+                    : "Record Changes: Capture Before/After states & annotate edits"
+                }
+              >
+                <span className="record-dot" />
+                <span>
+                  {isRecording
+                    ? `Stop (${String(Math.floor(recordingTimerSeconds / 60)).padStart(2, "0")}:${String(recordingTimerSeconds % 60).padStart(2, "0")})`
+                    : "Record"}
+                </span>
+              </button>
+
               {/* Reveal Animations & Hidden Headings Toggle */}
               <button
                 className={`device-btn ${revealAnimations ? "active" : ""}`}
@@ -6566,11 +6626,16 @@ export default function EditorWorkspace({
                 : handleReset()
             }
             disabled={workspaceTab !== "editBeta" && resetting}
-            title="Hard refresh (F5)"
+            title={
+              workspaceTab !== "editBeta" && resetting
+                ? "Refreshing..."
+                : "Hard refresh (F5)"
+            }
+            aria-label="Hard refresh"
           >
             <svg
-              width="14"
-              height="14"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -6581,11 +6646,6 @@ export default function EditorWorkspace({
               <path d="M1 4v6h6" />
               <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
             </svg>
-            <span>
-              {workspaceTab !== "editBeta" && resetting
-                ? "Refreshing..."
-                : "Refresh"}
-            </span>
           </button>
         </div>
       </div>
@@ -10070,6 +10130,18 @@ export default function EditorWorkspace({
           </div>
         </div>
       )}
+
+      {/* Before & After Snipping Studio Modal */}
+      <BeforeAfterSnippingModal
+        isOpen={isSnippingModalOpen}
+        onClose={() => setIsSnippingModalOpen(false)}
+        beforeImage={recordingBeforeImage}
+        afterImage={recordingAfterImage}
+        recordedChanges={recordedChanges}
+        onSaveSnapshot={(dataUrl, title) => {
+          setSnapshotImage(dataUrl, title);
+        }}
+      />
     </div>
   );
 }
