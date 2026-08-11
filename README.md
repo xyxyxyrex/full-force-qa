@@ -9,7 +9,7 @@ Parity is an Electron desktop application for quality assurance engineers, web d
 The application interface is structured into four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate`) accessible via top-bar tab navigation, along with persistent system overlays and settings.
 
 ### 1. Live Workspace (`live`)
-- **Monday.com Ticket Integration**: Connects to the Monday.com GraphQL API (`https://api.monday.com/v2`) using a user-configured API token (`monday_api_token`). Fetches board items, board structure, staging URLs, Figma file links, and Google Sheets links to populate ticket lists and auto-initialize QA projects.
+- **Monday.com Ticket Integration**: Uses OAuth 2.1 with PKCE, encrypted desktop credential storage, automatic refresh, and an editable board/assignee picker. Personal API tokens remain an advanced fallback and are encrypted by the operating system rather than stored in renderer storage.
 - **Figma Viewport Integration**: Renders Figma design frames inside an embedded `<webview>` using Figma embed URLs (`https://www.figma.com/embed?...`). Supports side-by-side positioning against the staging site frame or static PNG snapshot overlays.
 - **Comparison Modes**: Provides four frame comparison modes:
   - `side-by-side`: Places the Figma frame adjacent to the staging website frame.
@@ -143,12 +143,13 @@ pip install -r python/requirements.txt
 ```
 
 ### 4. Environment Variables
-Create a `.env` file in the project root if override values are required:
+Create a `.env` file in the project root using the public Supabase and viewer values from `.env.example`:
 ```env
-MONDAY_API_TOKEN=your_monday_api_token_here
-FIGMA_API_TOKEN=your_figma_api_token_here
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-publishable-or-legacy-anon-key
+VITE_EPHEMERAL_VIEWER_URL=https://parity-rz8.pages.dev
 ```
-*Note: API tokens can also be set inside the application via the Settings modal (`Ctrl+,` or top bar gear icon).*
+Monday's client secret belongs only in Supabase Edge Function secrets. Figma personal access tokens are entered in the application and encrypted with Electron `safeStorage`; do not add either secret to `.env`.
 
 ---
 

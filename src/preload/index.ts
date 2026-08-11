@@ -1,12 +1,24 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppUpdateStatus, CaptureResult, Project } from '../shared/types'
+import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, Project } from '../shared/types'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   login(adminUrl: string): Promise<void> {
     return ipcRenderer.invoke('auth:login', adminUrl)
   },
-  mondayLogin(): Promise<{ success: boolean; token?: string; error?: string }> {
-    return ipcRenderer.invoke('monday:login')
+  mondayLogin(config: MondayPublicConfig) {
+    return ipcRenderer.invoke('monday:login', config)
+  },
+  mondayStatus() {
+    return ipcRenderer.invoke('monday:status')
+  },
+  mondaySetPersonalToken(token: string) {
+    return ipcRenderer.invoke('monday:set-personal-token', token)
+  },
+  mondayDisconnect(config?: MondayPublicConfig) {
+    return ipcRenderer.invoke('monday:disconnect', config)
+  },
+  mondayGraphQL(query: string, variables?: Record<string, unknown>) {
+    return ipcRenderer.invoke('monday:graphql', query, variables)
   },
   capture(url: string): Promise<CaptureResult> {
     return ipcRenderer.invoke('capture:start', url)
@@ -32,11 +44,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   figmaLoginWindow(url?: string): Promise<void> {
     return ipcRenderer.invoke('app:figmaLoginWindow', url)
   },
-  figmaTokenStatus(): Promise<{ configured: boolean }> {
+  figmaTokenStatus(): Promise<FigmaConnectionStatus> {
     return ipcRenderer.invoke('figma:token-status')
   },
   setFigmaToken(token: string): Promise<{ success: boolean; configured: boolean; error?: string }> {
     return ipcRenderer.invoke('figma:set-token', token)
+  },
+  onFigmaAuthChanged(callback: (status: FigmaConnectionStatus) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, status: FigmaConnectionStatus) => callback(status)
+    ipcRenderer.on('figma:auth-changed', handler)
+    return () => ipcRenderer.removeListener('figma:auth-changed', handler)
   },
   listFigmaFrames(url: string): Promise<any> {
     return ipcRenderer.invoke('figma:list-frames', url)

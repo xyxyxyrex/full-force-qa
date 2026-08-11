@@ -20,3 +20,6 @@ file_size_limit = "50MiB"
 public = false
 file_size_limit = "25MiB"
 allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
+
+[functions.monday-oauth]
+verify_jwt = false

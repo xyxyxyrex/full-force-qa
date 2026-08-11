@@ -114,9 +114,33 @@ export interface AppUpdateStatus {
   message?: string
 }
 
+export interface MondayPublicConfig {
+  supabaseUrl: string
+  supabaseAnonKey: string
+}
+
+export interface MondayConnectionStatus {
+  connected: boolean
+  authType?: 'oauth' | 'personal'
+  user?: { id: string; name: string; email?: string; accountId?: string }
+  error?: string
+}
+
+export interface FigmaConnectionStatus {
+  connected: boolean
+  apiConfigured: boolean
+  browserSession: boolean
+  user?: { id?: string; handle?: string; email?: string; imgUrl?: string }
+  error?: string
+}
+
 export interface ElectronAPI {
   login: (adminUrl: string) => Promise<void>
-  mondayLogin: () => Promise<{ success: boolean; token?: string; error?: string }>
+  mondayLogin: (config: MondayPublicConfig) => Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }>
+  mondayStatus: () => Promise<MondayConnectionStatus>
+  mondaySetPersonalToken: (token: string) => Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }>
+  mondayDisconnect: (config?: MondayPublicConfig) => Promise<{ success: boolean; error?: string }>
+  mondayGraphQL: (query: string, variables?: Record<string, unknown>) => Promise<any>
   capture: (url: string) => Promise<CaptureResult>
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project) => Promise<void>
@@ -125,8 +149,9 @@ export interface ElectronAPI {
   openExternal: (url: string) => Promise<void>
   openDetachedWindow: (url: string, title?: string) => Promise<void>
   figmaLoginWindow: (url?: string) => Promise<void>
-  figmaTokenStatus: () => Promise<{ configured: boolean }>
+  figmaTokenStatus: () => Promise<FigmaConnectionStatus>
   setFigmaToken: (token: string) => Promise<{ success: boolean; configured: boolean; error?: string }>
+  onFigmaAuthChanged: (callback: (status: FigmaConnectionStatus) => void) => () => void
   listFigmaFrames: (url: string) => Promise<{ success: boolean; fileName?: string; lastModified?: string; requestedNodeId?: string; frames?: Array<{ id: string; name: string; type: string; pageName: string; width: number; height: number }>; error?: string }>
   getFigmaFrame: (url: string, nodeId?: string) => Promise<{ success: boolean; node?: any; imageDataUrl?: string; error?: string }>
   captureAutomatePage: (webContentsId: number, viewportWidth: number, viewportHeight: number) => Promise<{ success: boolean; dataUrl?: string; documentWidth?: number; documentHeight?: number; domNodes?: any[]; tiles?: number; mode?: string; error?: string; fallback?: boolean }>

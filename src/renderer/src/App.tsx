@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import type { AppUpdateStatus, Project } from '../../shared/types'
 import Dashboard from './components/Dashboard'
 import CaptureScreen from './components/CaptureScreen'
@@ -43,6 +43,20 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ state: 'idle', currentVersion: '' })
+
+  const syncMondayTickets = useCallback(async (): Promise<boolean> => {
+    try {
+      const status = await window.electronAPI.mondayStatus()
+      if (!status.connected) return false
+      await fetchMondayTicketsApi()
+      lastSyncRef.current = Date.now()
+      window.dispatchEvent(new CustomEvent('monday_tickets_updated'))
+      return true
+    } catch (error) {
+      console.warn('[Monday] Sync skipped:', error)
+      return false
+    }
+  }, [])
 
   // Apply theme on initial mount and when theme changes
   useEffect(() => {
@@ -159,19 +173,16 @@ export default function App() {
 
   // ── Background Polling for Monday Tickets (every 2 minutes) ────────────────
   useEffect(() => {
-    const doPoll = async () => {
-      const token = localStorage.getItem('monday_api_token')
-      if (token) {
-        await fetchMondayTicketsApi(token)
-        lastSyncRef.current = Date.now()
-        window.dispatchEvent(new CustomEvent('monday_tickets_updated'))
-      }
+    const intervalMinutes = settings.mondaySyncIntervalMinutes
+    let interval: ReturnType<typeof setInterval> | undefined
+    if (intervalMinutes > 0) {
+      void syncMondayTickets()
+      interval = setInterval(() => void syncMondayTickets(), intervalMinutes * 60_000)
     }
-
-    doPoll()
-    const interval = setInterval(doPoll, 120000)
-    return () => clearInterval(interval)
-  }, [])
+    return () => {
+      if (interval !== undefined) clearInterval(interval)
+    }
+  }, [settings.mondaySyncIntervalMinutes, syncMondayTickets])
 
   const updateActiveTab = (updater: (tab: TabState) => TabState) => {
     setTabs(prev => prev.map(t => (t.id === activeTabId ? updater(t) : t)))
@@ -233,12 +244,8 @@ export default function App() {
       snapshotHtml: null,
       activeProject: null
     }))
-    const token = localStorage.getItem('monday_api_token')
-    if (token && Date.now() - lastSyncRef.current > 30000) {
-      fetchMondayTicketsApi(token).then(() => {
-        lastSyncRef.current = Date.now()
-        window.dispatchEvent(new CustomEvent('monday_tickets_updated'))
-      })
+    if (Date.now() - lastSyncRef.current > 30000) {
+      void syncMondayTickets()
     }
   }
 

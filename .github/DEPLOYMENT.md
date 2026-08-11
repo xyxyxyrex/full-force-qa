@@ -36,6 +36,8 @@ Official references: [GitHub deployment environments](https://docs.github.com/en
 | `SUPABASE_ACCESS_TOKEN` | Supabase personal access token beginning with `sbp_` | Supabase CLI deployment | Secret |
 | `SUPABASE_DB_PASSWORD` | Password for the production project's `postgres` role | Supabase migrations | Secret |
 | `SUPABASE_PROJECT_ID` | Project reference from the Supabase dashboard URL | Supabase deployment | Identifier |
+| `MONDAY_CLIENT_ID` | Client ID from the Parity app in Monday Developer Center | Supabase `monday-oauth` function | Public identifier |
+| `MONDAY_CLIENT_SECRET` | Client secret from the same Monday app | Supabase `monday-oauth` function only | Secret |
 
 The name `VITE_SUPABASE_ANON_KEY` is retained for compatibility with the application, but its value should preferably be Supabase's newer publishable key. Never place an `sb_secret_…` or legacy `service_role` key in either `VITE_` value: Vite embeds these values into public viewer and desktop artifacts. Supabase requires Row Level Security to protect data accessed with publishable/anon credentials.
 
@@ -49,6 +51,22 @@ The name `VITE_SUPABASE_ANON_KEY` is retained for compatibility with the applica
 Without these optional signing secrets, electron-builder can produce an unsigned installer and Windows may show an unknown-publisher warning. The current workflow maps them to `CSC_LINK` and `CSC_KEY_PASSWORD`. Hardware-token EV certificates do not fit this workflow without a separate signing service or custom signing configuration.
 
 GitHub automatically creates `GITHUB_TOKEN` for every job; do not create a secret with that name. The workflows explicitly grant it `deployments: write` for Cloudflare deployment records and `contents: write` for desktop releases. See [GitHub's `GITHUB_TOKEN` documentation](https://docs.github.com/en/actions/concepts/security/github_token).
+
+### Monday OAuth application
+
+Create or update the Parity integration in Monday's Developer Center before deploying the `monday-oauth` Edge Function:
+
+1. Enable Monday's **New OAuth Flow** for the app version and promote that version after testing.
+2. Add the exact redirect URL `http://localhost:51847/oauth/callback`. The desktop application binds this loopback callback only while a login is in progress.
+3. Enable `me:read`, `boards:read`, and `users:read`. Add broader scopes only when a feature actually requires them.
+4. Copy the app's client ID and secret into the `production` GitHub environment using the names in the table above.
+5. Push the `supabase/` or Supabase workflow changes. The workflow sets the Edge Function secrets before deploying the function; the client secret is never bundled into Electron.
+
+The OAuth function exchanges and refreshes tokens at Monday's server-side OAuth 2.1 endpoint. Electron stores the returned access/refresh pair using the operating-system credential service. A personal API token can still be entered from the Dashboard as an advanced fallback; it receives the same encrypted local storage treatment.
+
+The app pins Monday GraphQL calls to API version `2026-07`. Board and user selectors include only resources visible to the authorizing Monday user. Sync uses `items_page` cursor pagination and therefore supports boards larger than one page, while still remaining subject to the account's Monday API complexity, daily, minute, and concurrency limits.
+
+Official references: [Monday OAuth 2.1 migration](https://developer.monday.com/apps/docs/migrating-to-the-new-oauth-flow), [Monday `items_page`](https://developer.monday.com/api-reference/reference/items-page), [Monday API rate limits](https://developer.monday.com/api-reference/docs/rate-limits), and [Monday API versioning](https://developer.monday.com/api-reference/docs/api-versioning).
 
 ## 2. Create the Cloudflare credentials
 

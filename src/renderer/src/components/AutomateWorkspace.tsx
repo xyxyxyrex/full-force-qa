@@ -674,7 +674,11 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [rawVisualData, setRawVisualData] = useState<any>(null)
   const selectedFrame = useMemo(() => frames.find((frame) => frame.id === frameId), [frameId, frames])
 
-  useEffect(() => { window.electronAPI.figmaTokenStatus().then((result) => setTokenConfigured(result.configured)).catch(() => { }) }, [])
+  useEffect(() => {
+    const syncStatus = () => window.electronAPI.figmaTokenStatus().then((result) => setTokenConfigured(result.apiConfigured)).catch(() => { })
+    void syncStatus()
+    return window.electronAPI.onFigmaAuthChanged?.((result) => setTokenConfigured(result.apiConfigured))
+  }, [])
   useEffect(() => { if (figmaUrl && !designUrl) setDesignUrl(figmaUrl) }, [designUrl, figmaUrl])
   useEffect(() => {
     const view = webviewRef.current

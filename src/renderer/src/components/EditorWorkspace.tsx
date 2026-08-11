@@ -8,7 +8,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import type { Project, SnapshotItem } from "../../../shared/types";
+import type { FigmaConnectionStatus, Project, SnapshotItem } from "../../../shared/types";
 import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
@@ -1193,13 +1193,9 @@ export default function EditorWorkspace({
     }
 
     try {
-      const token =
-        localStorage.getItem("monday_api_token") ||
-        localStorage.getItem("monday_token") ||
-        localStorage.getItem("monday_api_key") ||
-        "";
-      if (token) {
-        const fetched = await fetchMondayTicketsApi(token);
+      const status = await window.electronAPI.mondayStatus();
+      if (status.connected) {
+        const fetched = await fetchMondayTicketsApi();
         if (fetched && fetched.length > 0) {
           setMondayTicketsList(fetched);
           localStorage.setItem(
@@ -1308,6 +1304,11 @@ export default function EditorWorkspace({
   const [activeSheetTab, setActiveSheetTab] = useState<"mock" | "google">(
     "mock",
   );
+  const [figmaAuthStatus, setFigmaAuthStatus] = useState<FigmaConnectionStatus>({ connected: false, apiConfigured: false, browserSession: false });
+  useEffect(() => {
+    void window.electronAPI.figmaTokenStatus().then(setFigmaAuthStatus).catch(() => {});
+    return window.electronAPI.onFigmaAuthChanged?.(setFigmaAuthStatus);
+  }, []);
   const mockSheetStorageKey = `qa_${activeProjectId}_mock_sheet`;
   const [mockSheetData, setMockSheetData] = useState<Sheet[]>(() => {
     try {
@@ -8951,7 +8952,7 @@ export default function EditorWorkspace({
                             >
                               {storedFigmaUrl && (
                                 <>
-                                  <button
+                                  {!figmaAuthStatus.connected && <button
                                     style={{
                                       padding: "2px 8px",
                                       fontSize: 10,
@@ -8991,7 +8992,8 @@ export default function EditorWorkspace({
                                     title="Sign in to Figma with your Google Account"
                                   >
                                     Sign In
-                                  </button>
+                                  </button>}
+                                  {figmaAuthStatus.connected && <span title="Figma session is shared with the Dashboard" style={{ fontSize: 10, color: "#86efac", padding: "2px 7px", border: "1px solid rgba(134,239,172,.3)", borderRadius: 12 }}>Connected</span>}
                                   <button
                                     style={{
                                       width: 22,
