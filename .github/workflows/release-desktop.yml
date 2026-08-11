@@ -39,7 +39,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -59,10 +59,34 @@ jobs:
       - run: npm ci
       - name: Install visual comparison builder
         run: python -m pip install -r python/requirements.txt
-      - name: Build installer and publish GitHub Release
-        run: npm run release:win
+      - name: Build installer and update artifacts
+        run: npm run build:dist
+      - name: Publish GitHub Release
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $assets = @(
+            "dist/QA-Snapshot-Editor-Setup-$version.exe"
+            "dist/QA-Snapshot-Editor-Setup-$version.exe.blockmap"
+            "dist/latest.yml"
+          )
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset)) {
+              throw "Missing required release asset: $asset"
+            }
+          }
+
+          $null = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG @assets --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $env:RELEASE_TAG @assets --verify-tag --title $version --generate-notes --repo $env:GITHUB_REPOSITORY
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release publication failed."
+          }
       - name: Archive release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: qa-snapshot-editor-${{ env.RELEASE_TAG }}-windows
           path: |
