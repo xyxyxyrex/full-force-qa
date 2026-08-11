@@ -75,6 +75,7 @@ interface Props {
 
 export interface EditBetaWorkspaceHandle {
   reload: () => void;
+  deselect: () => void;
   undo: () => void;
   redo: () => void;
   refreshLayers: () => void;
@@ -176,7 +177,7 @@ interface BridgeOptions {
 function installEditBetaBridge() {
   const guestWindow = window as any;
   if (guestWindow.__fullForceEditBeta) {
-    if (guestWindow.__fullForceEditBeta.version === 9) {
+    if (guestWindow.__fullForceEditBeta.version === 10) {
       guestWindow.__fullForceEditBeta.enable();
       return true;
     }
@@ -1145,6 +1146,20 @@ function installEditBetaBridge() {
     positionOverlay();
     scheduleMeasurements();
   };
+  const deselect = () => {
+    const previousSelection = selected;
+    const activeInlineEditor = inlineEditing;
+    if (inlineEditing) finishInlineEdit(true);
+    selected = null;
+    hovered = null;
+    if (activeInlineEditor?.isConnected) activeInlineEditor.blur();
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch {}
+    positionOverlay();
+    scheduleMeasurements();
+    return !!previousSelection;
+  };
   const beginInlineEdit = (
     el: HTMLElement,
     clientX: number,
@@ -1243,6 +1258,14 @@ function installEditBetaBridge() {
       `__FULLFORCE_PAN__${JSON.stringify({ screenX: event?.screenX || 0, screenY: event?.screenY || 0, active, sequence: ++panSequence })}`,
     );
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" || event.code === "Escape") {
+      if (deselect()) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      }
+      return;
+    }
     const key = event.key.toLowerCase();
     if ((event.ctrlKey || event.metaKey) && !editableTarget(event.target)) {
       if (key === "z" && !event.shiftKey) {
@@ -1418,7 +1441,7 @@ function installEditBetaBridge() {
   window.addEventListener("resize", scheduleHighlights, true);
 
   const api = {
-    version: 9,
+    version: 10,
     enable() {
       host.style.display = "";
       positionOverlay();
@@ -1467,6 +1490,7 @@ function installEditBetaBridge() {
         scrollY: window.scrollY || document.documentElement.scrollTop || 0,
       };
     },
+    deselect,
     async prepareCapture(renderMode = "raster") {
       captureInspectionForced = true;
       captureInspectionHost.style.visibility = "visible";
@@ -3101,9 +3125,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     } | null>(null);
     const sectionResizeFrameRef = useRef<number | null>(null);
     const sectionDragRef = useRef<{
-      divider: "layers" | "styles";
+      divider: "annotations" | "layers" | "styles";
       pointerId: number;
       startY: number;
+      annotationsHeight: number;
       layersHeight: number;
       stylesHeight: number;
     } | null>(null);
@@ -3153,12 +3178,23 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       styles: true,
       history: true,
     });
+    const [annotationsSectionHeight, setAnnotationsSectionHeight] = useState(
+      () =>
+        Math.max(
+          132,
+          Math.min(
+            560,
+            Number(localStorage.getItem("qa_edit_annotations_height")) || 250,
+          ),
+        ),
+    );
     const [layersSectionHeight, setLayersSectionHeight] = useState(
       () => Number(localStorage.getItem("qa_edit_layers_height")) || 340,
     );
     const [stylesSectionHeight, setStylesSectionHeight] = useState(
       () => Number(localStorage.getItem("qa_edit_styles_height")) || 260,
     );
+    const annotationsSectionHeightRef = useRef(annotationsSectionHeight);
     const layersSectionHeightRef = useRef(layersSectionHeight);
     const stylesSectionHeightRef = useRef(stylesSectionHeight);
     const [pageColors, setPageColors] = useState<PaletteColor[]>([]);
@@ -3760,20 +3796,23 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const beginSectionResize = useCallback(
       (
         event: React.PointerEvent<HTMLDivElement>,
-        divider: "layers" | "styles",
+        divider: "annotations" | "layers" | "styles",
       ) => {
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);
-        setLeftSections((current) =>
-          divider === "layers"
-            ? { ...current, layers: true, styles: true }
-            : { ...current, styles: true, history: true },
-        );
+        setLeftSections((current) => {
+          if (divider === "annotations")
+            return { ...current, annotations: true, layers: true };
+          if (divider === "layers")
+            return { ...current, layers: true, styles: true };
+          return { ...current, styles: true, history: true };
+        });
         sectionDragRef.current = {
           divider,
           pointerId: event.pointerId,
           startY: event.clientY,
+          annotationsHeight: annotationsSectionHeightRef.current,
           layersHeight: layersSectionHeightRef.current,
           stylesHeight: stylesSectionHeightRef.current,
         };
@@ -3786,9 +3825,17 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         const drag = sectionDragRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
         const delta = event.clientY - drag.startY;
+        let nextAnnotations = drag.annotationsHeight;
         let nextLayers = drag.layersHeight;
         let nextStyles = drag.stylesHeight;
-        if (drag.divider === "layers") {
+        if (drag.divider === "annotations") {
+          const total = drag.annotationsHeight + drag.layersHeight;
+          nextAnnotations = Math.max(
+            132,
+            Math.min(total - 150, drag.annotationsHeight + delta),
+          );
+          nextLayers = total - nextAnnotations;
+        } else if (drag.divider === "layers") {
           const total = drag.layersHeight + drag.stylesHeight;
           nextLayers = Math.max(
             120,
@@ -3798,12 +3845,14 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         } else {
           nextStyles = Math.max(120, Math.min(560, drag.stylesHeight + delta));
         }
+        annotationsSectionHeightRef.current = Math.round(nextAnnotations);
         layersSectionHeightRef.current = Math.round(nextLayers);
         stylesSectionHeightRef.current = Math.round(nextStyles);
         if (sectionResizeFrameRef.current != null)
           cancelAnimationFrame(sectionResizeFrameRef.current);
         sectionResizeFrameRef.current = requestAnimationFrame(() => {
           sectionResizeFrameRef.current = null;
+          setAnnotationsSectionHeight(annotationsSectionHeightRef.current);
           setLayersSectionHeight(layersSectionHeightRef.current);
           setStylesSectionHeight(stylesSectionHeightRef.current);
         });
@@ -3818,8 +3867,13 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         try {
           event.currentTarget.releasePointerCapture(event.pointerId);
         } catch {}
+        setAnnotationsSectionHeight(annotationsSectionHeightRef.current);
         setLayersSectionHeight(layersSectionHeightRef.current);
         setStylesSectionHeight(stylesSectionHeightRef.current);
+        localStorage.setItem(
+          "qa_edit_annotations_height",
+          String(annotationsSectionHeightRef.current),
+        );
         localStorage.setItem(
           "qa_edit_layers_height",
           String(layersSectionHeightRef.current),
@@ -3904,6 +3958,17 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       );
       return results[0];
     }, [execute]);
+
+    const deselect = useCallback(async () => {
+      await executeAll(
+        "window.__fullForceEditBeta?.deselect?.() || false",
+      );
+      selectedStateKeyRef.current = JSON.stringify(null);
+      setSelected(null);
+      try {
+        window.getSelection()?.removeAllRanges();
+      } catch {}
+    }, [executeAll]);
 
     const captureProjectThumbnail = useCallback(async () => {
       const view = webviewRef.current;
@@ -4404,6 +4469,17 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       if (!ready) return;
       const onKeyDown = (event: KeyboardEvent) => {
+        if (
+          (event.key === "Escape" || event.code === "Escape") &&
+          mode === "edit" &&
+          selected
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          void deselect();
+          return;
+        }
         const target = event.target as HTMLElement | null;
         if (
           target?.closest?.('input,textarea,select,[contenteditable="true"]') ||
@@ -4423,7 +4499,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       };
       window.addEventListener("keydown", onKeyDown, true);
       return () => window.removeEventListener("keydown", onKeyDown, true);
-    }, [ready]);
+    }, [deselect, mode, ready, selected?.path]);
     const scanColors = useCallback(async () => {
       const result = await execute(
         "window.__fullForceEditBeta?.scanColors() || []",
@@ -4463,6 +4539,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       () => ({
         reload: () => {
           void hardReload();
+        },
+        deselect: () => {
+          void deselect();
         },
         undo: () => {
           void call("undo");
@@ -4567,7 +4646,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           return Array.isArray(result) ? result : [];
         },
       }),
-      [execute, hardReload, height, refreshLayers, width],
+      [deselect, execute, hardReload, height, refreshLayers, width],
     );
     const navigate = () => {
       let next = url.trim();
@@ -5011,6 +5090,14 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             />
             <section
               className={`edit-beta-left-section annotations ${leftSections.annotations ? "open" : ""}`}
+              style={
+                leftSections.annotations
+                  ? {
+                      flex: `0 0 ${annotationsSectionHeight}px`,
+                      height: annotationsSectionHeight,
+                    }
+                  : undefined
+              }
             >
               <button
                 className="edit-beta-left-heading"
@@ -5066,6 +5153,15 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                 </div>
               )}
             </section>
+            <div
+              className="edit-beta-section-resizer"
+              onPointerDown={(event) => beginSectionResize(event, "annotations")}
+              onPointerMove={moveSectionResize}
+              onPointerUp={endSectionResize}
+              onPointerCancel={endSectionResize}
+              title="Drag to resize Annotations and Layers"
+              aria-label="Resize Annotations section"
+            />
             <section
               className={`edit-beta-left-section layers ${leftSections.layers ? "open" : ""}`}
               style={

@@ -428,47 +428,40 @@ async function figmaRequest(path: string) {
 let spellCheckerInstance: any = null
 let harperLinterInstance: any = null
 let initPromise: Promise<void> | null = null
+const grammarEngineWarnings: string[] = []
 
 async function initMainSpellingAndGrammar(): Promise<void> {
   if (initPromise) return initPromise
 
-  initPromise = new Promise(async (resolve) => {
+  initPromise = (async () => {
     try {
       const dictMod: any = await import('dictionary-en')
-      const dictionaryEn = typeof dictMod === 'function' ? dictMod : (dictMod.default || dictMod)
-      if (typeof dictionaryEn === 'function') {
-        await new Promise<void>((resDict) => {
-          dictionaryEn((err: any, dict: any) => {
-            if (!err && dict) {
-              spellCheckerInstance = nspell(dict)
-            } else if (err) {
-              console.warn('[Main] dictionary-en error:', err)
-            }
-            resDict()
-          })
-        })
-      }
+      const dictionary = dictMod.default || dictMod
+      if (!dictionary?.aff || !dictionary?.dic) throw new Error('English dictionary files are missing.')
+      spellCheckerInstance = nspell(dictionary)
     } catch (e) {
       console.warn('[Main] Error loading Hunspell dictionary:', e)
+      grammarEngineWarnings.push(`Spelling fallback unavailable: ${e instanceof Error ? e.message : String(e)}`)
     }
 
     try {
       const harperMod: any = await import('harper.js')
-      const LinterClass = harperMod.Linter || (harperMod.default ? harperMod.default.Linter : null)
-      if (LinterClass) {
-        harperLinterInstance = new LinterClass()
-      }
+      const binaryMod: any = await import('harper.js/binaryInlined')
+      if (!harperMod.LocalLinter || !binaryMod.binaryInlined) throw new Error('Harper runtime is incomplete.')
+      harperLinterInstance = new harperMod.LocalLinter({
+        binary: binaryMod.binaryInlined,
+        dialect: harperMod.Dialect?.American
+      })
+      await harperLinterInstance.setup()
     } catch (e) {
       console.warn('[Main] Error loading Harper Linter:', e)
+      grammarEngineWarnings.push(`Grammar engine unavailable: ${e instanceof Error ? e.message : String(e)}`)
     }
-
-    resolve()
-  })
+  })()
 
   return initPromise
 }
 
-initMainSpellingAndGrammar()
 
 // ── Monday.com OAuth config ─────────────────────────────────────────────────
 // Fallback credentials embedded into app binary so .env is optional for workmates.
@@ -973,7 +966,7 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('app:runGrammarSpellAudit', async (_event, items: Array<{ id: string; tag: string; text: string; index: number }>) => {
+  ipcMain.handle('app:runGrammarSpellAuditLegacy', async (_event, items: Array<{ id: string; tag: string; text: string; index: number }>) => {
     await initMainSpellingAndGrammar()
     const issues: any[] = []
     if (!Array.isArray(items)) return { totalIssues: 0, spellingCount: 0, grammarCount: 0, issues: [] }
@@ -1074,6 +1067,122 @@ function registerIpcHandlers(): void {
   })
 
   // ── Monday.com OAuth: System default browser + localhost callback + PKCE ───────
+  ipcMain.handle('app:runGrammarSpellAudit', async (_event, items: Array<{ id: string; tag: string; text: string; index: number; path?: string }>) => {
+    await initMainSpellingAndGrammar()
+    const issues: any[] = []
+    const engines = {
+      harper: Boolean(harperLinterInstance),
+      spellingFallback: Boolean(spellCheckerInstance),
+      warnings: [...grammarEngineWarnings]
+    }
+    if (!Array.isArray(items)) {
+      return { totalIssues: 0, spellingCount: 0, grammarCount: 0, issues: [], scannedElements: 0, engines }
+    }
+
+    let globalIdx = 0
+    let totalCharacters = 0
+    let scannedElements = 0
+
+    for (const item of items.slice(0, 1500)) {
+      const { tag, index: elementIdx, path = '' } = item
+      const text = typeof item.text === 'string' ? item.text.slice(0, 12000) : ''
+      if (text.length < 3) continue
+      totalCharacters += text.length
+      if (totalCharacters > 350000) {
+        engines.warnings.push('The scan was capped at 350,000 characters for responsiveness.')
+        break
+      }
+      scannedElements++
+      const snippet = text.length > 90 ? `${text.slice(0, 90)}…` : text
+
+      if (harperLinterInstance) {
+        try {
+          const lints = await harperLinterInstance.lint(text, {
+            language: 'plaintext',
+            dedup: true,
+            isolateEnglish: false
+          })
+          for (const lint of Array.isArray(lints) ? lints : []) {
+            const span = typeof lint.span === 'function' ? lint.span() : null
+            const start = Number(span?.start)
+            const end = Number(span?.end)
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > text.length) continue
+            const phrase = typeof lint.get_problem_text === 'function' ? lint.get_problem_text() : text.slice(start, end)
+            const kind = typeof lint.lint_kind === 'function' ? lint.lint_kind() : 'Grammar'
+            const category = typeof lint.lint_kind_pretty === 'function' ? lint.lint_kind_pretty() : kind
+            const type = kind === 'Spelling' || kind === 'Typo' ? 'spelling' : 'grammar'
+            const suggestions = typeof lint.suggestions === 'function'
+              ? Array.from(new Set<string>((lint.suggestions() || [])
+                  .map((suggestion: any) => typeof suggestion.get_replacement_text === 'function'
+                    ? suggestion.get_replacement_text()
+                    : '')
+                  .filter((suggestion: string) => suggestion !== phrase))).slice(0, 5)
+              : []
+
+            globalIdx++
+            issues.push({
+              id: `h_${globalIdx}_${elementIdx}_${start}`,
+              type,
+              wordOrPhrase: phrase,
+              suggestion: suggestions[0],
+              suggestions,
+              message: typeof lint.message === 'function' ? lint.message() : `${category} issue`,
+              elementTag: tag,
+              elementSnippet: snippet,
+              elementIndex: elementIdx,
+              elementPath: path,
+              fullText: text,
+              start,
+              end,
+              category,
+              ruleId: kind,
+              engine: 'harper'
+            })
+          }
+        } catch (error) {
+          const warning = `Harper could not scan <${tag}>: ${error instanceof Error ? error.message : String(error)}`
+          if (!engines.warnings.includes(warning) && engines.warnings.length < 5) engines.warnings.push(warning)
+        }
+      }
+
+      if (!harperLinterInstance && spellCheckerInstance) {
+        const wordPattern = /[A-Za-z]+(?:['’][A-Za-z]+)*/g
+        for (const match of text.matchAll(wordPattern)) {
+          const word = match[0]
+          const start = match.index || 0
+          if (word.length < 3 || word.length > 45 || /^[A-Z]{2,}$/.test(word) || /[A-Z].*[A-Z]/.test(word.slice(1))) continue
+          try {
+            if (spellCheckerInstance.correct(word) || spellCheckerInstance.correct(word.toLowerCase())) continue
+            const suggestions = (spellCheckerInstance.suggest(word) || spellCheckerInstance.suggest(word.toLowerCase()) || []).slice(0, 5)
+            globalIdx++
+            issues.push({
+              id: `n_${globalIdx}_${elementIdx}_${start}`,
+              type: 'spelling',
+              wordOrPhrase: word,
+              suggestion: suggestions[0],
+              suggestions,
+              message: `“${word}” was not found in the English dictionary.`,
+              elementTag: tag,
+              elementSnippet: snippet,
+              elementIndex: elementIdx,
+              elementPath: path,
+              fullText: text,
+              start,
+              end: start + word.length,
+              category: 'Spelling',
+              ruleId: 'nspell',
+              engine: 'nspell'
+            })
+          } catch {}
+        }
+      }
+    }
+
+    const spellingCount = issues.filter((issue) => issue.type === 'spelling').length
+    const grammarCount = issues.filter((issue) => issue.type === 'grammar').length
+    return { totalIssues: issues.length, spellingCount, grammarCount, issues, scannedElements, engines }
+  })
+
   ipcMain.handle('monday:status', () => getMondayConnectionStatus())
 
   ipcMain.handle('monday:set-personal-token', async (_event, token: string, config?: MondayPublicConfig) => {

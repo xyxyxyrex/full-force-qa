@@ -1,6 +1,14 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { runSeoAudit, type SeoAuditReport } from '../utils/seoAudit'
-import { runGrammarSpellAudit, type GrammarSpellReport, type TextIssue } from '../utils/grammarSpellAudit'
+import {
+  applyIssueSuggestion,
+  grammarAuditContentSignature,
+  issueDomRange,
+  locateIssueElement,
+  runGrammarSpellAuditAsync,
+  type GrammarSpellReport,
+  type TextIssue
+} from '../utils/grammarSpellAudit'
 import type { Editor } from 'grapesjs'
 import './SeoAuditRightPanel.css'
 
@@ -10,6 +18,7 @@ interface Props {
   editor: Editor | null
   selectedComponent: any
   iframeRef?: React.RefObject<HTMLIFrameElement>
+  onDocumentChange?: (doc: Document, description: string) => void
 }
 
 type SectorKey = 'grammarSpell' | 'selected' | 'meta' | 'headers' | 'images' | 'links' | 'duplicates' | 'assets'
@@ -19,7 +28,8 @@ export default function SeoAuditRightPanel({
   sourceUrl,
   editor,
   selectedComponent,
-  iframeRef
+  iframeRef,
+  onDocumentChange
 }: Props) {
   const [openSectors, setOpenSectors] = useState<Record<SectorKey, boolean>>({
     grammarSpell: true,
@@ -35,6 +45,10 @@ export default function SeoAuditRightPanel({
   const [copied, setCopied] = useState(false)
   const [grammarFilter, setGrammarFilter] = useState<'all' | 'spelling' | 'grammar'>('all')
   const auditRequestRef = useRef(0)
+  const auditSignatureRef = useRef('')
+  const [grammarScanStatus, setGrammarScanStatus] = useState<'idle' | 'scanning' | 'ready' | 'error'>('idle')
+  const [grammarScanError, setGrammarScanError] = useState('')
+  const [ignoredIssueKeys, setIgnoredIssueKeys] = useState<Set<string>>(() => new Set())
 
   const [auditOverlays, setAuditOverlays] = useState({
     showLinks: false,
@@ -73,43 +87,72 @@ export default function SeoAuditRightPanel({
     return null
   }, [editor, iframeRef])
 
-  // Calculate Grammar & Spell Audit report (Harper.js + Hunspell)
-  const [grammarReport, setGrammarReport] = useState<GrammarSpellReport>(() => {
-    const targetDoc = getIframeDoc()
-    return runGrammarSpellAudit(targetDoc || html)
+  const [grammarReport, setGrammarReport] = useState<GrammarSpellReport>({
+    totalIssues: 0,
+    spellingCount: 0,
+    grammarCount: 0,
+    issues: [],
+    scannedElements: 0,
+    engines: { harper: false, spellingFallback: false, warnings: [] }
   })
 
-  const runAuditScan = useCallback(() => {
-    const requestId = ++auditRequestRef.current
+  const issueKey = useCallback((issue: TextIssue) =>
+    `${issue.elementPath}:${issue.start}:${issue.end}:${issue.ruleId || issue.type}:${issue.wordOrPhrase}`, [])
+
+  const runAuditScan = useCallback(async (force = false) => {
     const targetDoc = getIframeDoc()
-    // Do not serialize through GrapesJS here. During project switches its model
-    // may already be destroyed, and the native document/raw capture is also the
-    // more accurate source for an SEO audit.
     const content = targetDoc || html
-    import('../utils/grammarSpellAudit').then(({ runGrammarSpellAuditAsync }) => {
-      runGrammarSpellAuditAsync(content).then((res) => {
-        if (res && requestId === auditRequestRef.current) {
-          setGrammarReport(res)
-        }
-      })
-    })
+    const signature = grammarAuditContentSignature(content)
+    if (!force && signature === auditSignatureRef.current) return
+    auditSignatureRef.current = signature
+    const requestId = ++auditRequestRef.current
+    setGrammarScanStatus('scanning')
+    setGrammarScanError('')
+    try {
+      const result = await runGrammarSpellAuditAsync(content)
+      if (requestId !== auditRequestRef.current) return
+      setGrammarReport(result)
+      const fatalWarning = !result.engines?.harper && !result.engines?.spellingFallback
+        ? result.engines?.warnings?.[0] || 'No grammar or spelling engine could be initialized.'
+        : ''
+      setGrammarScanError(fatalWarning)
+      setGrammarScanStatus(fatalWarning ? 'error' : 'ready')
+    } catch (error) {
+      if (requestId !== auditRequestRef.current) return
+      auditSignatureRef.current = ''
+      setGrammarScanError(error instanceof Error ? error.message : 'The page could not be scanned.')
+      setGrammarScanStatus('error')
+    }
   }, [html, getIframeDoc])
 
   useEffect(() => {
-    runAuditScan()
-    const timer = setInterval(runAuditScan, 3000)
+    const initialTimer = window.setTimeout(() => void runAuditScan(true), 150)
+    const changeTimer = window.setInterval(() => void runAuditScan(false), 1500)
+    const iframe = iframeRef?.current
+    const handleLoad = () => void runAuditScan(true)
+    iframe?.addEventListener('load', handleLoad)
     return () => {
-      clearInterval(timer)
-      // Invalidates an audit promise that completes after this panel unmounts.
+      window.clearTimeout(initialTimer)
+      window.clearInterval(changeTimer)
+      iframe?.removeEventListener('load', handleLoad)
       auditRequestRef.current += 1
     }
-  }, [runAuditScan])
+  }, [iframeRef, runAuditScan])
 
+  const visibleGrammarIssues = useMemo(
+    () => grammarReport.issues.filter((issue) => !ignoredIssueKeys.has(issueKey(issue))),
+    [grammarReport.issues, ignoredIssueKeys, issueKey]
+  )
+  const grammarCounts = useMemo(() => ({
+    total: visibleGrammarIssues.length,
+    spelling: visibleGrammarIssues.filter((issue) => issue.type === 'spelling').length,
+    grammar: visibleGrammarIssues.filter((issue) => issue.type === 'grammar').length
+  }), [visibleGrammarIssues])
   const filteredGrammarIssues = useMemo(() => {
-    if (grammarFilter === 'spelling') return grammarReport.issues.filter((i) => i.type === 'spelling')
-    if (grammarFilter === 'grammar') return grammarReport.issues.filter((i) => i.type === 'grammar')
-    return grammarReport.issues
-  }, [grammarReport, grammarFilter])
+    if (grammarFilter === 'spelling') return visibleGrammarIssues.filter((issue) => issue.type === 'spelling')
+    if (grammarFilter === 'grammar') return visibleGrammarIssues.filter((issue) => issue.type === 'grammar')
+    return visibleGrammarIssues
+  }, [visibleGrammarIssues, grammarFilter])
 
   // ── Canvas Overlay Injector (Targeting Native Preview IFRAME) ─────────────
   useEffect(() => {
@@ -160,7 +203,7 @@ export default function SeoAuditRightPanel({
       container.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:9999999;'
       iframeDoc.body.appendChild(container)
 
-      const drawBadge = (el: Element, text: string, bgColor: string, textColor: string = '#ffffff') => {
+      const drawBadge = (el: Element, text: string, bgColor: string, textColor: string = '#ffffff', stackIndex = 0) => {
         const rect = el.getBoundingClientRect()
         if (rect.width < 1 && rect.height < 1) return
 
@@ -168,7 +211,7 @@ export default function SeoAuditRightPanel({
         badge.style.cssText = `
           position: absolute;
           left: ${Math.max(4, rect.left + scrollX + 4)}px;
-          top: ${Math.max(4, rect.top + scrollY + 4)}px;
+          top: ${Math.max(4, rect.top + scrollY + 4 + stackIndex * 22)}px;
           background: ${bgColor};
           color: ${textColor};
           font-size: 10px;
@@ -226,17 +269,26 @@ export default function SeoAuditRightPanel({
 
       // 5. Show Grammar & Spell Overlays
       if (showGrammarSpell) {
-        const textElements = Array.from(
-          iframeDoc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, button, td, th, label, div')
-        )
-        grammarReport.issues.forEach((issue) => {
-          const targetEl = textElements[issue.elementIndex] as HTMLElement
+        const stackByElement = new Map<HTMLElement, number>()
+        visibleGrammarIssues.forEach((issue) => {
+          const targetEl = locateIssueElement(iframeDoc, issue)
           if (targetEl) {
+            const stackIndex = stackByElement.get(targetEl) || 0
+            stackByElement.set(targetEl, stackIndex + 1)
             drawBadge(
               targetEl,
-              `${issue.type.toUpperCase()}: ${issue.wordOrPhrase}`,
-              issue.type === 'spelling' ? '#ef4444' : '#f59e0b'
+              `${issue.category || issue.type}: ${issue.wordOrPhrase}`,
+              issue.type === 'spelling' ? '#ef4444' : '#f59e0b',
+              issue.type === 'spelling' ? '#ffffff' : '#111827',
+              stackIndex
             )
+            const range = issueDomRange(iframeDoc, issue)
+            Array.from(range?.getClientRects() || []).forEach((rect) => {
+              if (rect.width < 1 || rect.height < 1) return
+              const underline = iframeDoc.createElement('div')
+              underline.style.cssText = `position:absolute;left:${rect.left + scrollX}px;top:${rect.bottom + scrollY - 2}px;width:${rect.width}px;height:2px;background:${issue.type === 'spelling' ? '#ef4444' : '#f59e0b'};border-radius:2px;box-shadow:0 0 4px currentColor;`
+              container.appendChild(underline)
+            })
           }
         })
       }
@@ -259,7 +311,7 @@ export default function SeoAuditRightPanel({
         if (c) c.remove()
       }
     }
-  }, [auditOverlays, editor, html, iframeRef, grammarReport])
+  }, [auditOverlays, editor, html, iframeRef, visibleGrammarIssues])
 
   // Scroll to and highlight issue element inside live iframe DOM
   const scrollToAndHighlightIssue = (issue: TextIssue) => {
@@ -272,21 +324,7 @@ export default function SeoAuditRightPanel({
 
     if (!iframeDoc || !iframeDoc.body) return
 
-    const textElements = Array.from(
-      iframeDoc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, a, li, button, td, th, label, div')
-    ).filter((el) => {
-      const tag = el.tagName.toLowerCase()
-      if (tag === 'script' || tag === 'style' || tag === 'svg') return false
-      const text = (el.textContent || '').trim()
-      return text.length > 2
-    })
-
-    let targetEl = textElements[issue.elementIndex] as HTMLElement
-    if (!targetEl || !(targetEl.textContent || '').includes(issue.wordOrPhrase)) {
-      targetEl = Array.from(iframeDoc.body.querySelectorAll(issue.elementTag)).find(
-        (el) => (el.textContent || '').includes(issue.wordOrPhrase)
-      ) as HTMLElement
-    }
+    const targetEl = locateIssueElement(iframeDoc, issue)
 
     if (targetEl) {
       targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -309,6 +347,27 @@ export default function SeoAuditRightPanel({
         selectElementOnCanvas(targetEl)
       }
     }
+  }
+
+  const applySuggestion = (issue: TextIssue, replacement: string) => {
+    const iframeDoc = getIframeDoc()
+    if (!iframeDoc || !applyIssueSuggestion(iframeDoc, issue, replacement)) {
+      setGrammarScanError('This text changed after the scan. Rescan the page and try again.')
+      setGrammarScanStatus('error')
+      return
+    }
+    onDocumentChange?.(iframeDoc, `${issue.wordOrPhrase} → ${replacement || 'removed'}`)
+    auditSignatureRef.current = ''
+    setIgnoredIssueKeys((current) => {
+      const next = new Set(current)
+      next.delete(issueKey(issue))
+      return next
+    })
+    window.setTimeout(() => void runAuditScan(true), 60)
+  }
+
+  const ignoreIssue = (issue: TextIssue) => {
+    setIgnoredIssueKeys((current) => new Set(current).add(issueKey(issue)))
   }
 
   const toggleSector = (sector: SectorKey) => {
@@ -481,23 +540,24 @@ export default function SeoAuditRightPanel({
             <span className="arrow-icon">{openSectors.grammarSpell ? '▼' : '►'}</span>
             <span className="sector-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>GRAMMAR & SPELL CHECK ({grammarReport.totalIssues})</span>
+                <span>GRAMMAR & SPELL CHECK ({grammarCounts.total})</span>
                 <button
                   style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
                   onClick={(e) => {
                     e.stopPropagation()
-                    runAuditScan()
+                    void runAuditScan(true)
                   }}
                   title="Rescan page for grammar and spelling issues"
+                  disabled={grammarScanStatus === 'scanning'}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
                   </svg>
                 </button>
               </div>
-              {grammarReport.totalIssues > 0 && (
+              {grammarCounts.total > 0 && (
                 <span className="sector-badge-warn" style={{ background: 'rgba(239,68,68,0.18)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600 }}>
-                  {grammarReport.totalIssues} ISSUES
+                  {grammarCounts.total} ISSUES
                 </span>
               )}
             </span>
@@ -505,36 +565,54 @@ export default function SeoAuditRightPanel({
 
           {openSectors.grammarSpell && (
             <div className="sector-content">
+              <div className="grammar-engine-status">
+                <span className={`grammar-status-dot ${grammarScanStatus}`} />
+                <span>
+                  {grammarScanStatus === 'scanning'
+                    ? 'Scanning page…'
+                    : grammarReport.engines?.harper
+                      ? `Offline Harper · ${grammarReport.scannedElements || 0} text blocks`
+                      : grammarReport.engines?.spellingFallback
+                        ? 'Offline spelling fallback'
+                        : 'Checker unavailable'}
+                </span>
+              </div>
+              {grammarScanError && <div className="grammar-scan-error">{grammarScanError}</div>}
+              {grammarReport.engines?.warnings?.filter((warning) => warning !== grammarScanError).map((warning) => (
+                <div className="grammar-scan-warning" key={warning}>{warning}</div>
+              ))}
               {/* Filter Sub-Tabs */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                 <button
                   style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'all' ? '#3f3f46' : 'transparent', color: grammarFilter === 'all' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'all' ? 600 : 400 }}
                   onClick={() => setGrammarFilter('all')}
                 >
-                  All ({grammarReport.totalIssues})
+                  All ({grammarCounts.total})
                 </button>
                 <button
                   style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'spelling' ? '#3f3f46' : 'transparent', color: grammarFilter === 'spelling' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'spelling' ? 600 : 400 }}
                   onClick={() => setGrammarFilter('spelling')}
                 >
-                  Spelling ({grammarReport.spellingCount})
+                  Spelling ({grammarCounts.spelling})
                 </button>
                 <button
                   style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'grammar' ? '#3f3f46' : 'transparent', color: grammarFilter === 'grammar' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'grammar' ? 600 : 400 }}
                   onClick={() => setGrammarFilter('grammar')}
                 >
-                  Grammar ({grammarReport.grammarCount})
+                  Grammar ({grammarCounts.grammar})
                 </button>
               </div>
 
-              {filteredGrammarIssues.length === 0 ? (
-                <div className="text-muted" style={{ fontSize: 11, padding: '8px 0', textAlign: 'center' }}>No grammar or spelling issues found</div>
+              {grammarScanStatus === 'scanning' && grammarReport.scannedElements === 0 ? (
+                <div className="grammar-empty-state">Analyzing visible English content…</div>
+              ) : filteredGrammarIssues.length === 0 ? (
+                <div className="grammar-empty-state">No {grammarFilter === 'all' ? 'grammar or spelling' : grammarFilter} issues found.</div>
               ) : (
                 <div className="list-stack">
                   {filteredGrammarIssues.map((issue) => (
                     <div
                       key={issue.id}
-                      className="list-item-row"
+                      className="list-item-row grammar-issue-card"
                       onClick={() => scrollToAndHighlightIssue(issue)}
                       style={{ cursor: 'pointer', padding: '8px 10px', background: '#18181b', borderRadius: 4, marginBottom: 4, border: '1px solid rgba(255,255,255,0.06)' }}
                       title="Click to scroll to and highlight this issue on canvas"
@@ -571,6 +649,20 @@ export default function SeoAuditRightPanel({
                             • Suggest: "{issue.suggestion}"
                           </span>
                         )}
+                      </div>
+                      <div className="grammar-issue-context">{issue.elementSnippet}</div>
+                      <div className="grammar-issue-actions" onClick={(event) => event.stopPropagation()}>
+                        {(issue.suggestions || (issue.suggestion ? [issue.suggestion] : [])).map((suggestion) => (
+                          <button
+                            key={`${issue.id}-${suggestion}`}
+                            className="grammar-suggestion-btn"
+                            onClick={() => applySuggestion(issue, suggestion)}
+                            title={suggestion ? `Replace with “${suggestion}”` : 'Remove this text'}
+                          >
+                            {suggestion || 'Remove'}
+                          </button>
+                        ))}
+                        <button className="grammar-ignore-btn" onClick={() => ignoreIssue(issue)}>Ignore</button>
                       </div>
                     </div>
                   ))}

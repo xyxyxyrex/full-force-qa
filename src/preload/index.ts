@@ -106,7 +106,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteSnapshot(snapshotId: string): Promise<any> {
     return ipcRenderer.invoke('snapshot:delete', snapshotId)
   },
-  runGrammarSpellAudit(items: Array<{ id: string; tag: string; text: string; index: number }>): Promise<any> {
+  runGrammarSpellAudit(items: Array<{ id: string; tag: string; text: string; index: number; path?: string }>): Promise<any> {
     return ipcRenderer.invoke('app:runGrammarSpellAudit', items)
   },
   getUpdateStatus(): Promise<AppUpdateStatus> {

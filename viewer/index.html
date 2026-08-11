@@ -256,6 +256,7 @@
   </div>
   <div class="toast" id="toast"></div>
 
+  <script src="./supabase.js"></script>
   <script>
     const SUPABASE_URL = __SUPABASE_URL__;
     const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
@@ -288,6 +289,14 @@
     const configured = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(SUPABASE_URL) && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith('__');
     const headers = () => ({ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` });
     const filter = (value) => encodeURIComponent(value);
+    const realtimeClient = configured && globalThis.supabase?.createClient
+      ? globalThis.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth:{ persistSession:false, autoRefreshToken:false, detectSessionInUrl:false },
+        })
+      : null;
+    let realtimeChannel = null;
+    let realtimeFallbackTimer = 0;
+    let commentRefreshTimer = 0;
 
     function showToast(text) {
       el('toast').textContent = text;
@@ -477,6 +486,94 @@
       // links intentionally share the same item_number=0 status namespace.
       const rows = await api(`/rest/v1/qa_annotation_statuses?select=annotation_id,status,completed,completed_by,updated_at&site_slug=eq.${filter(state.site)}&master_id=eq.${filter(state.masterId)}&item_number=eq.0`);
       state.statuses = Object.fromEntries((rows || []).map((row) => [String(row.annotation_id), row]));
+    }
+
+    function statusRowMatchesSnapshot(row) {
+      return row && String(row.site_slug) === state.site &&
+        String(row.master_id) === state.masterId && Number(row.item_number) === 0;
+    }
+
+    function commentRowMatchesActiveAnnotation(row) {
+      return row && String(row.site_slug) === state.site &&
+        String(row.master_id) === state.masterId && Number(row.item_number) === 0 &&
+        String(row.annotation_id) === state.activeAnnotationId;
+    }
+
+    function refreshStatusAppearance() {
+      document.querySelectorAll('[data-annotation-id]').forEach((node) => {
+        applyStatusStyle(node, node.dataset.annotationId || '');
+      });
+      updateActiveStatusBadge();
+    }
+
+    async function reconcileRealtimeState() {
+      try {
+        await loadStatuses();
+        refreshStatusAppearance();
+        if (state.activeAnnotationId) await loadComments();
+      } catch (error) {
+        console.warn('Could not reconcile the latest QA activity.', error);
+      }
+    }
+
+    function scheduleCommentRefresh() {
+      window.clearTimeout(commentRefreshTimer);
+      commentRefreshTimer = window.setTimeout(() => void loadComments(), 80);
+    }
+
+    function startRealtimeFallback() {
+      if (realtimeFallbackTimer) return;
+      realtimeFallbackTimer = window.setInterval(() => void reconcileRealtimeState(), 15000);
+    }
+
+    function stopRealtimeFallback() {
+      window.clearInterval(realtimeFallbackTimer);
+      realtimeFallbackTimer = 0;
+    }
+
+    function handleRealtimeStatusChange(payload) {
+      const row = payload.new;
+      if (!statusRowMatchesSnapshot(row)) return;
+      const annotationId = String(row.annotation_id || '');
+      if (!annotationId) return;
+      const current = state.statuses[annotationId];
+      if (current?.updated_at && row.updated_at &&
+          new Date(current.updated_at).getTime() > new Date(row.updated_at).getTime()) return;
+      state.statuses[annotationId] = row;
+      updateStatusAppearance(annotationId);
+    }
+
+    function subscribeToQaActivity() {
+      if (!realtimeClient || realtimeChannel || !state.masterId) {
+        if (!realtimeClient) startRealtimeFallback();
+        return;
+      }
+
+      const masterFilter = `master_id=eq.${state.masterId}`;
+      realtimeChannel = realtimeClient
+        .channel(`qa-snapshot-${state.masterId}`)
+        .on('postgres_changes', {
+          event:'INSERT', schema:'public', table:'qa_annotation_statuses', filter:masterFilter,
+        }, handleRealtimeStatusChange)
+        .on('postgres_changes', {
+          event:'UPDATE', schema:'public', table:'qa_annotation_statuses', filter:masterFilter,
+        }, handleRealtimeStatusChange)
+        .on('postgres_changes', {
+          event:'INSERT', schema:'public', table:'qa_annotation_comments', filter:masterFilter,
+        }, (payload) => {
+          if (commentRowMatchesActiveAnnotation(payload.new)) scheduleCommentRefresh();
+        })
+        .subscribe((status, error) => {
+          if (status === 'SUBSCRIBED') {
+            stopRealtimeFallback();
+            void reconcileRealtimeState();
+            return;
+          }
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn(`QA realtime channel ${status.toLowerCase()}.`, error || 'Retrying automatically.');
+            startRealtimeFallback();
+          }
+        });
     }
 
     async function fetchPrivateImage(objectPath) {
@@ -725,8 +822,10 @@
         });
         showToast(`Status changed to ${definition.label}`);
       } catch (error) {
-        if (previous) state.statuses[annotationId] = previous; else delete state.statuses[annotationId];
-        updateStatusAppearance(annotationId);
+        if (state.statuses[annotationId]?.updated_at === updatedAt) {
+          if (previous) state.statuses[annotationId] = previous; else delete state.statuses[annotationId];
+          updateStatusAppearance(annotationId);
+        }
         showToast(error.message || 'Status could not be updated');
       }
     }
@@ -1027,6 +1126,7 @@
           };
           openAnnotationModal(annotation);
         }
+        subscribeToQaActivity();
       } catch (error) {
         // A current signed URL may still render while metadata is temporarily unavailable.
         if (params.get('img')) {
@@ -1061,6 +1161,15 @@
       if (event.key !== 'Escape') return;
       if (!el('imageLightbox').hidden) closeImageLightbox();
       else closeAnnotationModal();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && state.snapshot) void reconcileRealtimeState();
+    });
+    window.addEventListener('beforeunload', () => {
+      stopRealtimeFallback();
+      window.clearTimeout(commentRefreshTimer);
+      if (realtimeClient && realtimeChannel) void realtimeClient.removeChannel(realtimeChannel);
+      realtimeChannel = null;
     });
 
     addEventListener('beforeunload', () => { state.objectUrls.forEach((url) => URL.revokeObjectURL(url)); });

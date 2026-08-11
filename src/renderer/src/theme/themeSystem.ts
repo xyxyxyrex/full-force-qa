@@ -88,3 +88,13 @@ export function saveSettings(settings: AppSettings): void {
 export function applyTheme(theme: AppTheme): void {
   document.documentElement.setAttribute('data-theme', theme)
 }
+
+export function readThemeAccentColor(): string {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') {
+    return THEME_LIST[0].previewAccent
+  }
+  return (
+    getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() ||
+    THEME_LIST[0].previewAccent
+  )
+}
