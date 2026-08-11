@@ -1841,8 +1841,10 @@
 .figma-overlay-side-content img {
   width: 100%;
   height: auto;
+  min-height: 0;
+  max-width: none;
   display: block;
-  object-fit: fill;
+  object-fit: contain;
   object-position: top left;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "parity",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
