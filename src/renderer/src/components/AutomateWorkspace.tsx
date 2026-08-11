@@ -5,6 +5,10 @@ import './AutomateWorkspace.css'
 
 interface FrameSummary { id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }
 
+// App-wide (not per-project) — the Figma token is one credential shared across
+// every project, so the "have we ever confirmed one" hint should be too.
+const FIGMA_CONNECTED_HINT_KEY = 'qa_automate_figma_connected'
+
 interface Props {
   sourceUrl: string
   figmaUrl?: string
@@ -435,7 +439,19 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [expandedTokensMap, setExpandedTokensMap] = useState<Record<number, boolean>>({})
   const comparisonRunRef = useRef(0)
   const activeVisualJobRef = useRef('')
-  const [tokenConfigured, setTokenConfigured] = useState(false); const [token, setToken] = useState(''); const [showToken, setShowToken] = useState(false)
+  // This tab unmounts and remounts on every click into it, and whether a Figma
+  // token is configured can only be confirmed asynchronously (over IPC). Without
+  // this, `tokenConfigured` starts at `false` on every single mount and the
+  // "Connect the Figma REST API" setup card renders before the check has had a
+  // chance to resolve — visible every time, even once the check itself is fast.
+  // Seed the initial render from the outcome of the last check instead.
+  const [tokenConfigured, setTokenConfigured] = useState(() => localStorage.getItem(FIGMA_CONNECTED_HINT_KEY) === '1')
+  const applyTokenConfigured = (configured: boolean) => {
+    setTokenConfigured(configured)
+    if (configured) localStorage.setItem(FIGMA_CONNECTED_HINT_KEY, '1')
+    else localStorage.removeItem(FIGMA_CONNECTED_HINT_KEY)
+  }
+  const [token, setToken] = useState(''); const [showToken, setShowToken] = useState(false)
   const [designUrl, setDesignUrl] = useState(() => localStorage.getItem(`qa_${projectId}_automate_figma_url`) || figmaUrl)
   const [frames, setFrames] = useState<FrameSummary[]>([]); const [frameId, setFrameId] = useState(''); const [fileName, setFileName] = useState('')
   const [ready, setReady] = useState(false); const [busy, setBusy] = useState(false); const [status, setStatus] = useState('Connect a Figma frame to begin.'); const [error, setError] = useState('')
@@ -466,9 +482,9 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     // Automate depends on Figma answering right now. Read the stored-token
     // state instead — instant, no network — and only actually calling Figma
     // (loadFrames / runComparison) will ever surface a truly revoked token.
-    const syncStatus = () => window.electronAPI.figmaTokenStatus(false).then((result) => setTokenConfigured(result.apiConfigured)).catch(() => { })
+    const syncStatus = () => window.electronAPI.figmaTokenStatus(false).then((result) => applyTokenConfigured(result.apiConfigured)).catch(() => { })
     void syncStatus()
-    return window.electronAPI.onFigmaAuthChanged?.((result) => setTokenConfigured(result.apiConfigured))
+    return window.electronAPI.onFigmaAuthChanged?.((result) => applyTokenConfigured(result.apiConfigured))
   }, [])
   useEffect(() => { window.electronAPI.getFindingTriage(projectId).then(setTriage).catch(() => { }) }, [projectId])
 
@@ -521,7 +537,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     setBusy(true); setError('')
     try {
       const result = await window.electronAPI.setFigmaToken(token.trim())
-      setTokenConfigured(result.success && result.configured)
+      applyTokenConfigured(result.success && result.configured)
       if (result.success && result.configured) { setToken(''); setShowToken(false); setStatus('Figma API connected securely. Load a design to verify file access.') }
       else setError(result.error || 'Unable to save the Figma token.')
     } catch (cause: any) {
@@ -821,7 +837,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
           <label className="automate-frame-select"><span>Frame</span><select value={frameId} onChange={(event) => setFrameId(event.target.value)} disabled={!frames.length}><option value="">Select a frame</option>{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.pageName}{frame.path ? ` / ${frame.path}` : ''} / {frame.name} · {frame.width}×{frame.height}</option>)}</select></label>
           <label className="automate-breakpoint-select" title="Tags this run in history — guessed from the frame's width, override if it's wrong"><span>Breakpoint</span><select value={breakpoint} onChange={(event) => setBreakpoint(event.target.value as typeof breakpoint)}><option value="Desktop">Desktop</option><option value="Tablet">Tablet</option><option value="Mobile">Mobile</option></select></label>
           {busy ? <button className="automate-secondary automate-cancel" onClick={cancelComparison}>Cancel</button> : <button className="automate-primary" disabled={!selectedFrame} onClick={runComparison} title={ready ? 'Run visual and semantic comparison' : 'The staging page will be checked before comparison starts'}>Run comparison</button>}
-          <button className="automate-icon-btn" title="Replace Figma API token" onClick={async () => { await window.electronAPI.setFigmaToken(''); setTokenConfigured(false) }}><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1Z" /></svg></button>
+          <button className="automate-icon-btn" title="Replace Figma API token" onClick={async () => { await window.electronAPI.setFigmaToken(''); applyTokenConfigured(false) }}><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1Z" /></svg></button>
         </section>
 
         {busy && <section className="automate-progress" aria-live="polite"><div><span>{progress.detail || 'Comparing…'}</span><strong>{progress.percent}%</strong></div><i><b style={{ width: `${progress.percent}%` }} /></i></section>}
