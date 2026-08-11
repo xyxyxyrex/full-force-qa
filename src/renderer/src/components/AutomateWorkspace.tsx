@@ -456,7 +456,11 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [lastCompletedRunId, setLastCompletedRunId] = useState(0)
   const selectedFrame = useMemo(() => frames.find((frame) => frame.id === frameId), [frameId, frames])
 
-  useEffect(() => { window.electronAPI.figmaTokenStatus().then((result) => setTokenConfigured(result.configured)).catch(() => { }) }, [])
+  useEffect(() => {
+    const syncStatus = () => window.electronAPI.figmaTokenStatus().then((result) => setTokenConfigured(result.apiConfigured)).catch(() => { })
+    void syncStatus()
+    return window.electronAPI.onFigmaAuthChanged?.((result) => setTokenConfigured(result.apiConfigured))
+  }, [])
   useEffect(() => { window.electronAPI.getFindingTriage(projectId).then(setTriage).catch(() => { }) }, [projectId])
 
   // A frame's own width is a reasonable guess at its breakpoint; the analyst can

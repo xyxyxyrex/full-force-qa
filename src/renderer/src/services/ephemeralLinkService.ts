@@ -298,11 +298,6 @@ export async function uploadMasterImage(
     if (!response.ok) throw new Error(`Capture conversion failed (${response.status}).`)
     const blob = await response.blob()
 
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET_NAME)
-      .upload(filePath, blob, { contentType: 'image/png', upsert: true })
-    if (uploadError) return { success: false, error: errorMessage('Master image upload failed', uploadError) }
-
     const preparedAnnotations = await prepareAnnotationsForSharing(
       annotations,
       site,
@@ -319,6 +314,14 @@ export async function uploadMasterImage(
       expiresAt,
     })
     if (metadataError) return { success: false, error: metadataError }
+
+    // The private bucket's SELECT policy only exposes objects with active
+    // metadata. Register first because Storage uploads use INSERT … RETURNING
+    // (and upserts also require SELECT permission on the returned object).
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(filePath, blob, { contentType: 'image/png', upsert: true })
+    if (uploadError) return { success: false, error: errorMessage('Master image upload failed', uploadError) }
 
     return {
       success: true,
@@ -367,11 +370,6 @@ export async function generateEphemeralLink(
     const filePath = `sites/${site}/${sessionMasterId}_${snapshotId}.png`
     const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
 
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET_NAME)
-      .upload(filePath, blob, { contentType: 'image/png', upsert: false })
-    if (uploadError) return { success: false, error: errorMessage('Item image upload failed', uploadError) }
-
     const processedNotes = await prepareRichTextAssets({
       html: notes,
       siteSlug: site,
@@ -400,7 +398,12 @@ export async function generateEphemeralLink(
     })
     if (metadataError) return { success: false, error: metadataError }
 
-    const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://qa-snapshots.pages.dev'
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(filePath, blob, { contentType: 'image/png', upsert: false })
+    if (uploadError) return { success: false, error: errorMessage('Item image upload failed', uploadError) }
+
+    const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-rz8.pages.dev'
     const queryParams = new URLSearchParams({
       site,
       id: sessionMasterId,

@@ -1,24 +1,27 @@
 {
-  "name": "qa-snapshot-editor",
-  "version": "1.0.0",
-  "description": "QA Snapshot Editor - Freeze and visually edit WordPress staging pages",
+  "name": "parity",
+  "version": "1.3.1",
+  "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node scripts/electron-dev.js electron-vite dev",
     "build": "node scripts/electron-dev.js electron-vite build",
     "build:viewer": "node scripts/build-viewer.js",
     "dev:viewer": "npm run build:viewer && wrangler pages dev",
-    "deploy:viewer": "npm run build:viewer && wrangler pages deploy dist-viewer --project-name qa-snapshots",
+    "deploy:viewer": "npm run build:viewer && wrangler pages deploy dist-viewer --project-name parity",
     "preview": "node scripts/electron-dev.js electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "build:visual-worker": "python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py",
-    "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder"
+    "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder",
+    "release:win": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --win nsis --publish always"
   },
   "dependencies": {
     "@fortune-sheet/react": "^1.0.4",
     "@supabase/supabase-js": "^2.112.2",
     "dictionary-en": "^4.0.0",
+    "dotenv": "^16.6.1",
+    "electron-updater": "^6.8.9",
     "grapesjs": "^0.23.3",
     "harper.js": "^2.7.0",
     "nspell": "^2.1.5",
@@ -40,8 +43,10 @@
     "wrangler": "^4.120.0"
   },
   "build": {
-    "appId": "com.qa-snapshot-editor",
-    "productName": "QA Snapshot Editor",
+    "appId": "com.fullforce.parity",
+    "productName": "Parity",
+    "artifactName": "Parity-Setup-${version}.${ext}",
+    "asar": true,
     "directories": {
       "output": "dist"
     },
@@ -55,6 +60,33 @@
         "filter": [
           "visual-compare*"
         ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.svg",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "guid": "5ef26538-4975-5aa9-a3b5-3c7d87c3904e",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Parity",
+      "uninstallDisplayName": "Parity"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "xyxyxyrex",
+        "repo": "full-force-qa",
+        "releaseType": "release"
       }
     ]
   }

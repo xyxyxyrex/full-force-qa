@@ -8,7 +8,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import type { Project, SnapshotItem } from "../../../shared/types";
+import type { FigmaConnectionStatus, Project, SnapshotItem } from "../../../shared/types";
 import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
@@ -95,6 +95,48 @@ const defaultQaSheetData: Sheet[] = [
 
 const cloneQaSheetData = (data: Sheet[] = defaultQaSheetData): Sheet[] =>
   JSON.parse(JSON.stringify(data)) as Sheet[];
+
+function readStoredBoolean(key: string, fallback = false): boolean {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored === null ? fallback : stored === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function useStoredBoolean(
+  storageKey: string,
+  fallback = false,
+): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
+  const [value, setValue] = useState(() =>
+    readStoredBoolean(storageKey, fallback),
+  );
+
+  useEffect(() => {
+    setValue(readStoredBoolean(storageKey, fallback));
+  }, [fallback, storageKey]);
+
+  const setStoredValue = useCallback<
+    React.Dispatch<React.SetStateAction<boolean>>
+  >(
+    (nextValue) => {
+      setValue((currentValue) => {
+        const resolvedValue =
+          typeof nextValue === "function"
+            ? nextValue(currentValue)
+            : nextValue;
+        try {
+          localStorage.setItem(storageKey, String(resolvedValue));
+        } catch {}
+        return resolvedValue;
+      });
+    },
+    [storageKey],
+  );
+
+  return [value, setStoredValue];
+}
 
 function getGoogleSheetsEmbedUrl(rawUrl: string): string {
   if (!rawUrl) return "";
@@ -489,17 +531,17 @@ function AnnotationShape({
     const arrow = annotation.arrowPct || { startX: 0, startY: 100, endX: 100, endY: 0 };
     const markerId = `annotation-arrow-${annotation.id.replace(/[^a-z0-9_-]/gi, "")}`;
     return (
-      <svg className="annotation-vector-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <svg className="annotation-vector-shape">
         <defs>
-          <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L8,4 L0,8 Z" fill={annotation.color} />
+          <marker id={markerId} viewBox="0 0 12 12" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M1,1 L11,6 L1,11 Z" fill={annotation.color} />
           </marker>
         </defs>
         <line
-          x1={arrow.startX}
-          y1={arrow.startY}
-          x2={arrow.endX}
-          y2={arrow.endY}
+          x1={`${arrow.startX}%`}
+          y1={`${arrow.startY}%`}
+          x2={`${arrow.endX}%`}
+          y2={`${arrow.endY}%`}
           stroke={annotation.color}
           strokeWidth="3"
           vectorEffect="non-scaling-stroke"
@@ -1193,13 +1235,9 @@ export default function EditorWorkspace({
     }
 
     try {
-      const token =
-        localStorage.getItem("monday_api_token") ||
-        localStorage.getItem("monday_token") ||
-        localStorage.getItem("monday_api_key") ||
-        "";
-      if (token) {
-        const fetched = await fetchMondayTicketsApi(token);
+      const status = await window.electronAPI.mondayStatus();
+      if (status.connected) {
+        const fetched = await fetchMondayTicketsApi();
         if (fetched && fetched.length > 0) {
           setMondayTicketsList(fetched);
           localStorage.setItem(
@@ -1291,9 +1329,15 @@ export default function EditorWorkspace({
   const [rightPanelWidth, setRightPanelWidth] = useState(260);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [figmaSplitOpen, setFigmaSplitOpen] = useState(false);
+  const figmaPanelOpenStorageKey = `qa_${activeProjectId}_figma_panel_open`;
+  const bottomSheetOpenStorageKey = `qa_${activeProjectId}_bottom_sheet_open`;
+  const [figmaSplitOpen, setFigmaSplitOpen] = useStoredBoolean(
+    figmaPanelOpenStorageKey,
+  );
   const [figmaSplitWidth, setFigmaSplitWidth] = useState(550);
-  const [bottomSheetOpen, setBottomSheetOpen] = useState(true);
+  const [bottomSheetOpen, setBottomSheetOpen] = useStoredBoolean(
+    bottomSheetOpenStorageKey,
+  );
   const [bottomSheetHeight, setBottomSheetHeight] = useState(520);
   const [bottomSheetMaximized, setBottomSheetMaximized] = useState(false);
   const panelDragRef = useRef<{
@@ -1308,6 +1352,11 @@ export default function EditorWorkspace({
   const [activeSheetTab, setActiveSheetTab] = useState<"mock" | "google">(
     "mock",
   );
+  const [figmaAuthStatus, setFigmaAuthStatus] = useState<FigmaConnectionStatus>({ connected: false, apiConfigured: false, browserSession: false });
+  useEffect(() => {
+    void window.electronAPI.figmaTokenStatus().then(setFigmaAuthStatus).catch(() => {});
+    return window.electronAPI.onFigmaAuthChanged?.(setFigmaAuthStatus);
+  }, []);
   const mockSheetStorageKey = `qa_${activeProjectId}_mock_sheet`;
   const [mockSheetData, setMockSheetData] = useState<Sheet[]>(() => {
     try {
@@ -1912,9 +1961,11 @@ export default function EditorWorkspace({
       localStorage.removeItem(`qa_${activeProjectId}_active_reference`);
       localStorage.removeItem(`qa_${activeProjectId}_overlay_label`);
     }
-    setFigmaSplitOpen(!!figUrl || !!figPng);
+    const restoreFigmaPanel = readStoredBoolean(figmaPanelOpenStorageKey);
+    setFigmaSplitOpen(restoreFigmaPanel && (!!figUrl || !!figPng));
   }, [
     activeProjectId,
+    figmaPanelOpenStorageKey,
     project?.id,
     project?.figmaUrl,
     project?.googleSheetUrl,
@@ -8814,7 +8865,8 @@ export default function EditorWorkspace({
                   <>
                     {/* LEFT PANEL: Standard Desktop Figma Live App / Reference PNG */}
                     {!figmaCardDismissed &&
-                      (storedFigmaUrl || figmaImage || figmaSplitOpen) &&
+                      figmaSplitOpen &&
+                      (storedFigmaUrl || figmaImage) &&
                       overlayMode === "side-by-side" && (
                         <div
                           className="figma-overlay-side"
@@ -8951,7 +9003,7 @@ export default function EditorWorkspace({
                             >
                               {storedFigmaUrl && (
                                 <>
-                                  <button
+                                  {!figmaAuthStatus.connected && <button
                                     style={{
                                       padding: "2px 8px",
                                       fontSize: 10,
@@ -8991,7 +9043,8 @@ export default function EditorWorkspace({
                                     title="Sign in to Figma with your Google Account"
                                   >
                                     Sign In
-                                  </button>
+                                  </button>}
+                                  {figmaAuthStatus.connected && <span title="Figma session is shared with the Dashboard" style={{ fontSize: 10, color: "#86efac", padding: "2px 7px", border: "1px solid rgba(134,239,172,.3)", borderRadius: 12 }}>Connected</span>}
                                   <button
                                     style={{
                                       width: 22,

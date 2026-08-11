@@ -28,6 +28,10 @@ if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(supabaseUrl) || !supabaseAnonK
 rmSync(outputDir, { recursive: true, force: true })
 mkdirSync(outputDir, { recursive: true })
 cpSync(sourceDir, outputDir, { recursive: true })
+cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-favicon.svg'), join(outputDir, 'parity-favicon.svg'))
+cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-180.png'), join(outputDir, 'parity-180.png'))
+cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-192.png'), join(outputDir, 'parity-192.png'))
+cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-512.png'), join(outputDir, 'parity-512.png'))
 
 const htmlPath = join(outputDir, 'index.html')
 const html = readFileSync(htmlPath, 'utf8')

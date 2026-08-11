@@ -1,4 +1,4 @@
-# PROJECT_SPEC.md — QA Snapshot Editor (Phase 1)
+# PROJECT_SPEC.md — Parity (Phase 1)
 
 ## 1. Purpose
 

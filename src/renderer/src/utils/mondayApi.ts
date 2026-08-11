@@ -3,9 +3,40 @@ export interface MondayLink {
   label: string
 }
 
-export interface MondayTicket {
+export interface MondayBoard {
   id: string
   name: string
+  kind?: string
+  state?: string
+}
+
+export interface MondayUser {
+  id: string
+  name: string
+  email?: string
+  enabled?: boolean
+  isGuest?: boolean
+}
+
+export type MondayAssignmentMode = 'all' | 'me' | 'users'
+
+export interface MondaySyncPreferences {
+  boardIds: string[]
+  assignmentMode: MondayAssignmentMode
+  userIds: string[]
+}
+
+export interface MondayMetadata {
+  me: MondayUser
+  boards: MondayBoard[]
+  users: MondayUser[]
+}
+
+export interface MondayTicket {
+  id: string
+  sourceIds?: string[]
+  name: string
+  boardId?: string
   boardName: string
   status: 'In Progress' | 'Requested' | 'Re-testing' | 'QA Passed' | 'Approved' | string
   stagingUrl: string
@@ -13,22 +44,59 @@ export interface MondayTicket {
   figmaUrl?: string
   googleSheetUrl?: string
   otherLinks: MondayLink[]
+  assigneeIds?: string[]
+  assigneeNames?: string[]
   updatedAt: string
 }
 
-const KEY_BOARDS = ['Web Development Board', 'QA Schedule']
+export const MONDAY_PREFERENCES_KEY = 'parity_monday_sync_preferences'
 const NOISE_DOMAINS = ['monday.com', 'gravatar.com', 'google.com/url', 'googleapis.com']
 
-// Helper: extract all URLs (with labels) from a single HTML body
+export function loadMondayPreferences(): MondaySyncPreferences | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(MONDAY_PREFERENCES_KEY) || 'null')
+    if (!value || !Array.isArray(value.boardIds)) return null
+    return {
+      boardIds: value.boardIds.map(String),
+      assignmentMode: ['all', 'me', 'users'].includes(value.assignmentMode) ? value.assignmentMode : 'me',
+      userIds: Array.isArray(value.userIds) ? value.userIds.map(String) : [],
+    }
+  } catch { return null }
+}
+
+export function saveMondayPreferences(preferences: MondaySyncPreferences): void {
+  localStorage.setItem(MONDAY_PREFERENCES_KEY, JSON.stringify(preferences))
+  window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { mondayPreferences: preferences } }))
+}
+
+async function mondayRequest(query: string, variables?: Record<string, unknown>): Promise<any> {
+  if (!window.electronAPI?.mondayGraphQL) throw new Error('This Parity build does not include the secure Monday connector.')
+  return window.electronAPI.mondayGraphQL(query, variables)
+}
+
+export async function fetchMondayMetadataApi(): Promise<MondayMetadata> {
+  const result = await mondayRequest(`query ParityMondaySources {
+    me { id name email }
+    boards(limit: 200, order_by: used_at) { id name board_kind state }
+    users(limit: 500) { id name email enabled is_guest }
+  }`)
+  const me = result?.data?.me
+  if (!me?.id) throw new Error('Monday did not return the connected user. Ensure me:read is enabled for the app.')
+  return {
+    me: { id: String(me.id), name: me.name || 'Current user', email: me.email },
+    boards: (result?.data?.boards || []).map((board: any) => ({ id: String(board.id), name: board.name, kind: board.board_kind, state: board.state })),
+    users: (result?.data?.users || []).map((user: any) => ({ id: String(user.id), name: user.name, email: user.email, enabled: user.enabled, isGuest: user.is_guest })),
+  }
+}
+
 const extractLinksFromBody = (body: string, links: MondayLink[], seenUrls: Set<string>): void => {
-  const anchorRegex = /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>(.*?)<\/a>/gs
-  let match
+  const anchorRegex = /<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>(.*?)<\/a>/gis
+  let match: RegExpExecArray | null
   while ((match = anchorRegex.exec(body)) !== null) {
     const url = match[1]
     if (seenUrls.has(url)) continue
     seenUrls.add(url)
-    const label = match[2].replace(/<[^>]+>/g, '').trim()
-    links.push({ url, label: label || '' })
+    links.push({ url, label: match[2].replace(/<[^>]+>/g, '').trim() })
   }
   const textOnly = body.replace(/<[^>]+>/g, ' ')
   const bareUrlRegex = /(https?:\/\/[^\s<>"')\]]+)/g
@@ -40,299 +108,181 @@ const extractLinksFromBody = (body: string, links: MondayLink[], seenUrls: Set<s
   }
 }
 
-// Helper: extract URLs from updates AND their replies
-const extractLinksFromUpdates = (updates: any[]): MondayLink[] => {
+const classifyUrl = (url: string, label = ''): 'googleSheet' | 'figma' | 'admin' | 'site' | null => {
+  const lowerUrl = url.toLowerCase()
+  const lowerLabel = label.toLowerCase()
+  if (lowerUrl.includes('docs.google.com/spreadsheets') || lowerUrl.includes('sheets.google.com') || (lowerUrl.includes('google.com') && /sheet|tracker|qa/.test(lowerLabel))) return 'googleSheet'
+  if (lowerUrl.includes('figma.com')) return 'figma'
+  if (lowerUrl.includes('/wp-admin')) return 'admin'
+  if (NOISE_DOMAINS.some((domain) => lowerUrl.includes(domain))) return null
+  return /^https?:\/\//i.test(url) ? 'site' : null
+}
+
+const displayLabel = (link: MondayLink): string => {
+  if (link.label && link.label.length > 2 && !/^https?:/i.test(link.label)) return link.label
+  try { return new URL(link.url).hostname.replace(/^www\./, '') } catch { return 'Link' }
+}
+
+function peopleIds(item: any): string[] {
+  const ids = new Set<string>()
+  for (const column of item.column_values || []) {
+    if (!['people', 'person', 'multiple-person', 'multiple_person'].includes(column.type)) continue
+    try {
+      const value = typeof column.value === 'string' ? JSON.parse(column.value) : column.value
+      for (const person of value?.personsAndTeams || []) if (person?.id != null) ids.add(String(person.id))
+    } catch { /* ignore malformed empty values */ }
+  }
+  return [...ids]
+}
+
+function columnLinks(item: any): MondayLink[] {
   const links: MondayLink[] = []
-  const seenUrls = new Set<string>()
-  for (const update of updates || []) {
-    if (update.body) extractLinksFromBody(update.body, links, seenUrls)
-    for (const reply of update.replies || []) {
-      if (reply.body) extractLinksFromBody(reply.body, links, seenUrls)
-    }
+  const seen = new Set<string>()
+  for (const column of item.column_values || []) {
+    const text = String(column.text || '').trim()
+    let raw = ''
+    try {
+      const value = typeof column.value === 'string' ? JSON.parse(column.value) : column.value
+      raw = String(value?.url || value?.text || '')
+    } catch { raw = String(column.value || '') }
+    const match = `${raw} ${text}`.match(/https?:\/\/[^\s"'<>]+/i)
+    if (!match || seen.has(match[0])) continue
+    seen.add(match[0])
+    links.push({ url: match[0], label: column.column?.title || 'Link' })
   }
   return links
 }
 
-// Helper: classify a URL into a link category
-const classifyUrl = (url: string, label?: string): 'googleSheet' | 'figma' | 'admin' | 'other' | null => {
-  const lowerUrl = url.toLowerCase()
-  const lowerLabel = (label || '').toLowerCase()
-
-  if (
-    lowerUrl.includes('docs.google.com/spreadsheets') ||
-    lowerUrl.includes('sheets.google.com') ||
-    lowerUrl.includes('google.com/sheets') ||
-    (lowerUrl.includes('google.com') && (lowerLabel.includes('sheet') || lowerLabel.includes('tracker') || lowerLabel.includes('qa')))
-  ) {
-    return 'googleSheet'
+function ticketFromItem(board: MondayBoard, item: any, updates: any[], usersById: Map<string, MondayUser>): MondayTicket {
+  const allLinks = columnLinks(item)
+  const seen = new Set(allLinks.map((link) => link.url))
+  for (const update of updates || []) {
+    if (update.body) extractLinksFromBody(update.body, allLinks, seen)
+    for (const reply of update.replies || []) if (reply.body) extractLinksFromBody(reply.body, allLinks, seen)
   }
-  if (lowerUrl.includes('figma.com')) return 'figma'
-  if (lowerUrl.includes('/wp-admin') || lowerUrl.includes('wp-admin')) return 'admin'
-  if (NOISE_DOMAINS.some(d => lowerUrl.includes(d))) return null
-  if (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) return 'other'
-  return null
+
+  let stagingUrl = ''
+  let adminUrl = ''
+  let figmaUrl = ''
+  let googleSheetUrl = ''
+  const otherLinks: MondayLink[] = []
+  for (const link of allLinks) {
+    const type = classifyUrl(link.url, link.label)
+    if (type === 'googleSheet' && !googleSheetUrl) googleSheetUrl = link.url
+    else if (type === 'figma' && !figmaUrl) figmaUrl = link.url
+    else if (type === 'admin' && !adminUrl) adminUrl = link.url
+    else if (type === 'site' && !stagingUrl) stagingUrl = link.url
+    else if (type) otherLinks.push({ url: link.url, label: displayLabel(link) })
+  }
+
+  const statusColumn = (item.column_values || []).find((column: any) => column.type === 'status' || /status/i.test(column.column?.title || ''))
+  const assigneeIds = peopleIds(item)
+  return {
+    id: String(item.id),
+    sourceIds: [String(item.id)],
+    name: item.name || 'Untitled Monday item',
+    boardId: board.id,
+    boardName: board.name,
+    status: statusColumn?.text || 'Requested',
+    stagingUrl,
+    adminUrl,
+    figmaUrl: figmaUrl || undefined,
+    googleSheetUrl: googleSheetUrl || undefined,
+    otherLinks,
+    assigneeIds,
+    assigneeNames: assigneeIds.map((id) => usersById.get(id)?.name).filter(Boolean) as string[],
+    updatedAt: item.updated_at || '',
+  }
 }
 
-// Helper: generate a short display label for a URL
-const labelForUrl = (link: MondayLink): string => {
-  if (link.label && link.label.length > 2 && !link.label.startsWith('http')) return link.label
-  try {
-    const u = new URL(link.url)
-    return u.hostname.replace('www.', '')
-  } catch {
-    return 'Link'
+function mergeTickets(target: MondayTicket, source: MondayTicket): MondayTicket {
+  const latest = source.updatedAt > target.updatedAt ? source : target
+  const links = [...target.otherLinks, ...source.otherLinks]
+  const seen = new Set<string>()
+  return {
+    ...target,
+    name: latest.name,
+    status: latest.status,
+    sourceIds: [...new Set([...(target.sourceIds || [target.id]), ...(source.sourceIds || [source.id])])],
+    boardName: [...new Set(`${target.boardName}|||${source.boardName}`.split('|||'))].join(' + '),
+    stagingUrl: target.stagingUrl || source.stagingUrl,
+    adminUrl: target.adminUrl || source.adminUrl,
+    figmaUrl: target.figmaUrl || source.figmaUrl,
+    googleSheetUrl: target.googleSheetUrl || source.googleSheetUrl,
+    otherLinks: links.filter((link) => !seen.has(link.url.toLowerCase()) && !!seen.add(link.url.toLowerCase())),
+    assigneeIds: [...new Set([...(target.assigneeIds || []), ...(source.assigneeIds || [])])],
+    assigneeNames: [...new Set([...(target.assigneeNames || []), ...(source.assigneeNames || [])])],
+    updatedAt: latest.updatedAt,
   }
 }
 
-// Helper: safely fetch Monday API with 503 / non-JSON handling
-const safeFetchMonday = async (token: string, query: string, variables?: any): Promise<any> => {
-  try {
-    const res = await fetch('https://api.monday.com/v2', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token,
-        'API-Version': '2024-10'
-      },
-      body: JSON.stringify({ query, variables })
+export async function fetchMondayTicketsApi(preferencesOrLegacyToken?: MondaySyncPreferences | string): Promise<MondayTicket[]> {
+  const metadata = await fetchMondayMetadataApi()
+  // Older renderer bundles passed the API token here. Credentials now live in
+  // Electron safeStorage and GraphQL calls go through IPC, so a legacy string
+  // argument is intentionally ignored while remaining source-compatible.
+  const saved = typeof preferencesOrLegacyToken === 'string'
+    ? loadMondayPreferences()
+    : preferencesOrLegacyToken || loadMondayPreferences()
+  if (!saved?.boardIds.length) throw new Error('Choose at least one Monday board before syncing.')
+  const selectedUsers = new Set(saved.assignmentMode === 'me' ? [metadata.me.id] : saved.userIds)
+  const usersById = new Map(metadata.users.map((user) => [user.id, user]))
+  const boardsById = new Map(metadata.boards.map((board) => [board.id, board]))
+  const selectedBoards = saved.boardIds.map((id) => boardsById.get(id)).filter(Boolean) as MondayBoard[]
+  if (!selectedBoards.length) throw new Error('The selected Monday boards are no longer accessible. Edit the integration sources.')
+
+  const rawItems: Array<{ board: MondayBoard; item: any }> = []
+  const itemFields = `id name updated_at column_values { id text value type column { title } }`
+  for (const board of selectedBoards) {
+    const first = await mondayRequest(`query ParityBoardItems($ids: [ID!]!) {
+      boards(ids: $ids) { items_page(limit: 200) { cursor items { ${itemFields} } } }
+    }`, { ids: [board.id] })
+    let page = first?.data?.boards?.[0]?.items_page
+    while (page) {
+      for (const item of page.items || []) {
+        const assigned = peopleIds(item)
+        if (saved.assignmentMode === 'all' || assigned.some((id) => selectedUsers.has(id))) rawItems.push({ board, item })
+      }
+      if (!page.cursor) break
+      const next = await mondayRequest(`query ParityNextBoardItems($cursor: String!) {
+        next_items_page(limit: 200, cursor: $cursor) { cursor items { ${itemFields} } }
+      }`, { cursor: page.cursor })
+      page = next?.data?.next_items_page
+    }
+  }
+
+  const updatesById = new Map<string, any[]>()
+  for (let index = 0; index < rawItems.length; index += 100) {
+    const ids = rawItems.slice(index, index + 100).map(({ item }) => String(item.id))
+    const result = await mondayRequest(`query ParityItemUpdates($ids: [ID!]!) {
+      items(ids: $ids) { id updates(limit: 15) { body replies { body } } }
+    }`, { ids })
+    for (const item of result?.data?.items || []) updatesById.set(String(item.id), item.updates || [])
+  }
+
+  const exact = new Map<string, MondayTicket>()
+  for (const { board, item } of rawItems) {
+    const ticket = ticketFromItem(board, item, updatesById.get(String(item.id)) || [], usersById)
+    exact.set(ticket.id, exact.has(ticket.id) ? mergeTickets(exact.get(ticket.id)!, ticket) : ticket)
+  }
+
+  // Mirror/connect-board records often have different IDs. Merge only when the full
+  // normalized title and at least one resource URL match, avoiding title-only collisions.
+  const deduped: MondayTicket[] = []
+  for (const ticket of exact.values()) {
+    const normalizedName = ticket.name.trim().toLowerCase().replace(/\s+/g, ' ')
+    const urls = new Set([ticket.stagingUrl, ticket.adminUrl, ticket.figmaUrl, ticket.googleSheetUrl, ...ticket.otherLinks.map((link) => link.url)].filter(Boolean).map((url) => String(url).toLowerCase()))
+    const duplicateIndex = deduped.findIndex((candidate) => {
+      if (candidate.name.trim().toLowerCase().replace(/\s+/g, ' ') !== normalizedName) return false
+      const candidateUrls = [candidate.stagingUrl, candidate.adminUrl, candidate.figmaUrl, candidate.googleSheetUrl, ...candidate.otherLinks.map((link) => link.url)].filter(Boolean)
+      return candidateUrls.some((url) => urls.has(String(url).toLowerCase()))
     })
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      console.warn(`[Monday] Server returned HTTP ${res.status}:`, text.slice(0, 150))
-      return null
-    }
-    const text = await res.text()
-    try {
-      return JSON.parse(text)
-    } catch {
-      console.warn('[Monday] Response was not valid JSON:', text.slice(0, 150))
-      return null
-    }
-  } catch (err) {
-    console.warn('[Monday] Network error:', err)
-    return null
+    if (duplicateIndex >= 0) deduped[duplicateIndex] = mergeTickets(deduped[duplicateIndex], ticket)
+    else deduped.push(ticket)
   }
-}
 
-export async function fetchMondayTicketsApi(token: string): Promise<MondayTicket[]> {
-  try {
-    // Step 1: Get current user ID
-    const meJson = await safeFetchMonday(token, `{ me { id name } }`)
-    if (!meJson || meJson.errors) {
-      if (meJson?.errors) console.error('[Monday] API errors:', meJson.errors)
-      return []
-    }
-
-    const myId = meJson.data?.me?.id
-    if (!myId) {
-      console.error('[Monday] Could not get user ID')
-      return []
-    }
-
-    // Step 2: Get board IDs for the key boards + other boards
-    const boardListJson = await safeFetchMonday(token, `query { boards(limit: 200, order_by: used_at) { id name } }`)
-    const allBoards: { id: string; name: string }[] = boardListJson?.data?.boards || []
-
-    const keyBoardIds = allBoards.filter(b => KEY_BOARDS.includes(b.name)).map(b => b.id)
-    const otherBoardIds = allBoards
-      .filter(b => !KEY_BOARDS.includes(b.name))
-      .slice(0, 30)
-      .map(b => b.id)
-
-    const fetchBoardItems = async (boardIds: string[], itemLimit: number, includeUpdates: boolean): Promise<any[]> => {
-      if (boardIds.length === 0) return []
-      const updatesField = includeUpdates ? 'updates(limit: 15) { body replies { body } }' : ''
-      const query = `query($ids: [ID!]) {
-        boards(ids: $ids) {
-          id
-          name
-          items_page(limit: ${itemLimit}) {
-            items {
-              id
-              name
-              updated_at
-              creator { id }
-              subscribers { id }
-              ${updatesField}
-              column_values {
-                id
-                text
-                value
-                type
-                column { title }
-              }
-            }
-          }
-        }
-      }`
-      const json = await safeFetchMonday(token, query, { ids: boardIds })
-      return json?.data?.boards || []
-    }
-
-    const [keyBoards, otherBoards] = await Promise.all([
-      fetchBoardItems(keyBoardIds, 200, true),
-      fetchBoardItems(otherBoardIds, 50, false)
-    ])
-    const json = { data: { boards: [...(keyBoards || []), ...(otherBoards || [])] } }
-
-    if (json.data && json.data.boards) {
-      const itemMap = new Map<string, MondayTicket>()
-
-      json.data.boards.forEach((board: any) => {
-        board.items_page?.items?.forEach((item: any) => {
-          const myIdStr = String(myId)
-
-          const isSubscriber = item.subscribers?.some(
-            (sub: any) => String(sub.id) === myIdStr
-          )
-          const isCreator = String(item.creator?.id) === myIdStr
-
-          let isAssigned = false
-          const personCols = item.column_values?.filter(
-            (cv: any) => cv.type === 'people' || cv.type === 'person' ||
-                         cv.type === 'multiple-person' || cv.type === 'multiple_person'
-          ) || []
-          for (const col of personCols) {
-            if (col.value) {
-              try {
-                const parsed = JSON.parse(col.value)
-                const ids = parsed.personsAndTeams?.map((p: any) => String(p.id)) || []
-                if (ids.includes(myIdStr)) { isAssigned = true; break }
-              } catch { /* skip */ }
-            }
-          }
-
-          if (!isSubscriber && !isCreator && !isAssigned) return
-
-          const allLinks: MondayLink[] = []
-
-          item.column_values?.forEach((cv: any) => {
-            const text = (cv.text || '').trim()
-            let urlFromValue = ''
-            if (cv.value) {
-              try {
-                const parsed = JSON.parse(cv.value)
-                urlFromValue = (parsed.url || parsed.text || '').trim()
-              } catch {
-                if (typeof cv.value === 'string') urlFromValue = cv.value.trim()
-              }
-            }
-
-            // Extract real HTTP URL properly!
-            let targetUrl = ''
-            if (urlFromValue.startsWith('http://') || urlFromValue.startsWith('https://')) {
-              targetUrl = urlFromValue
-            } else if (text.startsWith('http://') || text.startsWith('https://')) {
-              targetUrl = text
-            } else {
-              const combo = urlFromValue + ' ' + text
-              const match = combo.match(/https?:\/\/[^\s"'<>]+/i)
-              if (match) targetUrl = match[0]
-            }
-
-            if (targetUrl) {
-              const title = cv.column?.title || (text && !text.startsWith('http') ? text : '') || 'Link'
-              allLinks.push({ url: targetUrl, label: title })
-            }
-          })
-
-          const updateLinks = extractLinksFromUpdates(item.updates)
-          allLinks.push(...updateLinks)
-
-          let stagingUrl = ''
-          let adminUrl = ''
-          let figmaUrl = ''
-          let googleSheetUrl = ''
-          const otherLinks: MondayLink[] = []
-          const seen = new Set<string>()
-
-          for (const link of allLinks) {
-            if (seen.has(link.url)) continue
-            seen.add(link.url)
-            const type = classifyUrl(link.url, link.label)
-            if (type === 'googleSheet') {
-              if (!googleSheetUrl) googleSheetUrl = link.url
-              otherLinks.push({ url: link.url, label: link.label || 'QA Sheet' })
-            } else if (type === 'figma') {
-              if (!figmaUrl) figmaUrl = link.url
-              otherLinks.push({ url: link.url, label: link.label || 'Figma' })
-            } else if (type === 'admin') {
-              if (!adminUrl) adminUrl = link.url
-              otherLinks.push({ url: link.url, label: link.label || 'WP Admin' })
-            } else if (type === 'other') {
-              otherLinks.push({ url: link.url, label: labelForUrl(link) })
-            }
-          }
-
-          let statusStr = 'Requested'
-          item.column_values?.forEach((cv: any) => {
-            if (cv.column?.title?.toLowerCase().includes('status')) {
-              statusStr = cv.text || 'In Progress'
-            }
-          })
-
-          const prefixMatch = item.name.match(/^\[([^\]]+)\]/)
-          const mergeKey = prefixMatch ? prefixMatch[1].toLowerCase() : null
-          const isKeyBoard = KEY_BOARDS.includes(board.name)
-          const isWebDevBoard = board.name.toLowerCase().includes('web development')
-
-          let existing: MondayTicket | undefined
-          if (mergeKey && isKeyBoard) {
-            for (const [, ticket] of itemMap) {
-              const existingPrefix = ticket.name.match(/^\[([^\]]+)\]/)
-              if (existingPrefix && existingPrefix[1].toLowerCase() === mergeKey) {
-                existing = ticket
-                break
-              }
-            }
-          }
-
-          if (existing) {
-            if (!existing.stagingUrl && stagingUrl) existing.stagingUrl = stagingUrl
-            if (!existing.adminUrl && adminUrl) existing.adminUrl = adminUrl
-            if (!existing.figmaUrl && figmaUrl) existing.figmaUrl = figmaUrl
-            if (!existing.googleSheetUrl && googleSheetUrl) existing.googleSheetUrl = googleSheetUrl
-            const existingUrls = new Set(existing.otherLinks.map(l => l.url))
-            for (const link of otherLinks) {
-              if (!existingUrls.has(link.url)) {
-                existing.otherLinks.push(link)
-                existingUrls.add(link.url)
-              }
-            }
-            if (isWebDevBoard) {
-              existing.status = statusStr
-              existing.name = item.name
-            }
-            if (item.updated_at > (existing.updatedAt || '')) {
-              existing.updatedAt = item.updated_at
-            }
-            existing.boardName = existing.boardName.includes(board.name)
-              ? existing.boardName
-              : `${existing.boardName} + ${board.name}`
-          } else if (isKeyBoard) {
-            itemMap.set(item.name, {
-              id: item.id,
-              name: item.name,
-              boardName: board.name,
-              status: statusStr,
-              stagingUrl,
-              adminUrl,
-              figmaUrl,
-              googleSheetUrl,
-              otherLinks,
-              updatedAt: item.updated_at || 'Recently'
-            })
-          }
-        })
-      })
-
-      const fetched = Array.from(itemMap.values())
-      localStorage.setItem('monday_tickets', JSON.stringify(fetched))
-      return fetched
-    }
-    return []
-  } catch (err) {
-    console.error('[Monday] Fetch error:', err)
-    return []
-  }
+  deduped.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  localStorage.setItem('monday_tickets', JSON.stringify(deduped))
+  localStorage.setItem('qa_cached_monday_tickets', JSON.stringify(deduped))
+  return deduped
 }

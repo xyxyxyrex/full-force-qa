@@ -82,9 +82,9 @@ const CanvasAnnotationShape: React.FC<{ box: CanvasSelectionBox }> = ({ box }) =
     const arrow = box.arrowPct || { startX: 0, startY: 100, endX: 100, endY: 0 }
     const markerId = `canvas-arrow-${box.id.replace(/[^a-z0-9_-]/gi, '')}`
     return (
-      <svg className="canvas-annotation-vector" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <defs><marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill={box.color} /></marker></defs>
-        <line x1={arrow.startX} y1={arrow.startY} x2={arrow.endX} y2={arrow.endY} stroke={box.color} strokeWidth="3" vectorEffect="non-scaling-stroke" markerEnd={`url(#${markerId})`} />
+      <svg className="canvas-annotation-vector">
+        <defs><marker id={markerId} viewBox="0 0 12 12" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M1,1 L11,6 L1,11 Z" fill={box.color} /></marker></defs>
+        <line x1={`${arrow.startX}%`} y1={`${arrow.startY}%`} x2={`${arrow.endX}%`} y2={`${arrow.endY}%`} stroke={box.color} strokeWidth="3" vectorEffect="non-scaling-stroke" markerEnd={`url(#${markerId})`} />
       </svg>
     )
   }
@@ -136,7 +136,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const autoGenerationStartedRef = useRef(false)
   const siteSlug = normalizeSiteSlug(pageTitle)
-  const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://qa-snapshots.pages.dev'
+  const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-rz8.pages.dev'
 
   const withInspectionManifest = (
     annotations: CanvasSelectionBox[],
@@ -842,7 +842,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                           </svg>
-                          <span>{generatingLinkId === box.id ? 'Generating...' : 'Copy Link'}</span>
+                          <span>{generatingLinkId === box.id ? 'Generating…' : 'Copy link'}</span>
                         </button>
 
                         <button className="btn-delete-box" onClick={(e) => handleDeleteBox(box.id, e)}>

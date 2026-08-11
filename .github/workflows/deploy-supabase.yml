@@ -1,0 +1,72 @@
+name: Deploy Supabase
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - supabase/**
+      - .github/workflows/deploy-supabase.yml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validate pending migrations without applying them
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Migrate database and deploy functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+      MONDAY_CLIENT_ID: ${{ secrets.MONDAY_CLIENT_ID }}
+      MONDAY_CLIENT_SECRET: ${{ secrets.MONDAY_CLIENT_SECRET }}
+      MONDAY_REDIRECT_URI: http://localhost:51847/oauth/callback
+    steps:
+      - uses: actions/checkout@v6
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.113.0
+      - name: Validate deployment secrets
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN"; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD" || { echo "Missing SUPABASE_DB_PASSWORD"; exit 1; }
+          test -n "$SUPABASE_PROJECT_ID" || { echo "Missing SUPABASE_PROJECT_ID"; exit 1; }
+          test -n "$MONDAY_CLIENT_ID" || { echo "Missing MONDAY_CLIENT_ID"; exit 1; }
+          test -n "$MONDAY_CLIENT_SECRET" || { echo "Missing MONDAY_CLIENT_SECRET"; exit 1; }
+      - name: Link production project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
+      - name: Show migration state
+        run: supabase migration list --linked
+      - name: Validate pending migrations
+        run: supabase db push --linked --dry-run
+      - name: Apply migrations
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+        run: supabase db push --linked
+      - name: Configure Edge Function secrets
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+        run: supabase secrets set MONDAY_CLIENT_ID="$MONDAY_CLIENT_ID" MONDAY_CLIENT_SECRET="$MONDAY_CLIENT_SECRET" MONDAY_REDIRECT_URI="$MONDAY_REDIRECT_URI" --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Deploy Edge Functions
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+        shell: bash
+        run: |
+          mapfile -t functions < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print 2>/dev/null || true)
+          if [ "${#functions[@]}" -eq 0 ]; then
+            echo "No Edge Functions found; skipping."
+            exit 0
+          fi
+          for entrypoint in "${functions[@]}"; do
+            function_name="$(basename "$(dirname "$entrypoint")")"
+            supabase functions deploy "$function_name" --project-ref "$SUPABASE_PROJECT_ID"
+          done

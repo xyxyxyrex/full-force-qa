@@ -3,7 +3,20 @@ import type { Project } from '../../../shared/types'
 import mondayLogo from '../assets/monday-icon-svgrepo-com.svg'
 import figmaIcon from '../assets/figma.png'
 import sheetsIcon from '../assets/sheets.png'
-import { fetchMondayTicketsApi, MondayTicket, MondayLink } from '../utils/mondayApi'
+import parityIcon from '../assets/parity-favicon.svg'
+import parityLightIcon from '../assets/parity-light-512.png'
+import {
+  fetchMondayMetadataApi,
+  fetchMondayTicketsApi,
+  loadMondayPreferences,
+  saveMondayPreferences,
+  type MondayLink,
+  type MondayMetadata,
+  type MondaySyncPreferences,
+  type MondayTicket,
+} from '../utils/mondayApi'
+import { supabaseAnonKey, supabaseConfigurationError, supabaseUrl } from '../../../shared/supabaseClient'
+import type { FigmaConnectionStatus } from '../../../shared/types'
 import './Dashboard.css'
 
 export type { MondayTicket, MondayLink }
@@ -16,6 +29,7 @@ interface Props {
 
 type SortOption = 'recent' | 'oldest' | 'name-asc' | 'name-desc'
 type ViewMode = 'cards' | 'list'
+type MondaySortOption = 'updated-desc' | 'updated-asc' | 'name-asc' | 'board-asc' | 'status-asc'
 
 interface ContextMenuState {
   x: number
@@ -112,8 +126,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null)
 
   // Monday.com state
-  const [mondayConnected, setMondayConnected] = useState(() => !!localStorage.getItem('monday_api_token'))
-  const [mondayToken, setMondayToken] = useState(() => localStorage.getItem('monday_api_token') || '')
+  const [mondayConnected, setMondayConnected] = useState(false)
+  const [mondayAccountName, setMondayAccountName] = useState('')
   const [mondayTickets, setMondayTickets] = useState<MondayTicket[]>(() => {
     try {
       const stored = localStorage.getItem('monday_tickets')
@@ -122,11 +136,21 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       return []
     }
   })
-  const [mondayModalOpen, setMondayModalOpen] = useState(false)
-  const [tempTokenInput, setTempTokenInput] = useState(mondayToken)
   const [mondaySyncing, setMondaySyncing] = useState(false)
+  const [mondayError, setMondayError] = useState('')
+  const [mondaySourceModalOpen, setMondaySourceModalOpen] = useState(false)
+  const [mondayMetadata, setMondayMetadata] = useState<MondayMetadata | null>(null)
+  const [mondayPreferences, setMondayPreferences] = useState<MondaySyncPreferences>(() => loadMondayPreferences() || { boardIds: [], assignmentMode: 'me', userIds: [] })
+  const [mondaySourceSearch, setMondaySourceSearch] = useState('')
+  const [mondayUserSearch, setMondayUserSearch] = useState('')
+  const [mondayTicketSearch, setMondayTicketSearch] = useState('')
+  const [mondayBoardFilter, setMondayBoardFilter] = useState('all')
+  const [mondayStatusFilter, setMondayStatusFilter] = useState('all')
+  const [mondaySort, setMondaySort] = useState<MondaySortOption>('updated-desc')
+  const [expandedTicketLinks, setExpandedTicketLinks] = useState<Set<string>>(new Set())
   const [mondaySectionExpanded, setMondaySectionExpanded] = useState(true)
   const [collapsedStatuses, setCollapsedStatuses] = useState<Set<string>>(new Set())
+  const [figmaStatus, setFigmaStatus] = useState<FigmaConnectionStatus>({ connected: false, apiConfigured: false, browserSession: false })
 
   // Active Monday Ticket IDs
   const [activeTicketIds, setActiveTicketIds] = useState<string[]>(() => {
@@ -151,6 +175,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   useEffect(() => {
     localStorage.setItem('qa_project_folders', JSON.stringify(folders))
     window.dispatchEvent(new CustomEvent('qa_folders_updated', { detail: folders }))
+    window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { folders } }))
   }, [folders])
 
   const reloadProjects = useCallback(() => { void window.electronAPI.getProjects().then(setProjects) }, [])
@@ -190,9 +215,25 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       setProjects(list)
       setLoading(false)
     })
-    if (mondayToken) {
-      fetchMondayTickets(mondayToken)
-    }
+    void (async () => {
+      let status = await window.electronAPI.mondayStatus()
+      if (!status.connected) {
+        const legacyToken = localStorage.getItem('monday_api_token') || localStorage.getItem('monday_token') || localStorage.getItem('monday_api_key')
+        if (legacyToken) {
+          const migrated = await window.electronAPI.mondaySetPersonalToken(
+            legacyToken,
+            supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey },
+          )
+          for (const key of ['monday_api_token', 'monday_token', 'monday_api_key']) localStorage.removeItem(key)
+          if (migrated.success && migrated.status) status = migrated.status
+        }
+      }
+      setMondayConnected(status.connected)
+      setMondayAccountName(status.user?.name || '')
+      if (status.connected && loadMondayPreferences()?.boardIds.length) void fetchMondayTickets()
+    })().catch((error) => setMondayError(error instanceof Error ? error.message : 'Unable to restore Monday connection.'))
+    void window.electronAPI.figmaTokenStatus().then(setFigmaStatus).catch(() => {})
+    const unsubscribeFigma = window.electronAPI.onFigmaAuthChanged?.(setFigmaStatus)
 
     const handleUpdate = () => {
       try {
@@ -201,7 +242,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       } catch { /* ignore */ }
     }
     window.addEventListener('monday_tickets_updated', handleUpdate)
-    return () => window.removeEventListener('monday_tickets_updated', handleUpdate)
+    return () => { window.removeEventListener('monday_tickets_updated', handleUpdate); unsubscribeFigma?.() }
   }, [])
 
   const toggleActiveTicket = async (ticketId: string) => {
@@ -211,6 +252,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         ? prev.filter((id) => id !== ticketId)
         : [...prev, ticketId]
       localStorage.setItem('active_monday_ticket_ids', JSON.stringify(next))
+      window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { activeTicketIds: next } }))
       queueMicrotask(() => window.dispatchEvent(new CustomEvent('qa_active_ticket_ids_updated', { detail: next })))
       return next
     })
@@ -250,9 +292,28 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     'Dev Complete', 'Des Complete', 'For Client Approval',
     'QA Passed', 'RSO Passed', 'Approved', 'Archive'
   ]
+  const visibleMondayTickets = useMemo(() => {
+    const query = mondayTicketSearch.trim().toLowerCase()
+    return mondayTickets.filter((ticket) => {
+      if (mondayBoardFilter !== 'all' && !ticket.boardName.split(' + ').includes(mondayBoardFilter)) return false
+      if (mondayStatusFilter !== 'all' && ticket.status !== mondayStatusFilter) return false
+      if (!query) return true
+      return [ticket.name, ticket.boardName, ticket.status, ...(ticket.assigneeNames || []), ticket.stagingUrl, ticket.adminUrl, ticket.figmaUrl, ticket.googleSheetUrl, ...ticket.otherLinks.map((link) => `${link.label} ${link.url}`)]
+        .filter(Boolean).some((value) => String(value).toLowerCase().includes(query))
+    }).sort((a, b) => {
+      if (mondaySort === 'updated-asc') return a.updatedAt.localeCompare(b.updatedAt)
+      if (mondaySort === 'name-asc') return a.name.localeCompare(b.name)
+      if (mondaySort === 'board-asc') return a.boardName.localeCompare(b.boardName)
+      if (mondaySort === 'status-asc') return a.status.localeCompare(b.status)
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })
+  }, [mondayTickets, mondayTicketSearch, mondayBoardFilter, mondayStatusFilter, mondaySort])
+  const mondayBoardOptions = useMemo(() => [...new Set(mondayTickets.flatMap((ticket) => ticket.boardName.split(' + ')))].sort(), [mondayTickets])
+  const mondayStatusOptions = useMemo(() => [...new Set(mondayTickets.map((ticket) => ticket.status))].sort(), [mondayTickets])
+
   const ticketsByStatus = useMemo(() => {
     const groups: Record<string, MondayTicket[]> = {}
-    for (const ticket of mondayTickets) {
+    for (const ticket of visibleMondayTickets) {
       const status = ticket.status || 'Other'
       if (!groups[status]) groups[status] = []
       groups[status].push(ticket)
@@ -265,7 +326,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       sorted.push([s, tickets])
     }
     return sorted
-  }, [mondayTickets])
+  }, [visibleMondayTickets])
 
   const toggleStatusCollapse = (status: string) => {
     setCollapsedStatuses(prev => {
@@ -292,42 +353,65 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [manualTokenInput, setManualTokenInput] = useState('')
   const [manualTokenError, setManualTokenError] = useState('')
 
-  const fetchMondayTickets = async (token: string) => {
-    if (!token) return
+  const fetchMondayTickets = async (preferences?: MondaySyncPreferences) => {
     setMondaySyncing(true)
+    setMondayError('')
     try {
-      const fetched = await fetchMondayTicketsApi(token)
+      const fetched = await fetchMondayTicketsApi(preferences)
       setMondayTickets(fetched || [])
       localStorage.setItem('monday_tickets', JSON.stringify(fetched || []))
       localStorage.setItem('qa_cached_monday_tickets', JSON.stringify(fetched || []))
       window.dispatchEvent(new Event('monday_tickets_updated'))
     } catch (err) {
       console.error('[Monday] Fetch error:', err)
+      setMondayError(err instanceof Error ? err.message : 'Unable to sync Monday tickets.')
     } finally {
       setMondaySyncing(false)
     }
   }
 
+  const openMondaySources = async (firstConnection = false) => {
+    setMondaySyncing(true)
+    setMondayError('')
+    try {
+      const metadata = await fetchMondayMetadataApi()
+      setMondayMetadata(metadata)
+      setMondayAccountName(metadata.me.name)
+      if (firstConnection || !mondayPreferences.boardIds.length) {
+        const preferred = metadata.boards.filter((board) => /qa|web development/i.test(board.name)).map((board) => board.id)
+        setMondayPreferences({ boardIds: preferred.length ? preferred : metadata.boards.slice(0, 2).map((board) => board.id), assignmentMode: 'me', userIds: [] })
+      }
+      setMondaySourceModalOpen(true)
+    } catch (error) {
+      setMondayError(error instanceof Error ? error.message : 'Unable to load Monday boards and users.')
+    } finally {
+      setMondaySyncing(false)
+    }
+  }
+
+  const saveMondaySourcesAndSync = async () => {
+    if (!mondayPreferences.boardIds.length) { setMondayError('Select at least one board.'); return }
+    if (mondayPreferences.assignmentMode === 'users' && !mondayPreferences.userIds.length) { setMondayError('Select at least one person.'); return }
+    saveMondayPreferences(mondayPreferences)
+    setMondaySourceModalOpen(false)
+    await fetchMondayTickets(mondayPreferences)
+  }
+
   const handleMondayLogin = async () => {
     setMondaySyncing(true)
+    setMondayError('')
     try {
-      const res = await window.electronAPI.mondayLogin()
-      if (res.success && res.token) {
-        localStorage.setItem('monday_api_token', res.token)
-        setMondayToken(res.token)
+      if (supabaseConfigurationError) throw new Error(supabaseConfigurationError)
+      const res = await window.electronAPI.mondayLogin({ supabaseUrl, supabaseAnonKey })
+      if (res.success && res.status?.connected) {
         setMondayConnected(true)
-        // Immediately fetch and sync tickets after successful login
-        await fetchMondayTickets(res.token)
-      } else if (
-        res.error &&
-        res.error !== 'Login window was closed' &&
-        res.error !== 'Login cancelled' &&
-        res.error !== 'No authorization code received'
-      ) {
-        setShowTokenFallbackModal(true)
-      }
+        setMondayAccountName(res.status.user?.name || '')
+        window.dispatchEvent(new Event('parity:monday-connected'))
+        await openMondaySources(true)
+      } else if (res.error) setMondayError(res.error)
     } catch (e) {
       console.error('[Monday] Login error:', e)
+      setMondayError(e instanceof Error ? e.message : 'Unable to connect Monday.com.')
     } finally {
       setMondaySyncing(false)
     }
@@ -342,26 +426,32 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     setMondaySyncing(true)
     setManualTokenError('')
     try {
-      localStorage.setItem('monday_api_token', trimmed)
-      setMondayToken(trimmed)
+      const result = await window.electronAPI.mondaySetPersonalToken(
+        trimmed,
+        supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey },
+      )
+      if (!result.success || !result.status?.connected) throw new Error(result.error || 'Monday rejected this token.')
       setMondayConnected(true)
-      await fetchMondayTickets(trimmed)
+      setMondayAccountName(result.status.user?.name || '')
+      window.dispatchEvent(new Event('parity:monday-connected'))
       setShowTokenFallbackModal(false)
       setManualTokenInput('')
-    } catch {
-      setManualTokenError('Failed to connect with token. Please verify the API token.')
+      await openMondaySources(true)
+    } catch (error) {
+      setManualTokenError(error instanceof Error ? error.message : 'Failed to connect with token.')
     } finally {
       setMondaySyncing(false)
     }
   }
 
-  const handleDisconnectMonday = () => {
-    localStorage.removeItem('monday_api_token')
+  const handleDisconnectMonday = async () => {
+    await window.electronAPI.mondayDisconnect(supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey })
     localStorage.removeItem('monday_tickets')
     localStorage.removeItem('qa_cached_monday_tickets')
-    setMondayToken('')
     setMondayConnected(false)
+    setMondayAccountName('')
     setMondayTickets([])
+    window.dispatchEvent(new Event('parity:monday-disconnected'))
   }
 
   const handleLaunchTicket = (ticket: MondayTicket) => {
@@ -642,6 +732,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       const isPinned = prev.includes(projectId)
       const updated = isPinned ? prev.filter((id) => id !== projectId) : [...prev, projectId]
       localStorage.setItem('pinned_project_ids', JSON.stringify(updated))
+      window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { pinnedProjectIds: updated } }))
       return updated
     })
   }
@@ -667,18 +758,16 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         {/* Header */}
         <div className="dashboard-header">
           <div className="dashboard-title-row">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#4C8BF5" />
-              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#fff" />
-            </svg>
-            <h1>QA Snapshot Editor</h1>
+            <img className="dashboard-brand-icon parity-dark-icon" src={parityIcon} alt="" aria-hidden="true" />
+            <img className="dashboard-brand-icon parity-light-icon" src={parityLightIcon} alt="" aria-hidden="true" />
+            <h1 className="dashboard-wordmark">parity</h1>
           </div>
           <div className="dashboard-header-actions">
             {onOpenSettings && (
               <button
                 className="dashboard-settings-btn"
                 onClick={onOpenSettings}
-                title="Settings: Hotkeys, Snapshot Storage Directory, Theme Customization & Integrations"
+                title="Settings: hotkeys, snapshot storage, themes, and integrations"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -702,10 +791,15 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
               </button>
             )}
             <button
-              className="figma-global-login-btn"
-              onClick={() => {
+              className={`figma-global-login-btn ${figmaStatus.connected ? 'connected' : ''}`}
+              onClick={async () => {
+                if (figmaStatus.connected) {
+                  await window.electronAPI.openExternal('https://www.figma.com/files')
+                  return
+                }
                 if (typeof (window.electronAPI as any)?.figmaLoginWindow === 'function') {
-                  ;(window.electronAPI as any).figmaLoginWindow()
+                  await (window.electronAPI as any).figmaLoginWindow()
+                  setFigmaStatus(await window.electronAPI.figmaTokenStatus())
                 } else {
                   window.open('https://www.figma.com/login', '_blank', 'width=1024,height=768')
                 }
@@ -713,7 +807,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
               title="Sign in to Figma in-app globally — persists across all projects and sessions"
             >
               <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
-              <span>Login to Figma</span>
+              <span>{figmaStatus.connected ? `Figma: ${figmaStatus.user?.handle || figmaStatus.user?.email || 'Connected'}` : 'Login to Figma'}</span>
             </button>
             <button className="new-project-btn" onClick={onNewProject}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -1139,7 +1233,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                 </svg>
               )}
               <img src={mondayLogo} alt="Monday.com" style={{ width: 18, height: 18, objectFit: 'contain' }} />
-              <h2 className="section-label">My Monday Tickets</h2>
+              <h2 className="section-label">Monday Work</h2>
               {mondayConnected ? (
                 <span className="monday-badge connected">{mondayTickets.length} ticket{mondayTickets.length !== 1 ? 's' : ''}</span>
               ) : (
@@ -1150,9 +1244,12 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
             <div className="monday-header-actions">
               {mondayConnected ? (
                 <>
+                  <button className="monday-account-btn" onClick={() => void openMondaySources()} title="Choose boards and people">
+                    Sources
+                  </button>
                   <button
                     className="monday-sync-btn"
-                    onClick={() => fetchMondayTickets(mondayToken)}
+                    onClick={() => fetchMondayTickets()}
                     disabled={mondaySyncing}
                     title="Sync latest Monday tickets"
                   >
@@ -1162,7 +1259,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                     </svg>
                     <span>{mondaySyncing ? 'Syncing...' : 'Sync Now'}</span>
                   </button>
-                  <button className="monday-account-btn" onClick={handleDisconnectMonday} title="Disconnect Monday.com">
+                  <button className="monday-account-btn" onClick={() => void handleDisconnectMonday()} title="Disconnect Monday.com">
                     Disconnect
                   </button>
                 </>
@@ -1200,6 +1297,34 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
             </div>
           )}
 
+          {mondayConnected && mondayAccountName && <div className="monday-connection-line">Connected as <strong>{mondayAccountName}</strong></div>}
+          {mondayError && <div className="monday-inline-error" role="alert">{mondayError}</div>}
+
+          {mondayConnected && mondaySectionExpanded && (
+            <div className="monday-organizer-bar">
+              <div className="monday-organizer-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+                <input value={mondayTicketSearch} onChange={(event) => setMondayTicketSearch(event.target.value)} placeholder="Search tickets, people, boards, or links" />
+              </div>
+              <select value={mondayBoardFilter} onChange={(event) => setMondayBoardFilter(event.target.value)} aria-label="Filter Monday board">
+                <option value="all">All boards</option>
+                {mondayBoardOptions.map((board) => <option key={board} value={board}>{board}</option>)}
+              </select>
+              <select value={mondayStatusFilter} onChange={(event) => setMondayStatusFilter(event.target.value)} aria-label="Filter Monday status">
+                <option value="all">All statuses</option>
+                {mondayStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+              </select>
+              <select value={mondaySort} onChange={(event) => setMondaySort(event.target.value as MondaySortOption)} aria-label="Sort Monday tickets">
+                <option value="updated-desc">Recently updated</option>
+                <option value="updated-asc">Oldest updated</option>
+                <option value="name-asc">Name A-Z</option>
+                <option value="board-asc">Board A-Z</option>
+                <option value="status-asc">Status A-Z</option>
+              </select>
+              <span className="monday-results-count">{visibleMondayTickets.length} shown</span>
+            </div>
+          )}
+
           {/* Monday Ticket Cards grouped by status (collapsible sub-sections) */}
           {mondaySectionExpanded && ticketsByStatus.map(([status, tickets]) => (
             <div key={status} className="monday-status-group">
@@ -1222,6 +1347,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                 <div className="monday-tickets-grid">
                   {tickets.map((ticket) => {
                     const isActive = activeTicketIds.includes(ticket.id)
+                    const linkCount = Number(!!ticket.stagingUrl) + Number(!!ticket.adminUrl) + Number(!!ticket.googleSheetUrl) + Number(!!ticket.figmaUrl) + (ticket.otherLinks?.length || 0)
+                    const linksOpen = expandedTicketLinks.has(ticket.id)
                     return (
                       <div
                         key={ticket.id}
@@ -1246,7 +1373,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                         <h3 className="monday-ticket-title" title={ticket.name}>{ticket.name}</h3>
 
                         {/* Detected Smart Resources — link list with copy */}
-                        <div className="monday-links-list">
+                        <div className={`monday-links-list ${!linksOpen && linkCount > 2 ? 'collapsed' : ''}`}>
                           {ticket.stagingUrl && (
                             <div className="monday-link-row">
                               <a className="monday-link-main" href={ticket.stagingUrl} target="_blank" rel="noreferrer" title={ticket.stagingUrl}>
@@ -1313,6 +1440,13 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                             </div>
                           )}
                         </div>
+                        {linkCount > 2 && (
+                          <button className="monday-links-toggle" onClick={() => setExpandedTicketLinks((current) => {
+                            const next = new Set(current)
+                            if (next.has(ticket.id)) next.delete(ticket.id); else next.add(ticket.id)
+                            return next
+                          })}>{linksOpen ? 'Hide links' : `Show all ${linkCount} links`}</button>
+                        )}
 
                         <div className="monday-card-footer">
                           <span className="monday-updated">{ticket.updatedAt}</span>
@@ -1550,6 +1684,46 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       )}
 
       {/* ── MONDAY MANUAL API TOKEN FALLBACK MODAL ────────────────── */}
+      {mondaySourceModalOpen && mondayMetadata && (
+        <div className="modal-overlay" onClick={() => setMondaySourceModalOpen(false)}>
+          <div className="modal-dialog monday-source-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div className="monday-source-title"><img src={mondayLogo} alt="" width="20" height="20" /><div><h3 className="modal-title">Choose Monday sources</h3><span>{mondayMetadata.me.name} · only accessible boards and users are shown</span></div></div>
+              <button className="modal-close-btn" onClick={() => setMondaySourceModalOpen(false)} aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg></button>
+            </div>
+            <div className="modal-body monday-source-body">
+              <section className="monday-source-panel">
+                <div className="monday-source-panel-head"><div><strong>Boards</strong><span>{mondayPreferences.boardIds.length} selected</span></div><div><button onClick={() => setMondayPreferences((current) => ({ ...current, boardIds: mondayMetadata.boards.map((board) => board.id) }))}>All</button><button onClick={() => setMondayPreferences((current) => ({ ...current, boardIds: [] }))}>None</button></div></div>
+                <input className="monday-source-search" value={mondaySourceSearch} onChange={(event) => setMondaySourceSearch(event.target.value)} placeholder="Search accessible boards" />
+                <div className="monday-source-list">
+                  {mondayMetadata.boards.filter((board) => board.name.toLowerCase().includes(mondaySourceSearch.toLowerCase())).map((board) => (
+                    <label key={board.id} className="monday-source-option"><input type="checkbox" checked={mondayPreferences.boardIds.includes(board.id)} onChange={() => setMondayPreferences((current) => ({ ...current, boardIds: current.boardIds.includes(board.id) ? current.boardIds.filter((id) => id !== board.id) : [...current.boardIds, board.id] }))} /><span><strong>{board.name}</strong><small>{board.kind || 'board'} · {board.state || 'active'}</small></span></label>
+                  ))}
+                </div>
+              </section>
+              <section className="monday-source-panel">
+                <div className="monday-source-panel-head"><div><strong>Items to include</strong><span>Editable at any time</span></div></div>
+                <div className="monday-assignment-modes">
+                  <label className={mondayPreferences.assignmentMode === 'me' ? 'active' : ''}><input type="radio" name="monday-assignment" checked={mondayPreferences.assignmentMode === 'me'} onChange={() => setMondayPreferences((current) => ({ ...current, assignmentMode: 'me' }))} /><span><strong>Assigned to me</strong><small>Items where {mondayMetadata.me.name} appears in a People column</small></span></label>
+                  <label className={mondayPreferences.assignmentMode === 'all' ? 'active' : ''}><input type="radio" name="monday-assignment" checked={mondayPreferences.assignmentMode === 'all'} onChange={() => setMondayPreferences((current) => ({ ...current, assignmentMode: 'all' }))} /><span><strong>Everything</strong><small>Every accessible item in the selected boards</small></span></label>
+                  <label className={mondayPreferences.assignmentMode === 'users' ? 'active' : ''}><input type="radio" name="monday-assignment" checked={mondayPreferences.assignmentMode === 'users'} onChange={() => setMondayPreferences((current) => ({ ...current, assignmentMode: 'users' }))} /><span><strong>Selected people</strong><small>Choose one or more assignees</small></span></label>
+                </div>
+                {mondayPreferences.assignmentMode === 'users' && <>
+                  <input className="monday-source-search" value={mondayUserSearch} onChange={(event) => setMondayUserSearch(event.target.value)} placeholder="Search people by name or email" />
+                  <div className="monday-source-list people">
+                    {mondayMetadata.users.filter((user) => user.enabled !== false && `${user.name} ${user.email || ''}`.toLowerCase().includes(mondayUserSearch.toLowerCase())).map((user) => (
+                      <label key={user.id} className="monday-source-option"><input type="checkbox" checked={mondayPreferences.userIds.includes(user.id)} onChange={() => setMondayPreferences((current) => ({ ...current, userIds: current.userIds.includes(user.id) ? current.userIds.filter((id) => id !== user.id) : [...current.userIds, user.id] }))} /><span><strong>{user.name}{user.id === mondayMetadata.me.id ? ' (you)' : ''}</strong><small>{user.email || (user.isGuest ? 'Guest' : 'Monday user')}</small></span></label>
+                    ))}
+                  </div>
+                </>}
+              </section>
+            </div>
+            {mondayError && <div className="monday-source-error" role="alert">{mondayError}</div>}
+            <div className="modal-footer"><button className="modal-btn secondary-btn" onClick={() => setMondaySourceModalOpen(false)}>Cancel</button><button className="modal-btn primary-btn" disabled={mondaySyncing || !mondayPreferences.boardIds.length} onClick={() => void saveMondaySourcesAndSync()}>{mondaySyncing ? 'Syncing…' : 'Save & Sync'}</button></div>
+          </div>
+        </div>
+      )}
+
       {showTokenFallbackModal && (
         <div className="modal-overlay" onClick={() => setShowTokenFallbackModal(false)}>
           <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>

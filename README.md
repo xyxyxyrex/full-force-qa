@@ -1,15 +1,20 @@
-# QA Snapshot Editor
+# Parity
 
-QA Snapshot Editor is an Electron desktop application designed for quality assurance engineers, web developers, and designers working on website staging environments. The application provides tools to pull tickets from Monday.com, view staging pages side-by-side with live Figma frames, execute automated visual diffs via an OpenCV worker, perform visual inline editing on Chromium webviews, run automated SEO and grammar/spell checks, and track QA progress using an embedded spreadsheet.
+Parity is an Electron desktop application for quality assurance engineers, web developers, and designers reviewing website implementations. It pulls tickets from Monday.com, compares staging pages with live Figma frames, runs OpenCV visual diffs, supports visual inline editing in Chromium webviews, performs SEO and grammar checks, and tracks QA progress in an embedded spreadsheet.
 
 ---
 
 ## Core Workspaces and Features
 
-The application interface is structured into four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate`) accessible via top-bar tab navigation, along with persistent system overlays and settings.
+The application interface is structured into four project workspaces (`Live`, `Edit`, `Audit`, and `Automate`) plus Dashboard and private Notes views. A VS Code-style activity bar provides auto-hiding navigation and can be pinned open.
+
+### Private Notes and account sync
+- **Monday-backed identity**: Monday OAuth identifies the current Parity user. A server-side Supabase Edge Function verifies Monday identity and keeps each user's settings, folders, projects, and notes isolated.
+- **Notes workspace**: Provides folders, tags, pins, archive, search, filtering, sorting, and a rich-text editor with headings, lists, quotes, code blocks, links, compressed images, paste-to-attach, and local files.
+- **Local attachment storage**: Note attachment bytes and project capture thumbnails remain in Electron's local application-data directory. Supabase stores only the private rich-text documents, account state, project metadata, and attachment metadata.
 
 ### 1. Live Workspace (`live`)
-- **Monday.com Ticket Integration**: Connects to the Monday.com GraphQL API (`https://api.monday.com/v2`) using a user-configured API token (`monday_api_token`). Fetches board items, board structure, staging URLs, Figma file links, and Google Sheets links to populate ticket lists and auto-initialize QA projects.
+- **Monday.com Ticket Integration**: Uses OAuth 2.1 with PKCE, encrypted desktop credential storage, automatic refresh, and an editable board/assignee picker. Personal API tokens remain an advanced fallback and are encrypted by the operating system rather than stored in renderer storage.
 - **Figma Viewport Integration**: Renders Figma design frames inside an embedded `<webview>` using Figma embed URLs (`https://www.figma.com/embed?...`). Supports side-by-side positioning against the staging site frame or static PNG snapshot overlays.
 - **Comparison Modes**: Provides four frame comparison modes:
   - `side-by-side`: Places the Figma frame adjacent to the staging website frame.
@@ -143,12 +148,13 @@ pip install -r python/requirements.txt
 ```
 
 ### 4. Environment Variables
-Create a `.env` file in the project root if override values are required:
+Create a `.env` file in the project root using the public Supabase and viewer values from `.env.example`:
 ```env
-MONDAY_API_TOKEN=your_monday_api_token_here
-FIGMA_API_TOKEN=your_figma_api_token_here
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-publishable-or-legacy-anon-key
+VITE_EPHEMERAL_VIEWER_URL=https://parity-rz8.pages.dev
 ```
-*Note: API tokens can also be set inside the application via the Settings modal (`Ctrl+,` or top bar gear icon).*
+Monday's client secret belongs only in Supabase Edge Function secrets. Figma personal access tokens are entered in the application and encrypted with Electron `safeStorage`; do not add either secret to `.env`.
 
 ---
 

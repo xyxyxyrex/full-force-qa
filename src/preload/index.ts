@@ -1,12 +1,45 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AutomateRunSummary, CaptureResult, FindingTriageMap, FindingTriageState, Project } from '../shared/types'
+import type { AppUpdateStatus, AutomateRunSummary, CaptureResult, FigmaConnectionStatus, FindingTriageMap, FindingTriageState, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   login(adminUrl: string): Promise<void> {
     return ipcRenderer.invoke('auth:login', adminUrl)
   },
-  mondayLogin(): Promise<{ success: boolean; token?: string; error?: string }> {
-    return ipcRenderer.invoke('monday:login')
+  mondayLogin(config: MondayPublicConfig) {
+    return ipcRenderer.invoke('monday:login', config)
+  },
+  mondayStatus() {
+    return ipcRenderer.invoke('monday:status')
+  },
+  mondaySetPersonalToken(token: string, config?: MondayPublicConfig) {
+    return ipcRenderer.invoke('monday:set-personal-token', token, config)
+  },
+  mondayDisconnect(config?: MondayPublicConfig) {
+    return ipcRenderer.invoke('monday:disconnect', config)
+  },
+  mondayGraphQL(query: string, variables?: Record<string, unknown>) {
+    return ipcRenderer.invoke('monday:graphql', query, variables)
+  },
+  accountBootstrap() {
+    return ipcRenderer.invoke('account:bootstrap')
+  },
+  accountSaveState(data: Partial<ParityAccountState>) {
+    return ipcRenderer.invoke('account:save-state', data)
+  },
+  accountSaveNote(note: NoteDocument) {
+    return ipcRenderer.invoke('account:save-note', note)
+  },
+  accountDeleteNote(noteId: string) {
+    return ipcRenderer.invoke('account:delete-note', noteId)
+  },
+  saveNoteAttachment(input: { dataUrl: string; name: string }) {
+    return ipcRenderer.invoke('notes:save-attachment', input)
+  },
+  deleteNoteAttachments(attachmentIds: string[]) {
+    return ipcRenderer.invoke('notes:delete-attachments', attachmentIds)
+  },
+  openNoteAttachment(uri: string) {
+    return ipcRenderer.invoke('notes:open-attachment', uri)
   },
   capture(url: string): Promise<CaptureResult> {
     return ipcRenderer.invoke('capture:start', url)
@@ -32,11 +65,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   figmaLoginWindow(url?: string): Promise<void> {
     return ipcRenderer.invoke('app:figmaLoginWindow', url)
   },
-  figmaTokenStatus(): Promise<{ configured: boolean }> {
+  figmaTokenStatus(): Promise<FigmaConnectionStatus> {
     return ipcRenderer.invoke('figma:token-status')
   },
   setFigmaToken(token: string): Promise<{ success: boolean; configured: boolean; error?: string }> {
     return ipcRenderer.invoke('figma:set-token', token)
+  },
+  onFigmaAuthChanged(callback: (status: FigmaConnectionStatus) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, status: FigmaConnectionStatus) => callback(status)
+    ipcRenderer.on('figma:auth-changed', handler)
+    return () => ipcRenderer.removeListener('figma:auth-changed', handler)
   },
   listFigmaFrames(url: string): Promise<any> {
     return ipcRenderer.invoke('figma:list-frames', url)
@@ -82,6 +120,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   runGrammarSpellAudit(items: Array<{ id: string; tag: string; text: string; index: number }>): Promise<any> {
     return ipcRenderer.invoke('app:runGrammarSpellAudit', items)
+  },
+  getUpdateStatus(): Promise<AppUpdateStatus> {
+    return ipcRenderer.invoke('app:update-status')
+  },
+  checkForUpdates(): Promise<AppUpdateStatus> {
+    return ipcRenderer.invoke('app:update-check')
+  },
+  downloadUpdate(): Promise<AppUpdateStatus> {
+    return ipcRenderer.invoke('app:update-download')
+  },
+  installUpdate(): Promise<{ success: boolean; error?: string }> {
+    return ipcRenderer.invoke('app:update-install')
+  },
+  onUpdateStatus(callback: (status: AppUpdateStatus) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) => callback(status)
+    ipcRenderer.on('app:update-status', handler)
+    return () => ipcRenderer.removeListener('app:update-status', handler)
   },
   onGlobalEscape(callback: () => void) {
     const handler = () => callback()

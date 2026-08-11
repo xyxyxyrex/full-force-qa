@@ -1,4 +1,4 @@
-# CLAUDE.md — QA Snapshot Editor
+# CLAUDE.md — Parity
 
 ## What This App Does
 
