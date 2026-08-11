@@ -10,9 +10,9 @@ import sharp from 'sharp'
 app.commandLine.appendSwitch('lang', 'en-US')
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
-import { getProjects, saveProject, deleteProject } from './store'
+import { getProjects, saveProject, deleteProject, getFindingTriage, setFindingTriage, getAutomateRuns, saveAutomateRun } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
-import type { Project, CaptureResult } from '../shared/types'
+import type { Project, CaptureResult, FindingTriageState, AutomateRunSummary } from '../shared/types'
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
 import nspell from 'nspell'
@@ -42,6 +42,38 @@ function parseFigmaReference(rawUrl: string) {
   if (!match) throw new Error('Enter a valid Figma design URL.')
   const rawNode = url.searchParams.get('node-id') || ''
   return { fileKey: match[1], nodeId: rawNode ? rawNode.replace(/-/g, ':') : '' }
+}
+
+const FIGMA_FRAME_CANDIDATE_TYPES = new Set(['FRAME', 'COMPONENT', 'SECTION'])
+const FIGMA_ORGANIZATIONAL_TYPES = new Set(['GROUP', 'SECTION', 'FRAME'])
+const FIGMA_MIN_FRAME_SIZE = 200
+const FIGMA_FRAME_MAX_DEPTH = 6
+
+/**
+ * Recursively finds page-sized frames wherever a designer nested them — inside a
+ * Section, a Group, or another Frame used purely for organization. A depth-limited
+ * top-level-only scan misses these, and there's no way to ask a viewer-only file's
+ * owner to flatten it for QA convenience.
+ */
+function collectFigmaFrames(document: any, frames: any[]): void {
+  for (const page of document?.children || []) {
+    walkFigmaContainer(page, page.name || '', [], 0, frames, new Set<string>())
+  }
+}
+
+function walkFigmaContainer(container: any, pageName: string, breadcrumb: string[], depth: number, frames: any[], seen: Set<string>): void {
+  for (const child of container?.children || []) {
+    if (seen.has(child.id)) continue
+    const box = child.absoluteBoundingBox || {}
+    const isCandidate = FIGMA_FRAME_CANDIDATE_TYPES.has(child.type) && box.width >= FIGMA_MIN_FRAME_SIZE && box.height >= FIGMA_MIN_FRAME_SIZE
+    if (isCandidate) {
+      seen.add(child.id)
+      frames.push({ id: child.id, name: child.name || 'Untitled frame', type: child.type, pageName, path: breadcrumb.join(' / '), width: Math.round(box.width), height: Math.round(box.height) })
+    }
+    if (depth < FIGMA_FRAME_MAX_DEPTH && FIGMA_ORGANIZATIONAL_TYPES.has(child.type)) {
+      walkFigmaContainer(child, pageName, isCandidate ? [...breadcrumb, child.name || 'Frame'] : breadcrumb, depth + 1, frames, seen)
+    }
+  }
 }
 
 async function figmaRequest(path: string) {
@@ -276,12 +308,19 @@ const AUTOMATE_DOM_EXPRESSION = `(() => {
     }
     return parts.join(' > ');
   };
+  const fontActuallyLoaded = (style) => {
+    try {
+      const family = (style.fontFamily.split(',')[0] || '').trim().replace(/^["']|["']$/g, '');
+      if (!family || !document.fonts || !document.fonts.check) return true;
+      return document.fonts.check(style.fontWeight + ' ' + style.fontSize + ' "' + family + '"');
+    } catch { return true; }
+  };
   const nodes = Array.from(document.querySelectorAll(selectors)).map((element) => {
     const rect = element.getBoundingClientRect(); const style = getComputedStyle(element);
     const positioned = style.position === 'fixed' || style.position === 'sticky';
     const pageX = positioned ? rect.left : rect.left + scrollX;
     const pageY = positioned ? rect.top : rect.top + scrollY;
-    return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, position: style.position } };
+    return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, textTransform: style.textTransform, position: style.position, fontLoaded: String(fontActuallyLoaded(style)) } };
   }).filter((item) => item.rect.width > 1 && item.rect.height > 1 && item.rect.x > -item.rect.width && item.rect.x < pageWidth + item.rect.width && item.rect.y > -item.rect.height && item.rect.y < pageHeight + item.rect.height);
   return { nodes, pageWidth: Math.ceil(pageWidth), pageHeight: Math.ceil(pageHeight) };
 })()`
@@ -299,7 +338,25 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
     const tileHeight = Math.max(320, Math.min(1000, Math.round(viewportHeight)))
     await debug.sendCommand('Page.enable')
     await debug.sendCommand('Emulation.setDeviceMetricsOverride', { width, height: tileHeight, deviceScaleFactor: 1, mobile: false, screenWidth: width, screenHeight: tileHeight })
-    await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const animations = document.getAnimations().map((animation) => ({ animation, playState: animation.playState })); for (const item of animations) item.animation.pause(); const positioned = []; for (const element of document.body?.querySelectorAll('*') || []) { const position = getComputedStyle(element).position; if (position === 'fixed' || position === 'sticky') positioned.push({ element, visibility: element.style.visibility }); } window.__qaAutomateAtomicState = { x: scrollX, y: scrollY, animations, positioned, scrollBehavior: document.documentElement.style.scrollBehavior }; document.documentElement.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,0); return document.readyState; })()`, awaitPromise: true })
+    // A visible scrollbar shrinks the content box by its own width, which shows
+    // up as a spurious few-pixel horizontal defect on every element in the page.
+    try { await debug.sendCommand('Emulation.setScrollbarsHidden', { hidden: true }) } catch {}
+    await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const freeze = document.createElement('style'); freeze.id = '__qaAutomateFreeze'; freeze.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; caret-color: transparent !important; }'; document.head?.appendChild(freeze); const animations = document.getAnimations().map((animation) => ({ animation, playState: animation.playState })); for (const item of animations) item.animation.pause(); const positioned = []; for (const element of document.body?.querySelectorAll('*') || []) { const position = getComputedStyle(element).position; if (position === 'fixed' || position === 'sticky') positioned.push({ element, visibility: element.style.visibility }); } window.__qaAutomateAtomicState = { x: scrollX, y: scrollY, animations, positioned, scrollBehavior: document.documentElement.style.scrollBehavior }; document.documentElement.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,0); return document.readyState; })()`, awaitPromise: true })
+    // Wait for the page to actually be ready to photograph — fonts and in-flight
+    // images — rather than trusting a flat delay to have been long enough.
+    await debug.sendCommand('Runtime.evaluate', {
+      expression: `(async () => {
+        try { await Promise.race([(document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve(), new Promise((resolve) => setTimeout(resolve, 3000))]); } catch {}
+        const images = Array.from(document.images || []).slice(0, 400).filter((img) => !img.complete);
+        await Promise.all(images.map((img) => new Promise((resolve) => {
+          img.addEventListener('load', resolve, { once: true });
+          img.addEventListener('error', resolve, { once: true });
+          setTimeout(resolve, 4000);
+        })));
+        return true;
+      })()`,
+      awaitPromise: true
+    })
     await new Promise((resolve) => setTimeout(resolve, 220))
     const measured = await debug.sendCommand('Runtime.evaluate', { expression: `(() => ({ width: Math.ceil(Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0)), height: Math.ceil(Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0)) }))()`, returnByValue: true })
     const documentWidth = Math.max(width, Number(measured?.result?.value?.width || width)); const documentHeight = Math.max(tileHeight, Number(measured?.result?.value?.height || tileHeight))
@@ -329,8 +386,9 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
     return { success: true, dataUrl: `data:image/png;base64,${stitched.toString('base64')}`, documentWidth, documentHeight, domNodes: semantic?.result?.value?.nodes || [], tiles: uniquePositions.length, mode: 'verified-cdp-tiles' }
   } finally {
     try {
-      await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) item.element.style.visibility = item.visibility; document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` })
+      await debug.sendCommand('Runtime.evaluate', { expression: `(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) item.element.style.visibility = item.visibility; document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` })
     } catch {}
+    try { await debug.sendCommand('Emulation.setScrollbarsHidden', { hidden: false }) } catch {}
     try { await debug.sendCommand('Emulation.clearDeviceMetricsOverride') } catch {}
     if (attachedHere && debug.isAttached()) debug.detach()
   }
@@ -489,17 +547,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle('figma:list-frames', async (_event, rawUrl: string) => {
     try {
       const { fileKey, nodeId } = parseFigmaReference(rawUrl)
-      const file = await figmaRequest(`/files/${encodeURIComponent(fileKey)}?depth=2`)
+      // Full depth from the document root: page(1) + up to 6 organizational levels
+      // (Section/Group/Frame wrappers) below it, plus headroom. A viewer-only token
+      // can't ask designers to keep page frames at the top level, so this has to find
+      // them wherever they're nested.
+      const file = await figmaRequest(`/files/${encodeURIComponent(fileKey)}?depth=10`)
       const frames: any[] = []
-      for (const page of file.document?.children || []) {
-        for (const node of page.children || []) {
-          const box = node.absoluteBoundingBox || {}
-          if (['FRAME', 'COMPONENT', 'SECTION'].includes(node.type) && box.width && box.height) {
-            frames.push({ id: node.id, name: node.name || 'Untitled frame', type: node.type, pageName: page.name || '', width: Math.round(box.width), height: Math.round(box.height) })
-          }
-        }
-      }
-      return { success: true, fileName: file.name || 'Figma design', lastModified: file.lastModified || '', requestedNodeId: nodeId, frames }
+      collectFigmaFrames(file.document, frames)
+      const styleNames: Record<string, string> = {}
+      for (const [id, style] of Object.entries<any>(file.styles || {})) styleNames[id] = style?.name || ''
+      return { success: true, fileName: file.name || 'Figma design', lastModified: file.lastModified || '', requestedNodeId: nodeId, frames, styleNames }
     } catch (error: any) {
       return { success: false, error: error?.message || 'Unable to load Figma frames.' }
     }
@@ -542,6 +599,20 @@ function registerIpcHandlers(): void {
     if (child) { child.kill(); activeVisualWorkers.delete(jobId); return { success: true } }
     return { success: false }
   })
+
+  ipcMain.handle('automate:triage-get', (_event, projectId: string) => getFindingTriage(projectId))
+
+  ipcMain.handle('automate:triage-set', (_event, projectId: string, findingId: string, state: FindingTriageState | null) => {
+    setFindingTriage(projectId, findingId, state)
+    return { success: true }
+  })
+
+  ipcMain.handle('automate:run-save', (_event, projectId: string, run: AutomateRunSummary) => {
+    saveAutomateRun(projectId, run)
+    return { success: true }
+  })
+
+  ipcMain.handle('automate:run-list', (_event, projectId: string, frameId: string) => getAutomateRuns(projectId, frameId))
 
   ipcMain.handle('app:toggleMaximizeWindow', async (): Promise<void> => {
     if (mainWindow) {

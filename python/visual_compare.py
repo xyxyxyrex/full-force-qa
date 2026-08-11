@@ -191,6 +191,114 @@ def feature_keypoint_anchors(design: np.ndarray, live: np.ndarray) -> list[dict[
     return raw_anchors
 
 
+def compute_lab_multiscale_ssim(
+    design_bgr: np.ndarray,
+    aligned_live_bgr: np.ndarray,
+) -> tuple[float, np.ndarray]:
+    """Lab color + multi-scale SSIM. Returns (score 0-1, change_map float32 0-1)."""
+    def lab_ssim(a: np.ndarray, b: np.ndarray) -> tuple[float, np.ndarray]:
+        lab_a = cv2.cvtColor(a, cv2.COLOR_BGR2Lab)
+        lab_b = cv2.cvtColor(b, cv2.COLOR_BGR2Lab)
+        scores, maps = [], []
+        for ch in range(3):
+            s, m = structural_similarity(lab_a[:, :, ch], lab_b[:, :, ch], data_range=255, full=True)
+            scores.append(s)
+            maps.append(m)
+        # Perceptual weights: L*=0.55, a*=0.25, b*=0.20
+        combined_score = scores[0] * 0.55 + scores[1] * 0.25 + scores[2] * 0.20
+        combined_map = (1 - maps[0]) * 0.55 + (1 - maps[1]) * 0.25 + (1 - maps[2]) * 0.20
+        return float(combined_score), combined_map.astype(np.float32)
+
+    score_full, map_full = lab_ssim(design_bgr, aligned_live_bgr)
+
+    h, w = design_bgr.shape[:2]
+    half_w = max(64, w // 2)
+    d_half = cv2.resize(design_bgr, (half_w, max(1, round(h * half_w / w))), interpolation=cv2.INTER_AREA)
+    l_half = cv2.resize(aligned_live_bgr, (half_w, max(1, round(h * half_w / w))), interpolation=cv2.INTER_AREA)
+    score_half, map_half = lab_ssim(d_half, l_half)
+    map_half_up = cv2.resize(map_half, (w, h), interpolation=cv2.INTER_LINEAR)
+
+    change_map = (map_full * 0.75 + map_half_up * 0.25).astype(np.float32)
+    score = score_full * 0.75 + score_half * 0.25
+    return score, change_map
+
+
+def detect_page_sections(
+    design_bgr: np.ndarray,
+    aligned_live_bgr: np.ndarray,
+    anchors: list[dict[str, float]],
+    min_section_height_fraction: float = 1 / 12,
+) -> list[dict]:
+    """Segment page into named sections via edge density + color transitions. Returns per-section SSIM."""
+    height = design_bgr.shape[0]
+    min_h = max(40, int(height * min_section_height_fraction))
+
+    edges = edge_image(design_bgr)
+    row_sums = edges.sum(axis=1).astype(np.float32)
+    kernel_size = max(21, (height // 80) | 1)  # must be odd
+    smoothed_edges = cv2.GaussianBlur(row_sums.reshape(-1, 1), (1, kernel_size), 0).flatten()
+
+    # Background lightness transitions (L channel of Lab)
+    thumb = cv2.resize(design_bgr, (32, height), interpolation=cv2.INTER_AREA)
+    lab_thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2Lab)
+    row_bg = lab_thumb[:, :, 0].mean(axis=1).astype(np.float32)
+    smoothed_bg = cv2.GaussianBlur(row_bg.reshape(-1, 1), (1, kernel_size), 0).flatten()
+    bg_gradient = np.abs(np.gradient(smoothed_bg))
+
+    edge_norm = smoothed_edges / (smoothed_edges.max() + 1e-6)
+    bg_norm = bg_gradient / (bg_gradient.max() + 1e-6)
+    signal = edge_norm * 0.7 + bg_norm * 0.3
+    mean_signal = float(signal.mean())
+
+    # Find local minima: rows where signal is below average and is a local minimum
+    window = max(15, height // 60)
+    candidates = []
+    for i in range(window, height - window):
+        local_min = signal[max(0, i - window):i + window + 1].min()
+        if signal[i] == local_min and signal[i] < mean_signal * 0.85:
+            candidates.append(i)
+
+    # Enforce minimum section height
+    boundaries = [0]
+    for row in candidates:
+        if row - boundaries[-1] >= min_h:
+            boundaries.append(row)
+    boundaries.append(height)
+
+    anchor_dy = np.array([a["designY"] for a in anchors], dtype=np.float32)
+    anchor_ly = np.array([a["liveY"] for a in anchors], dtype=np.float32)
+
+    sections = []
+    num = len(boundaries) - 1
+    for idx in range(num):
+        y0, y1 = boundaries[idx], boundaries[idx + 1]
+        if y1 - y0 < 10:
+            continue
+        d_crop = cv2.cvtColor(design_bgr[y0:y1, :], cv2.COLOR_BGR2GRAY)
+        l_crop = cv2.cvtColor(aligned_live_bgr[y0:y1, :], cv2.COLOR_BGR2GRAY)
+        sec_score = float(structural_similarity(d_crop, l_crop, data_range=255))
+
+        live_y0 = float(np.interp(y0, anchor_dy, anchor_ly))
+        live_y1 = float(np.interp(y1, anchor_dy, anchor_ly))
+
+        if idx == 0:
+            name = "Header"
+        elif idx == num - 1:
+            name = "Footer"
+        else:
+            name = f"Section {idx}"
+
+        sections.append({
+            "name": name,
+            "designY": y0,
+            "designHeight": y1 - y0,
+            "liveY": live_y0,
+            "liveHeight": live_y1 - live_y0,
+            "similarity": round(sec_score * 100, 1),
+        })
+    return sections
+
+
 def compare(design_path: str, live_path: str, hard_anchors_path: str | None = None, mode: str = "visual-surface") -> dict:
     design_original = read_image(design_path)
     live_original = read_image(live_path)
@@ -226,11 +334,8 @@ def compare(design_path: str, live_path: str, hard_anchors_path: str | None = No
     anchors = alignment_anchors(design, live, scaled_hard_anchors)
     aligned_live = warp_live(design, live, anchors)
 
-    design_gray = cv2.cvtColor(design, cv2.COLOR_BGR2GRAY)
-    live_gray = cv2.cvtColor(aligned_live, cv2.COLOR_BGR2GRAY)
-    score, similarity_map = structural_similarity(design_gray, live_gray, data_range=255, full=True)
-    change_map = np.clip(1.0 - similarity_map, 0.0, 1.0)
-    
+    score, change_map = compute_lab_multiscale_ssim(design, aligned_live)
+    change_map = np.clip(change_map, 0.0, 1.0)
     # Material change thresholding: change_map > 0.32 ignores minor font anti-aliasing / sub-pixel rasterization
     changed_mask = (change_map > 0.32).astype(np.uint8) * 255
     changed_mask = cv2.morphologyEx(changed_mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7)), iterations=1)
@@ -262,6 +367,20 @@ def compare(design_path: str, live_path: str, hard_anchors_path: str | None = No
             
     regions.sort(key=lambda region: region["difference"], reverse=True)
 
+    sections_raw = detect_page_sections(design, aligned_live, anchors)
+    live_anchor_scale = live_original.shape[0] / live.shape[0]
+    scaled_sections = [
+        {
+            "name": s["name"],
+            "designY": round(s["designY"] * scale_y),
+            "designHeight": max(1, round(s["designHeight"] * scale_y)),
+            "liveY": round(s["liveY"] * live_anchor_scale),
+            "liveHeight": max(1, round(s["liveHeight"] * live_anchor_scale)),
+            "similarity": s["similarity"],
+        }
+        for s in sections_raw
+    ]
+
     heat = cv2.applyColorMap(np.uint8(change_map * 255), cv2.COLORMAP_TURBO)
     muted = cv2.addWeighted(design, 0.28, np.zeros_like(design), 0.0, 0)
     overlay = cv2.addWeighted(muted, 0.45, heat, 0.75, 0)
@@ -274,14 +393,15 @@ def compare(design_path: str, live_path: str, hard_anchors_path: str | None = No
         raise RuntimeError('Unable to encode the comparison heatmap.')
 
     design_anchor_scale = design_original.shape[0] / design.shape[0]
-    live_anchor_scale = live_original.shape[0] / live.shape[0]
     engine_name = "opencv-orb-feature" if mode == "feature-anchor" else "opencv-ssim"
     return {
-        "success": True, "engine": engine_name, "similarity": round(float(score) * 100, 4),
+        "success": True, "engine": engine_name, "detectionMode": "lab-multiscale-ssim",
+        "similarity": round(float(score) * 100, 4),
         "changedPercent": round(float(np.count_nonzero(changed_mask)) / changed_mask.size * 100, 4),
         "heatmapDataUrl": "data:image/png;base64," + base64.b64encode(encoded.tobytes()).decode('ascii'),
         "regions": regions[:120],
         "anchors": [{"designY": round(anchor["designY"] * design_anchor_scale), "liveY": round(anchor["liveY"] * live_anchor_scale), "confidence": round(anchor["confidence"] * 100, 1)} for anchor in anchors],
+        "sections": scaled_sections,
     }
 
 

@@ -1,38 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { AutomateRunSummary, FindingTriageMap, FindingTriageState, PageSection } from '../../../shared/types'
+import { extractSemanticAnchors, semanticFindings, stableId, type ComparedRegion, type DomNode, type Finding, type TokenAssertion } from '../utils/visualCompare'
 import './AutomateWorkspace.css'
 
-interface FrameSummary { id: string; name: string; type: string; pageName: string; width: number; height: number }
-interface DomNode { tag: string; role: string; text: string; src: string; context: string; path: string; rect: { x: number; y: number; width: number; height: number }; styles: Record<string, string> }
-interface ComparedRegion { rect: { x: number; y: number; width: number; height: number }; pageWidth: number; pageHeight: number; label: string }
-interface TokenAssertion { name: string; passed: boolean; figma: string; css: string; isExtended?: boolean }
-interface FindingComparison { design?: ComparedRegion; live?: ComparedRegion; delta?: { x?: number; y?: number; width?: number; height?: number; fontSize?: number } }
-interface Finding { severity: 'high' | 'medium' | 'low' | 'pass'; title: string; detail: string; confidence: number; comparison?: FindingComparison; tokens?: TokenAssertion[] }
+interface FrameSummary { id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }
 
 interface Props {
   sourceUrl: string
   figmaUrl?: string
   projectId: string
   onOpenSettings?: () => void
-}
-
-const normalizeText = (value = '') => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
-const textTokens = (value: string) => new Set(normalizeText(value).split(' ').filter(Boolean))
-const tokenScore = (left: string, right: string) => {
-  const a = normalizeText(left); const b = normalizeText(right)
-  if (!a || !b) return 0
-  if (a === b) return 1
-  const minLen = Math.min(a.length, b.length); const maxLen = Math.max(a.length, b.length)
-  if (minLen >= 12 && (a.includes(b) || b.includes(a) || (a.length >= 20 && b.includes(a.slice(0, 25))) || (b.length >= 20 && a.includes(b.slice(0, 25))))) {
-    return Math.max(0.85, (minLen / maxLen) * 0.95)
-  }
-  const aa = textTokens(a); const bb = textTokens(b)
-  if (!aa.size || !bb.size) return 0
-  let common = 0
-  aa.forEach((token) => { if (bb.has(token)) common++ })
-  const jaccard = common / Math.max(aa.size, bb.size)
-  const minSize = Math.min(aa.size, bb.size)
-  const containment = minSize >= 3 ? (common / minSize) * 0.90 : jaccard
-  return Math.max(jaccard, containment)
 }
 
 function loadImage(src: string) {
@@ -77,7 +54,22 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
 }
 
 async function captureFullPage(view: any, viewportWidth: number, viewportHeight: number, onProgress: (percent: number, detail: string) => void, isCancelled: () => boolean) {
-  const metrics = await withTimeout(view.executeJavaScript(`(() => {
+  const metrics = await withTimeout(view.executeJavaScript(`(async () => {
+    const freeze = document.createElement('style');
+    freeze.id = '__qaAutomateFreeze';
+    freeze.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; caret-color: transparent !important; } html, body { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }';
+    document.head?.appendChild(freeze);
+    const animations = document.getAnimations().map((animation) => ({ animation, playState: animation.playState }));
+    for (const item of animations) { try { item.animation.pause(); } catch {} }
+    // Wait for the page to actually be ready to photograph — fonts and
+    // in-flight images — rather than trusting a flat delay was long enough.
+    try { await Promise.race([(document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve(), new Promise((resolve) => setTimeout(resolve, 3000))]); } catch {}
+    const pendingImages = Array.from(document.images || []).slice(0, 400).filter((img) => !img.complete);
+    await Promise.all(pendingImages.map((img) => new Promise((resolve) => {
+      img.addEventListener('load', resolve, { once: true });
+      img.addEventListener('error', resolve, { once: true });
+      setTimeout(resolve, 4000);
+    })));
     const root = document.documentElement; const body = document.body;
     const documentScroller = document.scrollingElement || root;
     const candidates = [documentScroller, ...Array.from(document.body?.querySelectorAll('*') || []).filter((element) => {
@@ -94,7 +86,7 @@ async function captureFullPage(view: any, viewportWidth: number, viewportHeight:
       if (moved > 50 && range > bestRange) { scroller = candidate; bestRange = range; }
     }
     const height = Math.max(scroller.scrollHeight, scroller.clientHeight);
-    window.__qaAutomateCapture = { x: scrollX, y: scrollY, scroller, scrollTop: scroller.scrollTop, scrollBehavior: scroller.style.scrollBehavior, scrollSnapType: scroller.style.scrollSnapType, overflowAnchor: scroller.style.overflowAnchor, positioned: [] };
+    window.__qaAutomateCapture = { x: scrollX, y: scrollY, scroller, scrollTop: scroller.scrollTop, scrollBehavior: scroller.style.scrollBehavior, scrollSnapType: scroller.style.scrollSnapType, overflowAnchor: scroller.style.overflowAnchor, positioned: [], animations };
     scroller.style.setProperty('scroll-behavior', 'auto', 'important');
     scroller.style.setProperty('scroll-snap-type', 'none', 'important');
     scroller.style.setProperty('overflow-anchor', 'none', 'important');
@@ -106,7 +98,7 @@ async function captureFullPage(view: any, viewportWidth: number, viewportHeight:
     }
     scroller.scrollTop = 0; if (scroller === documentScroller) scrollTo(0, 0);
     return { height: Math.ceil(height), width: Math.ceil(Math.max(root.scrollWidth, body?.scrollWidth || 0)), clientHeight: Math.ceil(scroller.clientHeight), scrollRange: Math.ceil(scroller.scrollHeight - scroller.clientHeight), innerHeight: Math.ceil(innerHeight), scrollerTag: scroller.tagName.toLowerCase(), scrollerId: scroller.id || '' };
-  })()`, true), 15000, 'Timed out while measuring the live page.') as { height: number; width: number; clientHeight: number; scrollRange: number; innerHeight: number; scrollerTag: string; scrollerId: string }
+  })()`, true), 20000, 'Timed out while measuring the live page.') as { height: number; width: number; clientHeight: number; scrollRange: number; innerHeight: number; scrollerTag: string; scrollerId: string }
   const fullHeight = Math.max(viewportHeight, metrics.height)
   const positions: number[] = []
   for (let y = 0; y < fullHeight; y += viewportHeight) positions.push(Math.min(y, Math.max(0, fullHeight - viewportHeight)))
@@ -176,7 +168,7 @@ async function captureFullPage(view: any, viewportWidth: number, viewportHeight:
     return { dataUrl, documentHeight: fullHeight, documentWidth: metrics.width, tiles: uniquePositions.length, mode: 'verified-tiles' }
   } finally {
     try {
-      await view.executeJavaScript(`(() => { const capture = window.__qaAutomateCapture; for (const item of capture?.positioned || []) item.element.style.visibility = item.visibility; if (capture) { const scroller = capture.scroller || document.scrollingElement || document.documentElement; window.__qaAutomateSemanticScroller = scroller; scroller.style.scrollBehavior = capture.scrollBehavior; scroller.style.scrollSnapType = capture.scrollSnapType; scroller.style.overflowAnchor = capture.overflowAnchor; scroller.scrollTop = capture.scrollTop; if (scroller === document.scrollingElement) scrollTo(capture.x, capture.y); } delete window.__qaAutomateCapture; })()`, true)
+      await view.executeJavaScript(`(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const capture = window.__qaAutomateCapture; for (const item of capture?.positioned || []) item.element.style.visibility = item.visibility; for (const item of capture?.animations || []) { if (item.playState === 'running') { try { item.animation.play(); } catch {} } } if (capture) { const scroller = capture.scroller || document.scrollingElement || document.documentElement; window.__qaAutomateSemanticScroller = scroller; scroller.style.scrollBehavior = capture.scrollBehavior; scroller.style.scrollSnapType = capture.scrollSnapType; scroller.style.overflowAnchor = capture.overflowAnchor; scroller.scrollTop = capture.scrollTop; if (scroller === document.scrollingElement) scrollTo(capture.x, capture.y); } delete window.__qaAutomateCapture; })()`, true)
     } catch { }
   }
 }
@@ -277,274 +269,29 @@ function FindingComparisonView({ finding, designImage, liveImage, onClose }: { f
   )
 }
 
-function semanticFindings(figmaRoot: any, domNodes: DomNode[], liveWidth: number, liveHeight: number, mode: 'visual-surface' | 'token-auditor' = 'visual-surface'): Finding[] {
-  const root = figmaRoot?.absoluteBoundingBox || { x: 0, y: 0, width: liveWidth, height: liveHeight }
-  const figmaText: any[] = []; const figmaImages: any[] = []
-  const walk = (node: any, ancestors: any[] = []) => {
-    if (node.visible !== false && node.absoluteBoundingBox) {
-      if (node.type === 'TEXT' && normalizeText(node.characters || '')) {
-        figmaText.push({ ...node, __context: ancestors.slice(-5).map((item) => item?.name || '').filter(Boolean).join(' ') })
-      }
-      if (Array.isArray(node.fills) && node.fills.some((fill: any) => fill?.type === 'IMAGE')) figmaImages.push(node)
-    }
-    for (const child of node.children || []) walk(child, [...ancestors, node])
+function ConformanceSparkline({ runs }: { runs: AutomateRunSummary[] }) {
+  if (runs.length < 2) return null
+  const ordered = [...runs].sort((a, b) => a.at - b.at)
+  const width = 160; const height = 28; const pad = 3
+  const scores = ordered.map((r) => r.conformanceScore)
+  const min = Math.min(...scores); const max = Math.max(...scores)
+  const range = Math.max(1, max - min)
+  const toPoint = (index: number, score: number) => {
+    const x = pad + (index / (ordered.length - 1)) * (width - pad * 2)
+    const y = height - pad - ((score - min) / range) * (height - pad * 2)
+    return { x, y }
   }
-  walk(figmaRoot)
-  const textTags = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'a', 'button', 'label', 'li', 'span', 'div', 'dt', 'dd', 'summary', 'figcaption', 'th', 'td'])
-  const candidates = domNodes.filter((node) => node.text && textTags.has(node.tag))
-  const used = new Set<number>(); const findings: Finding[] = []
-  const orderedDesignText = figmaText.slice(0, 240).sort((left, right) => {
-    const a = normalizeText(left.characters); const b = normalizeText(right.characters)
-    const aExact = candidates.filter((candidate) => normalizeText(candidate.text) === a).length
-    const bExact = candidates.filter((candidate) => normalizeText(candidate.text) === b).length
-    if (!!aExact !== !!bExact) return aExact ? -1 : 1
-    return b.length - a.length
-  })
-  for (const design of orderedDesignText) {
-    let best: { index: number; score: number; geometry: number; text: number } | null = null
-    const designText = normalizeText(design.characters)
-    const hasExactCandidate = candidates.some((candidate, index) => !used.has(index) && normalizeText(candidate.text) === designText)
-    for (let index = 0; index < candidates.length; index++) {
-      if (used.has(index)) continue
-      const candidate = candidates[index]
-      const candidateText = normalizeText(candidate.text)
-      const exact = designText === candidateText
-      if (hasExactCandidate && !exact) continue
-      const text = tokenScore(design.characters, candidate.text)
-      if ((!exact && text < .45) || (!exact && Math.min(designText.length, candidateText.length) < 5)) continue
-      const box = design.absoluteBoundingBox
-      const dx = Math.abs((box.x - root.x) / root.width - candidate.rect.x / liveWidth)
-      const dy = Math.abs((box.y - root.y) / root.height - candidate.rect.y / liveHeight)
-      const normalizedDistance = Math.hypot(dx, dy)
-      if (!exact && text < .50 && normalizedDistance > .45) continue
-      const geometry = Math.max(0, 1 - normalizedDistance * 2.0)
-      const context = tokenScore(design.__context || '', `${candidate.context} ${candidate.path}`)
-      const expectedFont = Number(design.style?.fontSize || 0)
-      const headingAffinity = expectedFont >= 20 ? (/^h[1-6]$/.test(candidate.tag) ? .06 : -.08) : 0
-      const score = text * .68 + geometry * .23 + context * .09 + headingAffinity
-      if (!best || score > best.score) best = { index, score, geometry, text }
-    }
-    const label = String(design.characters).trim().replace(/\s+/g, ' ').slice(0, 72)
-    const designRect = { x: design.absoluteBoundingBox.x - root.x, y: design.absoluteBoundingBox.y - root.y, width: design.absoluteBoundingBox.width, height: design.absoluteBoundingBox.height }
-    const designContext = String(design.__context || '').trim().replace(/\s+/g, ' ').slice(0, 72)
-    const designRegion: ComparedRegion = { rect: designRect, pageWidth: root.width, pageHeight: root.height, label: `TEXT · ${label}${designContext ? ` · ${designContext}` : ''}` }
-    if (!best || best.score < .48) {
-      findings.push({ severity: 'high', title: `Missing design text: “${label}”`, detail: 'No sufficiently similar visible DOM element was found.', confidence: Math.round((1 - (best?.score || 0)) * 100), comparison: { design: designRegion } })
-      continue
-    }
-    used.add(best.index)
-    const live = candidates[best.index]; const box = design.absoluteBoundingBox
-    const expectedX = (box.x - root.x) / root.width * liveWidth
-    const expectedY = (box.y - root.y) / root.height * liveHeight
-
-    const designCenterX = expectedX + (box.width / root.width * liveWidth) / 2
-    const liveCenterX = live.rect.x + live.rect.width / 2
-    const dxLeft = Math.abs(expectedX - live.rect.x)
-    const dxCenter = Math.abs(designCenterX - liveCenterX)
-    const dxEffective = Math.min(dxLeft, dxCenter)
-    const dyEffective = Math.abs(expectedY - live.rect.y)
-
-    const figmaFullText = String(design.characters || '').trim()
-    const figmaParagraphs = figmaFullText.split(/\n\s*\n/).filter(Boolean)
-    let adjustedDesignRect = { ...designRect }
-    if (figmaParagraphs.length > 1 && live.text) {
-      const matchedIndex = figmaParagraphs.findIndex((p) => tokenScore(p, live.text) >= 0.50)
-      const idx = matchedIndex >= 0 ? matchedIndex : 0
-      const targetP = figmaParagraphs[idx]
-      const pRatio = Math.min(1, targetP.length / Math.max(1, figmaFullText.length))
-      const targetHeight = Math.max(20, Math.round(designRect.height * pRatio))
-      const yOffset = (designRect.height / figmaParagraphs.length) * idx
-      adjustedDesignRect = {
-        ...designRect,
-        y: Math.round(designRect.y + yOffset),
-        height: targetHeight
-      }
-    }
-
-    const expectedFont = Number(design.style?.fontSize || 0); const actualFont = parseFloat(live.styles.fontSize || '0')
-    const matchedDesignRegion: ComparedRegion = { rect: adjustedDesignRect, pageWidth: root.width, pageHeight: root.height, label: `TEXT · ${label}${designContext ? ` · ${designContext}` : ''}` }
-    const liveRegion: ComparedRegion = { rect: live.rect, pageWidth: liveWidth, pageHeight: liveHeight, label: `<${live.tag}> · ${live.text.slice(0, 54)}${live.context ? ` · ${live.context.slice(0, 42)}` : ''}` }
-    const comparison: FindingComparison = { design: matchedDesignRegion, live: liveRegion, delta: { x: dxEffective < dxLeft ? liveCenterX - designCenterX : live.rect.x - expectedX, y: live.rect.y - expectedY, width: live.rect.width - adjustedDesignRect.width / root.width * liveWidth, height: live.rect.height - adjustedDesignRect.height / root.height * liveHeight } }
-
-    if (mode === 'token-auditor') {
-      const tokenList: TokenAssertion[] = []
-      if (expectedFont && actualFont) {
-        const passed = Math.abs(expectedFont - actualFont) <= 1.0
-        tokenList.push({ name: 'font-size', passed, figma: `${expectedFont}px`, css: `${Math.round(actualFont * 10) / 10}px` })
-      }
-      const expectedWeight = Number(design.style?.fontWeight || 400); const actualWeight = Number(live.styles.fontWeight || 400)
-      if (expectedWeight && actualWeight) {
-        const passed = Math.abs(expectedWeight - actualWeight) < 100
-        tokenList.push({ name: 'font-weight', passed, figma: `${expectedWeight}`, css: `${actualWeight}` })
-      }
-      const expectedLineHeight = Math.round(Number(design.style?.lineHeightPx || 0))
-      const actualLineHeight = Math.round(parseFloat(live.styles.lineHeight || '0'))
-      if (expectedLineHeight > 0 && actualLineHeight > 0) {
-        const passed = Math.abs(expectedLineHeight - actualLineHeight) <= 2.5
-        tokenList.push({ name: 'line-height', passed, figma: `${expectedLineHeight}px`, css: `${actualLineHeight}px` })
-      }
-      const expectedLetterSpacing = Number(design.style?.letterSpacing || 0)
-      const rawCssLs = live.styles.letterSpacing || '0'
-      const actualLetterSpacing = (rawCssLs === 'normal' || !rawCssLs) ? 0 : (parseFloat(rawCssLs) || 0)
-      if (!isNaN(actualLetterSpacing)) {
-        const passed = Math.abs(expectedLetterSpacing - actualLetterSpacing) <= 0.5
-        tokenList.push({ name: 'letter-spacing', passed, figma: `${Math.round(expectedLetterSpacing * 10) / 10}px`, css: `${Math.round(actualLetterSpacing * 10) / 10}px` })
-      }
-      const expectedFamily = String(design.style?.fontFamily || '').trim()
-      const actualFamily = String(live.styles.fontFamily || '').trim()
-      if (expectedFamily && actualFamily) {
-        const passed = actualFamily.toLowerCase().includes(expectedFamily.toLowerCase())
-        tokenList.push({ name: 'font-family', passed, figma: expectedFamily, css: actualFamily.split(',')[0].replace(/["']/g, '') })
-      }
-      const figmaHex = figmaColorToHex(design.fills)
-      const cssHex = parseCssColorToHex(live.styles.color)
-      if (figmaHex && cssHex) {
-        const passed = figmaHex === cssHex
-        tokenList.push({ name: 'color', passed, figma: figmaHex, css: cssHex })
-      }
-
-      // Extended UI Properties (only revealed via [...more] button if inconsistent)
-      const figmaAlign = String(design.style?.textAlignHorizontal || '').toLowerCase()
-      const liveAlign = String(live.styles.textAlign || '').toLowerCase()
-      if (figmaAlign && liveAlign && figmaAlign !== 'left') {
-        const passed = liveAlign.includes(figmaAlign) || (figmaAlign === 'justified' && liveAlign === 'justify')
-        if (!passed) {
-          tokenList.push({ name: 'text-align', passed: false, figma: figmaAlign, css: liveAlign, isExtended: true })
-        }
-      }
-      const figmaBgHex = figmaColorToHex(design.fills)
-      const liveBgHex = parseCssColorToHex(live.styles.backgroundColor)
-      if (figmaBgHex && liveBgHex && liveBgHex !== 'transparent' && liveBgHex !== '#00000000' && liveBgHex !== '#000000') {
-        const passed = figmaBgHex === liveBgHex
-        if (!passed) {
-          tokenList.push({ name: 'bg-color', passed: false, figma: figmaBgHex, css: liveBgHex, isExtended: true })
-        }
-      }
-      if (design.cornerRadius && live.styles.borderRadius) {
-        const expectedRadius = Number(design.cornerRadius || 0)
-        const actualRadius = parseFloat(live.styles.borderRadius || '0')
-        if (expectedRadius > 0 && Math.abs(expectedRadius - actualRadius) > 2) {
-          tokenList.push({ name: 'border-radius', passed: false, figma: `${expectedRadius}px`, css: `${actualRadius}px`, isExtended: true })
-        }
-      }
-
-      if (tokenList.length > 0) {
-        const fails = tokenList.filter((t) => !t.passed)
-        const passes = tokenList.filter((t) => t.passed)
-        const isPass = fails.length === 0
-        const title = isPass ? `CSS Tokens Verified: “${label}”` : `CSS Token Mismatch: “${label}”`
-        const detail = isPass
-          ? `${passes.length} typography tokens verified against Figma spec`
-          : `Mismatch on ${fails.map((f) => `${f.name} (Figma ${f.figma} vs CSS ${f.css})`).join(', ')}`
-
-        findings.push({
-          severity: isPass ? 'pass' : fails.some((f) => f.name === 'font-size') ? 'high' : 'medium',
-          title,
-          detail,
-          confidence: isPass ? 98 : 92,
-          tokens: tokenList,
-          comparison
-        })
-      }
-    } else {
-      if (dyEffective > 28 || dxEffective > 45) {
-        findings.push({ severity: (dyEffective > 60 || dxEffective > 100) ? 'high' : 'medium', title: `Position mismatch: “${label}”`, detail: `Matched <${live.tag}> is displaced from expected position (ΔY ${Math.round(dyEffective)}px, ΔX ${Math.round(dxEffective)}px).`, confidence: Math.round(best.score * 100), comparison })
-      } else if (dyEffective <= 15 && dxEffective <= 20 && best.score >= 0.70) {
-        findings.push({ severity: 'pass', title: `Spec Verified: Position & Content “${label}”`, detail: `Matched <${live.tag}> at expected location (ΔY ${Math.round(dyEffective)}px, ΔX ${Math.round(dxEffective)}px)`, confidence: Math.round(best.score * 100), comparison })
-      }
-      if (expectedFont && actualFont && Math.abs(expectedFont - actualFont) > 1.5) {
-        findings.push({ severity: Math.abs(expectedFont - actualFont) > 4 ? 'medium' : 'low', title: `Font-size mismatch: “${label}”`, detail: `Figma ${expectedFont}px · Live ${Math.round(actualFont * 10) / 10}px`, confidence: Math.round(best.score * 100), comparison: { ...comparison, delta: { ...comparison.delta, fontSize: actualFont - expectedFont } } })
-      }
-    }
-  }
-  const liveImages = domNodes.filter((node) => node.tag === 'img')
-  if (figmaImages.length !== liveImages.length) findings.push({ severity: 'medium', title: 'Image count differs', detail: `Figma contains ${figmaImages.length} image layers; the live page contains ${liveImages.length} visible images.`, confidence: 72, comparison: { design: { rect: { x: 0, y: 0, width: root.width, height: root.height }, pageWidth: root.width, pageHeight: root.height, label: `${figmaImages.length} Figma image layers` }, live: { rect: { x: 0, y: 0, width: liveWidth, height: liveHeight }, pageWidth: liveWidth, pageHeight: liveHeight, label: `${liveImages.length} live images` } } })
-  if (!findings.length) findings.push({ severity: 'pass', title: 'No material semantic mismatches detected', detail: `${figmaText.length} text layers and ${figmaImages.length} image layers were evaluated.`, confidence: 92 })
-  const rank = { high: 0, medium: 1, low: 2, pass: 3 }
-  return findings.sort((a, b) => rank[a.severity] - rank[b.severity])
+  const points = ordered.map((run, index) => { const p = toPoint(index, run.conformanceScore); return `${p.x.toFixed(1)},${p.y.toFixed(1)}` }).join(' ')
+  const last = toPoint(ordered.length - 1, ordered[ordered.length - 1].conformanceScore)
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Conformance trend across recent runs: ${scores.join(', ')}`}>
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.8" />
+      <circle cx={last.x} cy={last.y} r="2.5" fill="currentColor" />
+    </svg>
+  )
 }
 
-function extractSemanticAnchors(figmaRoot: any, domNodes: DomNode[], liveWidth: number, liveHeight: number): Array<{ designY: number; liveY: number; confidence: number }> {
-  const root = figmaRoot?.absoluteBoundingBox || { x: 0, y: 0, width: liveWidth, height: liveHeight }
-  const figmaText: any[] = []
-  const walk = (node: any) => {
-    if (node.visible !== false && node.absoluteBoundingBox) {
-      if (node.type === 'TEXT' && normalizeText(node.characters || '')) {
-        figmaText.push(node)
-      }
-    }
-    for (const child of node.children || []) walk(child)
-  }
-  walk(figmaRoot)
-
-  const textTags = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'a', 'button', 'label', 'li', 'span', 'dt', 'dd', 'summary'])
-  const candidates = domNodes.filter((node) => node.text && textTags.has(node.tag))
-  const anchors: Array<{ designY: number; liveY: number; confidence: number }> = []
-  const used = new Set<number>()
-
-  for (const design of figmaText) {
-    const designText = normalizeText(design.characters)
-    if (designText.length < 5) continue
-
-    let bestIdx = -1
-    let bestScore = 0
-
-    for (let index = 0; index < candidates.length; index++) {
-      if (used.has(index)) continue
-      const candidate = candidates[index]
-      const candidateText = normalizeText(candidate.text)
-
-      let score = 0
-      if (designText === candidateText) {
-        score = 1.0
-      } else {
-        const tScore = tokenScore(design.characters, candidate.text)
-        if (tScore > 0.85 && Math.min(designText.length, candidateText.length) >= 10) {
-          score = tScore
-        }
-      }
-
-      if (score > bestScore) {
-        bestScore = score
-        bestIdx = index
-      }
-    }
-
-    if (bestIdx >= 0 && bestScore >= 0.85) {
-      used.add(bestIdx)
-      const live = candidates[bestIdx]
-      const designY = design.absoluteBoundingBox.y - root.y
-      anchors.push({ designY, liveY: live.rect.y, confidence: bestScore })
-    }
-  }
-
-  return anchors.sort((a, b) => a.designY - b.designY)
-}
-
-function figmaColorToHex(fills: any[]): string | null {
-  if (!Array.isArray(fills)) return null
-  const solid = fills.find((f) => f.visible !== false && f.type === 'SOLID' && f.color)
-  if (!solid) return null
-  const r = Math.round((solid.color.r || 0) * 255)
-  const g = Math.round((solid.color.g || 0) * 255)
-  const b = Math.round((solid.color.b || 0) * 255)
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`.toLowerCase()
-}
-
-function parseCssColorToHex(cssColor: string): string | null {
-  if (!cssColor) return null
-  if (cssColor.startsWith('#')) return cssColor.toLowerCase()
-  const match = cssColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
-  if (match) {
-    const r = parseInt(match[1], 10)
-    const g = parseInt(match[2], 10)
-    const b = parseInt(match[3], 10)
-    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`.toLowerCase()
-  }
-  return null
-}
-
-function TokenIconBadge({ token }: { token: { name: string; passed: boolean; figma: string; css: string } }) {
+function TokenIconBadge({ token }: { token: TokenAssertion }) {
   const renderIcon = () => {
     switch (token.name) {
       case 'font-size':
@@ -619,6 +366,24 @@ function TokenIconBadge({ token }: { token: { name: string; passed: boolean; fig
             <rect x="3" y="3" width="18" height="18" rx="5" />
           </svg>
         )
+      case 'text-case':
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 17L7 7L11 17" />
+            <path d="M4.5 13H9.5" />
+            <path d="M13 8h5" />
+            <path d="M15.5 8v9" />
+          </svg>
+        )
+      case 'font-loaded':
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19L10 5L16 19" />
+            <path d="M6 14H14" />
+            <line x1="18" y1="6" x2="22" y2="10" />
+            <line x1="22" y1="6" x2="18" y2="10" />
+          </svg>
+        )
       default:
         return (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -629,6 +394,16 @@ function TokenIconBadge({ token }: { token: { name: string; passed: boolean; fig
   }
 
   const shortName = token.name.replace('font-', '').replace('letter-', '').replace('line-', '')
+
+  if (token.unresolved) {
+    return (
+      <div className="automate-token-chip unresolved" title={`${token.name}: could not be compared (Figma ${token.figma} vs live "${token.css}")`}>
+        <span className="tok-icon">{renderIcon()}</span>
+        <span className="tok-label">{shortName}</span>
+        <span className="tok-val">unresolved</span>
+      </div>
+    )
+  }
 
   return token.passed ? (
     <div className="automate-token-chip pass" title={`${token.name}: Figma ${token.figma} = CSS ${token.css}`}>
@@ -665,6 +440,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [ready, setReady] = useState(false); const [busy, setBusy] = useState(false); const [status, setStatus] = useState('Connect a Figma frame to begin.'); const [error, setError] = useState('')
   const [designImage, setDesignImage] = useState(''); const [liveImage, setLiveImage] = useState(''); const [diffImage, setDiffImage] = useState('')
   const [similarity, setSimilarity] = useState<number | null>(null); const [changed, setChanged] = useState<number | null>(null); const [view, setView] = useState<'diff' | 'design' | 'live'>('diff')
+  const [sections, setSections] = useState<PageSection[]>([])
   const [progress, setProgress] = useState({ percent: 0, detail: '' })
   const [liveDocumentHeight, setLiveDocumentHeight] = useState<number | null>(null)
   const [selectedFindingIndex, setSelectedFindingIndex] = useState<number | null>(null)
@@ -672,9 +448,38 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [rawDesignNode, setRawDesignNode] = useState<any>(null)
   const [rawDomNodes, setRawDomNodes] = useState<DomNode[] | null>(null)
   const [rawVisualData, setRawVisualData] = useState<any>(null)
+  const [triage, setTriage] = useState<FindingTriageMap>({})
+  const [showTriaged, setShowTriaged] = useState(false)
+  const [styleNames, setStyleNames] = useState<Record<string, string>>({})
+  const [breakpoint, setBreakpoint] = useState<'Desktop' | 'Tablet' | 'Mobile'>('Desktop')
+  const [runHistory, setRunHistory] = useState<AutomateRunSummary[]>([])
+  const [lastCompletedRunId, setLastCompletedRunId] = useState(0)
   const selectedFrame = useMemo(() => frames.find((frame) => frame.id === frameId), [frameId, frames])
 
   useEffect(() => { window.electronAPI.figmaTokenStatus().then((result) => setTokenConfigured(result.configured)).catch(() => { }) }, [])
+  useEffect(() => { window.electronAPI.getFindingTriage(projectId).then(setTriage).catch(() => { }) }, [projectId])
+
+  // A frame's own width is a reasonable guess at its breakpoint; the analyst can
+  // override it when tagging runs for history, since guesses aren't always right.
+  useEffect(() => {
+    if (!selectedFrame) return
+    setBreakpoint(selectedFrame.width < 600 ? 'Mobile' : selectedFrame.width < 1024 ? 'Tablet' : 'Desktop')
+  }, [selectedFrame])
+
+  useEffect(() => {
+    if (!selectedFrame) { setRunHistory([]); return }
+    window.electronAPI.getAutomateRuns(projectId, selectedFrame.id).then(setRunHistory).catch(() => { })
+  }, [projectId, selectedFrame])
+
+  const applyTriage = (findingId: string, state: FindingTriageState | null) => {
+    setTriage((prev) => {
+      const next = { ...prev }
+      if (state) next[findingId] = { state, at: Date.now() }
+      else delete next[findingId]
+      return next
+    })
+    void window.electronAPI.setFindingTriage(projectId, findingId, state)
+  }
   useEffect(() => { if (figmaUrl && !designUrl) setDesignUrl(figmaUrl) }, [designUrl, figmaUrl])
   useEffect(() => {
     const view = webviewRef.current
@@ -717,6 +522,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     setBusy(false)
     if (!result.success) return setError(result.error || 'Unable to read the Figma file.')
     const nextFrames = result.frames || []; setFrames(nextFrames); setFileName(result.fileName || 'Figma design')
+    setStyleNames(result.styleNames || {})
     const requested = nextFrames.find((frame) => frame.id === result.requestedNodeId)?.id
     setFrameId(requested || nextFrames[0]?.id || ''); localStorage.setItem(`qa_${projectId}_automate_figma_url`, designUrl.trim())
     setStatus(`${nextFrames.length} comparable frames found.`)
@@ -729,7 +535,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     activeVisualJobRef.current = visualJobId
     const cancelled = () => comparisonRunRef.current !== runId
     const updateProgress = (percent: number, detail: string) => { if (!cancelled()) { setProgress({ percent: Math.round(percent), detail }); setStatus(detail) } }
-    setBusy(true); setError(''); setStatus('Preparing comparison…'); setProgress({ percent: 4, detail: 'Preparing comparison…' }); setSelectedFindingIndex(null); setVisualEngine('')
+    setBusy(true); setError(''); setStatus('Preparing comparison…'); setProgress({ percent: 4, detail: 'Preparing comparison…' }); setSelectedFindingIndex(null); setVisualEngine(''); setSections([])
     try {
       const view = webviewRef.current
       updateProgress(8, 'Checking the authenticated staging page…')
@@ -787,13 +593,20 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
           }
           return parts.join(' > ');
         };
+        const fontActuallyLoaded = (style) => {
+          try {
+            const family = (style.fontFamily.split(',')[0] || '').trim().replace(/^["']|["']$/g, '');
+            if (!family || !document.fonts || !document.fonts.check) return true;
+            return document.fonts.check(style.fontWeight + ' ' + style.fontSize + ' "' + family + '"');
+          } catch { return true; }
+        };
         return Array.from(document.querySelectorAll(selectors)).map((element) => {
           const rect = element.getBoundingClientRect(); const style = getComputedStyle(element);
           const positioned = style.position === 'fixed' || style.position === 'sticky';
           const insideNestedScroller = scroller !== documentScroller && scroller.contains(element);
           const pageX = positioned ? rect.left : insideNestedScroller ? rect.left - scrollerRect.left + scroller.scrollLeft : rect.left + scrollX;
           const pageY = positioned ? rect.top : insideNestedScroller ? rect.top - scrollerRect.top + scroller.scrollTop : rect.top + scrollY;
-          return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, position: style.position } };
+          return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, textTransform: style.textTransform, position: style.position, fontLoaded: String(fontActuallyLoaded(style)) } };
         }).filter((item) => item.rect.width > 1 && item.rect.height > 1 && item.rect.x > -item.rect.width && item.rect.x < document.documentElement.scrollWidth + item.rect.width && item.rect.y > -item.rect.height && item.rect.y < pageHeight + item.rect.height);
       })()`, true) as DomNode[]
       const liveHeight = liveCapture.documentHeight || captureViewportHeight
@@ -803,7 +616,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
       let workerProgress = 81
       const workerProgressTimer = window.setInterval(() => { workerProgress = Math.min(90, workerProgress + 1); updateProgress(workerProgress, workerProgress < 86 ? 'Registering long-page sections with OpenCV…' : 'Calculating SSIM heatmap and change contours…') }, 900)
       try {
-        enhancedVisual = await withTimeout(window.electronAPI.compareVisuals(visualJobId, design.imageDataUrl, liveCapture.dataUrl, semanticAnchors, activeEngineMode), 95_000, 'The OpenCV visual comparison exceeded 95 seconds.')
+        enhancedVisual = await withTimeout(window.electronAPI.compareVisuals(visualJobId, design.imageDataUrl, liveCapture.dataUrl, semanticAnchors, 'visual-surface'), 95_000, 'The OpenCV visual comparison exceeded 95 seconds.')
       } catch (workerError: any) {
         enhancedVisual = { success: false, error: workerError?.message || 'The OpenCV worker was unavailable.', fallback: true }
       } finally { clearInterval(workerProgressTimer) }
@@ -816,8 +629,9 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
         setRawDesignNode(design.node)
         setRawDomNodes(domNodes)
         setRawVisualData(visual)
-        setDesignImage(design.imageDataUrl); setLiveImage(liveCapture.dataUrl); setDiffImage(visual.dataUrl); setSimilarity(visual.similarity); setChanged(visual.changedPercent); setLiveDocumentHeight(liveHeight); setVisualEngine(visual.engine)
+        setDesignImage(design.imageDataUrl); setLiveImage(liveCapture.dataUrl); setDiffImage(visual.dataUrl); setSimilarity(visual.similarity); setChanged(visual.changedPercent); setLiveDocumentHeight(liveHeight); setVisualEngine(visual.engine); setSections(enhancedVisual?.sections || [])
         setView('diff'); setProgress({ percent: 100, detail: `Comparison complete · ${liveCapture.mode === 'atomic-cdp' ? 'atomic Chromium capture' : `${liveCapture.tiles} capture tiles`} · ${visual.engine}` }); setStatus('Comparison complete.')
+        setLastCompletedRunId(runId)
       }
     } catch (cause: any) {
       if (!cancelled()) { const message = cause?.message || 'Comparison failed.'; setError(message); setStatus(message === 'Comparison cancelled.' ? 'Comparison cancelled.' : 'Comparison stopped.'); setProgress({ percent: 0, detail: '' }) }
@@ -831,15 +645,13 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     setBusy(false); setProgress({ percent: 0, detail: '' }); setStatus('Comparison cancelled.'); setError('Comparison cancelled before completion.')
   }
 
-  const [activeEngineMode, setActiveEngineMode] = useState<'visual-surface' | 'token-auditor'>('visual-surface')
-  const [useExperimentalUiMatch, setUseExperimentalUiMatch] = useState(false)
   const captureWidth = selectedFrame?.width || 1440
   const captureViewportHeight = 1200
 
   const findings = useMemo(() => {
     if (!rawDesignNode || !rawDomNodes || !selectedFrame) return []
     const liveHeight = liveDocumentHeight || captureViewportHeight
-    const nextFindings = semanticFindings(rawDesignNode, rawDomNodes, selectedFrame.width, liveHeight, activeEngineMode)
+    const nextFindings = semanticFindings(rawDesignNode, rawDomNodes, selectedFrame.width, liveHeight, styleNames)
     if (rawVisualData?.regions?.length && rawVisualData?.anchors?.length) {
       const mapLiveY = (designY: number) => {
         const anchors = rawVisualData.anchors as Array<{ designY: number; liveY: number }>
@@ -854,43 +666,80 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
         const liveY = mapLiveY(region.y); const liveBottom = mapLiveY(region.y + region.height)
         const designRegion: ComparedRegion = { rect: { x: region.x, y: region.y, width: region.width, height: region.height }, pageWidth: selectedFrame.width, pageHeight: selectedFrame.height, label: `OpenCV difference region ${index + 1}` }
         const liveRegion: ComparedRegion = { rect: { x: region.x / selectedFrame.width * captureWidth, y: liveY, width: region.width / selectedFrame.width * captureWidth, height: Math.max(1, liveBottom - liveY) }, pageWidth: captureWidth, pageHeight: liveHeight, label: `Registered live region · ${region.difference}% structural difference` }
-        nextFindings.push({ severity: region.difference > 55 ? 'high' : region.difference > 32 ? 'medium' : 'low', title: `Visual difference region ${index + 1}`, detail: `${region.width}×${region.height}px region · ${region.difference}% structural difference after section alignment.`, confidence: Math.min(100, Math.round(region.difference)), comparison: { design: designRegion, live: liveRegion, delta: { x: liveRegion.rect.x - designRegion.rect.x, y: liveRegion.rect.y - designRegion.rect.y, width: liveRegion.rect.width - designRegion.rect.width, height: liveRegion.rect.height - designRegion.rect.height } } })
+        nextFindings.push({ id: stableId('opencv-region', String(index), String(Math.round(region.y))), severity: region.difference > 55 ? 'high' : region.difference > 32 ? 'medium' : 'low', title: `Visual difference region ${index + 1}`, detail: `${region.width}×${region.height}px region · ${region.difference}% structural difference after section alignment.`, confidence: Math.min(100, Math.round(region.difference)), comparison: { design: designRegion, live: liveRegion, delta: { x: liveRegion.rect.x - designRegion.rect.x, y: liveRegion.rect.y - designRegion.rect.y, width: liveRegion.rect.width - designRegion.rect.width, height: liveRegion.rect.height - designRegion.rect.height } } })
       }
     }
-    nextFindings.unshift({ severity: Math.abs(selectedFrame.height - liveHeight) > 20 ? 'medium' : 'pass', title: Math.abs(selectedFrame.height - liveHeight) > 20 ? 'Full-page height differs' : 'Full-page height matches', detail: `Figma ${selectedFrame.height}px · Live ${liveHeight}px · Chromium viewport ${captureWidth}×${captureViewportHeight}`, confidence: 100, comparison: { design: { rect: { x: 0, y: 0, width: selectedFrame.width, height: selectedFrame.height }, pageWidth: selectedFrame.width, pageHeight: selectedFrame.height, label: `Figma full page · ${selectedFrame.width}×${selectedFrame.height}` }, live: { rect: { x: 0, y: 0, width: captureWidth, height: liveHeight }, pageWidth: captureWidth, pageHeight: liveHeight, label: `Live full page · ${captureWidth}×${liveHeight}` }, delta: { height: liveHeight - selectedFrame.height } } })
+    nextFindings.unshift({ id: stableId('page-height'), severity: Math.abs(selectedFrame.height - liveHeight) > 20 ? 'medium' : 'pass', title: Math.abs(selectedFrame.height - liveHeight) > 20 ? 'Full-page height differs' : 'Full-page height matches', detail: `Figma ${selectedFrame.height}px · Live ${liveHeight}px · Chromium viewport ${captureWidth}×${captureViewportHeight}`, confidence: 100, comparison: { design: { rect: { x: 0, y: 0, width: selectedFrame.width, height: selectedFrame.height }, pageWidth: selectedFrame.width, pageHeight: selectedFrame.height, label: `Figma full page · ${selectedFrame.width}×${selectedFrame.height}` }, live: { rect: { x: 0, y: 0, width: captureWidth, height: liveHeight }, pageWidth: captureWidth, pageHeight: liveHeight, label: `Live full page · ${captureWidth}×${liveHeight}` }, delta: { height: liveHeight - selectedFrame.height } } })
     const getY = (item: Finding) => {
       if (item.comparison?.live?.rect?.y !== undefined) return item.comparison.live.rect.y
       if (item.comparison?.design?.rect?.y !== undefined) return item.comparison.design.rect.y
       return 0
     }
     return nextFindings.sort((a, b) => getY(a) - getY(b))
-  }, [rawDesignNode, rawDomNodes, selectedFrame, liveDocumentHeight, activeEngineMode, rawVisualData, captureWidth, captureViewportHeight])
+  }, [rawDesignNode, rawDomNodes, selectedFrame, liveDocumentHeight, rawVisualData, captureWidth, captureViewportHeight, styleNames])
+
+  // Findings the analyst already accepted or dismissed drop out of the default
+  // view — otherwise every run re-surfaces the same known deltas forever.
+  const triagedCount = useMemo(() => findings.filter((f) => triage[f.id]).length, [findings, triage])
+  const visibleFindings = useMemo(() => showTriaged ? findings : findings.filter((f) => !triage[f.id]), [findings, triage, showTriaged])
+
+  // Severity-weighted counts — a defect list that can be triaged, not a raster
+  // similarity percentage nobody can act on.
+  const severityCounts = useMemo(() => ({
+    high: visibleFindings.filter((f) => f.severity === 'high').length,
+    medium: visibleFindings.filter((f) => f.severity === 'medium').length,
+    low: visibleFindings.filter((f) => f.severity === 'low').length,
+    pass: visibleFindings.filter((f) => f.severity === 'pass').length
+  }), [visibleFindings])
 
   const dfs = useMemo(() => {
-    if (similarity === null || changed === null) return null;
-    const pixelPenalty = Math.min(50, (changed / 100) * 50 * 2.2);
-    const highCount = findings.filter((item) => item.severity === 'high').length;
-    const medCount = findings.filter((item) => item.severity === 'medium').length;
-    const highPenalty = Math.min(30, highCount * 8);
-    const medPenalty = Math.min(15, medCount * 4);
-    const score = Math.max(0, Math.min(100, Math.round(100 - pixelPenalty - highPenalty - medPenalty)));
-    return { score, pixelPenalty: Math.round(pixelPenalty), highPenalty, medPenalty };
-  }, [similarity, changed, findings]);
+    const pixelPenalty = similarity === null || changed === null ? 0 : Math.min(50, (changed / 100) * 50 * 2.2)
+    const highPenalty = Math.min(30, severityCounts.high * 8)
+    const medPenalty = Math.min(15, severityCounts.medium * 4)
+    const score = Math.max(0, Math.min(100, Math.round(100 - pixelPenalty - highPenalty - medPenalty)))
+    return { score, pixelPenalty: Math.round(pixelPenalty), highPenalty, medPenalty }
+  }, [similarity, changed, severityCounts])
+
+  // Records a lightweight trend point once per completed run — never on triage
+  // changes or re-renders, only when a comparison actually finished. Reads the
+  // freshest findings/severity/score via closure since this fires in the same
+  // commit those values updated in.
+  useEffect(() => {
+    if (!lastCompletedRunId || !selectedFrame) return
+    const summary: AutomateRunSummary = {
+      id: stableId(selectedFrame.id, String(lastCompletedRunId), String(Date.now())),
+      frameId: selectedFrame.id,
+      frameName: selectedFrame.name,
+      breakpoint,
+      captureWidth,
+      at: Date.now(),
+      severityCounts,
+      conformanceScore: dfs.score,
+      findingsCount: findings.length
+    }
+    window.electronAPI.saveAutomateRun(projectId, summary)
+      .then(() => window.electronAPI.getAutomateRuns(projectId, selectedFrame.id))
+      .then(setRunHistory)
+      .catch(() => { })
+    // Deliberately keyed only on lastCompletedRunId — see comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastCompletedRunId])
 
   const [findingsFilter, setFindingsFilter] = useState<'all' | 'tokens' | 'layout' | 'content' | 'pass'>('all')
 
-  const countTokens = useMemo(() => findings.filter((f) => f.title.startsWith('CSS Token') || f.title.includes('Font-')).length, [findings])
-  const countLayout = useMemo(() => findings.filter((f) => f.title.includes('Position') || f.title.includes('height') || f.title.includes('Visual difference')).length, [findings])
-  const countContent = useMemo(() => findings.filter((f) => f.title.includes('Missing design text') || f.title.includes('Image count')).length, [findings])
-  const countPass = useMemo(() => findings.filter((f) => f.severity === 'pass').length, [findings])
+  const isLayoutFinding = (f: Finding) => f.title.includes('Position') || f.title.includes('height') || f.title.includes('Visual difference') || f.title.includes('Section growth') || f.title.includes('Container is shifted') || f.title.includes('Spacing mismatch')
+  const countTokens = useMemo(() => visibleFindings.filter((f) => f.title.startsWith('CSS Token') || f.title.includes('Font-')).length, [visibleFindings])
+  const countLayout = useMemo(() => visibleFindings.filter(isLayoutFinding).length, [visibleFindings])
+  const countContent = useMemo(() => visibleFindings.filter((f) => f.title.includes('Missing design text') || f.title.includes('Image count')).length, [visibleFindings])
+  const countPass = useMemo(() => visibleFindings.filter((f) => f.severity === 'pass').length, [visibleFindings])
 
   const filteredFindings = useMemo(() => {
-    if (findingsFilter === 'tokens') return findings.filter((f) => f.title.startsWith('CSS Token') || f.title.includes('Font-'))
-    if (findingsFilter === 'layout') return findings.filter((f) => f.title.includes('Position') || f.title.includes('height') || f.title.includes('Visual difference'))
-    if (findingsFilter === 'content') return findings.filter((f) => f.title.includes('Missing design text') || f.title.includes('Image count'))
-    if (findingsFilter === 'pass') return findings.filter((f) => f.severity === 'pass')
-    return findings
-  }, [findings, findingsFilter])
+    if (findingsFilter === 'tokens') return visibleFindings.filter((f) => f.title.startsWith('CSS Token') || f.title.includes('Font-'))
+    if (findingsFilter === 'layout') return visibleFindings.filter(isLayoutFinding)
+    if (findingsFilter === 'content') return visibleFindings.filter((f) => f.title.includes('Missing design text') || f.title.includes('Image count'))
+    if (findingsFilter === 'pass') return visibleFindings.filter((f) => f.severity === 'pass')
+    return visibleFindings
+  }, [visibleFindings, findingsFilter])
 
   return <div className="automate-workspace">
     <webview ref={webviewRef} className="automate-capture-webview" src={sourceUrl} webpreferences="backgroundThrottling=no" style={{ width: captureWidth, height: captureViewportHeight }} />
@@ -928,33 +777,22 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
         <section className="automate-source-bar">
           <label><span>Figma design</span><input value={designUrl} onChange={(event) => setDesignUrl(event.target.value)} placeholder="https://www.figma.com/design/…?node-id=…" /></label>
           <button className="automate-secondary" disabled={busy || !designUrl.trim()} onClick={loadFrames}>Load frames</button>
-          <label className="automate-frame-select"><span>Frame</span><select value={frameId} onChange={(event) => setFrameId(event.target.value)} disabled={!frames.length}><option value="">Select a frame</option>{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.pageName} / {frame.name} · {frame.width}×{frame.height}</option>)}</select></label>
+          <label className="automate-frame-select"><span>Frame</span><select value={frameId} onChange={(event) => setFrameId(event.target.value)} disabled={!frames.length}><option value="">Select a frame</option>{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.pageName}{frame.path ? ` / ${frame.path}` : ''} / {frame.name} · {frame.width}×{frame.height}</option>)}</select></label>
+          <label className="automate-breakpoint-select" title="Tags this run in history — guessed from the frame's width, override if it's wrong"><span>Breakpoint</span><select value={breakpoint} onChange={(event) => setBreakpoint(event.target.value as typeof breakpoint)}><option value="Desktop">Desktop</option><option value="Tablet">Tablet</option><option value="Mobile">Mobile</option></select></label>
           {busy ? <button className="automate-secondary automate-cancel" onClick={cancelComparison}>Cancel</button> : <button className="automate-primary" disabled={!selectedFrame} onClick={runComparison} title={ready ? 'Run visual and semantic comparison' : 'The staging page will be checked before comparison starts'}>Run comparison</button>}
           <button className="automate-icon-btn" title="Replace Figma API token" onClick={async () => { await window.electronAPI.setFigmaToken(''); setTokenConfigured(false) }}><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1Z" /></svg></button>
         </section>
 
-        <section className="automate-mode-bar">
-          <span className="automate-mode-label">Inspection Engine</span>
-          <div className="automate-mode-segmented">
-            <button
-              className={`automate-mode-btn ${activeEngineMode === 'visual-surface' ? 'active' : ''}`}
-              onClick={() => setActiveEngineMode('visual-surface')}
-              title="Visual & Layout Engine: Hybrid OpenCV SSIM Surface Comparison & AKAZE Keypoint Registration"
-            >
-              Visual & Layout Engine
-            </button>
-            <button
-              className={`automate-mode-btn ${activeEngineMode === 'token-auditor' ? 'active' : ''}`}
-              onClick={() => setActiveEngineMode('token-auditor')}
-              title="Design Token Auditor: Figma AST vs Computed CSS Spec Audit"
-            >
-              Design Token Auditor
-            </button>
-          </div>
-        </section>
         {busy && <section className="automate-progress" aria-live="polite"><div><span>{progress.detail || 'Comparing…'}</span><strong>{progress.percent}%</strong></div><i><b style={{ width: `${progress.percent}%` }} /></i></section>}
         {error && <div className="automate-error">{error}</div>}
         {similarity === null ? <section className="automate-empty"><div className="automate-empty-grid"><span /><span /><span /><span /></div><h3>{frames.length ? 'Ready to compare' : 'Choose a Figma file and frame'}</h3><p>{selectedFrame ? `Design frame: ${selectedFrame.width}×${selectedFrame.height} full page · Chromium viewport: ${captureWidth}×${captureViewportHeight} · Live page height will be detected and stitched automatically.` : 'The matcher does not require Figma layer names to match WordPress or Elementor classes.'}</p>{fileName && <small>{fileName}</small>}</section> : <div className="automate-results">
+          <div className="automate-score-row">
+            <div><strong>{severityCounts.high}</strong><span>Blocking</span></div>
+            <div><strong>{severityCounts.medium}</strong><span>Warning</span></div>
+            <div><strong>{severityCounts.low}</strong><span>Minor</span></div>
+            <div><strong>{severityCounts.pass}</strong><span>Verified</span></div>
+            <div><strong>{dfs?.score ?? '—'}</strong><span>Conformance</span></div>
+          </div>
           <div className="automate-result-grid">
             <section className="automate-visual-card">
               <div className="automate-card-head">
@@ -980,9 +818,17 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
               )}
             </section>
             <section className="automate-findings">
-              <div className="automate-card-head"><div><h3>Findings ({filteredFindings.length})</h3><span>Click a finding to inspect its visual evidence</span></div></div>
+              <div className="automate-card-head">
+                <div><h3>Findings ({filteredFindings.length})</h3><span>Click a finding to inspect its visual evidence</span></div>
+                {triagedCount > 0 && (
+                  <label className="automate-triage-toggle">
+                    <input type="checkbox" checked={showTriaged} onChange={(e) => setShowTriaged(e.target.checked)} />
+                    Show triaged ({triagedCount})
+                  </label>
+                )}
+              </div>
               <div className="automate-findings-tabs">
-                <button className={findingsFilter === 'all' ? 'active' : ''} onClick={() => setFindingsFilter('all')}>All ({findings.length})</button>
+                <button className={findingsFilter === 'all' ? 'active' : ''} onClick={() => setFindingsFilter('all')}>All ({visibleFindings.length})</button>
                 <button className={findingsFilter === 'tokens' ? 'active' : ''} onClick={() => setFindingsFilter('tokens')}>Tokens ({countTokens})</button>
                 <button className={findingsFilter === 'layout' ? 'active' : ''} onClick={() => setFindingsFilter('layout')}>Layout ({countLayout})</button>
                 <button className={findingsFilter === 'content' ? 'active' : ''} onClick={() => setFindingsFilter('content')}>Missing ({countContent})</button>
@@ -994,7 +840,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
                   return (
                     <button
                       type="button"
-                      key={`${finding.title}-${realIndex}`}
+                      key={finding.id}
                       className={`severity-${finding.severity}${selectedFindingIndex === realIndex ? ' selected' : ''}`}
                       onClick={() => finding.comparison && setSelectedFindingIndex(realIndex)}
                       aria-pressed={selectedFindingIndex === realIndex}
@@ -1031,6 +877,23 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
                             </div>
                           )
                         })()}
+                        {finding.severity !== 'pass' && (
+                          <div className="automate-triage-row">
+                            {triage[finding.id] ? (
+                              <>
+                                <span className={`automate-triage-badge ${triage[finding.id].state}`}>
+                                  {triage[finding.id].state === 'accepted' ? 'Accepted' : triage[finding.id].state === 'false-positive' ? 'False positive' : 'Ignored'}
+                                </span>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, null) }}>Reset</button>
+                              </>
+                            ) : (
+                              <>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, 'accepted') }} title="Mark as an expected, known-acceptable difference">Accept as baseline</button>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, 'false-positive') }} title="The matcher got this one wrong">False positive</button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <small>{finding.confidence}%</small>
                     </button>
@@ -1039,7 +902,67 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
               </div>
             </section>
           </div>
+          {sections.length > 0 && (
+            <section className="automate-sections-panel">
+              <div className="automate-card-head">
+                <div>
+                  <h3>Page sections ({sections.length})</h3>
+                  <span>Per-section SSIM — boundaries auto-detected from edge density and color transitions</span>
+                </div>
+              </div>
+              <div className="automate-sections-list">
+                {sections.map((section) => (
+                  <div key={section.name} className="automate-section-row">
+                    <span className="automate-section-name">{section.name}</span>
+                    <div className="automate-section-bar-track">
+                      <div
+                        className="automate-section-bar-fill"
+                        style={{
+                          width: `${section.similarity}%`,
+                          background: section.similarity >= 95 ? '#34d399' : section.similarity >= 80 ? '#f59e0b' : '#ef4444',
+                        }}
+                      />
+                    </div>
+                    <span className="automate-section-score">{section.similarity.toFixed(1)}%</span>
+                    <span className="automate-section-meta">design {section.designY}–{section.designY + section.designHeight}px</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>}
       </>)}
+    {runHistory.length > 0 && (() => {
+      const sameBreakpoint = runHistory.filter((r) => r.breakpoint === breakpoint).sort((a, b) => b.at - a.at)
+      const delta = sameBreakpoint.length >= 2 ? sameBreakpoint[0].conformanceScore - sameBreakpoint[1].conformanceScore : null
+      return (
+        <section className="automate-history-panel">
+          <div className="automate-card-head">
+            <div>
+              <h3>Run history · {breakpoint}</h3>
+              <span>{runHistory.length} run{runHistory.length === 1 ? '' : 's'} recorded for this frame across breakpoints</span>
+            </div>
+            {delta !== null && (
+              <span className={`automate-trend ${delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'}`}>
+                {delta > 0 ? '▲' : delta < 0 ? '▼' : '—'} {delta > 0 ? '+' : ''}{delta} vs last {breakpoint} run
+              </span>
+            )}
+          </div>
+          <div className="automate-history-body">
+            <ConformanceSparkline runs={sameBreakpoint} />
+            <div className="automate-history-list">
+              {runHistory.slice(0, 6).map((run) => (
+                <div key={run.id} className="automate-history-row">
+                  <span className="automate-history-bp">{run.breakpoint}</span>
+                  <span className="automate-history-date">{new Date(run.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                  <span className="automate-history-score">{run.conformanceScore}</span>
+                  <span className="automate-history-counts">{run.severityCounts.high}H · {run.severityCounts.medium}M · {run.severityCounts.low}L</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )
+    })()}
   </div>
 }
