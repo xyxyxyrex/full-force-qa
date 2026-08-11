@@ -188,6 +188,76 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
+.workspace-action-group {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: 4px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  white-space: nowrap;
+}
+
+.generate-items-control { position:relative; display:inline-flex; }
+.generate-expiry-popover { position:absolute; top:34px; right:0; z-index:1200; min-width:156px; padding:9px; border:1px solid rgba(255,255,255,.18); border-radius:8px; background:#202024; box-shadow:0 12px 30px rgba(0,0,0,.65); }
+.generate-expiry-popover>span { display:block; margin-bottom:7px; color:#a1a1aa; font:700 10px/1 "SFMono-Regular",Consolas,monospace; letter-spacing:.06em; text-transform:uppercase; }
+.generate-expiry-popover>div { display:flex; gap:5px; }
+.generate-expiry-popover button { flex:1; min-height:28px; padding:4px 7px; border:1px solid #52525b; border-radius:5px; background:#27272a; color:#f4f4f5; font:700 11px/1 system-ui; cursor:pointer; }
+.generate-expiry-popover button:hover,.generate-expiry-popover button.selected { border-color:#ff0055; background:#ff00551f; color:#fff; }
+
+.workspace-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 28px;
+  gap: 6px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #a1a1aa;
+  font: 700 10px/1 "SFMono-Regular", "SF Mono", Consolas, monospace;
+  letter-spacing: 0.055em;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.workspace-action-btn:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.workspace-action-btn.active {
+  color: #fff;
+  background: var(--accent-color);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
+}
+
+.workspace-action-btn.record.active {
+  background: #dc2626;
+}
+
+.workspace-action-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.workspace-action-btn .record-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  box-shadow: none;
+}
+
+.workspace-action-btn.record.active .record-dot {
+  background: #fff;
+  animation: recordBlink 1s infinite;
+}
+
 .toolbar-btn {
   display: inline-flex;
   align-items: center;
@@ -286,6 +356,17 @@
   .toolbar-divider {
     display: none;
   }
+  .workspace-action-btn {
+    padding: 0 7px;
+    gap: 4px;
+  }
+  .workspace-action-btn.generate .workspace-action-label {
+    font-size: 0;
+  }
+  .workspace-action-btn.generate .workspace-action-label::after {
+    content: "GENERATE";
+    font-size: 10px;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -304,6 +385,13 @@
   }
   .workspace-tab-btn {
     padding: 4px 6px;
+  }
+  .workspace-action-btn {
+    width: 28px;
+    padding: 0;
+  }
+  .workspace-action-label {
+    display: none;
   }
 }
 
@@ -2390,4 +2478,194 @@ body.is-panel-resizing {
   padding-right: 0;
   padding-left: 0;
   justify-content: center;
+}
+
+/* ── Floating Bottom Annotation Toolbar ── */
+.floating-annotation-toolbar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  background: rgba(18, 18, 21, 0.94);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7);
+  animation: floatToolbarIn 0.2s ease-out;
+}
+
+@keyframes floatToolbarIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.annotation-tool-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.annotation-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.annotation-tool-btn.active {
+  background: #ff0055;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(255, 0, 85, 0.35);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
+}
+
+.annotation-colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch.active {
+  border-color: #ffffff;
+  transform: scale(1.2);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.annotation-done-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e4e4e7;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.annotation-done-btn:hover {
+  background: #27272a;
+  color: #ffffff;
+}
+
+/* ── Annotate Drawing Overlay (Blocks webview element hover/edit interference) ── */
+.annotate-drawing-canvas-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  user-select: none;
+  pointer-events: none;
+}
+
+.annotate-drawing-surface {
+  box-sizing: border-box;
+  overflow: visible;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.live-annotation-item {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.15s ease;
+}
+
+.live-annotation-item.active-drawing {
+  background: rgba(255, 0, 85, 0.1);
+}
+
+.annotation-vector-shape,
+.annotation-blur-shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.annotation-text-shape {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 6px 8px;
+  border-left: 3px solid currentColor;
+  border-radius: 4px;
+  background: rgba(17, 17, 19, .88);
+  color: #fff;
+  font: 700 12px/1.35 Inter, system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.annotation-blur-shape {
+  border: 1px dashed rgba(255, 255, 255, .65);
+  border-radius: 4px;
+  background: rgba(82, 82, 91, .62);
+  backdrop-filter: blur(9px);
+}
+
+.selection-box-overlay.annotation-type-arrow,
+.selection-box-overlay.annotation-type-pen,
+.selection-box-overlay.annotation-type-text,
+.selection-box-overlay.annotation-type-blur {
+  background: transparent;
+}
+
+.selection-box-overlay.annotation-type-arrow.selection-box-active,
+.selection-box-overlay.annotation-type-pen.selection-box-active,
+.selection-box-overlay.annotation-type-text.selection-box-active,
+.selection-box-overlay.annotation-type-blur.selection-box-active {
+  outline: 2px solid rgba(255, 255, 255, .7);
+  outline-offset: 3px;
+}
+
+.btn-confirm-box {
+  background: #22c55e;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-confirm-box:hover {
+  background: #16a34a;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.35);
 }

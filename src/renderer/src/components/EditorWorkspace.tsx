@@ -1,4 +1,5 @@
 import { Workbook } from "@fortune-sheet/react";
+import type { Sheet } from "@fortune-sheet/core";
 import "@fortune-sheet/react/dist/index.css";
 import React, {
   useEffect,
@@ -18,28 +19,34 @@ import AutomateWorkspace from "./AutomateWorkspace";
 import NativeStylePanel from "./NativeStylePanel";
 import CssInspectorEditor from "./CssInspectorEditor";
 import BeforeAfterSnippingModal from "./BeforeAfterSnippingModal";
+import { RichTextEditor, plainTextFromRichText } from "./RichTextEditor";
+import {
+  FullsiteCanvasModal,
+  type CanvasSelectionBox,
+  type CaptureInspectionOverlay,
+  type CaptureViewportInfo,
+} from "./FullsiteCanvasModal";
 import { toggleCanvasDuplicates } from "../utils/seoCanvasOverlay";
 import figmaIcon from "../assets/figma.png";
 import mondayIcon from "../assets/monday-icon-svgrepo-com.svg";
 import { fetchMondayTicketsApi, type MondayTicket } from "../utils/mondayApi";
 import "./EditorWorkspace.css";
 
-const defaultQaSheetData = [
+const defaultQaSheetData: Sheet[] = [
   {
     name: "QA Tracker",
     color: "#4c8bf5",
     status: 1,
     order: 0,
-    column: 14,
+    column: 3,
     row: 50,
     celldata: [
-      // Row 0: Dark Headers
       {
         r: 0,
         c: 0,
         v: {
-          v: "Page Link",
-          m: "Page Link",
+          v: "Title",
+          m: "Title",
           bg: "#1c1c1c",
           fc: "#ffffff",
           bl: 1,
@@ -51,8 +58,8 @@ const defaultQaSheetData = [
         r: 0,
         c: 1,
         v: {
-          v: "Section",
-          m: "Section",
+          v: "Description",
+          m: "Description",
           bg: "#1c1c1c",
           fc: "#ffffff",
           bl: 1,
@@ -64,138 +71,30 @@ const defaultQaSheetData = [
         r: 0,
         c: 2,
         v: {
-          v: "Screenshot",
-          m: "Screenshot",
+          v: "Annotated URL",
+          m: "Annotated URL",
           bg: "#1c1c1c",
           fc: "#ffffff",
           bl: 1,
           ht: 0,
           vt: 0,
-        },
-      },
-      {
-        r: 0,
-        c: 3,
-        v: {
-          v: "Remarks",
-          m: "Remarks",
-          bg: "#1c1c1c",
-          fc: "#ffffff",
-          bl: 1,
-          ht: 0,
-          vt: 0,
-        },
-      },
-      {
-        r: 0,
-        c: 4,
-        v: {
-          v: "Display",
-          m: "Display",
-          bg: "#1c1c1c",
-          fc: "#ffffff",
-          bl: 1,
-          ht: 0,
-          vt: 0,
-        },
-      },
-      {
-        r: 0,
-        c: 5,
-        v: {
-          v: "Status",
-          m: "Status",
-          bg: "#1c1c1c",
-          fc: "#ffffff",
-          bl: 1,
-          ht: 0,
-          vt: 0,
-        },
-      },
-      {
-        r: 0,
-        c: 6,
-        v: {
-          v: "QA Screenshots",
-          m: "QA Screenshots",
-          bg: "#1c1c1c",
-          fc: "#ffffff",
-          bl: 1,
-          ht: 0,
-          vt: 0,
-        },
-      },
-      {
-        r: 0,
-        c: 7,
-        v: {
-          v: "Reason for Rejection (if applicable)",
-          m: "Reason for Rejection (if applicable)",
-          bg: "#1c1c1c",
-          fc: "#ffffff",
-          bl: 1,
-          ht: 0,
-          vt: 0,
-        },
-      },
-      {
-        r: 0,
-        c: 8,
-        v: {
-          v: "Screenshot and Remarks (Dev)",
-          m: "Screenshot and Remarks (Dev)",
-          bg: "#1c1c1c",
-          fc: "#ffffff",
-          bl: 1,
-          ht: 0,
-          vt: 0,
-        },
-      },
-      {
-        r: 0,
-        c: 9,
-        v: {
-          v: "Remarks (PM)",
-          m: "Remarks (PM)",
-          bg: "#1c1c1c",
-          fc: "#ffffff",
-          bl: 1,
-          ht: 0,
-          vt: 0,
-        },
-      },
-
-      // Row 1: Subheader
-      {
-        r: 1,
-        c: 0,
-        v: {
-          v: "QA Notes:",
-          m: "QA Notes:",
-          bg: "#fff2cc",
-          fc: "#7f6000",
-          bl: 1,
-          it: 1,
         },
       },
     ],
     config: {
       merge: {},
       columnlen: {
-        0: 160,
-        1: 190,
-        2: 180,
-        3: 290,
-        4: 100,
-        5: 120,
-        6: 160,
-        7: 220,
-        8: 220,
-        9: 160,
+        0: 240,
+        1: 420,
+        2: 380,
       },
+      rowlen: { 0: 34 },
     },
   },
 ];
+
+const cloneQaSheetData = (data: Sheet[] = defaultQaSheetData): Sheet[] =>
+  JSON.parse(JSON.stringify(data)) as Sheet[];
 
 function getGoogleSheetsEmbedUrl(rawUrl: string): string {
   if (!rawUrl) return "";
@@ -570,6 +469,68 @@ const DEVTOOLS_PRESETS: DevtoolsPreset[] = [
   { name: "Nest Hub Max", w: 1280, h: 800 },
 ];
 
+const viewportKey = (width: number, height: number) =>
+  `${Math.round(width)}x${Math.round(height)}`;
+
+const annotationViewportKey = (annotation: CanvasSelectionBox) =>
+  annotation.viewportKey ||
+  viewportKey(annotation.viewportWidth || 0, annotation.viewportHeight || 0);
+
+function AnnotationShape({
+  annotation,
+}: {
+  annotation: Pick<
+    CanvasSelectionBox,
+    "id" | "type" | "color" | "title" | "notes" | "arrowPct" | "pointsPct"
+  >;
+}) {
+  const type = annotation.type || "box";
+  if (type === "arrow") {
+    const arrow = annotation.arrowPct || { startX: 0, startY: 100, endX: 100, endY: 0 };
+    const markerId = `annotation-arrow-${annotation.id.replace(/[^a-z0-9_-]/gi, "")}`;
+    return (
+      <svg className="annotation-vector-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <defs>
+          <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L8,4 L0,8 Z" fill={annotation.color} />
+          </marker>
+        </defs>
+        <line
+          x1={arrow.startX}
+          y1={arrow.startY}
+          x2={arrow.endX}
+          y2={arrow.endY}
+          stroke={annotation.color}
+          strokeWidth="3"
+          vectorEffect="non-scaling-stroke"
+          markerEnd={`url(#${markerId})`}
+        />
+      </svg>
+    );
+  }
+  if (type === "pen") {
+    const points = annotation.pointsPct || [];
+    return (
+      <svg className="annotation-vector-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polyline
+          points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+          fill="none"
+          stroke={annotation.color}
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+    );
+  }
+  if (type === "text") {
+    return <div className="annotation-text-shape">{plainTextFromRichText(annotation.notes) || annotation.title || "Text note"}</div>;
+  }
+  if (type === "blur") return <div className="annotation-blur-shape" />;
+  return null;
+}
+
 const ZOOM_MIN = 25;
 const ZOOM_MAX = 200;
 const ZOOM_STEP = 10;
@@ -708,8 +669,446 @@ export default function EditorWorkspace({
   const [recordingAfterImage, setRecordingAfterImage] = useState<string | null>(null);
   const [recordingTimerSeconds, setRecordingTimerSeconds] = useState(0);
   const [isSnippingModalOpen, setIsSnippingModalOpen] = useState(false);
+  const [isFullsiteCanvasOpen, setIsFullsiteCanvasOpen] = useState(false);
+  const [isCapturingFullsite, setIsCapturingFullsite] = useState(false);
+  const [generateExpiryOpen, setGenerateExpiryOpen] = useState(false);
+  const [shareExpirySeconds, setShareExpirySeconds] = useState(7 * 24 * 60 * 60);
+  const [isAnnotateActive, setIsAnnotateActive] = useState(false);
+  const [activeAnnotationTool, setActiveAnnotationTool] = useState<'select' | 'box' | 'arrow' | 'rect' | 'circle' | 'pen' | 'text' | 'blur'>('select');
+  const [annotationColor, setAnnotationColor] = useState('#ff0055');
+  const [fullsiteMasterImage, setFullsiteMasterImage] = useState<string | null>(null);
+  const [fullsiteCaptureViewport, setFullsiteCaptureViewport] =
+    useState<CaptureViewportInfo | null>(null);
+  const [fullsiteCaptureKey, setFullsiteCaptureKey] = useState(0);
+  const [fullsiteInspectionOverlays, setFullsiteInspectionOverlays] =
+    useState<CaptureInspectionOverlay[]>([]);
+
+  // Live Annotations State & Event Handlers with Scroll Offset Tracking
+  const [liveAnnotations, setLiveAnnotations] = useState<CanvasSelectionBox[]>([]);
+  const [selectedLiveAnnId, setSelectedLiveAnnId] = useState<string | null>(null);
+  const [isDrawingLive, setIsDrawingLive] = useState(false);
+  const [liveDrawStart, setLiveDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [liveDrawCurrent, setLiveDrawCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [liveDrawPoints, setLiveDrawPoints] = useState<Array<{ x: number; y: number }>>([]);
+  const [currentScrollY, setCurrentScrollY] = useState(0);
+  const [annotationFrame, setAnnotationFrame] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    pageWidth: number;
+    pageHeight: number;
+  } | null>(null);
+  const annotationLayerRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+
+  const activeAnnotationViewport = useMemo<CaptureViewportInfo>(() => {
+    const width = Math.round(
+      annotationFrame?.pageWidth ||
+        (canvasViewMode === "multi"
+          ? activeFrames.find((frame) => frame.id === activeFrameId)?.width
+          : vpWidth) ||
+        vpWidth,
+    );
+    const height = Math.round(
+      annotationFrame?.pageHeight ||
+        (canvasViewMode === "multi"
+          ? activeFrames.find((frame) => frame.id === activeFrameId)?.height
+          : vpHeight) ||
+        vpHeight,
+    );
+    const matchingFrame = activeFrames.find(
+      (frame) => frame.width === width && frame.height === height,
+    );
+    const matchingPreset = DEVTOOLS_PRESETS.find(
+      (preset) => preset.w === width && preset.h === height,
+    );
+    const deviceType =
+      matchingFrame?.deviceType ||
+      (width >= 1400 ? "desktop" : width >= 700 ? "tablet" : width <= 600 ? "mobile" : "custom");
+
+    return {
+      key: viewportKey(width, height),
+      name: matchingFrame?.name || matchingPreset?.name.replace(/\s*\([^)]*\)$/, "") || "Custom",
+      width,
+      height,
+      deviceType,
+    };
+  }, [activeFrameId, activeFrames, annotationFrame, canvasViewMode, vpHeight, vpWidth]);
+
+  const visibleLiveAnnotations = useMemo(
+    () =>
+      liveAnnotations.filter(
+        (annotation) => annotationViewportKey(annotation) === activeAnnotationViewport.key,
+      ),
+    [activeAnnotationViewport.key, liveAnnotations],
+  );
+
+  useEffect(() => {
+    if (!isAnnotateActive) return;
+    const interval = setInterval(async () => {
+      try {
+        const scrollY = (await editBetaRef.current?.getScrollY?.()) || 0;
+        if (typeof scrollY === "number") setCurrentScrollY(scrollY);
+      } catch (err) {}
+    }, 150);
+    return () => clearInterval(interval);
+  }, [isAnnotateActive]);
+
+  useEffect(() => {
+    if (!isAnnotateActive) {
+      setAnnotationFrame(null);
+      return;
+    }
+
+    let animationFrame = 0;
+    let previousKey = "";
+    const trackActiveViewport = () => {
+      const layer = annotationLayerRef.current;
+      const viewport = editBetaRef.current?.getViewportGeometry?.();
+      if (layer && viewport) {
+        const layerRect = layer.getBoundingClientRect();
+        const next = {
+          left: viewport.left - layerRect.left,
+          top: viewport.top - layerRect.top,
+          width: viewport.width,
+          height: viewport.height,
+          pageWidth: viewport.pageWidth,
+          pageHeight: viewport.pageHeight,
+        };
+        const key = Object.values(next).map((value) => Math.round(value * 100) / 100).join(":");
+        if (key !== previousKey) {
+          previousKey = key;
+          setAnnotationFrame(next);
+        }
+      }
+      animationFrame = requestAnimationFrame(trackActiveViewport);
+    };
+
+    animationFrame = requestAnimationFrame(trackActiveViewport);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [isAnnotateActive]);
+
+  const getAnnotationScale = () => ({
+    x: annotationFrame ? annotationFrame.width / Math.max(1, annotationFrame.pageWidth) : 1,
+    y: annotationFrame ? annotationFrame.height / Math.max(1, annotationFrame.pageHeight) : 1,
+  });
+
+  const getAnnotationPagePoint = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!overlayRef.current || !annotationFrame) return null;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const scale = getAnnotationScale();
+    return {
+      x: Math.max(0, Math.min(annotationFrame.pageWidth, (e.clientX - rect.left) / scale.x)),
+      y: Math.max(0, Math.min(annotationFrame.pageHeight, (e.clientY - rect.top) / scale.y)),
+    };
+  };
+
+  const getLiveAnnotationPageRect = (annotation: CanvasSelectionBox) => {
+    const pageWidth = annotationFrame?.pageWidth || annotation.viewportWidth || 1;
+    const pageHeight = annotationFrame?.pageHeight || annotation.viewportHeight || 1;
+    const hasPageRect =
+      annotation.coordinateSpace === "page" &&
+      annotation.xPx !== undefined &&
+      annotation.yPagePx !== undefined &&
+      annotation.widthPx !== undefined &&
+      annotation.heightPx !== undefined;
+
+    if (hasPageRect) {
+      return {
+        x: annotation.xPx!,
+        y: annotation.yPagePx!,
+        width: annotation.widthPx!,
+        height: annotation.heightPx!,
+      };
+    }
+
+    return {
+      x: (annotation.rectPct.x / 100) * pageWidth,
+      y:
+        annotation.yPagePx ??
+        annotation.topPagePx ??
+        currentScrollY + (annotation.rectPct.y / 100) * pageHeight,
+      width: (annotation.rectPct.width / 100) * pageWidth,
+      height: (annotation.rectPct.height / 100) * pageHeight,
+    };
+  };
+
+  const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeAnnotationTool === "select") return;
+    const point = getAnnotationPagePoint(e);
+    if (!point) return;
+
+    setIsDrawingLive(true);
+    setLiveDrawStart(point);
+    setLiveDrawCurrent(point);
+    setLiveDrawPoints([point]);
+    setSelectedLiveAnnId(null);
+  };
+
+  const handleOverlayMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDrawingLive) return;
+    const point = getAnnotationPagePoint(e);
+    if (point) {
+      setLiveDrawCurrent(point);
+      if (activeAnnotationTool === "pen") {
+        setLiveDrawPoints((current) => [...current, point]);
+      }
+    }
+  };
+
+  const handleOverlayMouseUp = () => {
+    if (!isDrawingLive || !liveDrawStart || !liveDrawCurrent || !annotationFrame) {
+      setIsDrawingLive(false);
+      return;
+    }
+
+    setIsDrawingLive(false);
+    const containerW = annotationFrame.pageWidth;
+    const containerH = annotationFrame.pageHeight;
+    const scale = getAnnotationScale();
+
+    const sourcePoints =
+      activeAnnotationTool === "pen" && liveDrawPoints.length > 1
+        ? liveDrawPoints
+        : [liveDrawStart, liveDrawCurrent];
+    let leftPx = Math.min(...sourcePoints.map((point) => point.x));
+    let topPx = Math.min(...sourcePoints.map((point) => point.y));
+    let widthPx = Math.max(...sourcePoints.map((point) => point.x)) - leftPx;
+    let heightPx = Math.max(...sourcePoints.map((point) => point.y)) - topPx;
+
+    if ((activeAnnotationTool === "arrow" || activeAnnotationTool === "pen") && widthPx < 12) {
+      leftPx = Math.max(0, leftPx - 6);
+      widthPx = Math.min(12, containerW - leftPx);
+    }
+    if ((activeAnnotationTool === "arrow" || activeAnnotationTool === "pen") && heightPx < 12) {
+      topPx = Math.max(0, topPx - 6);
+      heightPx = Math.min(12, containerH - topPx);
+    }
+
+    if (activeAnnotationTool === "text" && widthPx * scale.x < 15 && heightPx * scale.y < 15) {
+      widthPx = Math.min(240, containerW - leftPx);
+      heightPx = Math.min(64, containerH - topPx);
+    }
+
+    const drawnLength = Math.hypot(widthPx * scale.x, heightPx * scale.y);
+    const invalidShape =
+      activeAnnotationTool === "arrow" || activeAnnotationTool === "pen"
+        ? drawnLength < 18
+        : widthPx * scale.x < 15 || heightPx * scale.y < 15;
+    if (invalidShape) {
+      setLiveDrawStart(null);
+      setLiveDrawCurrent(null);
+      setLiveDrawPoints([]);
+      return;
+    }
+
+    const topPagePx = topPx + currentScrollY;
+
+    const badgeNumber = visibleLiveAnnotations.length + 1;
+    const activeDeviceFrame = activeFrames.find(
+      (frame) => frame.width === containerW && frame.height === containerH,
+    );
+    const newAnn: CanvasSelectionBox = {
+      id: `live_ann_${Date.now()}`,
+      badgeNumber,
+      type: activeAnnotationTool === "select" ? "box" : activeAnnotationTool,
+      title: `Issue Section #${badgeNumber}`,
+      notes: "",
+      color: annotationColor,
+      coordinateSpace: "page",
+      xPx: leftPx,
+      yPagePx: topPagePx,
+      widthPx: widthPx,
+      heightPx: heightPx,
+      viewportWidth: containerW,
+      viewportHeight: containerH,
+      viewportKey: viewportKey(containerW, containerH),
+      deviceFrameId: activeDeviceFrame?.id,
+      deviceName: activeAnnotationViewport.name,
+      deviceType: activeAnnotationViewport.deviceType,
+      arrowPct:
+        activeAnnotationTool === "arrow"
+          ? {
+              startX: ((liveDrawStart.x - leftPx) / Math.max(1, widthPx)) * 100,
+              startY: ((liveDrawStart.y - topPx) / Math.max(1, heightPx)) * 100,
+              endX: ((liveDrawCurrent.x - leftPx) / Math.max(1, widthPx)) * 100,
+              endY: ((liveDrawCurrent.y - topPx) / Math.max(1, heightPx)) * 100,
+            }
+          : undefined,
+      pointsPct:
+        activeAnnotationTool === "pen"
+          ? sourcePoints.map((point) => ({
+              x: ((point.x - leftPx) / Math.max(1, widthPx)) * 100,
+              y: ((point.y - topPx) / Math.max(1, heightPx)) * 100,
+            }))
+          : undefined,
+      rectPct: {
+        x: (leftPx / containerW) * 100,
+        y: (topPagePx / containerH) * 100,
+        width: (widthPx / containerW) * 100,
+        height: (heightPx / containerH) * 100,
+      },
+    };
+
+    setLiveAnnotations((prev) => [...prev, newAnn]);
+    setSelectedLiveAnnId(newAnn.id);
+    setLiveDrawStart(null);
+    setLiveDrawCurrent(null);
+    setLiveDrawPoints([]);
+  };
+
+  const handleAnnotateSelectedElement = async (element: {
+    path: string;
+    tag: string;
+    id: string;
+    rect: { left: number; top: number; width: number; height: number };
+  }) => {
+    const geometry = editBetaRef.current?.getViewportGeometry?.();
+    if (!geometry || element.rect.width <= 0 || element.rect.height <= 0) return;
+    const scrollY = (await editBetaRef.current?.getScrollY?.()) || 0;
+    const width = Math.round(geometry.pageWidth);
+    const height = Math.round(geometry.pageHeight);
+    const key = viewportKey(width, height);
+    const badgeNumber =
+      liveAnnotations.filter((annotation) => annotationViewportKey(annotation) === key).length + 1;
+    const matchingFrame = activeFrames.find(
+      (frame) => frame.width === width && frame.height === height,
+    );
+    const name = matchingFrame?.name || activeAnnotationViewport.name;
+    const annotation: CanvasSelectionBox = {
+      id: `element_ann_${Date.now()}`,
+      badgeNumber,
+      type: "box",
+      elementPath: element.path,
+      title: `${element.tag}${element.id ? `#${element.id}` : ""} feedback`,
+      notes: "",
+      color: annotationColor,
+      coordinateSpace: "page",
+      xPx: Math.max(0, element.rect.left),
+      yPagePx: Math.max(0, element.rect.top + scrollY),
+      widthPx: element.rect.width,
+      heightPx: element.rect.height,
+      viewportWidth: width,
+      viewportHeight: height,
+      viewportKey: key,
+      deviceFrameId: matchingFrame?.id,
+      deviceName: name,
+      deviceType: matchingFrame?.deviceType || activeAnnotationViewport.deviceType,
+      rectPct: {
+        x: (Math.max(0, element.rect.left) / width) * 100,
+        y: (Math.max(0, element.rect.top + scrollY) / height) * 100,
+        width: (element.rect.width / width) * 100,
+        height: (element.rect.height / height) * 100,
+      },
+    };
+    setLiveAnnotations((current) => [...current, annotation]);
+    setSelectedLiveAnnId(annotation.id);
+    setActiveAnnotationTool("select");
+    setIsAnnotateActive(true);
+  };
+
+  const getLiveDrawingPreview = () => {
+    if (!isDrawingLive || !liveDrawStart || !liveDrawCurrent) return null;
+    const points =
+      activeAnnotationTool === "pen" && liveDrawPoints.length > 1
+        ? liveDrawPoints
+        : [liveDrawStart, liveDrawCurrent];
+    const left = Math.min(...points.map((point) => point.x));
+    const top = Math.min(...points.map((point) => point.y));
+    const width = Math.max(1, Math.max(...points.map((point) => point.x)) - left);
+    const height = Math.max(1, Math.max(...points.map((point) => point.y)) - top);
+    return {
+      left,
+      top,
+      width,
+      height,
+      annotation: {
+        id: "drawing-preview",
+        type: activeAnnotationTool === "select" ? "box" : activeAnnotationTool,
+        color: annotationColor,
+        title: activeAnnotationTool === "text" ? "Text note" : "",
+        notes: "",
+        arrowPct:
+          activeAnnotationTool === "arrow"
+            ? {
+                startX: ((liveDrawStart.x - left) / width) * 100,
+                startY: ((liveDrawStart.y - top) / height) * 100,
+                endX: ((liveDrawCurrent.x - left) / width) * 100,
+                endY: ((liveDrawCurrent.y - top) / height) * 100,
+              }
+            : undefined,
+        pointsPct:
+          activeAnnotationTool === "pen"
+            ? points.map((point) => ({
+                x: ((point.x - left) / width) * 100,
+                y: ((point.y - top) / height) * 100,
+              }))
+            : undefined,
+      } as Pick<CanvasSelectionBox, "id" | "type" | "color" | "title" | "notes" | "arrowPct" | "pointsPct">,
+    };
+  };
+
   const [recordedChanges, setRecordedChanges] = useState<any[]>([]);
   const startPatchesCountRef = useRef<number>(0);
+
+  const handleOpenFullsiteCanvas = async () => {
+    setIsCapturingFullsite(true);
+    try {
+      const img = await (editBetaRef.current?.captureFullPage?.() || editBetaRef.current?.captureViewport());
+      if (img) {
+        const inspectionOverlays =
+          (await editBetaRef.current?.getCaptureInspection?.()) || [];
+        setFullsiteCaptureViewport(activeAnnotationViewport);
+        setFullsiteInspectionOverlays(inspectionOverlays);
+        setFullsiteCaptureKey(Date.now());
+        setFullsiteMasterImage(img);
+        setIsFullsiteCanvasOpen(true);
+      }
+    } finally {
+      setIsCapturingFullsite(false);
+    }
+  };
+
+  const handleSelectWorkspaceAnnotation = (annotation: CanvasSelectionBox) => {
+    const width = Math.round(annotation.viewportWidth || vpWidth);
+    const height = Math.round(annotation.viewportHeight || vpHeight);
+    const matchingFrame = activeFrames.find(
+      (frame) =>
+        frame.id === annotation.deviceFrameId ||
+        (frame.width === width && frame.height === height),
+    );
+
+    if (canvasViewMode === "multi" && matchingFrame) {
+      setActiveFrames((current) =>
+        current.map((frame) =>
+          frame.id === matchingFrame.id ? { ...frame, enabled: true } : frame,
+        ),
+      );
+      setActiveFrameId(matchingFrame.id);
+    } else {
+      vpWidthRef.current = width;
+      vpHeightRef.current = height;
+      setVpWidth(width);
+      setVpHeight(height);
+      const preset = (Object.entries(PRESETS) as Array<
+        [DevicePreset, { w: number; h: number; label: string }]
+      >).find(([, dimensions]) => dimensions.w === width && dimensions.h === height);
+      if (preset) {
+        setActivePreset(preset[0]);
+        setMode("preset");
+      } else {
+        setMode("free");
+      }
+    }
+
+    setSelectedLiveAnnId(annotation.id);
+    setIsAnnotateActive(true);
+    window.setTimeout(() => {
+      const pageY = annotation.yPagePx ?? annotation.topPagePx ?? 0;
+      editBetaRef.current?.scrollTo?.(Math.max(0, pageY - 96));
+    }, canvasViewMode === "multi" && matchingFrame ? 220 : 80);
+  };
 
   useEffect(() => {
     if (!isRecording) {
@@ -908,6 +1307,113 @@ export default function EditorWorkspace({
   // ── Bottom Sheet Tab & Google Sheets state ─────
   const [activeSheetTab, setActiveSheetTab] = useState<"mock" | "google">(
     "mock",
+  );
+  const mockSheetStorageKey = `qa_${activeProjectId}_mock_sheet`;
+  const [mockSheetData, setMockSheetData] = useState<Sheet[]>(() => {
+    try {
+      const saved = localStorage.getItem(mockSheetStorageKey);
+      const parsed = saved ? (JSON.parse(saved) as Sheet[]) : null;
+      return Array.isArray(parsed) && parsed.length
+        ? cloneQaSheetData(parsed)
+        : cloneQaSheetData();
+    } catch {
+      return cloneQaSheetData();
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(mockSheetStorageKey);
+      const parsed = saved ? (JSON.parse(saved) as Sheet[]) : null;
+      setMockSheetData(
+        Array.isArray(parsed) && parsed.length
+          ? cloneQaSheetData(parsed)
+          : cloneQaSheetData(),
+      );
+    } catch {
+      setMockSheetData(cloneQaSheetData());
+    }
+  }, [mockSheetStorageKey]);
+
+  const handleMockSheetChange = useCallback(
+    (nextData: Sheet[]) => {
+      const cloned = cloneQaSheetData(nextData);
+      setMockSheetData(cloned);
+      localStorage.setItem(mockSheetStorageKey, JSON.stringify(cloned));
+    },
+    [mockSheetStorageKey],
+  );
+
+  const populateMockSheetFromGeneratedItems = useCallback(
+    (items: CanvasSelectionBox[]) => {
+      const linkedItems = items.filter((item) => item.ephemeralUrl);
+      if (!linkedItems.length) return;
+
+      setMockSheetData((current) => {
+        const next = cloneQaSheetData(current.length ? current : defaultQaSheetData);
+        const sheet = next[0] || cloneQaSheetData()[0];
+        const sheetId = sheet.id || "qa-tracker";
+        sheet.id = sheetId;
+        sheet.column = Math.max(3, sheet.column || 0);
+        sheet.celldata = sheet.celldata || [];
+        sheet.hyperlink = sheet.hyperlink || {};
+
+        const existingRowsByUrl = new Map<string, number>();
+        let lastUsedRow = 0;
+        sheet.celldata.forEach((cell) => {
+          if (cell.r > lastUsedRow) lastUsedRow = cell.r;
+          if (cell.r > 0 && cell.c === 2 && cell.v?.v) {
+            existingRowsByUrl.set(String(cell.v.v), cell.r);
+          }
+        });
+
+        linkedItems.forEach((item) => {
+          const url = item.ephemeralUrl!;
+          const row = existingRowsByUrl.get(url) ?? ++lastUsedRow;
+          sheet.celldata = sheet.celldata!.filter(
+            (cell) => cell.r !== row || cell.c > 2,
+          );
+          sheet.celldata.push(
+            { r: row, c: 0, v: { v: item.title, m: item.title, vt: 0 } },
+            {
+              r: row,
+              c: 1,
+              v: {
+                v: plainTextFromRichText(item.notes),
+                m: plainTextFromRichText(item.notes),
+                vt: 0,
+                tb: "2",
+              },
+            },
+            {
+              r: row,
+              c: 2,
+              v: {
+                v: url,
+                m: url,
+                fc: "#2563eb",
+                un: 1,
+                vt: 0,
+                hl: { r: row, c: 2, id: sheetId },
+              },
+            },
+          );
+          sheet.hyperlink![`${row}_2`] = {
+            linkType: "webpage",
+            linkAddress: url,
+          };
+          existingRowsByUrl.set(url, row);
+        });
+
+        sheet.row = Math.max(sheet.row || 0, lastUsedRow + 10, 50);
+        next[0] = sheet;
+        localStorage.setItem(mockSheetStorageKey, JSON.stringify(next));
+        return next;
+      });
+      setActiveSheetTab("mock");
+      setBottomSheetOpen(true);
+    },
+    [mockSheetStorageKey],
   );
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState(
     () =>
@@ -5209,23 +5715,78 @@ export default function EditorWorkspace({
                 </button>
               </div>
 
-              {/* Viewport Record Button */}
-              <button
-                className={`record-btn ${isRecording ? "recording" : ""}`}
-                onClick={isRecording ? handleStopRecording : handleStartRecording}
-                title={
-                  isRecording
-                    ? "Stop recording & open Before/After Snipping Studio"
-                    : "Record Changes: Capture Before/After states & annotate edits"
-                }
-              >
-                <span className="record-dot" />
-                <span>
-                  {isRecording
-                    ? `Stop (${String(Math.floor(recordingTimerSeconds / 60)).padStart(2, "0")}:${String(recordingTimerSeconds % 60).padStart(2, "0")})`
-                    : "Record"}
-                </span>
-              </button>
+              {/* Grouped Action Bar: RECORD | ANNOTATE | GENERATE ITEMS */}
+              <div className="workspace-action-group" role="group" aria-label="Capture and annotation actions">
+                <button
+                  className={`workspace-action-btn record ${isRecording ? "active" : ""}`}
+                  onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  title={isRecording ? "Stop Recording" : "Record Changes"}
+                >
+                  <span className="record-dot" />
+                  <span className="workspace-action-label">
+                    {isRecording
+                      ? `RECORDING (${String(Math.floor(recordingTimerSeconds / 60)).padStart(2, "0")}:${String(recordingTimerSeconds % 60).padStart(2, "0")})`
+                      : "RECORD"}
+                  </span>
+                </button>
+
+                <button
+                  className={`workspace-action-btn annotate ${isAnnotateActive ? "active" : ""}`}
+                  onClick={() =>
+                    setIsAnnotateActive((previous) => {
+                      if (!previous) setActiveAnnotationTool("select");
+                      return !previous;
+                    })
+                  }
+                  title="Annotate: Toggle floating annotation tools to add shapes, arrows, text & mark regions"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                  <span className="workspace-action-label">ANNOTATE</span>
+                </button>
+
+                <div className="generate-items-control">
+                  <button
+                    className={`workspace-action-btn generate ${isCapturingFullsite || generateExpiryOpen ? "active" : ""}`}
+                    onClick={() => setGenerateExpiryOpen((open) => !open)}
+                    disabled={isCapturingFullsite}
+                    title="Generate Items: choose how long captures, annotations, comments, and images remain available"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                    </svg>
+                    <span className="workspace-action-label">{isCapturingFullsite ? "GENERATING…" : "GENERATE ITEMS"}</span>
+                  </button>
+                  {generateExpiryOpen && (
+                    <div className="generate-expiry-popover" role="dialog" aria-label="Choose link expiry">
+                      <span>Expires in</span>
+                      <div>
+                        {[
+                          { label: "3d", seconds: 3 * 24 * 60 * 60, title: "3 days" },
+                          { label: "7d", seconds: 7 * 24 * 60 * 60, title: "7 days" },
+                          { label: "1mo", seconds: 30 * 24 * 60 * 60, title: "1 month" },
+                        ].map((option) => (
+                          <button
+                            key={option.label}
+                            type="button"
+                            className={shareExpirySeconds === option.seconds ? "selected" : ""}
+                            title={option.title}
+                            onClick={() => {
+                              setShareExpirySeconds(option.seconds);
+                              setGenerateExpiryOpen(false);
+                              void handleOpenFullsiteCanvas();
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Reveal Animations & Hidden Headings Toggle */}
               <button
@@ -7228,6 +7789,7 @@ export default function EditorWorkspace({
                 interactionMode={interactionMode}
                 revealAnimations={revealAnimations}
                 fontInspectorOn={fontInspectorOn}
+                annotateMode={isAnnotateActive}
                 boundaries={{
                   enabled: boundariesOn,
                   showMargins,
@@ -7254,6 +7816,11 @@ export default function EditorWorkspace({
                 onSelectActiveFrame={setActiveFrameId}
                 onToggleFrameEnabled={toggleFrameEnabled}
                 onRemoveFrame={removeFrame}
+                annotations={liveAnnotations}
+                activeAnnotationViewport={activeAnnotationViewport}
+                selectedAnnotationId={selectedLiveAnnId}
+                onSelectAnnotation={handleSelectWorkspaceAnnotation}
+                onAnnotateElement={handleAnnotateSelectedElement}
                 overlayVisible={overlayVisible}
                 overlayOpacity={overlayOpacity}
                 overlayMode={overlayMode}
@@ -7275,6 +7842,184 @@ export default function EditorWorkspace({
                   project?.thumbnailUrl ? undefined : onThumbnailCaptured
                 }
               />
+            )}
+
+            {isAnnotateActive && (
+              <div
+                ref={annotationLayerRef}
+                className="annotate-drawing-canvas-overlay"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: 9999,
+                  pointerEvents: "none",
+                }}
+              >
+                {annotationFrame && (
+                  <div
+                    ref={overlayRef}
+                    className="annotate-drawing-surface"
+                    style={{
+                      position: "absolute",
+                      left: annotationFrame.left,
+                      top: annotationFrame.top,
+                      width: annotationFrame.width,
+                      height: annotationFrame.height,
+                      pointerEvents: activeAnnotationTool === "select" ? "none" : "auto",
+                      cursor: activeAnnotationTool === "text" ? "text" : "crosshair",
+                    }}
+                    onWheel={(e) => {
+                      if (activeAnnotationTool === "select") return;
+                      e.preventDefault();
+                      editBetaRef.current?.scrollBy?.(e.deltaY);
+                    }}
+                    onMouseDown={handleOverlayMouseDown}
+                    onMouseMove={handleOverlayMouseMove}
+                    onMouseUp={handleOverlayMouseUp}
+                    onMouseLeave={() => {
+                      if (isDrawingLive) handleOverlayMouseUp();
+                    }}
+                  >
+                {/* Active tool-specific drawing preview */}
+                {(() => {
+                  const preview = getLiveDrawingPreview();
+                  if (!preview) return null;
+                  const scale = getAnnotationScale();
+                  const previewType = preview.annotation.type || "box";
+                  return (
+                    <div
+                      className={`live-annotation-item active-drawing annotation-type-${previewType}`}
+                      style={{
+                        position: "absolute",
+                        left: `${preview.left * scale.x}px`,
+                        top: `${preview.top * scale.y}px`,
+                        width: `${Math.max(2, preview.width * scale.x)}px`,
+                        height: `${Math.max(2, preview.height * scale.y)}px`,
+                        border:
+                          previewType === "box"
+                            ? `2px dashed ${annotationColor}`
+                            : ["rect", "circle"].includes(previewType)
+                              ? `2px solid ${annotationColor}`
+                              : "none",
+                        borderRadius: previewType === "circle" ? "50%" : 4,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <AnnotationShape annotation={preview.annotation} />
+                    </div>
+                  );
+                })()}
+
+                {/* Drawn Annotation Containers */}
+                {visibleLiveAnnotations.map((ann) => {
+                  const isSelected = selectedLiveAnnId === ann.id;
+                  const pageRect = getLiveAnnotationPageRect(ann);
+                  const annotationScale = getAnnotationScale();
+                  const renderTopPx = (pageRect.y - currentScrollY) * annotationScale.y;
+                  const renderHeightPx = pageRect.height * annotationScale.y;
+
+                  if (
+                    renderTopPx + renderHeightPx <= 0 ||
+                    renderTopPx >= annotationFrame.height
+                  ) {
+                    return null;
+                  }
+
+                  return (
+                    <div
+                      key={ann.id}
+                      className={`selection-box-overlay annotation-type-${ann.type || "box"} ${isSelected ? "selection-box-active" : ""}`}
+                      style={{
+                        position: "absolute",
+                        left: `${pageRect.x * annotationScale.x}px`,
+                        top: `${renderTopPx}px`,
+                        width: `${pageRect.width * annotationScale.x}px`,
+                        height: `${renderHeightPx}px`,
+                        border:
+                          (ann.type || "box") === "box"
+                            ? `2px dashed ${ann.color}`
+                            : ["rect", "circle"].includes(ann.type || "")
+                              ? `2px solid ${ann.color}`
+                              : "none",
+                        borderRadius: ann.type === "circle" ? "50%" : 4,
+                        pointerEvents: activeAnnotationTool === "select" ? "none" : "auto",
+                      }}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        setSelectedLiveAnnId(ann.id);
+                      }}
+                      onMouseUp={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedLiveAnnId(ann.id);
+                      }}
+                    >
+                      <AnnotationShape annotation={ann} />
+                      <div className="box-header-badge" style={{ backgroundColor: ann.color }}>
+                        <span>#{ann.badgeNumber} {ann.title}</span>
+                      </div>
+
+                      {isSelected && (
+                        <div
+                          className="box-action-popover"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onMouseUp={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            className="box-input"
+                            value={ann.title}
+                            placeholder="Title (e.g. Hero Spacing)"
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setLiveAnnotations((prev) =>
+                                prev.map((a) => (a.id === ann.id ? { ...a, title: val } : a))
+                              );
+                            }}
+                          />
+                          <RichTextEditor
+                            value={ann.notes}
+                            placeholder="Notes / Issue description..."
+                            compact
+                            ariaLabel={`Description for ${ann.title}`}
+                            onChange={(val) => {
+                              setLiveAnnotations((prev) =>
+                                prev.map((a) => (a.id === ann.id ? { ...a, notes: val } : a))
+                              );
+                            }}
+                          />
+
+                          <div className="box-actions-row">
+                            <button
+                              className="btn-confirm-box"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedLiveAnnId(null);
+                              }}
+                            >
+                              Confirm
+                            </button>
+
+                            <button
+                              className="btn-delete-box"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLiveAnnotations((prev) => prev.filter((a) => a.id !== ann.id));
+                                if (selectedLiveAnnId === ann.id) setSelectedLiveAnnId(null);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                  </div>
+                )}
+              </div>
             )}
             {workspaceTab === "automate" && (
               <AutomateWorkspace
@@ -8888,7 +9633,11 @@ export default function EditorWorkspace({
 
                   <div className="bottom-sheet-body">
                     {activeSheetTab === "mock" ? (
-                      <Workbook data={defaultQaSheetData} showToolbar={true} />
+                      <Workbook
+                        data={mockSheetData}
+                        showToolbar={true}
+                        onChange={handleMockSheetChange}
+                      />
                     ) : isEditingGoogleUrl || !googleSheetsUrl ? (
                       <div className="google-sheet-input-container">
                         <div className="google-sheet-input-card">
@@ -10131,6 +10880,127 @@ export default function EditorWorkspace({
         </div>
       )}
 
+      {/* Floating Bottom Annotation Toolbar (When Annotate is toggled) */}
+      {isAnnotateActive && (
+        <div className="floating-annotation-toolbar">
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "select" ? "active" : ""}`}
+            onClick={() => {
+              setActiveAnnotationTool("select");
+              setIsDrawingLive(false);
+            }}
+            title="Select elements — keeps Edit Workspace mouse interactions enabled"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="m4 3 7 17 2.2-6.1L19 11Z" />
+            </svg>
+          </button>
+
+          <div className="toolbar-divider" />
+
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "box" ? "active" : ""}`}
+            onClick={() => setActiveAnnotationTool("box")}
+            title="Selection Box"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 4" />
+            </svg>
+          </button>
+
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "arrow" ? "active" : ""}`}
+            onClick={() => setActiveAnnotationTool("arrow")}
+            title="Arrow"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="5" y1="19" x2="19" y2="5" />
+              <polyline points="12 5 19 5 19 12" />
+            </svg>
+          </button>
+
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "rect" ? "active" : ""}`}
+            onClick={() => setActiveAnnotationTool("rect")}
+            title="Rectangle"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+            </svg>
+          </button>
+
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "circle" ? "active" : ""}`}
+            onClick={() => setActiveAnnotationTool("circle")}
+            title="Circle"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          </button>
+
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "pen" ? "active" : ""}`}
+            onClick={() => setActiveAnnotationTool("pen")}
+            title="Pen"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 19l7-7 3 3-7 7-3 3z" />
+              <path d="M18 13l-1.5-1.5" />
+            </svg>
+          </button>
+
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "text" ? "active" : ""}`}
+            onClick={() => setActiveAnnotationTool("text")}
+            title="Text Note"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="4 7 4 4 20 4 20 7" />
+              <line x1="12" y1="4" x2="12" y2="20" />
+              <line x1="9" y1="20" x2="15" y2="20" />
+            </svg>
+          </button>
+
+          <button
+            className={`annotation-tool-btn ${activeAnnotationTool === "blur" ? "active" : ""}`}
+            onClick={() => setActiveAnnotationTool("blur")}
+            title="Blur / Redact"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
+              <circle cx="12" cy="12" r="3" />
+              <line x1="3" y1="3" x2="21" y2="21" />
+            </svg>
+          </button>
+
+          <div className="toolbar-divider" />
+
+          <div className="annotation-colors">
+            {["#ff0055", "#f59e0b", "#22c55e", "#3b82f6", "#ffffff"].map((c) => (
+              <button
+                key={c}
+                className={`color-swatch ${annotationColor === c ? "active" : ""}`}
+                style={{ backgroundColor: c }}
+                onClick={() => setAnnotationColor(c)}
+              />
+            ))}
+          </div>
+
+          <div className="toolbar-divider" />
+
+          <button
+            className="annotation-done-btn"
+            onClick={() => {
+              setIsAnnotateActive(false);
+              setActiveAnnotationTool("select");
+            }}
+          >
+            Done
+          </button>
+        </div>
+      )}
+
       {/* Before & After Snipping Studio Modal */}
       <BeforeAfterSnippingModal
         isOpen={isSnippingModalOpen}
@@ -10141,6 +11011,24 @@ export default function EditorWorkspace({
         onSaveSnapshot={(dataUrl, title) => {
           setSnapshotImage(dataUrl, title);
         }}
+      />
+
+      {/* Fullsite Zoomable Ephemeral Selection Canvas Modal */}
+      <FullsiteCanvasModal
+        key={fullsiteCaptureKey}
+        isOpen={isFullsiteCanvasOpen}
+        onClose={() => setIsFullsiteCanvasOpen(false)}
+        masterDataUrl={fullsiteMasterImage || ""}
+        pageTitle={project?.name || "Staging Fullsite Ephemeral Canvas"}
+        initialBoxes={liveAnnotations.filter(
+          (annotation) =>
+            annotationViewportKey(annotation) ===
+            (fullsiteCaptureViewport?.key || activeAnnotationViewport.key),
+        )}
+        captureViewport={fullsiteCaptureViewport || activeAnnotationViewport}
+        inspectionOverlays={fullsiteInspectionOverlays}
+        expiresInSeconds={shareExpirySeconds}
+        onItemsGenerated={populateMockSheetFromGeneratedItems}
       />
     </div>
   );

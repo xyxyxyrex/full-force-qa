@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -12,6 +13,12 @@ import NativeStylePanel from "./NativeStylePanel";
 import SmoothColorPicker from "./SmoothColorPicker";
 import figmaIcon from "../assets/figma.png";
 import type { DeviceFrame } from "./EditorWorkspace";
+import type {
+  CaptureInspectionOverlay,
+  CanvasSelectionBox,
+  CaptureViewportInfo,
+} from "./FullsiteCanvasModal";
+import { plainTextFromRichText } from "./RichTextEditor";
 
 interface Props {
   sourceUrl: string;
@@ -21,6 +28,7 @@ interface Props {
   interactionMode: "edit" | "interact";
   revealAnimations: boolean;
   fontInspectorOn: boolean;
+  annotateMode?: boolean;
   boundaries: {
     enabled: boolean;
     showMargins: boolean;
@@ -58,6 +66,11 @@ interface Props {
   onSelectActiveFrame?: (frameId: string) => void;
   onToggleFrameEnabled?: (frameId: string) => void;
   onRemoveFrame?: (frameId: string) => void;
+  annotations?: CanvasSelectionBox[];
+  activeAnnotationViewport?: CaptureViewportInfo;
+  selectedAnnotationId?: string | null;
+  onSelectAnnotation?: (annotation: CanvasSelectionBox) => void;
+  onAnnotateElement?: (element: RemoteElement) => void;
 }
 
 export interface EditBetaWorkspaceHandle {
@@ -66,6 +79,19 @@ export interface EditBetaWorkspaceHandle {
   redo: () => void;
   refreshLayers: () => void;
   captureViewport: () => Promise<string | null>;
+  captureFullPage: () => Promise<string | null>;
+  getScrollY: () => Promise<number>;
+  scrollBy: (deltaY: number) => void;
+  scrollTo: (top: number) => void;
+  getViewportGeometry: () => {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    pageWidth: number;
+    pageHeight: number;
+  } | null;
+  getCaptureInspection: () => Promise<CaptureInspectionOverlay[]>;
   getPatches: () => Promise<any[]>;
 }
 
@@ -135,7 +161,13 @@ interface BridgeState {
 interface BridgeOptions {
   revealAnimations: boolean;
   fontInspectorOn: boolean;
+  annotateMode: boolean;
   boundaries: Props["boundaries"];
+  rulers: {
+    enabled: boolean;
+    guidesEnabled: boolean;
+    guides: Array<{ axis: "x" | "y"; position: number }>;
+  };
   zoomScale: number;
 }
 
@@ -144,7 +176,7 @@ interface BridgeOptions {
 function installEditBetaBridge() {
   const guestWindow = window as any;
   if (guestWindow.__fullForceEditBeta) {
-    if (guestWindow.__fullForceEditBeta.version === 8) {
+    if (guestWindow.__fullForceEditBeta.version === 9) {
       guestWindow.__fullForceEditBeta.enable();
       return true;
     }
@@ -168,12 +200,18 @@ function installEditBetaBridge() {
   let options: BridgeOptions = {
     revealAnimations: false,
     fontInspectorOn: false,
+    annotateMode: false,
     boundaries: {
       enabled: false,
       showMargins: true,
       showPaddings: true,
       showDimensions: true,
       showGaps: true,
+    },
+    rulers: {
+      enabled: false,
+      guidesEnabled: false,
+      guides: [],
     },
     zoomScale: 1,
   };
@@ -241,10 +279,334 @@ function installEditBetaBridge() {
   });
   shadow.append(highlights, measurements, marginBox, paddingBox, box, label);
   document.documentElement.appendChild(host);
+  const captureInspectionHost = document.createElement("div");
+  captureInspectionHost.setAttribute("data-fullforce-beta-ui", "true");
+  Object.assign(captureInspectionHost.style, {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: "0",
+    height: "0",
+    zIndex: "2147483646",
+    pointerEvents: "none",
+  });
+  const captureInspectionShadow = captureInspectionHost.attachShadow({ mode: "open" });
+  const captureInspectionLayer = document.createElement("div");
+  Object.assign(captureInspectionLayer.style, {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    pointerEvents: "none",
+  });
+  captureInspectionShadow.appendChild(captureInspectionLayer);
+  document.documentElement.appendChild(captureInspectionHost);
   let highlightedElements: HTMLElement[] = [];
   let highlightedColor = "#a78bfa";
   let highlightFrame = 0;
   let measurementFrame = 0;
+  let captureInspectionFrame = 0;
+  let captureInspectionForced = false;
+  let lastCaptureInspectionSnapshot: CaptureInspectionOverlay[] = [];
+
+  const inspectionElement = (
+    className: string,
+    styles: Record<string, string>,
+    text = "",
+  ) => {
+    const element = document.createElement("div");
+    element.className = className;
+    element.textContent = text;
+    Object.assign(element.style, styles);
+    captureInspectionLayer.appendChild(element);
+    return element;
+  };
+
+  const renderCaptureInspection = () => {
+    captureInspectionFrame = 0;
+    captureInspectionLayer.replaceChildren();
+    const showProperties =
+      (options.annotateMode || captureInspectionForced) &&
+      (options.fontInspectorOn || options.boundaries.enabled || options.rulers.enabled || options.rulers.guidesEnabled);
+    const nextDisplay = showProperties ? "" : "none";
+    if (captureInspectionHost.style.display !== nextDisplay) {
+      captureInspectionHost.style.display = nextDisplay;
+    }
+    if (!showProperties || !document.body) return;
+
+    const scrollX = window.scrollX || document.documentElement.scrollLeft || 0;
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    const documentWidth = Math.ceil(
+      Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth),
+    );
+    const documentHeight = Math.ceil(
+      Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, window.innerHeight),
+    );
+    const nextInspectionSnapshot: CaptureInspectionOverlay[] = [];
+    Object.assign(captureInspectionLayer.style, {
+      width: `${documentWidth}px`,
+      height: `${documentHeight}px`,
+    });
+
+    if (options.rulers.enabled) {
+      nextInspectionSnapshot.push(
+        {
+          id: "inspection-ruler-top",
+          kind: "ruler-top",
+          coordinateSpace: "page",
+          xPx: 0,
+          yPagePx: 0,
+          widthPx: documentWidth,
+          heightPx: 22,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        },
+        {
+          id: "inspection-ruler-left",
+          kind: "ruler-left",
+          coordinateSpace: "page",
+          xPx: 0,
+          yPagePx: 0,
+          widthPx: 22,
+          heightPx: documentHeight,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        },
+      );
+      inspectionElement("qa-capture-ruler-top", {
+        position: "absolute",
+        left: "0",
+        top: "0",
+        width: `${documentWidth}px`,
+        height: "22px",
+        boxSizing: "border-box",
+        borderBottom: "1px solid #52525b",
+        background: "repeating-linear-gradient(90deg,#71717a 0 1px,transparent 1px 10px),#18181b",
+        opacity: "0.92",
+      });
+      inspectionElement("qa-capture-ruler-left", {
+        position: "absolute",
+        left: "0",
+        top: "0",
+        width: "22px",
+        height: `${documentHeight}px`,
+        boxSizing: "border-box",
+        borderRight: "1px solid #52525b",
+        background: "repeating-linear-gradient(0deg,#71717a 0 1px,transparent 1px 10px),#18181b",
+        opacity: "0.92",
+      });
+      for (let x = 0; x < documentWidth; x += 100) {
+        inspectionElement("qa-capture-ruler-label", {
+          position: "absolute",
+          left: `${x + 3}px`,
+          top: "3px",
+          color: "#d4d4d8",
+          font: "8px/1 monospace",
+          whiteSpace: "nowrap",
+        }, String(x));
+      }
+      for (let y = 100; y < documentHeight; y += 100) {
+        inspectionElement("qa-capture-ruler-label", {
+          position: "absolute",
+          left: "3px",
+          top: `${y + 3}px`,
+          color: "#d4d4d8",
+          font: "8px/1 monospace",
+          writingMode: "vertical-rl",
+          whiteSpace: "nowrap",
+        }, String(y));
+      }
+    }
+
+    if (options.rulers.guidesEnabled) {
+      for (const [guideIndex, guide] of (options.rulers.guides || []).entries()) {
+        const isHorizontal = guide.axis === "x";
+        const position = Math.max(0, Math.min(1, Number(guide.position) || 0));
+        const guideLeft = isHorizontal ? 0 : position * window.innerWidth;
+        const guideTop = isHorizontal ? position * window.innerHeight : 0;
+        const guideWidth = isHorizontal ? documentWidth : 1;
+        const guideHeight = isHorizontal ? 1 : documentHeight;
+        nextInspectionSnapshot.push({
+          id: `inspection-guide-${guideIndex}`,
+          kind: "guide",
+          coordinateSpace: "page",
+          xPx: guideLeft,
+          yPagePx: guideTop,
+          widthPx: guideWidth,
+          heightPx: guideHeight,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        });
+        inspectionElement("qa-capture-guide", {
+          position: "absolute",
+          left: `${guideLeft}px`,
+          top: `${guideTop}px`,
+          width: `${guideWidth}px`,
+          height: `${guideHeight}px`,
+          background: "#22d3ee",
+          boxShadow: "0 0 0 1px rgba(8,145,178,.22)",
+        });
+      }
+    }
+
+    const allElements = Array.from(document.body.querySelectorAll<HTMLElement>("*"));
+    let rendered = 0;
+    for (const element of allElements) {
+      if (rendered >= 800 || isUi(element)) continue;
+      const computed = getComputedStyle(element);
+      if (
+        computed.display === "none" ||
+        computed.visibility === "hidden" ||
+        Number(computed.opacity) === 0
+      ) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) continue;
+      const isPositioned = computed.position === "fixed" || computed.position === "sticky";
+      const left = rect.left + (isPositioned ? 0 : scrollX);
+      const top = rect.top + (isPositioned ? 0 : scrollY);
+      if (
+        left + rect.width < 0 ||
+        top + rect.height < 0 ||
+        left > documentWidth ||
+        top > documentHeight
+      ) continue;
+
+      const directText = Array.from(element.childNodes).some(
+        (node) => node.nodeType === Node.TEXT_NODE && !!node.textContent?.trim(),
+      );
+      const textElement =
+        directText ||
+        /^(H[1-6]|P|A|LI|LABEL|BUTTON|TD|TH|BLOCKQUOTE|FIGCAPTION|INPUT|TEXTAREA)$/i.test(
+          element.tagName,
+        );
+      const details: string[] = [];
+      const boundaryDetails: string[] = [];
+      let fontDetail = "";
+
+      if (options.boundaries.enabled) {
+        inspectionElement("qa-capture-boundary", {
+          position: "absolute",
+          left: `${left}px`,
+          top: `${top}px`,
+          width: `${rect.width}px`,
+          height: `${rect.height}px`,
+          boxSizing: "border-box",
+          border: "1px solid rgba(59,130,246,.72)",
+          background: "rgba(59,130,246,.025)",
+        });
+        if (options.boundaries.showDimensions) {
+          boundaryDetails.push(`${Math.round(rect.width)}×${Math.round(rect.height)}`);
+        }
+        if (options.boundaries.showMargins) {
+          const values = [computed.marginTop, computed.marginRight, computed.marginBottom, computed.marginLeft]
+            .map((value) => Math.round(parseFloat(value) || 0));
+          boundaryDetails.push(`M ${values.join("/")}`);
+          const mt = values[0], mr = values[1], mb = values[2], ml = values[3];
+          if (mt || mr || mb || ml) {
+            inspectionElement("qa-capture-margin", {
+              position: "absolute",
+              left: `${left - ml}px`,
+              top: `${top - mt}px`,
+              width: `${rect.width + ml + mr}px`,
+              height: `${rect.height + mt + mb}px`,
+              boxSizing: "border-box",
+              border: "1px dashed rgba(245,158,11,.7)",
+            });
+          }
+        }
+        if (options.boundaries.showPaddings) {
+          const values = [computed.paddingTop, computed.paddingRight, computed.paddingBottom, computed.paddingLeft]
+            .map((value) => Math.round(parseFloat(value) || 0));
+          boundaryDetails.push(`P ${values.join("/")}`);
+          const pt = values[0], pr = values[1], pb = values[2], pl = values[3];
+          if (pt || pr || pb || pl) {
+            inspectionElement("qa-capture-padding", {
+              position: "absolute",
+              left: `${left + pl}px`,
+              top: `${top + pt}px`,
+              width: `${Math.max(0, rect.width - pl - pr)}px`,
+              height: `${Math.max(0, rect.height - pt - pb)}px`,
+              boxSizing: "border-box",
+              border: "1px dashed rgba(34,197,94,.72)",
+            });
+          }
+        }
+        if (options.boundaries.showGaps && computed.gap && computed.gap !== "normal") {
+          boundaryDetails.push(`Gap ${computed.gap}`);
+        }
+      }
+
+      if (options.fontInspectorOn && textElement) {
+        const family = computed.fontFamily.split(",")[0].replace(/["']/g, "").trim() || "Sans";
+        fontDetail = `${family} ${computed.fontSize}/${computed.fontWeight}`;
+      }
+
+      details.push(...boundaryDetails);
+      if (fontDetail) details.push(fontDetail);
+
+      if (boundaryDetails.length) {
+        nextInspectionSnapshot.push({
+          id: `inspection-boundary-${rendered}`,
+          kind: "boundary",
+          text: boundaryDetails.join(" · "),
+          coordinateSpace: "page",
+          xPx: left,
+          yPagePx: top,
+          widthPx: rect.width,
+          heightPx: rect.height,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        });
+      }
+      if (fontDetail) {
+        nextInspectionSnapshot.push({
+          id: `inspection-font-${rendered}`,
+          kind: "font",
+          text: fontDetail,
+          coordinateSpace: "page",
+          xPx: left,
+          yPagePx: top,
+          widthPx: rect.width,
+          heightPx: rect.height,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        });
+      }
+
+      if (details.length && (options.boundaries.enabled || textElement)) {
+        inspectionElement("qa-capture-property-badge", {
+          position: "absolute",
+          left: `${Math.max(22, Math.min(documentWidth - 8, left))}px`,
+          top: `${Math.max(options.rulers.enabled ? 23 : 0, top - 15)}px`,
+          maxWidth: `${Math.max(100, Math.min(360, rect.width + 180))}px`,
+          overflow: "hidden",
+          padding: "2px 5px",
+          border: "1px solid rgba(255,255,255,.18)",
+          borderRadius: "3px",
+          background: "rgba(17,17,19,.88)",
+          color: "#f4f4f5",
+          font: "600 8px/1.25 system-ui,sans-serif",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          boxShadow: "0 1px 4px rgba(0,0,0,.4)",
+        }, details.join(" · "));
+      }
+      rendered++;
+    }
+    lastCaptureInspectionSnapshot = nextInspectionSnapshot;
+  };
+
+  const scheduleCaptureInspection = () => {
+    if (!captureInspectionFrame) {
+      captureInspectionFrame = requestAnimationFrame(renderCaptureInspection);
+    }
+  };
+  const captureInspectionObserver = new MutationObserver(scheduleCaptureInspection);
+  captureInspectionObserver.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["style", "class", "hidden"],
+  });
 
   const revealStyle = document.createElement("style");
   revealStyle.setAttribute("data-fullforce-beta-ui", "true");
@@ -944,6 +1306,8 @@ function installEditBetaBridge() {
   };
   window.addEventListener("scroll", refreshViewportOverlays, true);
   window.addEventListener("resize", refreshViewportOverlays, true);
+  window.addEventListener("scroll", scheduleCaptureInspection, true);
+  window.addEventListener("resize", scheduleCaptureInspection, true);
 
   const applyPatch = (patch: any) => {
     const el = resolve(patch.path);
@@ -1054,7 +1418,7 @@ function installEditBetaBridge() {
   window.addEventListener("resize", scheduleHighlights, true);
 
   const api = {
-    version: 8,
+    version: 9,
     enable() {
       host.style.display = "";
       positionOverlay();
@@ -1078,6 +1442,7 @@ function installEditBetaBridge() {
         ...options,
         ...next,
         boundaries: { ...options.boundaries, ...(next?.boundaries || {}) },
+        rulers: { ...options.rulers, ...(next?.rulers || {}) },
       };
       if (options.revealAnimations && !revealStyle.isConnected)
         document.head.appendChild(revealStyle);
@@ -1085,6 +1450,7 @@ function installEditBetaBridge() {
         revealStyle.remove();
       positionOverlay();
       scheduleMeasurements();
+      scheduleCaptureInspection();
       return true;
     },
     getState(): BridgeState {
@@ -1100,6 +1466,28 @@ function installEditBetaBridge() {
         patches: basePatches.concat(activePatches),
         scrollY: window.scrollY || document.documentElement.scrollTop || 0,
       };
+    },
+    async prepareCapture(renderMode = "raster") {
+      captureInspectionForced = true;
+      captureInspectionHost.style.visibility = "visible";
+      renderCaptureInspection();
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      if (renderMode === "metadata") {
+        captureInspectionHost.style.visibility = "hidden";
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      return true;
+    },
+    finishCapture() {
+      captureInspectionForced = false;
+      captureInspectionHost.style.visibility = "visible";
+      scheduleCaptureInspection();
+      return true;
+    },
+    getCaptureInspection() {
+      return lastCaptureInspectionSnapshot.map((overlay) => ({ ...overlay }));
     },
     getLayers() {
       const rows: LayerRow[] = [];
@@ -1649,15 +2037,21 @@ function installEditBetaBridge() {
       document.removeEventListener("mouseup", onPanUp, true);
       window.removeEventListener("scroll", refreshViewportOverlays, true);
       window.removeEventListener("resize", refreshViewportOverlays, true);
+      window.removeEventListener("scroll", scheduleCaptureInspection, true);
+      window.removeEventListener("resize", scheduleCaptureInspection, true);
       window.removeEventListener("scroll", scheduleHighlights, true);
       window.removeEventListener("resize", scheduleHighlights, true);
       if (measurementFrame) cancelAnimationFrame(measurementFrame);
       measurementFrame = 0;
       measurements.replaceChildren();
+      if (captureInspectionFrame) cancelAnimationFrame(captureInspectionFrame);
+      captureInspectionFrame = 0;
+      captureInspectionObserver.disconnect();
       clearHighlights();
       revealStyle.remove();
       cursorStyle.remove();
       host.remove();
+      captureInspectionHost.remove();
       delete guestWindow.__fullForceEditBeta;
     },
     getPatches() {
@@ -1896,6 +2290,7 @@ function SelectionOverlay({
   onTextStyle,
   onReorder,
   onAction,
+  onAnnotate,
 }: {
   selected: RemoteElement;
   scale: number;
@@ -1909,6 +2304,7 @@ function SelectionOverlay({
   onTextStyle: (values: Record<string, string>, isFinal?: boolean) => void;
   onReorder: (targetPath: string, placement: "before" | "after") => void;
   onAction: (action: "parent" | "up" | "down" | "duplicate" | "delete") => void;
+  onAnnotate: () => void;
 }) {
   const { rect, box } = selected;
   const [dragRect, setDragRect] = useState(rect);
@@ -2470,6 +2866,17 @@ function SelectionOverlay({
               </svg>
             </button>
             <button
+              className="edit-beta-toolbar-annotate"
+              onClick={onAnnotate}
+              title="Annotate this element"
+              aria-label="Annotate this element"
+            >
+              <svg viewBox="0 0 24 24">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+            <button
               className="danger"
               onClick={() => onAction("delete")}
               title="Delete element"
@@ -2628,6 +3035,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       interactionMode,
       revealAnimations,
       fontInspectorOn,
+      annotateMode = false,
       boundaries,
       leftPanelOpen,
       rightPanelOpen,
@@ -2659,6 +3067,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       onSelectActiveFrame,
       onToggleFrameEnabled,
       onRemoveFrame,
+      annotations = [],
+      activeAnnotationViewport,
+      selectedAnnotationId,
+      onSelectAnnotation,
+      onAnnotateElement,
     },
     ref,
   ) {
@@ -2707,7 +3120,13 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const optionsRef = useRef<BridgeOptions>({
       revealAnimations,
       fontInspectorOn,
+      annotateMode,
       boundaries,
+      rulers: {
+        enabled: rulersOn,
+        guidesEnabled: guidesOn || guidesAlwaysVisible,
+        guides,
+      },
       zoomScale: Math.max(0.25, zoom / 100),
     });
     const selectedStateKeyRef = useRef("");
@@ -2729,6 +3148,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       new Set(),
     );
     const [leftSections, setLeftSections] = useState({
+      annotations: true,
       layers: true,
       styles: true,
       history: true,
@@ -2777,6 +3197,59 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const [figmaFrameOffset, setFigmaFrameOffset] = useState({ x: 0, y: 0 });
     const [liveFrameOffset, setLiveFrameOffset] = useState({ x: 0, y: 0 });
     const [snapshotFrameOffset, setSnapshotFrameOffset] = useState({ x: 0, y: 0 });
+
+    const annotationGroups = useMemo(() => {
+      const groups = new Map<
+        string,
+        {
+          key: string;
+          name: string;
+          width: number;
+          height: number;
+          deviceType: string;
+          annotations: CanvasSelectionBox[];
+        }
+      >();
+      activeFrames.forEach((frame) => {
+        const key = `${Math.round(frame.width)}x${Math.round(frame.height)}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            name: frame.name,
+            width: Math.round(frame.width),
+            height: Math.round(frame.height),
+            deviceType: frame.deviceType,
+            annotations: [],
+          });
+        }
+      });
+      if (activeAnnotationViewport && !groups.has(activeAnnotationViewport.key)) {
+        groups.set(activeAnnotationViewport.key, {
+          key: activeAnnotationViewport.key,
+          name: activeAnnotationViewport.name,
+          width: activeAnnotationViewport.width,
+          height: activeAnnotationViewport.height,
+          deviceType: activeAnnotationViewport.deviceType,
+          annotations: [],
+        });
+      }
+      annotations.forEach((annotation) => {
+        const width = Math.round(annotation.viewportWidth || 0);
+        const height = Math.round(annotation.viewportHeight || 0);
+        const key = annotation.viewportKey || `${width}x${height}`;
+        const existing = groups.get(key) || {
+          key,
+          name: annotation.deviceName || "Custom",
+          width,
+          height,
+          deviceType: annotation.deviceType || "custom",
+          annotations: [],
+        };
+        existing.annotations.push(annotation);
+        groups.set(key, existing);
+      });
+      return Array.from(groups.values()).sort((a, b) => b.width - a.width);
+    }, [activeAnnotationViewport, activeFrames, annotations]);
     const [frameSnapGuide, setFrameSnapGuide] = useState<{
       x: number | null;
       y: number | null;
@@ -2813,6 +3286,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const topRulerRef = useRef<HTMLCanvasElement | null>(null);
     const leftRulerRef = useRef<HTMLCanvasElement | null>(null);
     const liveFrameRef = useRef<HTMLDivElement | null>(null);
+    const activeViewportRef = useRef<HTMLDivElement | null>(null);
     const [multiFrameOffsets, setMultiFrameOffsets] = useState<Record<string, { x: number; y: number }>>({});
 
     const [localGuides, setLocalGuides] = useState<
@@ -3775,14 +4249,33 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       optionsRef.current = {
         revealAnimations,
         fontInspectorOn,
+        annotateMode,
         boundaries,
+        rulers: {
+          enabled: rulersOn,
+          guidesEnabled: guidesOn || guidesAlwaysVisible,
+          guides: [...guides, ...localGuides],
+        },
         zoomScale: Math.max(0.25, zoom / 100),
       };
       if (ready)
         void execute(
           `window.__fullForceEditBeta?.setOptions(${JSON.stringify(optionsRef.current)})`,
         );
-    }, [boundaries, execute, fontInspectorOn, ready, revealAnimations, zoom]);
+    }, [
+      annotateMode,
+      boundaries,
+      execute,
+      fontInspectorOn,
+      guides,
+      guidesAlwaysVisible,
+      guidesOn,
+      localGuides,
+      ready,
+      revealAnimations,
+      rulersOn,
+      zoom,
+    ]);
 
     useEffect(() => {
       if (selected?.path && cssEditingPathRef.current === selected.path) return;
@@ -3984,6 +4477,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           const view = webviewRef.current;
           if (!view || typeof view.capturePage !== "function") return null;
           try {
+            await execute("window.__fullForceEditBeta?.prepareCapture?.() || true");
             const image = await view.capturePage();
             if (!image) return null;
             const dataUrl = typeof image.toDataURL === "function" ? image.toDataURL() : null;
@@ -3991,14 +4485,89 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           } catch (err) {
             console.error("Error capturing viewport:", err);
             return null;
+          } finally {
+            await execute("window.__fullForceEditBeta?.finishCapture?.() || true");
           }
+        },
+        captureFullPage: async () => {
+          const view = webviewRef.current as any;
+          if (!view) return null;
+          await execute("window.__fullForceEditBeta?.prepareCapture?.('metadata') || true");
+          try {
+            try {
+              const webContentsId = typeof view.getWebContentsId === "function" ? view.getWebContentsId() : null;
+              if (webContentsId) {
+                const viewportWidth = activeViewportRef.current?.offsetWidth || width || 1280;
+                const viewportHeight = activeViewportRef.current?.offsetHeight || height || 800;
+                const res = await window.electronAPI.captureAutomatePage(
+                  webContentsId,
+                  viewportWidth,
+                  viewportHeight
+                );
+                if (res && res.success && res.dataUrl) {
+                  return res.dataUrl;
+                }
+              }
+            } catch (err) {
+              console.warn("CDP full page capture notice, falling back:", err);
+            }
+            try {
+              const image = await view.capturePage();
+              return image ? image.toDataURL() : null;
+            } catch (err) {
+              return null;
+            }
+          } finally {
+            await execute("window.__fullForceEditBeta?.finishCapture?.() || true");
+          }
+        },
+        getScrollY: async () => {
+          try {
+            const res = await execute("window.scrollY || document.documentElement.scrollTop || 0");
+            return typeof res === "number" ? res : 0;
+          } catch (err) {
+            return 0;
+          }
+        },
+        scrollBy: (deltaY: number) => {
+          const view = webviewRef.current as any;
+          if (view && typeof view.executeJavaScript === "function") {
+            view.executeJavaScript(`window.scrollBy({ top: ${deltaY}, behavior: "instant" })`);
+          }
+        },
+        scrollTo: (top: number) => {
+          const view = webviewRef.current as any;
+          if (view && typeof view.executeJavaScript === "function") {
+            view.executeJavaScript(
+              `window.scrollTo({ top: ${Math.max(0, Number(top) || 0)}, behavior: "smooth" })`,
+            );
+          }
+        },
+        getViewportGeometry: () => {
+          const viewport = activeViewportRef.current;
+          if (!viewport) return null;
+          const rect = viewport.getBoundingClientRect();
+          return {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+            pageWidth: viewport.offsetWidth,
+            pageHeight: viewport.offsetHeight,
+          };
+        },
+        getCaptureInspection: async () => {
+          const result = await execute(
+            "window.__fullForceEditBeta?.getCaptureInspection?.() || []",
+          );
+          return Array.isArray(result) ? result : [];
         },
         getPatches: async () => {
           const result = await execute("window.__fullForceEditBeta?.getPatches() || []");
           return Array.isArray(result) ? result : [];
         },
       }),
-      [hardReload, refreshLayers],
+      [execute, hardReload, height, refreshLayers, width],
     );
     const navigate = () => {
       let next = url.trim();
@@ -4440,6 +5009,63 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
               onPointerUp={endPanelResize}
               onPointerCancel={endPanelResize}
             />
+            <section
+              className={`edit-beta-left-section annotations ${leftSections.annotations ? "open" : ""}`}
+            >
+              <button
+                className="edit-beta-left-heading"
+                onClick={() => toggleLeftSection("annotations")}
+              >
+                <span>
+                  <i>{leftSections.annotations ? "⌄" : "›"}</i> Annotations
+                </span>
+                <small>{annotations.length}</small>
+              </button>
+              {leftSections.annotations && (
+                <div className="edit-beta-annotation-groups">
+                  {annotationGroups.map((group) => {
+                    const isActive = group.key === activeAnnotationViewport?.key;
+                    return (
+                      <div
+                        key={group.key}
+                        className={`edit-beta-annotation-device ${isActive ? "active" : ""}`}
+                      >
+                        <div className="edit-beta-annotation-device-head">
+                          <span className={`edit-beta-device-icon ${group.deviceType}`} aria-hidden="true" />
+                          <span>
+                            <b>{group.name}</b>
+                            <small>{group.width} × {group.height}</small>
+                          </span>
+                          <em>{isActive ? "Viewing" : group.annotations.length}</em>
+                        </div>
+                        {group.annotations.length > 0 ? (
+                          <div className="edit-beta-annotation-items">
+                            {group.annotations.map((annotation) => (
+                              <button
+                                key={annotation.id}
+                                className={selectedAnnotationId === annotation.id ? "selected" : ""}
+                                onClick={() => onSelectAnnotation?.(annotation)}
+                                title={`Open #${annotation.badgeNumber} at ${group.width} × ${group.height}`}
+                              >
+                                <i style={{ background: annotation.color }} />
+                                <span>
+                                  <b>#{annotation.badgeNumber} {annotation.title}</b>
+                                  <small>{plainTextFromRichText(annotation.notes) || "No notes"}</small>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="edit-beta-annotation-empty">
+                            No annotations at this size
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
             <section
               className={`edit-beta-left-section layers ${leftSections.layers ? "open" : ""}`}
               style={
@@ -5073,6 +5699,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                             )}
 
                             <div
+                              ref={isActive ? activeViewportRef : undefined}
                               className="edit-beta-frame"
                               style={{
                                 width: fWidth,
@@ -5115,6 +5742,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                   void call("reorder", targetPath, placement);
                                   void refreshLayers();
                                 }}
+                                onAnnotate={() => onAnnotateElement?.(selected)}
                                 onAction={(action) => {
                                   const calls = {
                                     parent: ["selectParent"],

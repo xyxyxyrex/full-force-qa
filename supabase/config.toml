@@ -1,0 +1,22 @@
+# Supabase Local Configuration
+project_id = "qa-snapshot-editor"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[storage.buckets.qa-ephemeral-snapshots]
+public = false
+file_size_limit = "25MiB"
+allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
