@@ -1,6 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './RichTextEditor.css'
 
+type ToolbarIconName = 'bold' | 'italic' | 'underline' | 'strike' | 'bulletList' | 'numberList' | 'link' | 'image'
+
+const ToolbarIcon: React.FC<{ name: ToolbarIconName }> = ({ name }) => {
+  const props = {
+    width: 15,
+    height: 15,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  }
+  if (name === 'bold') return <svg {...props}><path d="M7 4h6a4 4 0 0 1 0 8H7z" /><path d="M7 12h7a4 4 0 0 1 0 8H7z" /></svg>
+  if (name === 'italic') return <svg {...props}><path d="M19 4h-9" /><path d="M14 20H5" /><path d="m15 4-6 16" /></svg>
+  if (name === 'underline') return <svg {...props}><path d="M6 4v6a6 6 0 0 0 12 0V4" /><path d="M4 21h16" /></svg>
+  if (name === 'strike') return <svg {...props}><path d="M16 4H9a4 4 0 0 0-3.7 5.5" /><path d="M14.5 14.5A4 4 0 0 1 11 20H5" /><path d="M3 12h18" /></svg>
+  if (name === 'bulletList') return <svg {...props}><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none" /><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none" /><path d="M8 6h12M8 12h12M8 18h12" /></svg>
+  if (name === 'numberList') return <svg {...props}><path d="M3 5h1v4M3 9h2M3 14h2l-2 3h2" /><path d="M9 6h11M9 12h11M9 18h11" /></svg>
+  if (name === 'link') return <svg {...props}><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>
+  return <svg {...props}><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m21 15-5-5L5 20" /></svg>
+}
+
 const ALLOWED_TAGS = new Set([
   'A', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DIV', 'EM', 'I', 'IMG', 'LI', 'OL',
   'P', 'PRE', 'S', 'SPAN', 'STRIKE', 'STRONG', 'U', 'UL',
@@ -232,17 +256,17 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     <div className={`rich-text-editor${compact ? ' compact' : ''}`}>
       <div className="rich-text-toolbar" role="toolbar" aria-label="Text formatting">
         {[
-          ['bold', 'B', 'Bold'],
-          ['italic', 'I', 'Italic'],
-          ['underline', 'U', 'Underline'],
-          ['strikeThrough', 'S', 'Strikethrough'],
-          ['insertUnorderedList', '• List', 'Bulleted list'],
-          ['insertOrderedList', '1. List', 'Numbered list'],
-        ].map(([command, label, title]) => (
-          <button key={command} type="button" title={title} onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand(command)}>{label}</button>
+          ['bold', 'bold', 'Bold'],
+          ['italic', 'italic', 'Italic'],
+          ['underline', 'underline', 'Underline'],
+          ['strikeThrough', 'strike', 'Strikethrough'],
+          ['insertUnorderedList', 'bulletList', 'Bulleted list'],
+          ['insertOrderedList', 'numberList', 'Numbered list'],
+        ].map(([command, icon, title]) => (
+          <button key={command} type="button" title={title} aria-label={title} onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand(command)}><ToolbarIcon name={icon as ToolbarIconName} /></button>
         ))}
-        <button type="button" title="Attach link" onMouseDown={(event) => event.preventDefault()} onClick={openLinkDialog}>Link</button>
-        <button type="button" title="Attach compressed image" onMouseDown={(event) => event.preventDefault()} onClick={() => { rememberSelection(); fileInputRef.current?.click() }}>Image</button>
+        <button type="button" title="Attach link" aria-label="Attach link" onMouseDown={(event) => event.preventDefault()} onClick={openLinkDialog}><ToolbarIcon name="link" /></button>
+        <button type="button" title="Attach compressed image" aria-label="Attach compressed image" onMouseDown={(event) => event.preventDefault()} onClick={() => { rememberSelection(); fileInputRef.current?.click() }}><ToolbarIcon name="image" /></button>
         <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={(event) => { void addImages(Array.from(event.target.files || [])); event.target.value = '' }} />
       </div>
       <div

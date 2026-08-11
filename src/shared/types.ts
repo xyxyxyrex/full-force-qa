@@ -96,6 +96,23 @@ export interface AppSettings {
   hotkeys: AppHotkeys
 }
 
+export type AppUpdateState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'not-available'
+  | 'error'
+
+export interface AppUpdateStatus {
+  state: AppUpdateState
+  currentVersion: string
+  version?: string
+  percent?: number
+  message?: string
+}
+
 export interface ElectronAPI {
   login: (adminUrl: string) => Promise<void>
   mondayLogin: () => Promise<{ success: boolean; token?: string; error?: string }>
@@ -129,6 +146,11 @@ export interface ElectronAPI {
   getSnapshots: (projectId: string) => Promise<SnapshotItem[]>
   deleteSnapshot: (snapshotId: string) => Promise<{ success: boolean }>
   runGrammarSpellAudit: (items: Array<{ id: string; tag: string; text: string; index: number }>) => Promise<any>
+  getUpdateStatus: () => Promise<AppUpdateStatus>
+  checkForUpdates: () => Promise<AppUpdateStatus>
+  downloadUpdate: () => Promise<AppUpdateStatus>
+  installUpdate: () => Promise<{ success: boolean; error?: string }>
+  onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => () => void
   onGlobalEscape: (callback: () => void) => () => void
 }
 

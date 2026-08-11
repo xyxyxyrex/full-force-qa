@@ -489,17 +489,17 @@ function AnnotationShape({
     const arrow = annotation.arrowPct || { startX: 0, startY: 100, endX: 100, endY: 0 };
     const markerId = `annotation-arrow-${annotation.id.replace(/[^a-z0-9_-]/gi, "")}`;
     return (
-      <svg className="annotation-vector-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <svg className="annotation-vector-shape">
         <defs>
-          <marker id={markerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L8,4 L0,8 Z" fill={annotation.color} />
+          <marker id={markerId} viewBox="0 0 12 12" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M1,1 L11,6 L1,11 Z" fill={annotation.color} />
           </marker>
         </defs>
         <line
-          x1={arrow.startX}
-          y1={arrow.startY}
-          x2={arrow.endX}
-          y2={arrow.endY}
+          x1={`${arrow.startX}%`}
+          y1={`${arrow.startY}%`}
+          x2={`${arrow.endX}%`}
+          y2={`${arrow.endY}%`}
           stroke={annotation.color}
           strokeWidth="3"
           vectorEffect="non-scaling-stroke"

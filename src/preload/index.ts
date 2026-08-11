@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CaptureResult, Project } from '../shared/types'
+import type { AppUpdateStatus, CaptureResult, Project } from '../shared/types'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   login(adminUrl: string): Promise<void> {
@@ -70,6 +70,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   runGrammarSpellAudit(items: Array<{ id: string; tag: string; text: string; index: number }>): Promise<any> {
     return ipcRenderer.invoke('app:runGrammarSpellAudit', items)
+  },
+  getUpdateStatus(): Promise<AppUpdateStatus> {
+    return ipcRenderer.invoke('app:update-status')
+  },
+  checkForUpdates(): Promise<AppUpdateStatus> {
+    return ipcRenderer.invoke('app:update-check')
+  },
+  downloadUpdate(): Promise<AppUpdateStatus> {
+    return ipcRenderer.invoke('app:update-download')
+  },
+  installUpdate(): Promise<{ success: boolean; error?: string }> {
+    return ipcRenderer.invoke('app:update-install')
+  },
+  onUpdateStatus(callback: (status: AppUpdateStatus) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) => callback(status)
+    ipcRenderer.on('app:update-status', handler)
+    return () => ipcRenderer.removeListener('app:update-status', handler)
   },
   onGlobalEscape(callback: () => void) {
     const handler = () => callback()

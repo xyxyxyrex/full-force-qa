@@ -1,8 +1,13 @@
 .rich-text-editor { position:relative; width:100%; border:1px solid #3f3f46; border-radius:7px; background:#09090b; color:#f4f4f5; }
 .rich-text-editor:focus-within { border-color:#ff0055; box-shadow:0 0 0 1px #ff005540; }
 .rich-text-toolbar { display:flex; flex-wrap:wrap; gap:3px; padding:5px; border-bottom:1px solid #2f2f35; background:#151518; border-radius:7px 7px 0 0; }
-.rich-text-toolbar button { min-width:27px; height:25px; padding:2px 6px; border:1px solid transparent; border-radius:4px; background:transparent; color:#d4d4d8; font-size:10px; font-weight:700; cursor:pointer; }
+.rich-text-toolbar button { min-width:28px; height:28px; display:inline-grid; place-items:center; padding:0; border:1px solid transparent; border-radius:5px; background:transparent; color:#d4d4d8; cursor:pointer; }
+.rich-text-toolbar button svg { display:block; pointer-events:none; }
 .rich-text-toolbar button:hover { border-color:#52525b; background:#27272a; color:#fff; }
+.rich-text-toolbar button:focus-visible { border-color:#38bdf8; outline:2px solid #38bdf84d; outline-offset:1px; }
+.rich-text-editor.compact .rich-text-toolbar { flex-wrap:nowrap; gap:2px; padding:4px; overflow-x:auto; scrollbar-width:none; }
+.rich-text-editor.compact .rich-text-toolbar::-webkit-scrollbar { display:none; }
+.rich-text-editor.compact .rich-text-toolbar button { min-width:26px; width:26px; height:27px; }
 .rich-text-surface { min-height:86px; max-height:260px; padding:9px 10px; overflow:auto; outline:0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .rich-text-editor.compact .rich-text-surface { min-height:64px; max-height:180px; }
 .rich-text-surface:empty::before { color:#71717a; content:attr(data-placeholder); pointer-events:none; }

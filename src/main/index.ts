@@ -13,6 +13,13 @@ import { freezeSnapshot } from './snapshot'
 import { getProjects, saveProject, deleteProject } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
 import type { Project, CaptureResult } from '../shared/types'
+import {
+  checkForAppUpdates,
+  downloadAppUpdate,
+  getAppUpdateStatus,
+  initializeAppUpdater,
+  installAppUpdate,
+} from './updater'
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
 import nspell from 'nspell'
@@ -553,6 +560,11 @@ function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle('app:update-status', () => getAppUpdateStatus())
+  ipcMain.handle('app:update-check', () => checkForAppUpdates())
+  ipcMain.handle('app:update-download', () => downloadAppUpdate())
+  ipcMain.handle('app:update-install', () => installAppUpdate())
+
   ipcMain.handle('app:openExternal', async (_event, url: string): Promise<void> => {
     if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
       shell.openExternal(url)
@@ -878,6 +890,7 @@ function registerIpcHandlers(): void {
 app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
+  initializeAppUpdater(() => mainWindow)
 })
 
 app.on('window-all-closed', () => {

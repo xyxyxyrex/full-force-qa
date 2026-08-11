@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Project } from '../../shared/types'
+import type { AppUpdateStatus, Project } from '../../shared/types'
 import Dashboard from './components/Dashboard'
 import CaptureScreen from './components/CaptureScreen'
 import EditorWorkspace from './components/EditorWorkspace'
@@ -40,11 +40,49 @@ export default function App() {
   const lastSyncRef = useRef<number>(0)
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ state: 'idle', currentVersion: '' })
 
   // Apply theme on initial mount and when theme changes
   useEffect(() => {
     applyTheme(settings.theme)
   }, [settings.theme])
+
+  useEffect(() => {
+    let disposed = false
+    void window.electronAPI.getUpdateStatus().then((status) => {
+      if (!disposed) setUpdateStatus(status)
+    }).catch(() => {})
+    const unsubscribe = window.electronAPI.onUpdateStatus((status) => {
+      if (!disposed) setUpdateStatus(status)
+    })
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [])
+
+  const updateButtonTitle = (() => {
+    if (updateStatus.state === 'available') return `Version ${updateStatus.version} is available. Click to download.`
+    if (updateStatus.state === 'downloading') return `Downloading version ${updateStatus.version || ''} (${Math.round(updateStatus.percent || 0)}%)`
+    if (updateStatus.state === 'downloaded') return `Version ${updateStatus.version} is ready. Click to restart and install.`
+    if (updateStatus.state === 'checking') return 'Checking for updates…'
+    if (updateStatus.state === 'error') return `${updateStatus.message || 'Update check failed'} Click to retry.`
+    if (updateStatus.state === 'not-available') return `QA Snapshot Editor ${updateStatus.currentVersion || ''} is up to date. Click to check again.`
+    return 'Check for updates'
+  })()
+
+  const handleUpdateButton = async () => {
+    if (updateStatus.state === 'checking' || updateStatus.state === 'downloading') return
+    if (updateStatus.state === 'available') {
+      await window.electronAPI.downloadUpdate()
+      return
+    }
+    if (updateStatus.state === 'downloaded') {
+      await window.electronAPI.installUpdate()
+      return
+    }
+    await window.electronAPI.checkForUpdates()
+  }
 
   const [tabs, setTabs] = useState<TabState[]>(() => {
     try {
@@ -363,6 +401,22 @@ export default function App() {
               +
             </button>
           </div>
+          <button
+            type="button"
+            className={`app-update-btn state-${updateStatus.state}`}
+            onClick={() => void handleUpdateButton()}
+            title={updateButtonTitle}
+            aria-label={updateButtonTitle}
+            aria-live="polite"
+            disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v11" />
+              <path d="m8 10 4 4 4-4" />
+              <path d="M5 17v2h14v-2" />
+            </svg>
+            {(updateStatus.state === 'available' || updateStatus.state === 'downloaded') && <span className="app-update-dot" />}
+          </button>
         </div>
       </div>
 

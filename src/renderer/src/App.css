@@ -89,7 +89,7 @@ button, input, select, textarea, a, .clickable, .no-drag {
   height: 38px;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
-  padding: 0 140px 0 8px; /* Reserves 140px on right for Windows native minimize/maximize/close buttons */
+  padding: 0 180px 0 8px; /* Update control + Windows native window buttons */
   user-select: none;
   overflow-x: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -99,8 +99,84 @@ button, input, select, textarea, a, .clickable, .no-drag {
 /* Explicitly make interactive controls clickable (non-draggable) */
 .app-tab-item,
 .app-tab-close,
-.app-new-tab-btn {
+.app-new-tab-btn,
+.app-update-btn {
   -webkit-app-region: no-drag;
+}
+
+.app-update-btn {
+  position: absolute;
+  top: 5px;
+  right: 144px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.app-update-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.app-update-btn:hover:not(:disabled),
+.app-update-btn:focus-visible {
+  border-color: var(--border-hover);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.app-update-btn.state-available,
+.app-update-btn.state-downloaded {
+  border-color: var(--accent-color);
+  background: var(--accent-light);
+  color: var(--accent-color);
+  animation: app-update-flash 1.35s ease-in-out infinite;
+}
+
+.app-update-btn.state-checking svg,
+.app-update-btn.state-downloading svg {
+  animation: app-update-working .9s ease-in-out infinite alternate;
+}
+
+.app-update-btn:disabled { cursor:wait; }
+
+.app-update-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--header-bg);
+}
+
+@keyframes app-update-flash {
+  0%,100% { box-shadow: 0 0 0 0 var(--accent-light); }
+  50% { box-shadow: 0 0 0 4px var(--accent-light); }
+}
+
+@keyframes app-update-working {
+  from { opacity: .45; transform: translateY(-1px); }
+  to { opacity: 1; transform: translateY(1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-update-btn { animation: none !important; }
+  .app-update-btn svg { animation: none !important; }
 }
 
 .app-tab-pin-btn {

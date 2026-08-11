@@ -18,9 +18,9 @@
     .dot { width:11px; height:11px; border-radius:50%; }
     .dot.red{background:#ff5f56}.dot.yellow{background:#ffbd2e}.dot.green{background:#27c93f}
     .path { margin-left:10px; overflow:hidden; color:var(--muted); font:12px monospace; text-overflow:ellipsis; white-space:nowrap; }
-    .body { display:grid; grid-template-columns:minmax(0,1fr) 330px; min-height:560px; }
+    .body { display:grid; grid-template-columns:minmax(0,1fr) 350px; min-height:560px; }
     .content { min-width:0; padding:24px; border-right:1px solid var(--border); }
-    .sidebar { padding:20px; background:#101012; }
+    .sidebar { min-width:0; padding:20px; background:#101012; }
     .meta { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
     .badge { display:inline-flex; margin-bottom:6px; padding:5px 12px; border:1px solid var(--accent); border-radius:999px; background:#ff005522; color:var(--accent); font-size:12px; font-weight:800; }
     h2 { margin:0; font-size:22px; line-height:1.25; }
@@ -56,7 +56,16 @@
     .message { max-width:620px; padding:22px; text-align:center; color:var(--muted); }
     .message.error { color:var(--danger); }
     .retry { margin-top:12px; }
-    .notes { margin-top:16px; padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--elevated); color:#e4e4e7; }
+    .detail-heading { display:flex; align-items:flex-start; gap:10px; margin-bottom:4px; }
+    .detail-badge { flex:0 0 auto; display:inline-flex; padding:4px 8px; border:1px solid var(--status-color,#9ca3af); border-radius:999px; background:color-mix(in srgb,var(--status-color,#9ca3af) 12%,transparent); color:var(--status-color,#9ca3af); font-size:10px; font-weight:900; }
+    .detail-title { min-width:0; margin:0; overflow-wrap:anywhere; font-size:18px; line-height:1.25; }
+    .detail-section { margin:15px 0; }
+    .detail-section h4,.detail-status label { display:block; margin:0 0 7px; color:var(--muted); font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+    .detail-status { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:15px 0; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--elevated); }
+    .detail-status label { margin:0; }
+    .detail-status .status-select { width:150px; }
+    .notes { max-height:300px; padding:13px; overflow:auto; border:1px solid var(--border); border-radius:9px; background:var(--elevated); color:#e4e4e7; overflow-wrap:anywhere; }
+    .description-empty { padding:12px; border:1px dashed var(--border); border-radius:8px; color:var(--muted); font-size:12px; }
     .actions { display:flex; justify-content:flex-end; margin-top:16px; }
     .btn { min-height:36px; padding:8px 14px; border:1px solid #3f3f46; border-radius:7px; background:#27272a; color:white; font-weight:700; cursor:pointer; }
     .btn:hover:not(:disabled){filter:brightness(1.13)} .btn:disabled{opacity:.5;cursor:not-allowed}.btn.primary{border-color:var(--accent);background:var(--accent)}
@@ -82,7 +91,8 @@
     .rich-box { position:relative; border:1px solid #3f3f46; border-radius:7px; background:#09090b; }
     .rich-box:focus-within { border-color:var(--accent); box-shadow:0 0 0 1px #ff005540; }
     .rich-toolbar { display:flex; flex-wrap:wrap; gap:3px; padding:5px; border-bottom:1px solid var(--border); background:#18181c; border-radius:7px 7px 0 0; }
-    .rich-toolbar button { min-width:27px; height:27px; padding:2px 6px; border:1px solid transparent; border-radius:4px; background:transparent; color:#d4d4d8; font-size:10px; font-weight:800; cursor:pointer; }
+    .rich-toolbar button { min-width:29px; height:29px; display:inline-grid; place-items:center; padding:0; border:1px solid transparent; border-radius:5px; background:transparent; color:#d4d4d8; cursor:pointer; }
+    .rich-toolbar button svg { display:block; pointer-events:none; }
     .rich-toolbar button:hover { border-color:#52525b; background:#27272a; color:white; }
     .rich-editor { min-height:96px; max-height:260px; padding:9px 10px; overflow:auto; outline:0; color:white; line-height:1.5; overflow-wrap:anywhere; }
     .rich-editor:empty::before { color:#71717a; content:attr(data-placeholder); pointer-events:none; }
@@ -101,7 +111,7 @@
     .link-dialog button.primary { border-color:#0ea5e9; background:#0284c7; }
     .form-status { min-height:19px; color:var(--muted); font-size:11px; }
     .form-status.error { color:var(--danger); }.form-status.success{color:var(--success)}
-    .toast { position:fixed; bottom:24px; left:50%; z-index:10; padding:10px 18px; border:1px solid #3f3f46; border-radius:999px; background:#27272a; opacity:0; transform:translate(-50%,10px); transition:.2s; pointer-events:none; }
+    .toast { position:fixed; bottom:24px; left:50%; z-index:1100; padding:10px 18px; border:1px solid #3f3f46; border-radius:999px; background:#27272a; opacity:0; transform:translate(-50%,10px); transition:.2s; pointer-events:none; }
     .toast.show { opacity:1; transform:translate(-50%,0); }
     .lightbox { position:fixed; inset:0; z-index:1000; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:12px; padding:20px; background:#000e; backdrop-filter:blur(8px); }
     .lightbox[hidden] { display:none; }
@@ -110,7 +120,27 @@
     .lightbox-image-wrap { min-height:0; display:grid; place-items:center; }
     .lightbox img { max-width:min(96vw,1600px); max-height:calc(100vh - 118px); border-radius:8px; object-fit:contain; box-shadow:0 24px 80px #000; }
     .lightbox-caption { min-height:20px; color:#d4d4d8; text-align:center; overflow-wrap:anywhere; }
-    @media(max-width:820px){.body{grid-template-columns:1fr}.content{border-right:0;border-bottom:1px solid var(--border)}.sidebar{padding:18px}.meta{flex-direction:column}.expiry{padding-top:0}}
+    .annotation-modal { position:fixed; inset:0; z-index:900; display:grid; place-items:center; padding:18px; background:#050507eb; backdrop-filter:blur(9px); }
+    .annotation-modal[hidden] { display:none; }
+    .annotation-modal-dialog { width:min(1500px,100%); height:min(900px,calc(100vh - 36px)); display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden; border:1px solid #3f3f46; border-radius:14px; background:var(--card); box-shadow:0 30px 100px #000; }
+    .annotation-modal-header { min-height:54px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 14px 10px 18px; border-bottom:1px solid var(--border); background:var(--elevated); }
+    .annotation-modal-header strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .annotation-modal-close { width:34px; height:34px; display:grid; place-items:center; flex:0 0 auto; padding:0; border:1px solid #52525b; border-radius:7px; background:#27272a; color:white; cursor:pointer; }
+    .annotation-modal-close:hover,.annotation-modal-close:focus-visible { border-color:var(--accent); color:var(--accent); outline:0; }
+    .annotation-modal-body { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 410px; }
+    #modalDetailsSlot { min-width:0; min-height:0; overflow:hidden; }
+    .annotation-focus { min-width:0; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) auto; gap:12px; padding:22px; overflow:auto; background:radial-gradient(circle at center,#202024,#09090b 70%); }
+    .annotation-zoom-wrap { min-height:320px; display:grid; place-items:center; }
+    .annotation-zoom-stage { position:relative; width:min(100%,980px); overflow:visible; border:1px solid #52525b; border-radius:10px; background:white; box-shadow:0 18px 55px #000b; line-height:0; }
+    .annotation-zoom-stage canvas { display:block; width:100%; height:100%; border-radius:9px; }
+    .annotation-zoom-layer { position:absolute; inset:0; pointer-events:none; }
+    .annotation-zoom-layer .annotation { pointer-events:none; }
+    .annotation-focus-meta { margin:0; color:var(--muted); font-size:11px; text-align:center; }
+    .annotation-modal .sidebar { height:100%; min-height:0; overflow:auto; border-left:1px solid var(--border); }
+    @media(max-width:900px){
+      .body{grid-template-columns:1fr}.content{border-right:0;border-bottom:1px solid var(--border)}.sidebar{padding:18px}.meta{flex-direction:column}.expiry{padding-top:0}
+      .annotation-modal{padding:0}.annotation-modal-dialog{height:100vh;border:0;border-radius:0}.annotation-modal-body{grid-template-columns:1fr;overflow:auto}#modalDetailsSlot{overflow:visible}.annotation-focus{min-height:48vh}.annotation-modal .sidebar{height:auto;overflow:visible;border-top:1px solid var(--border);border-left:0}.annotation-zoom-wrap{min-height:260px}
+    }
   </style>
 </head>
 <body>
@@ -122,7 +152,7 @@
 
     <section class="viewer">
       <div class="titlebar"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span><span class="path" id="path">Loading snapshot…</span></div>
-      <div class="body">
+      <div class="body" id="viewerBody">
         <div class="content">
           <div class="meta">
             <div><span class="badge" id="badge">QA SNAPSHOT</span><h2 id="title">Loading capture…</h2></div>
@@ -137,27 +167,43 @@
               <div class="annotation-layer" id="annotationLayer"></div>
             </div>
           </div>
-          <div class="notes" id="notes" hidden></div>
           <div class="actions"><button class="btn primary" id="copy">Copy Link</button></div>
         </div>
 
-        <aside class="sidebar">
-          <h3>Annotation comments</h3>
+        <aside class="sidebar" id="annotationDetails">
+          <div class="detail-heading">
+            <span class="detail-badge" id="detailBadge">#1</span>
+            <h3 class="detail-title" id="detailTitle">Annotation details</h3>
+          </div>
           <p class="sidebar-intro" id="commentContext">Select an annotation to view its discussion.</p>
-          <div class="annotation-picker" id="annotationPicker"></div>
+          <div class="detail-status">
+            <label for="activeStatus">Status</label>
+            <select class="status-select" id="activeStatus" aria-label="Status for selected annotation"></select>
+          </div>
+          <section class="detail-section">
+            <h4>Description</h4>
+            <div class="notes" id="notes" hidden></div>
+            <div class="description-empty" id="descriptionEmpty">No description was included.</div>
+          </section>
+          <section class="detail-section">
+            <h4>Annotations</h4>
+            <div class="annotation-picker" id="annotationPicker"></div>
+          </section>
+          <section class="detail-section">
+            <h4>Comments</h4>
           <div class="comments" id="comments"><div class="empty">Comments will appear here.</div></div>
           <form class="form" id="commentForm">
             <input class="field" id="author" maxlength="80" autocomplete="name" placeholder="Your name" required>
             <div class="rich-box">
               <div class="rich-toolbar" id="commentToolbar" role="toolbar" aria-label="Comment formatting">
-                <button type="button" data-command="bold" title="Bold">B</button>
-                <button type="button" data-command="italic" title="Italic">I</button>
-                <button type="button" data-command="underline" title="Underline">U</button>
-                <button type="button" data-command="strikeThrough" title="Strikethrough">S</button>
-                <button type="button" data-command="insertUnorderedList" title="Bulleted list">• List</button>
-                <button type="button" data-command="insertOrderedList" title="Numbered list">1. List</button>
-                <button type="button" id="commentLink" title="Attach link">Link</button>
-                <button type="button" id="commentImage" title="Attach compressed image">Image</button>
+                <button type="button" data-command="bold" title="Bold" aria-label="Bold"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h6a4 4 0 0 1 0 8H7z"/><path d="M7 12h7a4 4 0 0 1 0 8H7z"/></svg></button>
+                <button type="button" data-command="italic" title="Italic" aria-label="Italic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 4h-9"/><path d="M14 20H5"/><path d="m15 4-6 16"/></svg></button>
+                <button type="button" data-command="underline" title="Underline" aria-label="Underline"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><path d="M4 21h16"/></svg></button>
+                <button type="button" data-command="strikeThrough" title="Strikethrough" aria-label="Strikethrough"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M16 4H9a4 4 0 0 0-3.7 5.5"/><path d="M14.5 14.5A4 4 0 0 1 11 20H5"/><path d="M3 12h18"/></svg></button>
+                <button type="button" data-command="insertUnorderedList" title="Bulleted list" aria-label="Bulleted list"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/><path d="M8 6h12M8 12h12M8 18h12"/></svg></button>
+                <button type="button" data-command="insertOrderedList" title="Numbered list" aria-label="Numbered list"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h1v4M3 9h2M3 14h2l-2 3h2"/><path d="M9 6h11M9 12h11M9 18h11"/></svg></button>
+                <button type="button" id="commentLink" title="Attach link" aria-label="Attach link"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></button>
+                <button type="button" id="commentImage" title="Attach compressed image" aria-label="Attach compressed image"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg></button>
                 <input id="commentImageInput" type="file" accept="image/*" multiple hidden>
               </div>
               <div class="rich-editor" id="commentBody" contenteditable="true" role="textbox" aria-label="Comment" aria-multiline="true" data-placeholder="Add a clear QA comment…"></div>
@@ -171,10 +217,33 @@
             <div class="form-status" id="formStatus"></div>
             <button class="btn primary" id="submitComment" type="submit">Post Comment</button>
           </form>
+          </section>
         </aside>
       </div>
     </section>
   </main>
+  <div class="annotation-modal" id="annotationModal" role="dialog" aria-modal="true" aria-labelledby="annotationModalTitle" hidden>
+    <div class="annotation-modal-dialog">
+      <div class="annotation-modal-header">
+        <strong id="annotationModalTitle">Annotation detail</strong>
+        <button class="annotation-modal-close" id="closeAnnotationModal" type="button" aria-label="Close annotation detail">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="annotation-modal-body">
+        <section class="annotation-focus" aria-label="Zoomed annotation">
+          <div class="annotation-zoom-wrap">
+            <div class="annotation-zoom-stage" id="annotationZoomStage">
+              <canvas id="annotationZoomCanvas"></canvas>
+              <div class="annotation-zoom-layer" id="annotationZoomLayer"></div>
+            </div>
+          </div>
+          <p class="annotation-focus-meta" id="annotationFocusMeta"></p>
+        </section>
+        <div id="modalDetailsSlot"></div>
+      </div>
+    </div>
+  </div>
   <div class="lightbox" id="imageLightbox" role="dialog" aria-modal="true" aria-label="Image preview" hidden>
     <button class="lightbox-close" id="closeLightbox" type="button" aria-label="Close image preview">&times;</button>
     <div class="lightbox-image-wrap"><img id="lightboxImage" alt=""></div>
@@ -197,6 +266,7 @@
       activeAnnotationId: '',
       statuses: {},
       objectUrls: new Set(),
+      modalAnnotationId: '',
     };
     const STATUS_OPTIONS = [
       { value:'requested', label:'Requested', color:'#9ca3af', foreground:'#111827' },
@@ -236,7 +306,7 @@
       if (el('imageLightbox').hidden) return;
       el('imageLightbox').hidden = true;
       el('lightboxImage').removeAttribute('src');
-      document.body.style.removeProperty('overflow');
+      if (el('annotationModal').hidden) document.body.style.removeProperty('overflow');
     }
 
     function showError(message, retry) {
@@ -498,6 +568,7 @@
       badge.style.color = definition.color;
       badge.style.borderColor = definition.color;
       badge.style.backgroundColor = `${definition.color}22`;
+      el('detailBadge').style.setProperty('--status-color', definition.color);
     }
 
     function updateStatusAppearance(annotationId) {
@@ -518,14 +589,118 @@
       });
     }
 
+    function renderAnnotationZoom(annotation) {
+      const image = el('image');
+      const canvas = el('annotationZoomCanvas');
+      const stage = el('annotationZoomStage');
+      const layer = el('annotationZoomLayer');
+      const context = canvas.getContext('2d', { alpha:false });
+      layer.replaceChildren();
+      if (!context || !image.naturalWidth || !image.naturalHeight) return;
+
+      const isItemCapture = state.itemNumber > 0;
+      const percentRect = isItemCapture
+        ? { left:0, top:0, width:100, height:100 }
+        : annotationPercentRect(annotation, image);
+      const annotationRect = {
+        x:Math.max(0, percentRect.left / 100 * image.naturalWidth),
+        y:Math.max(0, percentRect.top / 100 * image.naturalHeight),
+        width:Math.max(1, percentRect.width / 100 * image.naturalWidth),
+        height:Math.max(1, percentRect.height / 100 * image.naturalHeight),
+      };
+
+      let crop = { x:0, y:0, width:image.naturalWidth, height:image.naturalHeight };
+      if (!isItemCapture) {
+        const paddingX = Math.max(48, annotationRect.width * .38);
+        const paddingY = Math.max(48, annotationRect.height * .55);
+        const left = Math.max(0, annotationRect.x - paddingX);
+        const top = Math.max(0, annotationRect.y - paddingY);
+        const right = Math.min(image.naturalWidth, annotationRect.x + annotationRect.width + paddingX);
+        const bottom = Math.min(image.naturalHeight, annotationRect.y + annotationRect.height + paddingY);
+        crop = { x:left, y:top, width:Math.max(1,right-left), height:Math.max(1,bottom-top) };
+      }
+
+      const outputScale = Math.min(1, 2400 / crop.width, 1800 / crop.height);
+      canvas.width = Math.max(1, Math.round(crop.width * outputScale));
+      canvas.height = Math.max(1, Math.round(crop.height * outputScale));
+      stage.style.aspectRatio = `${crop.width} / ${crop.height}`;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
+      context.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height);
+
+      const box = document.createElement('div');
+      const id = String(annotation?.id || `item-${state.itemNumber || 1}`);
+      box.className = `annotation ${annotation?.type || 'box'} active`;
+      box.dataset.annotationId = id;
+      const boxRect = isItemCapture
+        ? { left:1, top:1, width:98, height:98 }
+        : {
+            left:(annotationRect.x-crop.x)/crop.width*100,
+            top:(annotationRect.y-crop.y)/crop.height*100,
+            width:annotationRect.width/crop.width*100,
+            height:annotationRect.height/crop.height*100,
+          };
+      box.style.left=`${boxRect.left}%`; box.style.top=`${boxRect.top}%`;
+      box.style.width=`${boxRect.width}%`; box.style.height=`${boxRect.height}%`;
+      applyStatusStyle(box, id);
+      renderAnnotationShape(box, annotation || {});
+      layer.append(box);
+
+      const cropLabel = isItemCapture ? 'Annotation crop' : 'Focused area';
+      el('annotationFocusMeta').textContent = `${cropLabel}: ${Math.round(crop.width)} × ${Math.round(crop.height)} px from the original capture`;
+    }
+
+    function updateAnnotationDetails(annotation) {
+      const badgeNumber = annotation?.badgeNumber || state.itemNumber || 1;
+      const title = annotation?.title || state.snapshot?.title || `Annotation #${badgeNumber}`;
+      const description = annotation?.notes || state.snapshot?.notes || '';
+      const id = String(annotation?.id || (state.itemNumber ? `item-${state.itemNumber}` : 'master'));
+      el('detailBadge').textContent = `#${badgeNumber}`;
+      el('detailBadge').dataset.annotationId = id;
+      el('detailTitle').textContent = title;
+      el('commentContext').textContent = `Discussion and QA feedback for “${title}”`;
+      el('notes').hidden = !description;
+      el('descriptionEmpty').hidden = Boolean(description);
+      if (description) void renderRichText(el('notes'), description);
+      else el('notes').replaceChildren();
+      const activeStatus = el('activeStatus');
+      activeStatus.dataset.annotationId = id;
+      activeStatus.value = annotationStatus(id);
+      applyStatusStyle(activeStatus, id);
+      el('annotationModalTitle').textContent = `#${badgeNumber} ${title}`;
+    }
+
+    let annotationModalReturnFocus = null;
+    function openAnnotationModal(annotation) {
+      annotationModalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      el('annotationModal').hidden = false;
+      el('modalDetailsSlot').append(el('annotationDetails'));
+      document.body.style.overflow = 'hidden';
+      state.modalAnnotationId = String(annotation?.id || (state.itemNumber ? `item-${state.itemNumber}` : 'master'));
+      setActiveAnnotation(annotation);
+      el('closeAnnotationModal').focus();
+    }
+
+    function closeAnnotationModal() {
+      if (el('annotationModal').hidden) return;
+      el('annotationModal').hidden = true;
+      state.modalAnnotationId = '';
+      el('viewerBody').append(el('annotationDetails'));
+      if (el('imageLightbox').hidden) document.body.style.removeProperty('overflow');
+      annotationModalReturnFocus?.focus?.();
+      annotationModalReturnFocus = null;
+    }
+
     function setActiveAnnotation(annotation, shouldScroll = false) {
       state.activeAnnotationId = String(annotation?.id || (state.itemNumber ? `item-${state.itemNumber}` : 'master'));
+      updateAnnotationDetails(annotation);
       document.querySelectorAll('[data-annotation-id]').forEach((node) => node.classList.toggle('active', node.dataset.annotationId === state.activeAnnotationId));
       el('commentContext').textContent = annotation?.title ? `Discussion for “${annotation.title}”` : 'Discussion for this capture';
       const description = annotation?.notes || state.snapshot?.notes || '';
       el('notes').hidden = !description;
       if (description) void renderRichText(el('notes'), description);
       updateActiveStatusBadge();
+      if (!el('annotationModal').hidden) renderAnnotationZoom(annotation);
       if (shouldScroll) scrollToAnnotation(state.activeAnnotationId);
       void loadComments();
     }
@@ -560,7 +735,7 @@
       const jump = document.createElement('button');
       jump.className = 'annotation-jump';
       jump.textContent = `#${annotation?.badgeNumber || state.itemNumber || index + 1} ${annotation?.title || 'Annotation'}`;
-      jump.addEventListener('click', () => setActiveAnnotation(annotation, true));
+      jump.addEventListener('click', () => openAnnotationModal(annotation));
 
       const select = document.createElement('select');
       select.className = 'status-select';
@@ -608,7 +783,7 @@
         label.className = 'annotation-label';
         label.textContent = `#${annotation.badgeNumber || index + 1} ${annotation.title || 'Annotation'}`;
         box.append(label);
-        box.addEventListener('click', () => setActiveAnnotation(annotation));
+        box.addEventListener('click', () => openAnnotationModal(annotation));
         layer.append(box);
 
         addAnnotationChoice(picker, annotation, index);
@@ -621,11 +796,12 @@
       const svgNode = (name) => document.createElementNS('http://www.w3.org/2000/svg', name);
       if (type === 'arrow') {
         const arrow = annotation.arrowPct || { startX:0, startY:100, endX:100, endY:0 };
-        const svg = svgNode('svg'); svg.setAttribute('class','annotation-shape-svg'); svg.setAttribute('viewBox','0 0 100 100'); svg.setAttribute('preserveAspectRatio','none');
-        const line = svgNode('line'); line.setAttribute('x1',arrow.startX); line.setAttribute('y1',arrow.startY); line.setAttribute('x2',arrow.endX); line.setAttribute('y2',arrow.endY); line.setAttribute('data-status-stroke',''); line.setAttribute('stroke-width','3'); line.setAttribute('vector-effect','non-scaling-stroke');
-        const dx = arrow.endX-arrow.startX; const dy = arrow.endY-arrow.startY; const length = Math.max(1,Math.hypot(dx,dy)); const ux=dx/length; const uy=dy/length; const px=-uy; const py=ux;
-        const head = svgNode('polygon'); head.setAttribute('points',`${arrow.endX},${arrow.endY} ${arrow.endX-ux*10+px*5},${arrow.endY-uy*10+py*5} ${arrow.endX-ux*10-px*5},${arrow.endY-uy*10-py*5}`); head.setAttribute('data-status-fill','');
-        svg.append(line,head); box.append(svg);
+        const markerId=`viewer-arrow-${String(annotation.id||Math.random()).replace(/[^a-z0-9_-]/gi,'')}`;
+        const svg = svgNode('svg'); svg.setAttribute('class','annotation-shape-svg');
+        const defs=svgNode('defs'); const marker=svgNode('marker'); marker.setAttribute('id',markerId); marker.setAttribute('viewBox','0 0 12 12'); marker.setAttribute('markerWidth','12'); marker.setAttribute('markerHeight','12'); marker.setAttribute('refX','10'); marker.setAttribute('refY','6'); marker.setAttribute('orient','auto'); marker.setAttribute('markerUnits','userSpaceOnUse');
+        const head=svgNode('path'); head.setAttribute('d','M1,1 L11,6 L1,11 Z'); head.setAttribute('data-status-fill',''); marker.append(head); defs.append(marker);
+        const line = svgNode('line'); line.setAttribute('x1',`${arrow.startX}%`); line.setAttribute('y1',`${arrow.startY}%`); line.setAttribute('x2',`${arrow.endX}%`); line.setAttribute('y2',`${arrow.endY}%`); line.setAttribute('data-status-stroke',''); line.setAttribute('stroke-width','3'); line.setAttribute('vector-effect','non-scaling-stroke'); line.setAttribute('marker-end',`url(#${markerId})`);
+        svg.append(defs,line); box.append(svg);
       } else if (type === 'pen') {
         const svg = svgNode('svg'); svg.setAttribute('class','annotation-shape-svg'); svg.setAttribute('viewBox','0 0 100 100'); svg.setAttribute('preserveAspectRatio','none');
         const line = svgNode('polyline'); line.setAttribute('points',(annotation.pointsPct||[]).map((point)=>`${point.x},${point.y}`).join(' ')); line.setAttribute('fill','none'); line.setAttribute('data-status-stroke',''); line.setAttribute('stroke-width','3'); line.setAttribute('stroke-linecap','round'); line.setAttribute('stroke-linejoin','round'); line.setAttribute('vector-effect','non-scaling-stroke');
@@ -696,6 +872,7 @@
       updateActiveStatusBadge();
       const notes = snapshot.notes || queryNotes || '';
       el('notes').hidden = !notes;
+      el('descriptionEmpty').hidden = Boolean(notes);
       if (notes) void renderRichText(el('notes'), notes);
       const expiresAt = snapshot.expires_at || params.get('expires');
       el('expiry').textContent = expiresAt ? `Expires ${new Date(expiresAt).toLocaleString()}` : '';
@@ -705,7 +882,8 @@
       const comments = el('comments');
       comments.innerHTML = '<div class="empty">Loading comments…</div>';
       try {
-        const rows = await api(`/rest/v1/qa_annotation_comments?select=id,author_name,body,created_at&site_slug=eq.${filter(state.site)}&master_id=eq.${filter(state.masterId)}&item_number=eq.${state.itemNumber}&annotation_id=eq.${filter(state.activeAnnotationId)}&order=created_at.asc`);
+        const itemFilter = state.itemNumber > 0 ? `in.(0,${state.itemNumber})` : 'eq.0';
+        const rows = await api(`/rest/v1/qa_annotation_comments?select=id,author_name,body,created_at&site_slug=eq.${filter(state.site)}&master_id=eq.${filter(state.masterId)}&item_number=${itemFilter}&annotation_id=eq.${filter(state.activeAnnotationId)}&order=created_at.asc`);
         comments.replaceChildren();
         if (!rows.length) comments.innerHTML = '<div class="empty">No comments yet. Start the discussion.</div>';
         rows.forEach((comment) => {
@@ -737,7 +915,7 @@
         const body = await uploadRichTextAssets(rawBody, `comment-${state.activeAnnotationId.replace(/[^a-z0-9_-]/gi,'-')}`);
         await api('/rest/v1/qa_annotation_comments', {
           method:'POST', headers:{Prefer:'return=minimal'},
-          body:JSON.stringify({ site_slug:state.site, master_id:state.masterId, item_number:state.itemNumber, annotation_id:state.activeAnnotationId, author_name:author, body }),
+          body:JSON.stringify({ site_slug:state.site, master_id:state.masterId, item_number:0, annotation_id:state.activeAnnotationId, author_name:author, body }),
         });
         localStorage.setItem('qa-comment-author', author); el('commentBody').innerHTML = '';
         status.className = 'form-status success'; status.textContent = 'Comment posted.';
@@ -819,6 +997,14 @@
     }
 
     async function initialize() {
+      if (!el('activeStatus').options.length) {
+        STATUS_OPTIONS.forEach((definition) => {
+          const option = document.createElement('option');
+          option.value = definition.value;
+          option.textContent = definition.label;
+          el('activeStatus').append(option);
+        });
+      }
       el('commentForm').querySelectorAll('input,button').forEach((node) => node.disabled = false);
       el('commentBody').setAttribute('contenteditable','true');
       try {
@@ -827,6 +1013,15 @@
         await loadStatuses();
         renderMetadata();
         await showImage();
+        if (state.itemNumber > 0) {
+          const annotation = state.annotations[0] || {
+            id:`item-${state.itemNumber}`,
+            badgeNumber:state.itemNumber,
+            title:state.snapshot?.title || `Annotation #${state.itemNumber}`,
+            notes:state.snapshot?.notes || '',
+          };
+          openAnnotationModal(annotation);
+        }
       } catch (error) {
         // A current signed URL may still render while metadata is temporarily unavailable.
         if (params.get('img')) {
@@ -854,8 +1049,13 @@
         closeImageLightbox();
       }
     });
+    el('activeStatus').addEventListener('change', () => void setAnnotationStatus(state.activeAnnotationId, el('activeStatus').value));
+    el('closeAnnotationModal').addEventListener('click', closeAnnotationModal);
+    el('annotationModal').addEventListener('click', (event) => { if (event.target === el('annotationModal')) closeAnnotationModal(); });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') closeImageLightbox();
+      if (event.key !== 'Escape') return;
+      if (!el('imageLightbox').hidden) closeImageLightbox();
+      else closeAnnotationModal();
     });
 
     addEventListener('beforeunload', () => { state.objectUrls.forEach((url) => URL.revokeObjectURL(url)); });
