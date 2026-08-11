@@ -8,13 +8,13 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import type { FigmaConnectionStatus, Project, ProjectAutomateState, SnapshotItem } from "../../../shared/types";
+import type { AppHotkeys, FigmaConnectionStatus, Project, ProjectAutomateState, SnapshotItem } from "../../../shared/types";
 import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
 import SeoAuditRightPanel from "./SeoAuditRightPanel";
 import EditBetaWorkspace from "./EditBetaWorkspace";
-import type { EditBetaWorkspaceHandle } from "./EditBetaWorkspace";
+import type { EditBetaWorkspaceHandle, EyedropperSample, FontInspectorMode, InteractionMode } from "./EditBetaWorkspace";
 import AutomateWorkspace from "./AutomateWorkspace";
 import type { AnnotationFromFindingSpec } from "../utils/visualCompare";
 import NativeStylePanel from "./NativeStylePanel";
@@ -31,7 +31,9 @@ import { toggleCanvasDuplicates } from "../utils/seoCanvasOverlay";
 import figmaIcon from "../assets/figma.png";
 import mondayIcon from "../assets/monday-icon-svgrepo-com.svg";
 import { fetchMondayTicketsApi, type MondayTicket } from "../utils/mondayApi";
-import { readThemeAccentColor } from "../theme/themeSystem";
+import { DEFAULT_HOTKEYS, readThemeAccentColor } from "../theme/themeSystem";
+import { nextCanvasZoomFromWheel } from "../utils/canvasZoom";
+import { findHotkeyCommand, isEditableHotkeyTarget, matchesHotkey, normalizeHotkey } from "../utils/hotkeys";
 import "./EditorWorkspace.css";
 
 const defaultQaSheetData: Sheet[] = [
@@ -173,6 +175,7 @@ function getGoogleSheetsEmbedUrl(rawUrl: string): string {
 interface Props {
   html: string;
   sourceUrl: string;
+  hotkeys?: AppHotkeys;
   project?: Project | null;
   onReset: () => void;
   onNewCapture: () => void;
@@ -188,6 +191,64 @@ type WorkspaceTab = "editBeta" | "layout" | "live" | "audit" | "automate";
 interface Guide {
   axis: "x" | "y";
   position: number; // 0–1 fraction of content width (y) or height (x)
+}
+
+interface GuideNumberFieldProps {
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  onChange: (value: number) => void;
+}
+
+function GuideNumberField({
+  label,
+  value,
+  min = 0,
+  max = Number.POSITIVE_INFINITY,
+  onChange,
+}: GuideNumberFieldProps) {
+  const updateValue = (nextValue: number) => {
+    const finiteValue = Number.isFinite(nextValue) ? nextValue : min;
+    onChange(Math.min(max, Math.max(min, finiteValue)));
+  };
+
+  return (
+    <div className="add-guides-field">
+      <label>{label}</label>
+      <div className="guide-number-control">
+        <input
+          type="number"
+          min={min}
+          max={Number.isFinite(max) ? max : undefined}
+          value={value}
+          onChange={(event) => updateValue(Number(event.target.value))}
+        />
+        <div className="guide-number-stepper">
+          <button
+            type="button"
+            onClick={() => updateValue(value + 1)}
+            aria-label={`Increase ${label}`}
+            title={`Increase ${label}`}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m3 7 3-3 3 3" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => updateValue(value - 1)}
+            aria-label={`Decrease ${label}`}
+            title={`Decrease ${label}`}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m3 5 3 3 3-3" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export interface HistoryStep {
@@ -490,6 +551,9 @@ const PRESETS: Record<DevicePreset, { w: number; h: number; label: string }> = {
   Mobile: { w: 430, h: 932, label: "430×932" },
 };
 
+const shortcutTitle = (label: string, binding: string) =>
+  binding ? `${label} (${binding})` : label;
+
 const DEVTOOLS_PRESETS: DevtoolsPreset[] = [
   { name: "Desktop (1920×1200)", w: 1920, h: 1200, category: "Standard" },
   { name: "Laptop (1440×900)", w: 1440, h: 900, category: "Standard" },
@@ -640,16 +704,31 @@ export default function EditorWorkspace({
   onPersistHtml,
   onThumbnailCaptured,
   onProjectUpdated,
+  hotkeys = DEFAULT_HOTKEYS,
 }: Props & { onOpenSettings?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const onPersistHtmlRef = useRef(onPersistHtml);
   const devtoolsDropdownRef = useRef<HTMLDivElement>(null);
+  const hotkeysRef = useRef(hotkeys);
+  const hotkeyCommandRef = useRef<(command: keyof AppHotkeys) => boolean>(() => false);
+  const panHotkeyCodeRef = useRef("");
+
+  const handleEmbeddedHotkey = useCallback((command: keyof AppHotkeys) => {
+    hotkeyCommandRef.current(command);
+  }, []);
+
+  useEffect(() => {
+    hotkeysRef.current = hotkeys;
+  }, [hotkeys]);
 
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("editBeta");
   const [selectedComponent, setSelectedComponent] = useState<any>(null);
   const [activePreset, setActivePreset] = useState<DevicePreset>("Desktop");
+  const [selectedDevicePresetName, setSelectedDevicePresetName] = useState<string | null>(
+    DEVTOOLS_PRESETS[0]?.name || null,
+  );
   const [mode, setMode] = useState<ViewportMode>("preset");
   const [vpWidth, setVpWidth] = useState(1920);
   const [vpHeight, setVpHeight] = useState(1200);
@@ -1759,7 +1838,8 @@ export default function EditorWorkspace({
   }, []);
 
   // ── Font inspector state ──────────────────────
-  const [fontInspectorOn, setFontInspectorOn] = useState(false);
+  const [fontInspectorMode, setFontInspectorMode] =
+    useState<FontInspectorMode>("off");
   const fontInspectorCleanupRef = useRef<(() => void) | null>(null);
 
   // ── Boundaries (element inspection) state ─────
@@ -2605,9 +2685,10 @@ export default function EditorWorkspace({
     };
   }, []);
 
-  const [interactionMode, setInteractionMode] = useState<"edit" | "interact">(
-    "edit",
-  );
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>("edit");
+  const [eyedropperSample, setEyedropperSample] = useState<EyedropperSample | null>(null);
+  const [eyedropperCopied, setEyedropperCopied] = useState(false);
+  const eyedropperCopiedTimerRef = useRef<number | null>(null);
   // Preserve the captured page's visibility and transforms by default.
   // Revealing animation targets is an explicit inspection aid because forcing
   // hidden/animated nodes visible can expose responsive duplicates and alter
@@ -2617,12 +2698,61 @@ export default function EditorWorkspace({
     null,
   );
 
-  const toggleInteractionMode = (newMode: "edit" | "interact") => {
+  const toggleInteractionMode = (newMode: InteractionMode) => {
+    if (newMode === "eyedropper") {
+      setIsAnnotateActive(false);
+      setActiveAnnotationTool("select");
+    } else {
+      setEyedropperSample(null);
+      setEyedropperCopied(false);
+    }
     setInteractionMode(newMode);
     if (liveEditorRef.current) {
-      liveEditorRef.current.updateOptions({ mode: newMode });
+      liveEditorRef.current.updateOptions({ mode: newMode === "edit" ? "edit" : "interact" });
     }
   };
+
+  const handleEyedropperColorChange = useCallback((sample: EyedropperSample | null) => {
+    setEyedropperSample(sample);
+    setEyedropperCopied(false);
+  }, []);
+
+  const copyEyedropperHex = useCallback(async () => {
+    if (!eyedropperSample?.hex) return;
+    const fallbackCopy = () => {
+      const input = document.createElement("textarea");
+      input.value = eyedropperSample.hex;
+      Object.assign(input.style, { position: "fixed", opacity: "0", pointerEvents: "none" });
+      document.body.appendChild(input);
+      input.select();
+      try { document.execCommand("copy"); } catch {}
+      input.remove();
+    };
+    try {
+      await navigator.clipboard.writeText(eyedropperSample.hex);
+    } catch {
+      fallbackCopy();
+    }
+    setEyedropperCopied(true);
+    if (eyedropperCopiedTimerRef.current) window.clearTimeout(eyedropperCopiedTimerRef.current);
+    eyedropperCopiedTimerRef.current = window.setTimeout(() => setEyedropperCopied(false), 1000);
+  }, [eyedropperSample]);
+
+  useEffect(() => {
+    if (interactionMode !== "eyedropper") return;
+    const onCopy = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "c") return;
+      if (isEditableHotkeyTarget(event.target)) return;
+      event.preventDefault();
+      void copyEyedropperHex();
+    };
+    document.addEventListener("keydown", onCopy, true);
+    return () => document.removeEventListener("keydown", onCopy, true);
+  }, [copyEyedropperHex, interactionMode]);
+
+  useEffect(() => () => {
+    if (eyedropperCopiedTimerRef.current) window.clearTimeout(eyedropperCopiedTimerRef.current);
+  }, []);
 
   const toggleRevealAnimations = () => {
     setRevealAnimations((prev) => {
@@ -2756,7 +2886,10 @@ export default function EditorWorkspace({
     };
     const handleDomReady = () => {
       try {
-        webview.setZoomFactor?.(Math.max(0.25, Math.min(3, zoomRef.current / 100)));
+        // Canvas zoom must never become Chromium page zoom. Electron remembers
+        // page zoom per origin, so changing it here also leaked into the Edit
+        // workspace webview and made the page reflow independently of overlays.
+        webview.setZoomFactor?.(1);
       } catch {}
     };
 
@@ -2973,64 +3106,46 @@ export default function EditorWorkspace({
 
     // Hotkey handler inside native iframe: Ctrl+A, Spacebar panning, and Undo/Redo
     const handleIframeKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isEditable =
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
+      const isEditable = isEditableHotkeyTarget(e.target);
+      const command = findHotkeyCommand(e, hotkeysRef.current);
 
-      // 1. Ctrl + A: Prevent whole-page selection highlight when not in an editable element
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
-        if (!isEditable) {
+      if (command && (!isEditable || command === "quickSave")) {
+        if (command === "panMode") {
+          if (!isEditable) {
+            e.preventDefault();
+            e.stopPropagation();
+            panHotkeyCodeRef.current = e.code;
+            (doc.activeElement as HTMLElement | null)?.blur?.();
+            if (!isSpacePressedRef.current) {
+              isSpacePressedRef.current = true;
+              doc.body.style.cursor = "grab";
+              document.body.style.cursor = "grab";
+              liveEditorRef.current?.setPaused(true);
+            }
+          }
+          return;
+        }
+
+        if (!e.repeat && hotkeyCommandRef.current(command)) {
           e.preventDefault();
           e.stopPropagation();
+          e.stopImmediatePropagation();
         }
         return;
       }
 
-      // 2. Spacebar: blur focused elements and activate panning without triggering button clicks
-      if (e.code === "Space") {
-        if (!isEditable) {
-          e.preventDefault();
-          const active = doc.activeElement as HTMLElement;
-          if (active) active.blur();
-          if (!isSpacePressedRef.current) {
-            isSpacePressedRef.current = true;
-            doc.body.style.cursor = "grab";
-            document.body.style.cursor = "grab";
-            liveEditorRef.current?.setPaused(true);
-          }
-        }
-        return;
-      }
-
-      // 3. Ctrl+Z (Undo) and Ctrl+Y / Ctrl+Shift+Z (Redo)
-      if (isEditable) return;
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        !e.shiftKey &&
-        e.key.toLowerCase() === "z"
-      ) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && !isEditable) {
         e.preventDefault();
-        jumpToHistoryIndex(Math.max(0, historyIndexRef.current - 1));
-      } else if (
-        (e.ctrlKey || e.metaKey) &&
-        (e.key.toLowerCase() === "y" ||
-          (e.shiftKey && e.key.toLowerCase() === "z"))
-      ) {
-        e.preventDefault();
-        jumpToHistoryIndex(
-          Math.min(historySteps.length - 1, historyIndexRef.current + 1),
-        );
+        e.stopPropagation();
       }
     };
     doc.addEventListener("keydown", handleIframeKeyDown);
 
     // Spacebar keyup inside iframe — without this, isSpacePressedRef stays true forever
     const handleIframeKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
+      if (isSpacePressedRef.current && e.code === panHotkeyCodeRef.current) {
         isSpacePressedRef.current = false;
+        panHotkeyCodeRef.current = "";
         doc.body.style.cursor = "";
         document.body.style.cursor = "";
         liveEditorRef.current?.setPaused(false);
@@ -3043,10 +3158,12 @@ export default function EditorWorkspace({
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       e.stopPropagation();
-      const dir = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-      const nextZoom = Math.max(
+      const nextZoom = nextCanvasZoomFromWheel(
+        zoomRef.current,
+        e.deltaY,
         ZOOM_MIN,
-        Math.min(ZOOM_MAX, zoomRef.current + dir),
+        ZOOM_MAX,
+        ZOOM_STEP,
       );
       applyZoomRef.current(nextZoom);
     };
@@ -3069,7 +3186,7 @@ export default function EditorWorkspace({
 
     // Attach live editor bridge to the NATIVE iframe for direct selection & editing
     const live = attachLiveEditor(doc, {
-      mode: interactionMode,
+      mode: interactionMode === "edit" ? "edit" : "interact",
       revealAnimations,
       zoom: zoomRef.current,
       onSelect: (_info, el) => {
@@ -3483,12 +3600,18 @@ export default function EditorWorkspace({
     setActivePreset(preset);
     setMode("preset");
     const { w, h } = PRESETS[preset];
+    setSelectedDevicePresetName(
+      DEVTOOLS_PRESETS.find(
+        (candidate) => candidate.category === "Standard" && candidate.w === w && candidate.h === h,
+      )?.name || null,
+    );
     setVpWidth(w);
     setVpHeight(h);
     applyDimensions(w, h);
   };
 
   const selectDevtoolsPreset = (p: DevtoolsPreset) => {
+    setSelectedDevicePresetName(p.name);
     setVpWidth(p.w);
     setVpHeight(p.h);
     if (p.w === 1920 && p.h === 1200) {
@@ -3517,6 +3640,7 @@ export default function EditorWorkspace({
   const commitWidth = (val: string) => {
     const n = parseInt(val, 10);
     if (!n || n < 100) return;
+    setSelectedDevicePresetName(null);
     setVpWidth(n);
     setMode("free");
     applyDimensions(n, vpHeight);
@@ -3525,12 +3649,14 @@ export default function EditorWorkspace({
   const commitHeight = (val: string) => {
     const n = parseInt(val, 10);
     if (!n || n < 100) return;
+    setSelectedDevicePresetName(null);
     setVpHeight(n);
     setMode("free");
     applyDimensions(vpWidth, n);
   };
 
   const swapDimensions = () => {
+    setSelectedDevicePresetName(null);
     const newW = vpHeight;
     const newH = vpWidth;
     setVpWidth(newW);
@@ -3562,9 +3688,9 @@ export default function EditorWorkspace({
         liveWrap.style.transition = "none";
       }
       try {
-        liveWebviewRef.current?.setZoomFactor?.(
-          Math.max(0.25, Math.min(3, zoomLevel / 100)),
-        );
+        // Live fills its workspace and is not part of the scaled Edit/Audit
+        // canvas. Keep its guest page at the browser's canonical 100% zoom.
+        liveWebviewRef.current?.setZoomFactor?.(1);
       } catch {}
       const frameEl = editorRef.current?.Canvas?.getFrameEl();
       const wrapperEl =
@@ -3628,6 +3754,18 @@ export default function EditorWorkspace({
     applyZoomRef.current = applyZoom;
   }, [applyZoom]);
 
+  const handleWebviewCanvasZoom = useCallback((deltaY: number) => {
+    applyZoomRef.current(
+      nextCanvasZoomFromWheel(
+        zoomRef.current,
+        deltaY,
+        ZOOM_MIN,
+        ZOOM_MAX,
+        ZOOM_STEP,
+      ),
+    );
+  }, []);
+
   const zoomIn = () => applyZoom(zoom + ZOOM_STEP);
   const zoomOut = () => applyZoom(zoom - ZOOM_STEP);
   const zoomFit = () => {
@@ -3641,10 +3779,12 @@ export default function EditorWorkspace({
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       e.stopPropagation();
-      const dir = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-      const nextZoom = Math.max(
+      const nextZoom = nextCanvasZoomFromWheel(
+        zoomRef.current,
+        e.deltaY,
         ZOOM_MIN,
-        Math.min(ZOOM_MAX, zoomRef.current + dir),
+        ZOOM_MAX,
+        ZOOM_STEP,
       );
       applyZoom(nextZoom);
     };
@@ -3661,6 +3801,12 @@ export default function EditorWorkspace({
   useEffect(() => {
     if (typeof window.electronAPI?.onGlobalEscape === "function") {
       const handleEscape = () => {
+        if (document.querySelector(".settings-modal-overlay")) return;
+        if (normalizeHotkey(hotkeysRef.current.deselect) !== "Escape") return;
+        if (isEditableHotkeyTarget(document.activeElement)) return;
+        hotkeyCommandRef.current("deselect");
+        return;
+
         // The selected element lives inside a <webview>, so a site can consume
         // its own Escape key event before the injected bridge sees it. Electron's
         // global key notification is the reliable fallback for that case.
@@ -3727,7 +3873,7 @@ export default function EditorWorkspace({
           const gFrame =
             editorRef.current?.Canvas?.getFrameEl() as HTMLIFrameElement;
           if (gFrame && gFrame.contentWindow) {
-            gFrame.contentWindow.getSelection()?.removeAllRanges();
+            gFrame.contentWindow?.getSelection()?.removeAllRanges();
           }
         } catch (_) {}
       };
@@ -3740,6 +3886,15 @@ export default function EditorWorkspace({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (document.querySelector(".edit-beta-root")) return;
+      const configuredCommand = findHotkeyCommand(e, hotkeysRef.current);
+      const isLegacyWorkspaceShortcut =
+        e.key === "Escape" ||
+        e.code === "Escape" ||
+        e.code === "Space" ||
+        ((e.ctrlKey || e.metaKey) && ["z", "y"].includes(e.key.toLowerCase()));
+      // Configurable commands are handled by the capture-phase dispatcher.
+      // Ignore former hard-coded bindings even after users rebind them.
+      if (configuredCommand || isLegacyWorkspaceShortcut) return;
       const target = e.target as HTMLElement;
       const isEditable =
         target &&
@@ -3800,7 +3955,7 @@ export default function EditorWorkspace({
             const gFrame =
               editorRef.current?.Canvas?.getFrameEl() as HTMLIFrameElement;
             if (gFrame && gFrame.contentWindow) {
-              gFrame.contentWindow.getSelection()?.removeAllRanges();
+              gFrame.contentWindow?.getSelection()?.removeAllRanges();
             }
           } catch (_) {}
         }
@@ -3861,6 +4016,7 @@ export default function EditorWorkspace({
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (document.querySelector(".edit-beta-root")) return;
+      if (e.code !== panHotkeyCodeRef.current) return;
       if (e.code === "Space") {
         isSpacePressedRef.current = false;
         document.body.style.cursor = "";
@@ -4771,11 +4927,14 @@ export default function EditorWorkspace({
 
 
   // ── Font Inspector ───────────────────────────
-  const activateFontInspector = useCallback(() => {
+  const activateFontInspector = useCallback((mode: FontInspectorMode) => {
     const iframeDoc =
       liveIframeRef.current?.contentDocument ||
       editorRef.current?.Canvas.getFrameEl()?.contentDocument;
     if (!iframeDoc) return;
+    const selectedFontElement =
+      (editorRef.current?.getSelected?.()?.getEl?.() as HTMLElement | null) ||
+      null;
 
     // Clean up any previous badges/tooltip
     iframeDoc.querySelectorAll(".__fi-badge").forEach((el) => el.remove());
@@ -4876,6 +5035,7 @@ export default function EditorWorkspace({
       if (processedSet.has(el)) return;
       processedSet.add(el);
       const htmlEl = el as HTMLElement;
+      if (mode === "selected" && htmlEl !== selectedFontElement) return;
       const cs = iframeDoc.defaultView?.getComputedStyle(htmlEl);
       if (!cs) return;
 
@@ -4913,6 +5073,7 @@ export default function EditorWorkspace({
       if (!hasDirectText) return;
       processedSet.add(el);
       const htmlEl = el as HTMLElement;
+      if (mode === "selected" && htmlEl !== selectedFontElement) return;
       const cs = iframeDoc.defaultView?.getComputedStyle(htmlEl);
       if (!cs) return;
       const fontFamily = cs.fontFamily;
@@ -4944,6 +5105,7 @@ export default function EditorWorkspace({
         target.classList.contains("__fi-tooltip")
       )
         return;
+      if (mode === "selected" && target !== selectedFontElement) return;
       const tagName = target.tagName;
       const isTextEl =
         TEXT_TAGS.includes(tagName) ||
@@ -5027,14 +5189,23 @@ export default function EditorWorkspace({
   }, []);
 
   useEffect(() => {
-    if (fontInspectorOn) {
+    if (fontInspectorMode !== "off") {
+      deactivateFontInspector();
       // Small delay to ensure iframe is loaded
-      const timer = setTimeout(() => activateFontInspector(), 100);
+      const timer = setTimeout(
+        () => activateFontInspector(fontInspectorMode),
+        100,
+      );
       return () => clearTimeout(timer);
     } else {
       deactivateFontInspector();
     }
-  }, [fontInspectorOn, activateFontInspector, deactivateFontInspector]);
+  }, [
+    selectedComponent,
+    fontInspectorMode,
+    activateFontInspector,
+    deactivateFontInspector,
+  ]);
 
   // Clean up font inspector when editor changes
   useEffect(() => {
@@ -5044,8 +5215,305 @@ export default function EditorWorkspace({
   }, [html, deactivateFontInspector]);
 
   const toggleFontInspector = () => {
-    setFontInspectorOn((prev) => !prev);
+    setFontInspectorMode((current) => {
+      if (current === "off") return "selected";
+      if (current === "selected") return "all";
+      return "off";
+    });
   };
+
+  const clearWorkspaceSelection = () => {
+    if (workspaceTab === "editBeta") editBetaRef.current?.deselect();
+
+    const ed: any = editorRef.current;
+    if (ed) {
+      try {
+        const selected: any = ed.getSelected?.();
+        if (selected) {
+          selected.set?.("status", "");
+          selected.set?.("active", false);
+          selected.set?.("selected", false);
+          selected.deselect?.();
+        }
+        ed.select?.([]);
+        ed.select?.(undefined as any);
+        ed.Canvas?.clearSelection?.();
+        const toolsEl = ed.Canvas?.getToolsEl?.();
+        toolsEl
+          ?.querySelectorAll?.(".gjs-toolbar, .gjs-highlighter, .gjs-badge")
+          .forEach((element: HTMLElement) => {
+            element.style.display = "none";
+          });
+        ed.trigger?.("component:deselected", selected);
+        ed.trigger?.("component:toggled");
+      } catch (error) {
+        console.error("[Hotkeys] Unable to clear the current selection:", error);
+      }
+    }
+
+    setSelectedComponent(null);
+    setSelectedLiveAnnId(null);
+    setIsDrawingLive(false);
+    setLiveDrawStart(null);
+    setLiveDrawCurrent(null);
+    setLiveDrawPoints([]);
+    bdLockedRef.current = null;
+    try {
+      window.getSelection()?.removeAllRanges();
+      editorRef.current?.Canvas?.getFrameEl()?.contentWindow?.getSelection()?.removeAllRanges();
+    } catch {}
+  };
+
+  const saveWorkspaceNow = () => {
+    const currentDoc = liveIframeRef.current?.contentDocument;
+    if (nativeIframeLoadedRef.current && currentDoc?.documentElement) {
+      onPersistHtmlRef.current?.(serializeWorkspaceHtml(currentDoc));
+    }
+
+    const activeProject = projectRef.current;
+    if (activeProject && onProjectUpdated) {
+      const annotations = liveAnnotationsRef.current.map(
+        ({ ephemeralUrl: _ephemeralUrl, ...annotation }) => annotation,
+      );
+      const workspaceData = { annotations, automate: automateState };
+      const signature = JSON.stringify(workspaceData);
+      lastPersistedWorkspaceRef.current = signature;
+      const updatedProject: Project = {
+        ...activeProject,
+        workspaceData,
+        updatedAt: Date.now(),
+      };
+      void Promise.resolve(onProjectUpdated(updatedProject)).catch((error) => {
+        if (lastPersistedWorkspaceRef.current === signature) {
+          lastPersistedWorkspaceRef.current = "";
+        }
+        console.error("[Hotkeys] Quick save failed:", error);
+      });
+    }
+  };
+
+  const executeHotkeyCommand = (command: keyof AppHotkeys): boolean => {
+    const annotationTools: Partial<
+      Record<keyof AppHotkeys, typeof activeAnnotationTool>
+    > = {
+      annotationSelect: "select",
+      annotationBox: "box",
+      annotationArrow: "arrow",
+      annotationRectangle: "rect",
+      annotationCircle: "circle",
+      annotationPen: "pen",
+      annotationText: "text",
+      annotationBlur: "blur",
+    };
+    const annotationTool = annotationTools[command];
+    if (annotationTool) {
+      if (!annotationsAvailable || !isAnnotateActive) return false;
+      setActiveAnnotationTool(annotationTool);
+      return true;
+    }
+
+    switch (command) {
+      case "quickSave":
+        saveWorkspaceNow();
+        return true;
+      case "undo":
+        if (workspaceTab === "editBeta") editBetaRef.current?.undo();
+        else if (workspaceTab === "layout" || workspaceTab === "audit") {
+          jumpToHistoryIndex(Math.max(0, historyIndexRef.current - 1));
+        } else return false;
+        return true;
+      case "redo":
+        if (workspaceTab === "editBeta") editBetaRef.current?.redo();
+        else if (workspaceTab === "layout" || workspaceTab === "audit") {
+          jumpToHistoryIndex(
+            Math.min(historySteps.length - 1, historyIndexRef.current + 1),
+          );
+        } else return false;
+        return true;
+      case "deselect":
+        clearWorkspaceSelection();
+        return true;
+      case "zoomIn":
+        zoomIn();
+        return true;
+      case "zoomOut":
+        zoomOut();
+        return true;
+      case "resetZoom":
+        zoomFit();
+        return true;
+      case "toggleRulers":
+        setRulersOn((current) => !current);
+        return true;
+      case "toggleGuides":
+        setGuidesOn((current) => !current);
+        return true;
+      case "toggleBoundaries":
+        setBoundariesOn((current) => !current);
+        return true;
+      case "cycleFontInspector":
+        toggleFontInspector();
+        return true;
+      case "toggleLeftPanel":
+        if (workspaceTab === "automate") return false;
+        setLeftPanelOpen((current) => !current);
+        return true;
+      case "toggleBottomPanel":
+        if (workspaceTab === "automate") return false;
+        setBottomSheetOpen((current) => !current);
+        return true;
+      case "toggleRightPanel":
+        if (workspaceTab === "automate") return false;
+        setRightPanelOpen((current) => !current);
+        return true;
+      case "viewportDesktop":
+        setCanvasViewMode("single");
+        switchPreset("Desktop");
+        return true;
+      case "viewportTablet":
+        setCanvasViewMode("single");
+        switchPreset("Tablet");
+        return true;
+      case "viewportMobile":
+        setCanvasViewMode("single");
+        switchPreset("Mobile");
+        return true;
+      case "toggleCanvasMode":
+        setCanvasViewMode((current) => (current === "single" ? "multi" : "single"));
+        return true;
+      case "workspaceEdit":
+        setWorkspaceTab("editBeta");
+        return true;
+      case "workspaceLive":
+        setWorkspaceTab("live");
+        return true;
+      case "workspaceAudit":
+        setWorkspaceTab("audit");
+        return true;
+      case "workspaceAutomate":
+        setWorkspaceTab("automate");
+        return true;
+      case "toggleInteractionMode":
+        toggleInteractionMode(interactionMode === "edit" ? "interact" : "edit");
+        return true;
+      case "activateEyedropper":
+        toggleInteractionMode("eyedropper");
+        return true;
+      case "toggleAnnotate":
+        if (!annotationsAvailable) return false;
+        setIsAnnotateActive((current) => {
+          if (!current) setActiveAnnotationTool("select");
+          return !current;
+        });
+        return true;
+      case "toggleRecording":
+        if (workspaceTab !== "editBeta") return false;
+        if (isRecording) void handleStopRecording();
+        else void handleStartRecording();
+        return true;
+      case "generateItems":
+        if (isCapturingFullsite) return false;
+        setGenerateExpiryOpen((current) => !current);
+        return true;
+      case "panMode":
+        return false;
+      default:
+        return false;
+    }
+  };
+  hotkeyCommandRef.current = executeHotkeyCommand;
+
+  useEffect(() => {
+    const activatePanHotkey = (code: string) => {
+      panHotkeyCodeRef.current = code;
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.matches?.("button, a, [role='button']")) active.blur();
+      isSpacePressedRef.current = true;
+      document.body.style.cursor = "grab";
+      liveEditorRef.current?.setPaused(true);
+      if (liveWebviewRef.current) liveWebviewRef.current.style.pointerEvents = "none";
+    };
+
+    const beginPanHotkey = (event: KeyboardEvent) => {
+      if (event.repeat || isEditableHotkeyTarget(event.target)) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      activatePanHotkey(event.code);
+      return true;
+    };
+
+    const endPanHotkey = (code: string) => {
+      if (!isSpacePressedRef.current || code !== panHotkeyCodeRef.current) return;
+      isSpacePressedRef.current = false;
+      panHotkeyCodeRef.current = "";
+      document.body.style.cursor = "";
+      liveEditorRef.current?.setPaused(false);
+      if (liveWebviewRef.current) liveWebviewRef.current.style.pointerEvents = "";
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Settings owns keyboard input while open so existing shortcuts can be
+      // captured and rebound instead of firing against the workspace behind it.
+      if (document.querySelector(".settings-modal-overlay")) return;
+      const command = findHotkeyCommand(event, hotkeysRef.current);
+      if (!command) return;
+      if (isEditableHotkeyTarget(event.target) && command !== "quickSave") return;
+      if (command === "panMode") {
+        beginPanHotkey(event);
+        return;
+      }
+      if (event.repeat || !hotkeyCommandRef.current(command)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onKeyUp = (event: KeyboardEvent) => endPanHotkey(event.code);
+
+    type EmbeddedHotkeyDetail = {
+      key: string;
+      code: string;
+      ctrlKey: boolean;
+      altKey: boolean;
+      shiftKey: boolean;
+      metaKey: boolean;
+      repeat: boolean;
+      editable: boolean;
+      handled: boolean;
+    };
+    const onEmbeddedKeyDown = (event: Event) => {
+      const detail = (event as CustomEvent<EmbeddedHotkeyDetail>).detail;
+      if (!detail) return;
+      const command = findHotkeyCommand(detail, hotkeysRef.current);
+      if (!command || (detail.editable && command !== "quickSave")) return;
+      if (command === "panMode") {
+        if (!detail.repeat && !detail.editable) {
+          activatePanHotkey(detail.code);
+          detail.handled = true;
+        }
+        return;
+      }
+      if (!detail.repeat && hotkeyCommandRef.current(command)) detail.handled = true;
+    };
+    const onEmbeddedKeyUp = (event: Event) => {
+      const detail = (event as CustomEvent<EmbeddedHotkeyDetail>).detail;
+      if (!detail) return;
+      const wasPanning = isSpacePressedRef.current && detail.code === panHotkeyCodeRef.current;
+      endPanHotkey(detail.code);
+      if (wasPanning) detail.handled = true;
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("parity:embedded-keydown", onEmbeddedKeyDown);
+    window.addEventListener("parity:embedded-keyup", onEmbeddedKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("parity:embedded-keydown", onEmbeddedKeyDown);
+      window.removeEventListener("parity:embedded-keyup", onEmbeddedKeyUp);
+    };
+  }, []);
 
   // ── Keep bdOptsRef in sync and trigger redraw ──
   useEffect(() => {
@@ -5088,7 +5556,7 @@ export default function EditorWorkspace({
     styleEl.textContent = `
       .__bd-margin { background: rgba(255, 165, 0, 0.15); }
       .__bd-padding { background: rgba(0, 200, 83, 0.15); }
-      .__bd-content { background: rgba(76, 139, 245, 0.1); }
+      .__bd-content { background: rgba(236, 72, 153, 0.1); }
       .__bd-label {
         position: absolute;
         color: #fff;
@@ -5101,10 +5569,10 @@ export default function EditorWorkspace({
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
         line-height: 1.4;
       }
-      .__bd-dim-label { background: rgba(76, 139, 245, 0.9); }
+      .__bd-dim-label { background: rgba(236, 72, 153, 0.94); }
       .__bd-margin-label { background: rgba(255, 165, 0, 0.9); }
       .__bd-padding-label { background: rgba(0, 200, 83, 0.9); color: #000; }
-      .__bd-gap-label { background: rgba(255, 80, 80, 0.9); }
+      .__bd-gap-label { background: rgba(168, 85, 247, 0.94); }
       .__bd-outline { position: absolute; pointer-events: none; border: 1px solid rgba(76, 139, 245, 0.6); z-index: 999998; }
     `;
     iframeDoc.head.appendChild(styleEl);
@@ -5306,12 +5774,12 @@ export default function EditorWorkspace({
         d.style.cssText = `position:absolute;left:${l}px;top:${t}px;width:${lw}px;height:${lh}px;pointer-events:none;z-index:999999;`;
         if (lw > 0 && lh === 0)
           d.style.borderTop = dashed
-            ? "1px dashed rgba(255,80,80,0.9)"
-            : "1px solid rgba(255,80,80,0.9)";
+            ? "1px dashed rgba(168,85,247,0.94)"
+            : "1px solid rgba(168,85,247,0.94)";
         if (lh > 0 && lw === 0)
           d.style.borderLeft = dashed
-            ? "1px dashed rgba(255,80,80,0.9)"
-            : "1px solid rgba(255,80,80,0.9)";
+            ? "1px dashed rgba(168,85,247,0.94)"
+            : "1px solid rgba(168,85,247,0.94)";
         container.appendChild(d);
       };
 
@@ -5916,14 +6384,55 @@ export default function EditorWorkspace({
                     <path d="M13 13l6 6" />
                   </svg>
                 </button>
+                <button
+                  className={`device-btn ${interactionMode === "eyedropper" ? "active" : ""}`}
+                  onClick={() => toggleInteractionMode("eyedropper")}
+                  title={shortcutTitle("Eyedropper: Inspect element colors · Ctrl+C copies the hovered HEX", hotkeys.activateEyedropper)}
+                  aria-label="Eyedropper color inspector"
+                  aria-pressed={interactionMode === "eyedropper"}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m19 3 2 2-8.5 8.5-3-3Z" />
+                    <path d="m9.5 10.5-5 5V19H8l5-5" />
+                    <path d="m14 6 4 4" />
+                  </svg>
+                </button>
               </div>
+
+              {interactionMode === "eyedropper" && (
+                <button
+                  type="button"
+                  className={`eyedropper-readout ${eyedropperSample ? "has-sample" : ""} ${eyedropperCopied ? "copied" : ""}`}
+                  onClick={() => void copyEyedropperHex()}
+                  disabled={!eyedropperSample}
+                  title={eyedropperSample ? `Copy ${eyedropperSample.hex}` : "Hover an element in the page to inspect its color"}
+                  aria-live="polite"
+                >
+                  <span
+                    className="eyedropper-readout-swatch"
+                    style={{ background: eyedropperSample?.hex || "transparent" }}
+                    aria-hidden="true"
+                  />
+                  <span>{eyedropperSample?.hex || "Hover element"}</span>
+                  {eyedropperSample && <small>{eyedropperCopied ? "Copied" : "Ctrl+C"}</small>}
+                </button>
+              )}
 
               {/* Grouped Action Bar: RECORD | ANNOTATE | GENERATE ITEMS */}
               <div className="workspace-action-group" role="group" aria-label="Capture and annotation actions">
                 <button
                   className={`workspace-action-btn record ${isRecording ? "active" : ""}`}
                   onClick={isRecording ? handleStopRecording : handleStartRecording}
-                  title={isRecording ? "Stop Recording" : "Record Changes"}
+                  title={shortcutTitle(isRecording ? "Stop Recording" : "Record Changes", hotkeys.toggleRecording)}
                 >
                   <span className="record-dot" />
                   <span className="workspace-action-label">
@@ -5942,7 +6451,7 @@ export default function EditorWorkspace({
                         return !previous;
                       })
                     }
-                    title="Annotate: Toggle floating annotation tools to add shapes, arrows, text & mark regions"
+                    title={shortcutTitle("Annotate: toggle the floating annotation tools", hotkeys.toggleAnnotate)}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M12 20h9" />
@@ -5957,7 +6466,7 @@ export default function EditorWorkspace({
                     className={`workspace-action-btn generate ${isCapturingFullsite || generateExpiryOpen ? "active" : ""}`}
                     onClick={() => setGenerateExpiryOpen((open) => !open)}
                     disabled={isCapturingFullsite}
-                    title="Generate Items: choose how long captures, annotations, comments, and images remain available"
+                    title={shortcutTitle("Generate Items: choose link expiry", hotkeys.generateItems)}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
@@ -6255,53 +6764,98 @@ export default function EditorWorkspace({
                 </div>
 
                 {devtoolsDropdownOpen && (
-                  <div className="devtools-preset-dropdown">
-                    <div className="devtools-dd-header">Responsive</div>
-                    <div className="devtools-dd-subheader">Standard</div>
+                  <div className="devtools-preset-dropdown" role="dialog" aria-label="Viewport presets">
+                    <div className="devtools-dd-header">
+                      <span className="devtools-dd-header-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="4" width="18" height="13" rx="2" />
+                          <path d="M8 21h8M12 17v4" />
+                        </svg>
+                      </span>
+                      <span className="devtools-dd-heading-copy">
+                        <strong>Viewport presets</strong>
+                        <small>Switch to a responsive device size</small>
+                      </span>
+                      <span className="devtools-dd-mode-badge">
+                        {canvasViewMode === "multi" ? "Multi" : "Single"}
+                      </span>
+                    </div>
+                    <div className="devtools-dd-current">
+                      <span>Current viewport</span>
+                      <strong>{vpWidth} × {vpHeight}</strong>
+                    </div>
                     <div className="devtools-dd-list">
-                      {DEVTOOLS_PRESETS.map((preset, idx) => {
-                        const isFrameActive = activeFrames.some(
-                          (f) => f.width === preset.w && f.height === preset.h && f.enabled
-                        );
-                        return (
-                          <button
-                            key={idx}
-                            className={`devtools-dd-item ${
-                              canvasViewMode === "multi"
-                                ? isFrameActive ? "active" : ""
-                                : vpWidth === preset.w && vpHeight === preset.h ? "active" : ""
-                            }`}
-                            onClick={() => {
-                              if (canvasViewMode === "multi") {
-                                addPresetFrame(preset);
-                              } else {
-                                selectDevtoolsPreset(preset);
-                              }
-                              setDevtoolsDropdownOpen(false);
-                            }}
-                          >
-                            <span className="preset-name">{preset.name}</span>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span className="preset-dims">
-                                {preset.w} × {preset.h}
-                              </span>
-                              {canvasViewMode === "multi" && (
-                                <span
-                                  style={{
-                                    fontSize: 10,
-                                    padding: "1px 5px",
-                                    borderRadius: 3,
-                                    background: isFrameActive ? "rgba(34, 197, 94, 0.2)" : "rgba(255, 255, 255, 0.1)",
-                                    color: isFrameActive ? "#4ade80" : "#a1a1aa",
-                                  }}
-                                >
-                                  {isFrameActive ? "Active" : "+ Add"}
+                      {[
+                        { label: "Standard", items: DEVTOOLS_PRESETS.filter((preset) => preset.category === "Standard") },
+                        { label: "Device library", items: DEVTOOLS_PRESETS.filter((preset) => preset.category !== "Standard") },
+                      ].map((section) => (
+                        <section className="devtools-dd-section" key={section.label}>
+                          <div className="devtools-dd-subheader">
+                            <span>{section.label}</span>
+                            <small>{section.items.length}</small>
+                          </div>
+                          {section.items.map((preset) => {
+                            const isFrameActive = activeFrames.some(
+                              (frame) => frame.width === preset.w && frame.height === preset.h && frame.enabled,
+                            );
+                            const selectedPresetStillMatches = DEVTOOLS_PRESETS.some(
+                              (candidate) =>
+                                candidate.name === selectedDevicePresetName &&
+                                candidate.w === vpWidth &&
+                                candidate.h === vpHeight,
+                            );
+                            const resolvedSinglePresetName = selectedPresetStillMatches
+                              ? selectedDevicePresetName
+                              : DEVTOOLS_PRESETS.find(
+                                  (candidate) => candidate.w === vpWidth && candidate.h === vpHeight,
+                                )?.name;
+                            const isActive = canvasViewMode === "multi"
+                              ? isFrameActive
+                              : resolvedSinglePresetName === preset.name;
+                            const displayName = preset.name.replace(/\s*\(\d+\s*×\s*\d+\)\s*$/, "");
+                            const deviceKind = preset.w >= 1100
+                              ? "desktop"
+                              : preset.w >= 600
+                                ? "tablet"
+                                : "mobile";
+                            return (
+                              <button
+                                key={preset.name}
+                                type="button"
+                                className={`devtools-dd-item ${isActive ? "active" : ""}`}
+                                onClick={() => {
+                                  if (canvasViewMode === "multi") addPresetFrame(preset);
+                                  else selectDevtoolsPreset(preset);
+                                  setDevtoolsDropdownOpen(false);
+                                }}
+                              >
+                                <span className={`preset-device-icon ${deviceKind}`} aria-hidden="true">
+                                  {deviceKind === "desktop" ? (
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+                                  ) : deviceKind === "tablet" ? (
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M11 18h2" /></svg>
+                                  ) : (
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="7" y="2" width="10" height="20" rx="2" /><path d="M11 18h2" /></svg>
+                                  )}
                                 </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
+                                <span className="preset-copy">
+                                  <strong className="preset-name">{displayName}</strong>
+                                  <small className="preset-dims">{preset.w} × {preset.h}</small>
+                                </span>
+                                {canvasViewMode === "multi" ? (
+                                  <span className={`preset-action-badge ${isFrameActive ? "added" : ""}`}>
+                                    {isFrameActive ? "Added" : "Add"}
+                                  </span>
+                                ) : (
+                                  <span className="preset-selected-mark" aria-hidden="true">
+                                    {isActive && <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2.5 2.5L11 4" /></svg>}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </section>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -6368,53 +6922,84 @@ export default function EditorWorkspace({
                   </svg>
                 </button>
                 {rulerDropdownOpen && (
-                  <div className="ruler-dropdown">
-                    <label className="ruler-dd-item ruler-dd-check">
+                  <div className="ruler-dropdown tool-settings-dropdown">
+                    <div className="tool-menu-header">
+                      <span className="tool-menu-header-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                          <rect x="3" y="5" width="18" height="14" rx="2" />
+                          <path d="M7 5v4M11 5v2.5M15 5v4M19 5v2.5" />
+                        </svg>
+                      </span>
+                      <span>
+                        <strong>Rulers &amp; Guides</strong>
+                        <small>Measure and align canvas content</small>
+                      </span>
+                    </div>
+                    <div className="tool-menu-section-label">Canvas tools</div>
+                    <label className="tool-menu-toggle">
+                      <span className="tool-menu-row-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 6h16v12H4zM8 6v4M12 6v2M16 6v4" /></svg>
+                      </span>
+                      <span className="tool-menu-copy"><strong>Rulers</strong><small>Show horizontal and vertical scales</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={rulersOn}
                         onChange={(e) => setRulersOn(e.target.checked)}
                       />
-                      <span>Rulers</span>
+                      <span className="tool-menu-switch" aria-hidden="true"><span /></span>
                     </label>
-                    <label className="ruler-dd-item ruler-dd-check">
+                    <label className="tool-menu-toggle">
+                      <span className="tool-menu-row-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 8h16M4 16h16" strokeDasharray="2 2" /><path d="M8 4v16M16 4v16" strokeDasharray="2 2" /></svg>
+                      </span>
+                      <span className="tool-menu-copy"><strong>Guides</strong><small>Enable draggable alignment guides</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={guidesOn}
                         onChange={(e) => setGuidesOn(e.target.checked)}
                       />
-                      <span>Guides</span>
+                      <span className="tool-menu-switch" aria-hidden="true"><span /></span>
                     </label>
-                    <div className="ruler-dd-divider" />
+                    <div className="tool-menu-section-label">Guide layout</div>
                     <button
-                      className="ruler-dd-item"
+                      className="tool-menu-action"
                       onClick={() => {
                         setAddGuidesOpen(true);
                         setRulerDropdownOpen(false);
                       }}
                     >
-                      Add Guides...
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                      <span>Add guide layout</span>
+                      <svg className="tool-menu-action-chevron" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="m6 3.5 4 4.5-4 4.5" /></svg>
                     </button>
                     <button
-                      className="ruler-dd-item ruler-dd-danger"
+                      className="tool-menu-action tool-menu-danger"
                       onClick={() => {
                         setGuides([]);
                         setRulerDropdownOpen(false);
                       }}
                       disabled={guides.length === 0}
                     >
-                      Delete Guides
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M5 7h14M9 7V4h6v3M8 7l1 13h6l1-13" /></svg>
+                      <span>Delete all guides</span>
                     </button>
-                    <div className="ruler-dd-divider" />
-                    <label className="ruler-dd-item ruler-dd-check">
+                    <div className="tool-menu-section-label">Visibility</div>
+                    <label className="tool-menu-toggle">
+                      <span className="tool-menu-row-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></svg>
+                      </span>
+                      <span className="tool-menu-copy"><strong>Always show guides</strong><small>Keep guides visible outside edit mode</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={guidesAlwaysVisible}
                         onChange={(e) =>
                           setGuidesAlwaysVisible(e.target.checked)
                         }
                       />
-                      <span>Show Guides</span>
+                      <span className="tool-menu-switch" aria-hidden="true"><span /></span>
                     </label>
                   </div>
                 )}
@@ -6422,11 +7007,32 @@ export default function EditorWorkspace({
 
               {/* Font inspector toggle */}
               <button
-                className={`device-btn ${fontInspectorOn ? "active" : ""}`}
+                className={`device-btn font-inspector-toggle ${fontInspectorMode !== "off" ? "active" : ""} font-mode-${fontInspectorMode}`}
                 onClick={toggleFontInspector}
-                title="Font inspector"
+                title={
+                  fontInspectorMode === "off"
+                    ? "Show font for selected element"
+                    : fontInspectorMode === "selected"
+                      ? "Selected element font shown · Click to show all fonts"
+                      : "All element fonts shown · Click to turn off"
+                }
+                aria-label={
+                  fontInspectorMode === "off"
+                    ? "Font inspector off"
+                    : fontInspectorMode === "selected"
+                      ? "Font inspector showing selected element"
+                      : "Font inspector showing all elements"
+                }
               >
-                <span style={{ fontSize: "13px", fontWeight: 600 }}>Aa</span>
+                <span className="font-inspector-label">Aa</span>
+                {fontInspectorMode !== "off" && (
+                  <span
+                    className="font-inspector-state-badge"
+                    aria-hidden="true"
+                  >
+                    {fontInspectorMode === "selected" ? "1" : "∞"}
+                  </span>
+                )}
               </button>
 
               {/* Boundaries (element inspection) dropdown */}
@@ -6458,79 +7064,80 @@ export default function EditorWorkspace({
                   </svg>
                 </button>
                 {boundariesDropdownOpen && (
-                  <div className="ruler-dropdown">
-                    <label className="ruler-dd-item ruler-dd-check">
+                  <div className="ruler-dropdown tool-settings-dropdown boundaries-settings-dropdown">
+                    <div className="tool-menu-header">
+                      <span className="tool-menu-header-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><rect x="7" y="7" width="10" height="10" rx="1" strokeDasharray="2 2" /></svg>
+                      </span>
+                      <span>
+                        <strong>Element Boundaries</strong>
+                        <small>Inspect spacing and dimensions</small>
+                      </span>
+                    </div>
+                    <div className="tool-menu-section-label">Inspector</div>
+                    <label className="tool-menu-toggle">
+                      <span className="tool-menu-row-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="8" y="8" width="8" height="8" strokeDasharray="2 2" /></svg>
+                      </span>
+                      <span className="tool-menu-copy"><strong>Boundaries</strong><small>Show inspection overlays on elements</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={boundariesOn}
                         onChange={(e) => setBoundariesOn(e.target.checked)}
                       />
-                      <span>Boundaries</span>
+                      <span className="tool-menu-switch" aria-hidden="true"><span /></span>
                     </label>
-                    <div className="ruler-dd-divider" />
-                    <label className="ruler-dd-item ruler-dd-check">
+                    <div className="tool-menu-section-label">Visible properties</div>
+                    <label className="tool-menu-toggle compact">
+                      <span className="tool-menu-property-dot margin" />
+                      <span className="tool-menu-copy"><strong>Margins</strong><small>Outer element spacing</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={showMargins}
                         onChange={(e) => setShowMargins(e.target.checked)}
                       />
-                      <span>Show Margins</span>
+                      <span className="tool-menu-checkmark" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2.5 6 2.2 2.2 4.8-5" /></svg></span>
                     </label>
-                    <label className="ruler-dd-item ruler-dd-check">
+                    <label className="tool-menu-toggle compact">
+                      <span className="tool-menu-property-dot padding" />
+                      <span className="tool-menu-copy"><strong>Paddings</strong><small>Inner element spacing</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={showPaddings}
                         onChange={(e) => setShowPaddings(e.target.checked)}
                       />
-                      <span>Show Paddings</span>
+                      <span className="tool-menu-checkmark" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2.5 6 2.2 2.2 4.8-5" /></svg></span>
                     </label>
-                    <label className="ruler-dd-item ruler-dd-check">
+                    <label className="tool-menu-toggle compact">
+                      <span className="tool-menu-property-dot dimensions" />
+                      <span className="tool-menu-copy"><strong>Dimensions</strong><small>Rendered width and height</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={showDimensions}
                         onChange={(e) => setShowDimensions(e.target.checked)}
                       />
-                      <span>Show Dimensions</span>
+                      <span className="tool-menu-checkmark" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2.5 6 2.2 2.2 4.8-5" /></svg></span>
                     </label>
-                    <label className="ruler-dd-item ruler-dd-check">
+                    <label className="tool-menu-toggle compact">
+                      <span className="tool-menu-property-dot gap" />
+                      <span className="tool-menu-copy"><strong>Gaps</strong><small>Flex and grid spacing</small></span>
                       <input
+                        className="tool-menu-checkbox"
                         type="checkbox"
                         checked={showGaps}
                         onChange={(e) => setShowGaps(e.target.checked)}
                       />
-                      <span>Show Gaps</span>
+                      <span className="tool-menu-checkmark" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2.5 6 2.2 2.2 4.8-5" /></svg></span>
                     </label>
                   </div>
                 )}
               </div>
 
-              {/* Monotone Settings Button */}
-              {onOpenSettings && (
-                <button
-                  className="device-btn"
-                  onClick={onOpenSettings}
-                  title="Settings: Hotkeys, Snapshot Storage Directory, Theme Customization & Integrations"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <svg
-                    width="17"
-                    height="17"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.75"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </button>
-              )}
+              <div className="toolbar-divider" />
 
               {/* Figma Design Overlay Dropdown */}
               <div className="ruler-dropdown-wrap" ref={overlayDropdownRef}>
@@ -6831,7 +7438,6 @@ export default function EditorWorkspace({
                     setOverlayPanelOpen(false);
                   }}
                   title="Compare Site Snapshots (Side-by-Side, Overlay, Diff)"
-                  style={{ marginLeft: 4 }}
                 >
                   <svg
                     width="18"
@@ -7993,7 +8599,9 @@ export default function EditorWorkspace({
                 zoom={zoom}
                 interactionMode={interactionMode}
                 revealAnimations={revealAnimations}
-                fontInspectorOn={fontInspectorOn}
+                fontInspectorMode={fontInspectorMode}
+                hotkeys={hotkeys}
+                onHotkeyCommand={handleEmbeddedHotkey}
                 annotateMode={annotationsAvailable && isAnnotateActive}
                 boundaries={{
                   enabled: boundariesOn,
@@ -8026,6 +8634,9 @@ export default function EditorWorkspace({
                 selectedAnnotationId={selectedLiveAnnId}
                 onSelectAnnotation={handleSelectWorkspaceAnnotation}
                 onAnnotateElement={handleAnnotateSelectedElement}
+                onCanvasZoom={handleWebviewCanvasZoom}
+                onEyedropperColorChange={handleEyedropperColorChange}
+                accentColor={themeAccentColor}
                 overlayVisible={overlayVisible}
                 overlayOpacity={overlayOpacity}
                 overlayMode={overlayMode}
@@ -8074,6 +8685,12 @@ export default function EditorWorkspace({
                       cursor: activeAnnotationTool === "text" ? "text" : "crosshair",
                     }}
                     onWheel={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleWebviewCanvasZoom(e.deltaY);
+                        return;
+                      }
                       if (activeAnnotationTool === "select") return;
                       e.preventDefault();
                       editBetaRef.current?.scrollBy?.(e.deltaY);
@@ -10260,149 +10877,68 @@ export default function EditorWorkspace({
             if (e.target === e.currentTarget) setAddGuidesOpen(false);
           }}
         >
-          <div className="add-guides-dialog">
+          <div className="add-guides-dialog" role="dialog" aria-modal="true" aria-labelledby="add-guides-title">
             <div className="add-guides-header">
-              <div className="add-guides-title">New Guide Layout</div>
-              <div className="add-guides-subtitle">
-                Generate column, row, and margin grid guides
+              <div className="add-guides-heading">
+                <span className="add-guides-heading-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 8h16M4 16h16" strokeDasharray="2 2" /><path d="M8 4v16M16 4v16" strokeDasharray="2 2" /></svg>
+                </span>
+                <div>
+                  <div className="add-guides-title" id="add-guides-title">New Guide Layout</div>
+                  <div className="add-guides-subtitle">
+                    Generate a precise grid for the current canvas
+                  </div>
+                </div>
               </div>
+              <button className="add-guides-close" type="button" onClick={() => setAddGuidesOpen(false)} aria-label="Close guide layout dialog">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m5 5 10 10M15 5 5 15" /></svg>
+              </button>
             </div>
 
             {/* Grid Dimensions */}
             <div className="add-guides-section">
               <div className="add-guides-section-title">Grid Dimensions</div>
               <div className="add-guides-grid-2col">
-                <div className="add-guides-field">
-                  <label>Columns</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={64}
-                    value={layoutColumns}
-                    onChange={(e) =>
-                      setLayoutColumns(Math.max(0, Number(e.target.value)))
-                    }
-                  />
-                </div>
-                <div className="add-guides-field">
-                  <label>Column Gutter (px)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={layoutGutterX}
-                    onChange={(e) =>
-                      setLayoutGutterX(Math.max(0, Number(e.target.value)))
-                    }
-                  />
-                </div>
-                <div className="add-guides-field">
-                  <label>Rows</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={64}
-                    value={layoutRows}
-                    onChange={(e) =>
-                      setLayoutRows(Math.max(0, Number(e.target.value)))
-                    }
-                  />
-                </div>
-                <div className="add-guides-field">
-                  <label>Row Gutter (px)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={layoutGutterY}
-                    onChange={(e) =>
-                      setLayoutGutterY(Math.max(0, Number(e.target.value)))
-                    }
-                  />
-                </div>
+                <GuideNumberField label="Columns" value={layoutColumns} max={64} onChange={setLayoutColumns} />
+                <GuideNumberField label="Column gutter (px)" value={layoutGutterX} onChange={setLayoutGutterX} />
+                <GuideNumberField label="Rows" value={layoutRows} max={64} onChange={setLayoutRows} />
+                <GuideNumberField label="Row gutter (px)" value={layoutGutterY} onChange={setLayoutGutterY} />
               </div>
             </div>
 
             {/* Margins */}
             <div className="add-guides-section">
               <div className="add-guides-section-title">Margins (px)</div>
-              <div
-                className="add-guides-field full-width"
-                style={{ marginBottom: 10 }}
-              >
-                <label>Uniform Margin (All sides)</label>
-                <input
-                  type="number"
-                  min={0}
+              <div className="add-guides-uniform-field">
+                <GuideNumberField
+                  label="Uniform margin (all sides)"
                   value={layoutGeneralMargin}
-                  onChange={(e) => {
-                    const val = Math.max(0, Number(e.target.value));
+                  onChange={(val) => {
                     setLayoutGeneralMargin(val);
                     setLayoutMarginTop(val);
                     setLayoutMarginBottom(val);
                     setLayoutMarginLeft(val);
                     setLayoutMarginRight(val);
                   }}
-                  placeholder="0"
                 />
               </div>
               <div className="add-guides-grid-2col">
-                <div className="add-guides-field">
-                  <label>Top Margin</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={layoutMarginTop}
-                    onChange={(e) =>
-                      setLayoutMarginTop(Math.max(0, Number(e.target.value)))
-                    }
-                  />
-                </div>
-                <div className="add-guides-field">
-                  <label>Bottom Margin</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={layoutMarginBottom}
-                    onChange={(e) =>
-                      setLayoutMarginBottom(
-                        Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                </div>
-                <div className="add-guides-field">
-                  <label>Left Margin</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={layoutMarginLeft}
-                    onChange={(e) =>
-                      setLayoutMarginLeft(Math.max(0, Number(e.target.value)))
-                    }
-                  />
-                </div>
-                <div className="add-guides-field">
-                  <label>Right Margin</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={layoutMarginRight}
-                    onChange={(e) =>
-                      setLayoutMarginRight(
-                        Math.max(0, Number(e.target.value)),
-                      )
-                    }
-                  />
-                </div>
+                <GuideNumberField label="Top margin" value={layoutMarginTop} onChange={setLayoutMarginTop} />
+                <GuideNumberField label="Bottom margin" value={layoutMarginBottom} onChange={setLayoutMarginBottom} />
+                <GuideNumberField label="Left margin" value={layoutMarginLeft} onChange={setLayoutMarginLeft} />
+                <GuideNumberField label="Right margin" value={layoutMarginRight} onChange={setLayoutMarginRight} />
               </div>
             </div>
 
             <label className="add-guides-check">
               <input
+                className="tool-menu-checkbox"
                 type="checkbox"
                 checked={layoutClear}
                 onChange={(e) => setLayoutClear(e.target.checked)}
               />
-              <span>Clear existing guides</span>
+              <span className="tool-menu-checkmark" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2.5 6 2.2 2.2 4.8-5" /></svg></span>
+              <span className="add-guides-check-copy"><strong>Clear existing guides</strong><small>Replace the current layout instead of adding to it</small></span>
             </label>
 
             <div className="add-guides-actions">
@@ -11110,7 +11646,7 @@ export default function EditorWorkspace({
               setActiveAnnotationTool("select");
               setIsDrawingLive(false);
             }}
-            title="Select elements — keeps Edit Workspace mouse interactions enabled"
+            title={shortcutTitle("Select elements", hotkeys.annotationSelect)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="m4 3 7 17 2.2-6.1L19 11Z" />
@@ -11122,7 +11658,7 @@ export default function EditorWorkspace({
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "box" ? "active" : ""}`}
             onClick={() => setActiveAnnotationTool("box")}
-            title="Selection Box"
+            title={shortcutTitle("Selection Box", hotkeys.annotationBox)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 4" />
@@ -11132,7 +11668,7 @@ export default function EditorWorkspace({
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "arrow" ? "active" : ""}`}
             onClick={() => setActiveAnnotationTool("arrow")}
-            title="Arrow"
+            title={shortcutTitle("Arrow", hotkeys.annotationArrow)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="5" y1="19" x2="19" y2="5" />
@@ -11143,7 +11679,7 @@ export default function EditorWorkspace({
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "rect" ? "active" : ""}`}
             onClick={() => setActiveAnnotationTool("rect")}
-            title="Rectangle"
+            title={shortcutTitle("Rectangle", hotkeys.annotationRectangle)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -11153,7 +11689,7 @@ export default function EditorWorkspace({
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "circle" ? "active" : ""}`}
             onClick={() => setActiveAnnotationTool("circle")}
-            title="Circle"
+            title={shortcutTitle("Circle", hotkeys.annotationCircle)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="9" />
@@ -11163,7 +11699,7 @@ export default function EditorWorkspace({
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "pen" ? "active" : ""}`}
             onClick={() => setActiveAnnotationTool("pen")}
-            title="Pen"
+            title={shortcutTitle("Pen", hotkeys.annotationPen)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 19l7-7 3 3-7 7-3 3z" />
@@ -11174,7 +11710,7 @@ export default function EditorWorkspace({
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "text" ? "active" : ""}`}
             onClick={() => setActiveAnnotationTool("text")}
-            title="Text Note"
+            title={shortcutTitle("Text Note", hotkeys.annotationText)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="4 7 4 4 20 4 20 7" />
@@ -11186,7 +11722,7 @@ export default function EditorWorkspace({
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "blur" ? "active" : ""}`}
             onClick={() => setActiveAnnotationTool("blur")}
-            title="Blur / Redact"
+            title={shortcutTitle("Blur / Redact", hotkeys.annotationBlur)}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
@@ -11212,6 +11748,7 @@ export default function EditorWorkspace({
 
           <button
             className="annotation-done-btn"
+            title={shortcutTitle("Close Annotate", hotkeys.toggleAnnotate)}
             onClick={() => {
               setIsAnnotateActive(false);
               setActiveAnnotationTool("select");

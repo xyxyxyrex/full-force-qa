@@ -103,7 +103,7 @@ button, input, select, textarea, a, .clickable, .no-drag {
   height: 38px;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
-  padding: 0 180px 0 8px; /* Update control + Windows native window buttons */
+  padding: 0 214px 0 8px; /* Title-bar actions + Windows native window buttons */
   user-select: none;
   overflow-x: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -152,7 +152,8 @@ button, input, select, textarea, a, .clickable, .no-drag {
 .app-tab-item,
 .app-tab-close,
 .app-new-tab-btn,
-.app-update-btn {
+.app-update-btn,
+.app-settings-btn {
   -webkit-app-region: no-drag;
 }
 
@@ -161,10 +162,10 @@ button, input, select, textarea, a, .clickable, .no-drag {
   .app-brand { margin-right: 5px; padding-right: 7px; }
 }
 
-.app-update-btn {
+.app-update-btn,
+.app-settings-btn {
   position: absolute;
   top: 5px;
-  right: 144px;
   width: 28px;
   height: 28px;
   display: grid;
@@ -177,7 +178,11 @@ button, input, select, textarea, a, .clickable, .no-drag {
   transition: color .15s ease, border-color .15s ease, background .15s ease;
 }
 
-.app-update-btn svg {
+.app-update-btn { right: 178px; }
+.app-settings-btn { right: 144px; }
+
+.app-update-btn svg,
+.app-settings-btn svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -188,7 +193,10 @@ button, input, select, textarea, a, .clickable, .no-drag {
 }
 
 .app-update-btn:hover:not(:disabled),
-.app-update-btn:focus-visible {
+.app-update-btn:focus-visible,
+.app-settings-btn:hover,
+.app-settings-btn:focus-visible,
+.app-settings-btn.active {
   border-color: var(--border-hover);
   background: var(--bg-elevated);
   color: var(--text-primary);

@@ -13,6 +13,7 @@ import NativeStylePanel from "./NativeStylePanel";
 import SmoothColorPicker from "./SmoothColorPicker";
 import figmaIcon from "../assets/figma.png";
 import type { DeviceFrame } from "./EditorWorkspace";
+import type { AppHotkeys } from "../../../shared/types";
 import type {
   CaptureInspectionOverlay,
   CanvasSelectionBox,
@@ -20,14 +21,24 @@ import type {
 } from "./FullsiteCanvasModal";
 import { plainTextFromRichText } from "./RichTextEditor";
 
+export type FontInspectorMode = "off" | "selected" | "all";
+export type InteractionMode = "edit" | "interact" | "eyedropper";
+
+export interface EyedropperSample {
+  hex: string;
+  property: string;
+  tag: string;
+}
+
 interface Props {
   sourceUrl: string;
   width: number;
   height: number;
   zoom: number;
-  interactionMode: "edit" | "interact";
+  interactionMode: InteractionMode;
   revealAnimations: boolean;
-  fontInspectorOn: boolean;
+  fontInspectorMode: FontInspectorMode;
+  hotkeys: AppHotkeys;
   annotateMode?: boolean;
   boundaries: {
     enabled: boolean;
@@ -71,6 +82,10 @@ interface Props {
   selectedAnnotationId?: string | null;
   onSelectAnnotation?: (annotation: CanvasSelectionBox) => void;
   onAnnotateElement?: (element: RemoteElement) => void;
+  onCanvasZoom?: (deltaY: number) => void;
+  onHotkeyCommand?: (command: keyof AppHotkeys) => void;
+  onEyedropperColorChange?: (sample: EyedropperSample | null) => void;
+  accentColor?: string;
 }
 
 export interface EditBetaWorkspaceHandle {
@@ -152,7 +167,7 @@ interface LayerRow {
 
 interface BridgeState {
   selected: RemoteElement | null;
-  mode: "edit" | "interact";
+  mode: InteractionMode;
   history: string[];
   historyIndex: number;
   patches: any[];
@@ -161,7 +176,8 @@ interface BridgeState {
 
 interface BridgeOptions {
   revealAnimations: boolean;
-  fontInspectorOn: boolean;
+  fontInspectorMode: FontInspectorMode;
+  hotkeys: AppHotkeys;
   annotateMode: boolean;
   boundaries: Props["boundaries"];
   rulers: {
@@ -170,6 +186,7 @@ interface BridgeOptions {
     guides: Array<{ axis: "x" | "y"; position: number }>;
   };
   zoomScale: number;
+  accentColor: string;
 }
 
 // This function is serialized and executed inside the real guest page. It uses
@@ -177,7 +194,7 @@ interface BridgeOptions {
 function installEditBetaBridge() {
   const guestWindow = window as any;
   if (guestWindow.__fullForceEditBeta) {
-    if (guestWindow.__fullForceEditBeta.version === 10) {
+    if (guestWindow.__fullForceEditBeta.version === 14) {
       guestWindow.__fullForceEditBeta.enable();
       return true;
     }
@@ -200,7 +217,8 @@ function installEditBetaBridge() {
   const cssSourcePreviews = new Map<string, { before: string }>();
   let options: BridgeOptions = {
     revealAnimations: false,
-    fontInspectorOn: false,
+    fontInspectorMode: "off",
+    hotkeys: {} as AppHotkeys,
     annotateMode: false,
     boundaries: {
       enabled: false,
@@ -215,6 +233,7 @@ function installEditBetaBridge() {
       guides: [],
     },
     zoomScale: 1,
+    accentColor: "#3b82f6",
   };
 
   const host = document.createElement("div");
@@ -278,7 +297,51 @@ function installEditBetaBridge() {
     inset: "0",
     pointerEvents: "none",
   });
-  shadow.append(highlights, measurements, marginBox, paddingBox, box, label);
+  const eyedropperOutline = document.createElement("div");
+  Object.assign(eyedropperOutline.style, {
+    position: "fixed",
+    display: "none",
+    boxSizing: "border-box",
+    border: "2px solid #3b82f6",
+    background: "rgba(59,130,246,.05)",
+    pointerEvents: "none",
+  });
+  const eyedropperTooltip = document.createElement("div");
+  Object.assign(eyedropperTooltip.style, {
+    position: "fixed",
+    display: "none",
+    alignItems: "center",
+    gap: "7px",
+    minHeight: "28px",
+    padding: "5px 8px",
+    border: "1px solid #3b82f6",
+    borderRadius: "6px",
+    background: "#18181b",
+    color: "#fff",
+    boxShadow: "0 8px 24px rgba(0,0,0,.38)",
+    font: "700 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace",
+    whiteSpace: "nowrap",
+    pointerEvents: "none",
+  });
+  const eyedropperSwatch = document.createElement("span");
+  Object.assign(eyedropperSwatch.style, {
+    width: "14px",
+    height: "14px",
+    flex: "0 0 14px",
+    border: "1px solid rgba(255,255,255,.42)",
+    borderRadius: "3px",
+    boxShadow: "0 0 0 1px rgba(0,0,0,.35)",
+  });
+  const eyedropperValue = document.createElement("strong");
+  const eyedropperHint = document.createElement("span");
+  eyedropperHint.textContent = "Ctrl+C";
+  Object.assign(eyedropperHint.style, {
+    color: "#a1a1aa",
+    fontSize: "9px",
+    fontWeight: "600",
+  });
+  eyedropperTooltip.append(eyedropperSwatch, eyedropperValue, eyedropperHint);
+  shadow.append(highlights, measurements, marginBox, paddingBox, box, label, eyedropperOutline, eyedropperTooltip);
   document.documentElement.appendChild(host);
   const captureInspectionHost = document.createElement("div");
   captureInspectionHost.setAttribute("data-fullforce-beta-ui", "true");
@@ -325,9 +388,13 @@ function installEditBetaBridge() {
   const renderCaptureInspection = () => {
     captureInspectionFrame = 0;
     captureInspectionLayer.replaceChildren();
+    const selectedFontVisible =
+      options.fontInspectorMode === "selected" && !!selected?.isConnected;
     const showProperties =
-      (options.annotateMode || captureInspectionForced) &&
-      (options.fontInspectorOn || options.boundaries.enabled || options.rulers.enabled || options.rulers.guidesEnabled);
+      options.fontInspectorMode === "all" ||
+      selectedFontVisible ||
+      ((options.annotateMode || captureInspectionForced) &&
+        (options.boundaries.enabled || options.rulers.enabled || options.rulers.guidesEnabled));
     const nextDisplay = showProperties ? "" : "none";
     if (captureInspectionHost.style.display !== nextDisplay) {
       captureInspectionHost.style.display = nextDisplay;
@@ -479,8 +546,13 @@ function installEditBetaBridge() {
         /^(H[1-6]|P|A|LI|LABEL|BUTTON|TD|TH|BLOCKQUOTE|FIGCAPTION|INPUT|TEXTAREA)$/i.test(
           element.tagName,
         );
-      const details: string[] = [];
       const boundaryDetails: string[] = [];
+      const propertyBadges: Array<{
+        text: string;
+        color: string;
+        background: string;
+        border: string;
+      }> = [];
       let fontDetail = "";
 
       if (options.boundaries.enabled) {
@@ -495,12 +567,16 @@ function installEditBetaBridge() {
           background: "rgba(59,130,246,.025)",
         });
         if (options.boundaries.showDimensions) {
-          boundaryDetails.push(`${Math.round(rect.width)}×${Math.round(rect.height)}`);
+          const detail = `${Math.round(rect.width)}×${Math.round(rect.height)}`;
+          boundaryDetails.push(detail);
+          propertyBadges.push({ text: detail, color: "#fbcfe8", background: "rgba(131,24,67,.94)", border: "rgba(236,72,153,.82)" });
         }
         if (options.boundaries.showMargins) {
           const values = [computed.marginTop, computed.marginRight, computed.marginBottom, computed.marginLeft]
             .map((value) => Math.round(parseFloat(value) || 0));
-          boundaryDetails.push(`M ${values.join("/")}`);
+          const detail = `M ${values.join("/")}`;
+          boundaryDetails.push(detail);
+          propertyBadges.push({ text: detail, color: "#fef3c7", background: "rgba(120,53,15,.94)", border: "rgba(245,158,11,.82)" });
           const mt = values[0], mr = values[1], mb = values[2], ml = values[3];
           if (mt || mr || mb || ml) {
             inspectionElement("qa-capture-margin", {
@@ -517,7 +593,9 @@ function installEditBetaBridge() {
         if (options.boundaries.showPaddings) {
           const values = [computed.paddingTop, computed.paddingRight, computed.paddingBottom, computed.paddingLeft]
             .map((value) => Math.round(parseFloat(value) || 0));
-          boundaryDetails.push(`P ${values.join("/")}`);
+          const detail = `P ${values.join("/")}`;
+          boundaryDetails.push(detail);
+          propertyBadges.push({ text: detail, color: "#dcfce7", background: "rgba(20,83,45,.94)", border: "rgba(34,197,94,.82)" });
           const pt = values[0], pr = values[1], pb = values[2], pl = values[3];
           if (pt || pr || pb || pl) {
             inspectionElement("qa-capture-padding", {
@@ -532,17 +610,21 @@ function installEditBetaBridge() {
           }
         }
         if (options.boundaries.showGaps && computed.gap && computed.gap !== "normal") {
-          boundaryDetails.push(`Gap ${computed.gap}`);
+          const detail = `Gap ${computed.gap}`;
+          boundaryDetails.push(detail);
+          propertyBadges.push({ text: detail, color: "#f3e8ff", background: "rgba(88,28,135,.94)", border: "rgba(168,85,247,.82)" });
         }
       }
 
-      if (options.fontInspectorOn && textElement) {
+      const shouldShowFont =
+        textElement &&
+        (options.fontInspectorMode === "all" ||
+          (options.fontInspectorMode === "selected" && element === selected));
+      if (shouldShowFont) {
         const family = computed.fontFamily.split(",")[0].replace(/["']/g, "").trim() || "Sans";
         fontDetail = `${family} ${computed.fontSize}/${computed.fontWeight}`;
+        propertyBadges.push({ text: fontDetail, color: "#bae6fd", background: "rgba(12,74,110,.94)", border: "rgba(56,189,248,.82)" });
       }
-
-      details.push(...boundaryDetails);
-      if (fontDetail) details.push(fontDetail);
 
       if (boundaryDetails.length) {
         nextInspectionSnapshot.push({
@@ -573,23 +655,33 @@ function installEditBetaBridge() {
         });
       }
 
-      if (details.length && (options.boundaries.enabled || textElement)) {
-        inspectionElement("qa-capture-property-badge", {
+      if (propertyBadges.length && (options.boundaries.enabled || textElement)) {
+        const badgeHost = inspectionElement("qa-capture-property-badges", {
           position: "absolute",
           left: `${Math.max(22, Math.min(documentWidth - 8, left))}px`,
-          top: `${Math.max(options.rulers.enabled ? 23 : 0, top - 15)}px`,
+          top: `${Math.max(options.rulers.enabled ? 23 : 0, top - 17)}px`,
           maxWidth: `${Math.max(100, Math.min(360, rect.width + 180))}px`,
           overflow: "hidden",
-          padding: "2px 5px",
-          border: "1px solid rgba(255,255,255,.18)",
-          borderRadius: "3px",
-          background: "rgba(17,17,19,.88)",
-          color: "#f4f4f5",
-          font: "600 8px/1.25 system-ui,sans-serif",
-          textOverflow: "ellipsis",
+          display: "flex",
+          gap: "2px",
+          font: "700 8px/1.25 system-ui,sans-serif",
           whiteSpace: "nowrap",
-          boxShadow: "0 1px 4px rgba(0,0,0,.4)",
-        }, details.join(" · "));
+        });
+        for (const badge of propertyBadges) {
+          const chip = document.createElement("span");
+          chip.textContent = badge.text;
+          Object.assign(chip.style, {
+            overflow: "hidden",
+            padding: "2px 5px",
+            border: `1px solid ${badge.border}`,
+            borderRadius: "3px",
+            background: badge.background,
+            color: badge.color,
+            boxShadow: "0 1px 4px rgba(0,0,0,.4)",
+            textOverflow: "ellipsis",
+          });
+          badgeHost.appendChild(chip);
+        }
       }
       rendered++;
     }
@@ -615,6 +707,9 @@ function installEditBetaBridge() {
   const cursorStyle = document.createElement("style");
   cursorStyle.setAttribute("data-fullforce-beta-ui", "true");
   cursorStyle.textContent = `html *{cursor:pointer!important}input,textarea,[contenteditable="true"]{cursor:text!important}select{cursor:default!important}`;
+  const eyedropperCursorStyle = document.createElement("style");
+  eyedropperCursorStyle.setAttribute("data-fullforce-beta-ui", "true");
+  eyedropperCursorStyle.textContent = `html,html *{cursor:crosshair!important}`;
 
   const cssEscape = (value: string) =>
     guestWindow.CSS?.escape
@@ -895,7 +990,7 @@ function installEditBetaBridge() {
         options.boundaries.showGaps && gapValue ? `  gap ${gapValue}` : "";
       label.textContent = `${selected.tagName.toLowerCase()}${selected.id ? `#${selected.id}` : ""}${dimensionDetails}${gapDetails}`;
     }
-    if (options.fontInspectorOn)
+    if (options.fontInspectorMode !== "off")
       label.textContent += `  ${cs.fontFamily.split(",")[0]} ${cs.fontSize}/${cs.fontWeight}`;
     if (options.boundaries.enabled && options.boundaries.showMargins) {
       const mt = parseFloat(cs.marginTop) || 0;
@@ -928,7 +1023,7 @@ function installEditBetaBridge() {
     box.style.display = "none";
     marginBox.style.display = "none";
     paddingBox.style.display = "none";
-    if (!options.fontInspectorOn) label.style.display = "none";
+    if (options.fontInspectorMode === "off") label.style.display = "none";
   };
   const renderMeasurements = () => {
     measurementFrame = 0;
@@ -984,9 +1079,9 @@ function installEditBetaBridge() {
         boxSizing: "border-box",
         pointerEvents: "none",
         borderTop:
-          width > 0 && height === 0 ? "1px dashed rgba(255,80,80,.95)" : "none",
+          width > 0 && height === 0 ? "1px dashed rgba(168,85,247,.95)" : "none",
         borderLeft:
-          height > 0 && width === 0 ? "1px dashed rgba(255,80,80,.95)" : "none",
+          height > 0 && width === 0 ? "1px dashed rgba(168,85,247,.95)" : "none",
       });
       measurements.appendChild(line);
     };
@@ -1002,7 +1097,7 @@ function installEditBetaBridge() {
         transformOrigin: "center center",
         padding: "2px 4px",
         borderRadius: "2px",
-        background: "rgba(255,80,80,.95)",
+        background: "rgba(168,85,247,.96)",
         color: "#fff",
         font: "600 10px/1.25 system-ui,sans-serif",
         whiteSpace: "nowrap",
@@ -1145,6 +1240,7 @@ function installEditBetaBridge() {
     hovered = null;
     positionOverlay();
     scheduleMeasurements();
+    scheduleCaptureInspection();
   };
   const deselect = () => {
     const previousSelection = selected;
@@ -1158,6 +1254,7 @@ function installEditBetaBridge() {
     } catch {}
     positionOverlay();
     scheduleMeasurements();
+    scheduleCaptureInspection();
     return !!previousSelection;
   };
   const beginInlineEdit = (
@@ -1196,10 +1293,137 @@ function installEditBetaBridge() {
       selection?.addRange(range);
     } catch {}
   };
+  const colorToHex = (value: string) => {
+    const match = value.match(
+      /rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?\s*\)/i,
+    );
+    if (!match || (match[4] !== undefined && Number(match[4]) === 0)) return "";
+    return `#${[match[1], match[2], match[3]]
+      .map((part) =>
+        Math.max(0, Math.min(255, Number(part)))
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")}`.toUpperCase();
+  };
+  let eyedropperSample: EyedropperSample | null = null;
+  let eyedropperPayload = "";
+  let eyedropperCopiedTimer = 0;
+  const emitEyedropperSample = (sample: EyedropperSample | null) => {
+    const payload = JSON.stringify(sample);
+    if (payload === eyedropperPayload) return;
+    eyedropperPayload = payload;
+    console.info(`__FULLFORCE_EYEDROPPER__${payload}`);
+  };
+  const clearEyedropper = () => {
+    eyedropperSample = null;
+    eyedropperOutline.style.display = "none";
+    eyedropperTooltip.style.display = "none";
+    emitEyedropperSample(null);
+  };
+  const sampleElementColor = (element: HTMLElement): EyedropperSample | null => {
+    const style = getComputedStyle(element);
+    const sample = (value: string, property: string): EyedropperSample | null => {
+      const hex = colorToHex(value);
+      return hex ? { hex, property, tag: element.tagName.toLowerCase() } : null;
+    };
+    if (element instanceof SVGElement) {
+      const vectorColor = sample(style.fill, "fill") || sample(style.stroke, "stroke");
+      if (vectorColor) return vectorColor;
+    }
+    const background = sample(style.backgroundColor, "background");
+    if (background) return background;
+    const hasBorder = [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth]
+      .some((width) => (parseFloat(width) || 0) > 0);
+    if (hasBorder) {
+      const border = sample(style.borderTopColor, "border");
+      if (border) return border;
+    }
+    const directText = Array.from(element.childNodes).some(
+      (node) => node.nodeType === Node.TEXT_NODE && !!node.textContent?.trim(),
+    );
+    if (directText || /^(A|BUTTON|INPUT|TEXTAREA|LABEL|H[1-6]|P|LI|SPAN|STRONG|EM)$/i.test(element.tagName)) {
+      const textColor = sample(style.color, "text");
+      if (textColor) return textColor;
+    }
+    let ancestor = element.parentElement;
+    while (ancestor && ancestor !== document.documentElement) {
+      const ancestorHex = colorToHex(getComputedStyle(ancestor).backgroundColor);
+      if (ancestorHex) return { hex: ancestorHex, property: "background", tag: element.tagName.toLowerCase() };
+      ancestor = ancestor.parentElement;
+    }
+    return sample(style.color, "text");
+  };
+  const renderEyedropper = (event: MouseEvent, target: HTMLElement | null) => {
+    if (mode !== "eyedropper" || !target || isUi(target)) {
+      clearEyedropper();
+      return;
+    }
+    const sample = sampleElementColor(target);
+    const rect = target.getBoundingClientRect();
+    if (!sample || !rect.width || !rect.height) {
+      clearEyedropper();
+      return;
+    }
+    eyedropperSample = sample;
+    const accent = options.accentColor || "#3b82f6";
+    const inverseZoom = 1 / Math.max(0.1, options.zoomScale || 1);
+    Object.assign(eyedropperOutline.style, {
+      display: "block",
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      borderColor: accent,
+      borderWidth: `${Math.max(1, 2 * inverseZoom)}px`,
+      background: `color-mix(in srgb, ${accent} 6%, transparent)`,
+    });
+    eyedropperSwatch.style.background = sample.hex;
+    eyedropperValue.textContent = `${sample.hex} · ${sample.property}`;
+    eyedropperHint.textContent = "Ctrl+C";
+    Object.assign(eyedropperTooltip.style, {
+      display: "flex",
+      left: `${Math.max(4, Math.min(window.innerWidth - 190, event.clientX + 15))}px`,
+      top: `${Math.max(4, Math.min(window.innerHeight - 38, event.clientY + 15))}px`,
+      borderColor: accent,
+      transform: `scale(${inverseZoom})`,
+      transformOrigin: "top left",
+    });
+    emitEyedropperSample(sample);
+  };
+  const copyEyedropperSample = () => {
+    if (!eyedropperSample?.hex) return;
+    const hex = eyedropperSample.hex;
+    const fallbackCopy = () => {
+      const input = document.createElement("textarea");
+      input.value = hex;
+      Object.assign(input.style, { position: "fixed", opacity: "0" });
+      document.body.appendChild(input);
+      input.select();
+      try { document.execCommand("copy"); } catch {}
+      input.remove();
+    };
+    try {
+      const operation = navigator.clipboard?.writeText(hex);
+      if (operation) void operation.catch(fallbackCopy);
+      else fallbackCopy();
+    } catch {
+      fallbackCopy();
+    }
+    eyedropperHint.textContent = "Copied";
+    if (eyedropperCopiedTimer) window.clearTimeout(eyedropperCopiedTimer);
+    eyedropperCopiedTimer = window.setTimeout(() => {
+      eyedropperHint.textContent = "Ctrl+C";
+    }, 900);
+  };
   let suppressClickAfterPan = false;
   const onMove = (event: MouseEvent) => {
-    if (mode !== "edit") return;
     const target = event.target as HTMLElement | null;
+    if (mode === "eyedropper") {
+      renderEyedropper(event, target);
+      return;
+    }
+    if (mode !== "edit") return;
     hovered =
       !target ||
       isUi(target) ||
@@ -1212,8 +1436,17 @@ function installEditBetaBridge() {
   const onMouseLeave = () => {
     hovered = null;
     scheduleMeasurements();
+    clearEyedropper();
   };
   const onClick = (event: MouseEvent) => {
+    if (mode === "eyedropper" && !isUi(event.target as Element)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      renderEyedropper(event, event.target as HTMLElement);
+      copyEyedropperSample();
+      return;
+    }
     if (mode !== "edit" || isUi(event.target as Element)) return;
     if (suppressClickAfterPan) {
       suppressClickAfterPan = false;
@@ -1238,17 +1471,20 @@ function installEditBetaBridge() {
     select(target);
     beginInlineEdit(target, event.clientX, event.clientY);
   };
-  document.addEventListener("pointerdown", () => {
+  const onFramePointerDown = () => {
     if ((window as any).__fullForceFrameId) {
       console.info(`__FULLFORCE_FRAME_CLICK__${(window as any).__fullForceFrameId}`);
     }
-  }, true);
+  };
+  document.addEventListener("pointerdown", onFramePointerDown, true);
   document.addEventListener("mousemove", onMove, true);
   document.addEventListener("mouseleave", onMouseLeave, true);
   document.addEventListener("click", onClick, true);
   let spacePressed = false;
   let panActive = false;
+  let panShortcutCode = "";
   let panSequence = 0;
+  let zoomSequence = 0;
   const editableTarget = (target: EventTarget | null) => {
     const el = target as HTMLElement | null;
     return !!el?.closest?.('input,textarea,select,[contenteditable="true"]');
@@ -1257,38 +1493,77 @@ function installEditBetaBridge() {
     console.info(
       `__FULLFORCE_PAN__${JSON.stringify({ screenX: event?.screenX || 0, screenY: event?.screenY || 0, active, sequence: ++panSequence })}`,
     );
+  const normalizedShortcut = (binding: string) => {
+    const parts = String(binding || "").split("+").map((part) => part.trim()).filter(Boolean);
+    let ctrl = false, alt = false, shift = false, meta = false, key = "";
+    for (const part of parts) {
+      const lower = part.toLowerCase();
+      if (lower === "ctrl" || lower === "control") ctrl = true;
+      else if (lower === "alt" || lower === "option") alt = true;
+      else if (lower === "shift") shift = true;
+      else if (lower === "meta" || lower === "cmd" || lower === "command") meta = true;
+      else if (lower === "space" || lower === "spacebar") key = "Space";
+      else if (lower === "esc") key = "Escape";
+      else key = part.length === 1 ? part.toUpperCase() : part;
+    }
+    return [ctrl && "Ctrl", alt && "Alt", shift && "Shift", meta && "Meta", key].filter(Boolean).join(" + ");
+  };
+  const shortcutFromEvent = (event: KeyboardEvent) => {
+    if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) return "";
+    const key = event.code === "Space" || event.key === " "
+      ? "Space"
+      : event.key.length === 1
+        ? event.key.toUpperCase()
+        : event.key;
+    return [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Meta", key]
+      .filter(Boolean)
+      .join(" + ");
+  };
+  const commandFromEvent = (event: KeyboardEvent): keyof AppHotkeys | null => {
+    const pressed = shortcutFromEvent(event);
+    if (!pressed) return null;
+    for (const [command, binding] of Object.entries(options.hotkeys || {})) {
+      if (normalizedShortcut(String(binding)) === pressed) return command as keyof AppHotkeys;
+    }
+    return null;
+  };
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" || event.code === "Escape") {
-      if (deselect()) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-      }
+    if (
+      mode === "eyedropper" &&
+      (event.ctrlKey || event.metaKey) &&
+      event.key.toLowerCase() === "c" &&
+      !editableTarget(event.target)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      copyEyedropperSample();
       return;
     }
-    const key = event.key.toLowerCase();
-    if ((event.ctrlKey || event.metaKey) && !editableTarget(event.target)) {
-      if (key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        guestWindow.__fullForceEditBeta?.undo();
-        return;
-      }
-      if (key === "y" || (key === "z" && event.shiftKey)) {
-        event.preventDefault();
-        event.stopPropagation();
-        guestWindow.__fullForceEditBeta?.redo();
-        return;
-      }
-    }
-    if (event.code === "Space" && !editableTarget(event.target)) {
+    const command = commandFromEvent(event);
+    if (!command) return;
+    if (editableTarget(event.target) && command !== "quickSave") return;
+    if (
+      command.startsWith("annotation") &&
+      command !== "toggleAnnotate" &&
+      !options.annotateMode
+    ) return;
+    if (command === "panMode") {
       spacePressed = true;
+      panShortcutCode = event.code;
       event.preventDefault();
+      return;
     }
+    if (event.repeat) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    console.info(`__FULLFORCE_HOTKEY__${command}`);
   };
   const onKeyUp = (event: KeyboardEvent) => {
-    if (event.code === "Space") {
+    if (spacePressed && event.code === panShortcutCode) {
       spacePressed = false;
+      panShortcutCode = "";
       if (panActive) {
         panActive = false;
         emitPan(false);
@@ -1318,11 +1593,24 @@ function installEditBetaBridge() {
       emitPan(false, event);
     }
   };
+  const onZoomWheel = (event: WheelEvent) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    console.info(
+      `__FULLFORCE_ZOOM__${JSON.stringify({ deltaY: event.deltaY, sequence: ++zoomSequence })}`,
+    );
+  };
   document.addEventListener("keydown", onKeyDown, true);
   document.addEventListener("keyup", onKeyUp, true);
   document.addEventListener("mousedown", onPanDown, true);
   document.addEventListener("mousemove", onPanMove, true);
   document.addEventListener("mouseup", onPanUp, true);
+  document.addEventListener("wheel", onZoomWheel, {
+    capture: true,
+    passive: false,
+  });
   const refreshViewportOverlays = () => {
     positionOverlay();
     scheduleMeasurements();
@@ -1380,19 +1668,6 @@ function installEditBetaBridge() {
         cs.visibility !== "hidden"
       );
     }) as HTMLElement[];
-  const colorToHex = (value: string) => {
-    const match = value.match(
-      /rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)(?:\D+([\d.]+))?\s*\)/i,
-    );
-    if (!match || (match[4] !== undefined && Number(match[4]) === 0)) return "";
-    return `#${[match[1], match[2], match[3]]
-      .map((part) =>
-        Math.max(0, Math.min(255, Number(part)))
-          .toString(16)
-          .padStart(2, "0"),
-      )
-      .join("")}`.toUpperCase();
-  };
   const renderHighlights = () => {
     highlightFrame = 0;
     highlights.replaceChildren();
@@ -1441,7 +1716,7 @@ function installEditBetaBridge() {
   window.addEventListener("resize", scheduleHighlights, true);
 
   const api = {
-    version: 10,
+    version: 14,
     enable() {
       host.style.display = "";
       positionOverlay();
@@ -1450,12 +1725,18 @@ function installEditBetaBridge() {
     disable() {
       host.style.display = "none";
       measurements.replaceChildren();
+      clearEyedropper();
     },
     setMode(next: string) {
-      mode = next === "interact" ? "interact" : "edit";
+      mode = next === "interact" ? "interact" : next === "eyedropper" ? "eyedropper" : "edit";
       if (mode === "edit" && !cursorStyle.isConnected)
         document.head.appendChild(cursorStyle);
       if (mode !== "edit" && cursorStyle.isConnected) cursorStyle.remove();
+      if (mode === "eyedropper" && !eyedropperCursorStyle.isConnected)
+        document.head.appendChild(eyedropperCursorStyle);
+      if (mode !== "eyedropper" && eyedropperCursorStyle.isConnected)
+        eyedropperCursorStyle.remove();
+      if (mode !== "eyedropper") clearEyedropper();
       positionOverlay();
       scheduleMeasurements();
       return mode;
@@ -1467,6 +1748,9 @@ function installEditBetaBridge() {
         boundaries: { ...options.boundaries, ...(next?.boundaries || {}) },
         rulers: { ...options.rulers, ...(next?.rulers || {}) },
       };
+      const accent = options.accentColor || "#3b82f6";
+      eyedropperOutline.style.borderColor = accent;
+      eyedropperTooltip.style.borderColor = accent;
       if (options.revealAnimations && !revealStyle.isConnected)
         document.head.appendChild(revealStyle);
       if (!options.revealAnimations && revealStyle.isConnected)
@@ -1492,6 +1776,8 @@ function installEditBetaBridge() {
     },
     deselect,
     async prepareCapture(renderMode = "raster") {
+      eyedropperOutline.style.visibility = "hidden";
+      eyedropperTooltip.style.visibility = "hidden";
       captureInspectionForced = true;
       captureInspectionHost.style.visibility = "visible";
       renderCaptureInspection();
@@ -1505,6 +1791,8 @@ function installEditBetaBridge() {
       return true;
     },
     finishCapture() {
+      eyedropperOutline.style.visibility = "visible";
+      eyedropperTooltip.style.visibility = "visible";
       captureInspectionForced = false;
       captureInspectionHost.style.visibility = "visible";
       scheduleCaptureInspection();
@@ -2054,11 +2342,13 @@ function installEditBetaBridge() {
       document.removeEventListener("mousemove", onMove, true);
       document.removeEventListener("mouseleave", onMouseLeave, true);
       document.removeEventListener("click", onClick, true);
+      document.removeEventListener("pointerdown", onFramePointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("keyup", onKeyUp, true);
       document.removeEventListener("mousedown", onPanDown, true);
       document.removeEventListener("mousemove", onPanMove, true);
       document.removeEventListener("mouseup", onPanUp, true);
+      document.removeEventListener("wheel", onZoomWheel, true);
       window.removeEventListener("scroll", refreshViewportOverlays, true);
       window.removeEventListener("resize", refreshViewportOverlays, true);
       window.removeEventListener("scroll", scheduleCaptureInspection, true);
@@ -2074,6 +2364,8 @@ function installEditBetaBridge() {
       clearHighlights();
       revealStyle.remove();
       cursorStyle.remove();
+      eyedropperCursorStyle.remove();
+      if (eyedropperCopiedTimer) window.clearTimeout(eyedropperCopiedTimer);
       host.remove();
       captureInspectionHost.remove();
       delete guestWindow.__fullForceEditBeta;
@@ -2647,12 +2939,38 @@ function SelectionOverlay({
     handle.addEventListener("pointercancel", onCancel);
     handle.addEventListener("lostpointercapture", onLostCapture);
   };
-  const marginStyle = {
-    left: (dragRect.left - box.marginLeft) * scale,
-    top: (dragRect.top - box.marginTop) * scale,
-    width: (dragRect.width + box.marginLeft + box.marginRight) * scale,
-    height: (dragRect.height + box.marginTop + box.marginBottom) * scale,
+  const positiveMargin = {
+    top: Math.max(0, box.marginTop),
+    right: Math.max(0, box.marginRight),
+    bottom: Math.max(0, box.marginBottom),
+    left: Math.max(0, box.marginLeft),
   };
+  const marginBands = [
+    {
+      left: (dragRect.left - positiveMargin.left) * scale,
+      top: (dragRect.top - positiveMargin.top) * scale,
+      width: (dragRect.width + positiveMargin.left + positiveMargin.right) * scale,
+      height: positiveMargin.top * scale,
+    },
+    {
+      left: (dragRect.left + dragRect.width) * scale,
+      top: dragRect.top * scale,
+      width: positiveMargin.right * scale,
+      height: dragRect.height * scale,
+    },
+    {
+      left: (dragRect.left - positiveMargin.left) * scale,
+      top: (dragRect.top + dragRect.height) * scale,
+      width: (dragRect.width + positiveMargin.left + positiveMargin.right) * scale,
+      height: positiveMargin.bottom * scale,
+    },
+    {
+      left: (dragRect.left - positiveMargin.left) * scale,
+      top: dragRect.top * scale,
+      width: positiveMargin.left * scale,
+      height: dragRect.height * scale,
+    },
+  ].filter((style) => style.width > 0 && style.height > 0);
   return (
     <>
       {moving && (
@@ -2686,7 +3004,11 @@ function SelectionOverlay({
         </>
       )}
       {boundaries.enabled && boundaries.showMargins && (
-        <div className="edit-beta-box-margin" style={marginStyle} />
+        <>
+          {marginBands.map((style, index) => (
+            <i key={index} className="edit-beta-box-margin" style={style} />
+          ))}
+        </>
       )}
       <div
         className="edit-beta-selection-box"
@@ -3058,7 +3380,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       zoom,
       interactionMode,
       revealAnimations,
-      fontInspectorOn,
+      fontInspectorMode,
+      hotkeys,
       annotateMode = false,
       boundaries,
       leftPanelOpen,
@@ -3096,6 +3419,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       selectedAnnotationId,
       onSelectAnnotation,
       onAnnotateElement,
+      onCanvasZoom,
+      onHotkeyCommand,
+      onEyedropperColorChange,
+      accentColor = "#3b82f6",
     },
     ref,
   ) {
@@ -3141,10 +3468,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const spacePressedRef = useRef(false);
     const patchesRef = useRef<any[]>([]);
     const patchStorageKeyRef = useRef("");
-    const modeRef = useRef<"edit" | "interact">(interactionMode);
+    const modeRef = useRef<InteractionMode>(interactionMode);
     const optionsRef = useRef<BridgeOptions>({
       revealAnimations,
-      fontInspectorOn,
+      fontInspectorMode,
+      hotkeys,
       annotateMode,
       boundaries,
       rulers: {
@@ -3153,11 +3481,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         guides,
       },
       zoomScale: Math.max(0.25, zoom / 100),
+      accentColor,
     });
     const selectedStateKeyRef = useRef("");
     const historyStateKeyRef = useRef("");
     const [ready, setReady] = useState(false);
-    const [mode, setMode] = useState<"edit" | "interact">(interactionMode);
+    const [mode, setMode] = useState<InteractionMode>(interactionMode);
     const [selected, setSelected] = useState<RemoteElement | null>(null);
     const [layers, setLayers] = useState<LayerRow[]>([]);
     const [history, setHistory] = useState<string[]>([]);
@@ -4093,9 +4422,16 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
       const bindWebview = (frameId: string, view: any) => {
         if (!view) return;
+        let lastZoomSequence = 0;
 
         const onLoad = async () => {
           setReady(false);
+          try {
+            // Electron persists zoom per origin. Always normalize the guest
+            // before reading element geometry; the outer canvas frame is the
+            // only layer that is allowed to scale in Edit mode.
+            view.setZoomFactor?.(1);
+          } catch {}
           try {
             const currentUrl = typeof view.getURL === "function" ? view.getURL() : "";
             if (currentUrl && (frameId === activeFrameId || !activeFrameId)) setUrl(currentUrl);
@@ -4137,10 +4473,44 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
         const onConsoleMessage = (event: any) => {
           const message = String(event.message || "");
+          if (message.startsWith("__FULLFORCE_ZOOM__")) {
+            event.preventDefault?.();
+            try {
+              const payload = JSON.parse(
+                message.slice("__FULLFORCE_ZOOM__".length),
+              );
+              const sequence = Number(payload.sequence || 0);
+              const deltaY = Number(payload.deltaY || 0);
+              if (sequence <= lastZoomSequence || !deltaY) return;
+              lastZoomSequence = sequence;
+              onCanvasZoom?.(deltaY);
+            } catch {}
+            return;
+          }
           if (message.startsWith("__FULLFORCE_FRAME_CLICK__")) {
             const clickedId = message.slice("__FULLFORCE_FRAME_CLICK__".length).trim();
             if (clickedId && onSelectActiveFrame && canvasViewMode === "multi") {
               onSelectActiveFrame(clickedId);
+            }
+            return;
+          }
+          if (message.startsWith("__FULLFORCE_HOTKEY__")) {
+            event.preventDefault?.();
+            const command = message.slice("__FULLFORCE_HOTKEY__".length).trim() as keyof AppHotkeys;
+            if (command && Object.prototype.hasOwnProperty.call(optionsRef.current.hotkeys, command)) {
+              onHotkeyCommand?.(command);
+            }
+            return;
+          }
+          if (message.startsWith("__FULLFORCE_EYEDROPPER__")) {
+            event.preventDefault?.();
+            try {
+              const sample = JSON.parse(message.slice("__FULLFORCE_EYEDROPPER__".length));
+              onEyedropperColorChange?.(
+                sample && typeof sample.hex === "string" ? sample as EyedropperSample : null,
+              );
+            } catch {
+              onEyedropperColorChange?.(null);
             }
             return;
           }
@@ -4203,7 +4573,18 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       return () => {
         cleanups.forEach((c) => c());
       };
-    }, [activeFrameId, activeFrames, captureProjectThumbnail, canvasViewMode, constrainPan, onSelectActiveFrame, refreshLayers, sourceUrl]);
+    }, [activeFrameId, activeFrames, captureProjectThumbnail, canvasViewMode, constrainPan, onCanvasZoom, onEyedropperColorChange, onHotkeyCommand, onSelectActiveFrame, refreshLayers, sourceUrl]);
+
+    useEffect(() => {
+      // Reassert 100% page zoom whenever canvas magnification changes. This
+      // repairs webviews that inherited a remembered origin zoom while keeping
+      // element and annotation coordinates in stable CSS/page pixels.
+      Object.values(webviewsMapRef.current).forEach((view) => {
+        try {
+          view?.setZoomFactor?.(1);
+        } catch {}
+      });
+    }, [zoom]);
 
     useEffect(() => {
       if (!ready) return;
@@ -4270,11 +4651,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       modeRef.current = interactionMode;
       setMode(interactionMode);
+      if (interactionMode !== "eyedropper") onEyedropperColorChange?.(null);
       if (ready)
         void execute(
           `window.__fullForceEditBeta?.setMode(${JSON.stringify(interactionMode)})`,
         );
-    }, [execute, interactionMode, ready]);
+    }, [execute, interactionMode, onEyedropperColorChange, ready]);
 
     useEffect(() => {
       resetPan();
@@ -4313,7 +4695,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       optionsRef.current = {
         revealAnimations,
-        fontInspectorOn,
+        fontInspectorMode,
+        hotkeys,
         annotateMode,
         boundaries,
         rulers: {
@@ -4322,6 +4705,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           guides: [...guides, ...localGuides],
         },
         zoomScale: Math.max(0.25, zoom / 100),
+        accentColor,
       };
       if (ready)
         void execute(
@@ -4329,9 +4713,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         );
     }, [
       annotateMode,
+      accentColor,
       boundaries,
       execute,
-      fontInspectorOn,
+      fontInspectorMode,
+      hotkeys,
       guides,
       guidesAlwaysVisible,
       guidesOn,

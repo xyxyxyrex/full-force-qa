@@ -5,6 +5,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writ
 import { tmpdir } from 'os'
 import { spawn } from 'child_process'
 import sharp from 'sharp'
+import { createCaptureScrollPositions, resolveCaptureScrollPosition } from './automateCaptureGeometry'
 
 const PARITY_APP_ID = 'com.fullforce.parity'
 
@@ -524,7 +525,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#1c2321',
+      color: '#00000000',
       symbolColor: '#edefee',
       height: 38
     },
@@ -722,32 +723,39 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
       awaitPromise: true
     })
     await new Promise((resolve) => setTimeout(resolve, 220))
-    const measured = await debug.sendCommand('Runtime.evaluate', { expression: `(() => ({ width: Math.ceil(Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0)), height: Math.ceil(Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0)) }))()`, returnByValue: true })
-    const documentWidth = Math.max(width, Number(measured?.result?.value?.width || width)); const documentHeight = Math.max(tileHeight, Number(measured?.result?.value?.height || tileHeight))
+    const measured = await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const root = document.documentElement; const body = document.body; const scroller = document.scrollingElement || root; const viewportHeight = Math.max(1, Math.ceil(scroller.clientHeight || innerHeight || ${tileHeight})); const height = Math.ceil(Math.max(scroller.scrollHeight, root.scrollHeight, body?.scrollHeight || 0, viewportHeight)); const scrollRange = Math.ceil(Math.max(0, scroller.scrollHeight - scroller.clientHeight, root.scrollHeight - root.clientHeight, (body?.scrollHeight || 0) - (body?.clientHeight || 0))); return { width: Math.ceil(Math.max(root.scrollWidth, body?.scrollWidth || 0)), height, viewportHeight, scrollRange }; })()`, returnByValue: true })
+    const measuredValue = measured?.result?.value || {}
+    const documentWidth = Math.max(width, Number(measuredValue.width || width))
+    const effectiveViewportHeight = Math.max(1, Number(measuredValue.viewportHeight || tileHeight))
+    let documentHeight = Math.max(tileHeight, Number(measuredValue.height || tileHeight), Number(measuredValue.scrollRange || 0) + effectiveViewportHeight)
     if (width * documentHeight > 45_000_000 || documentHeight > 24000) throw new Error('The page exceeds the verified Chromium tile limit.')
-    const positions: number[] = []
-    const overlap = Math.min(180, Math.max(64, Math.round(tileHeight * .12)))
-    const stride = Math.max(1, tileHeight - overlap)
-    for (let y = 0; y < documentHeight; y += stride) positions.push(Math.min(y, Math.max(0, documentHeight - tileHeight)))
-    const uniquePositions = Array.from(new Set(positions)); const composites: Array<{ input: Buffer; top: number; left: number }> = []
+    const uniquePositions = createCaptureScrollPositions(documentHeight, effectiveViewportHeight, Number(measuredValue.scrollRange || 0))
+    const composites: Array<{ input: Buffer; top: number; left: number }> = []
     let previousHash = ''; let consecutiveDuplicates = 0
     for (let index = 0; index < uniquePositions.length; index++) {
       const y = uniquePositions[index]
       const positionedVisibility = y === 0 ? 'item.visibility' : "'hidden'"
-      const positioned = await debug.sendCommand('Runtime.evaluate', { expression: `(async () => { const state = window.__qaAutomateAtomicState; for (const item of state?.positioned || []) item.element.style.visibility = ${positionedVisibility}; document.documentElement.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,${y}); document.documentElement.scrollTop=${y}; if (document.body) document.body.scrollTop=${y}; await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))); return { y: scrollY, rootY: document.documentElement.scrollTop, bodyY: document.body?.scrollTop || 0 }; })()`, returnByValue: true, awaitPromise: true })
-      const actual = Math.max(Number(positioned?.result?.value?.y || 0), Number(positioned?.result?.value?.rootY || 0), Number(positioned?.result?.value?.bodyY || 0))
-      if (Math.abs(actual - y) > 3) throw new Error(`DevTools Chromium stopped at ${Math.round(actual)}px instead of tile ${index + 1} at ${y}px.`)
+      const positioned = await debug.sendCommand('Runtime.evaluate', { expression: `(async () => { const state = window.__qaAutomateAtomicState; for (const item of state?.positioned || []) item.element.style.visibility = ${positionedVisibility}; const root = document.documentElement; const body = document.body; const scroller = document.scrollingElement || root; root.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,${y}); root.scrollTop=${y}; if (body) body.scrollTop=${y}; await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))); const viewportHeight = Math.max(1, Math.ceil(scroller.clientHeight || innerHeight || ${effectiveViewportHeight})); const scrollHeight = Math.ceil(Math.max(scroller.scrollHeight, root.scrollHeight, body?.scrollHeight || 0, viewportHeight)); const maxScroll = Math.ceil(Math.max(0, scroller.scrollHeight - scroller.clientHeight, root.scrollHeight - root.clientHeight, (body?.scrollHeight || 0) - (body?.clientHeight || 0))); return { y: scrollY, rootY: root.scrollTop, bodyY: body?.scrollTop || 0, scrollHeight, viewportHeight, maxScroll }; })()`, returnByValue: true, awaitPromise: true })
+      const positionValue = positioned?.result?.value || {}
+      const actual = Math.max(Number(positionValue.y || 0), Number(positionValue.rootY || 0), Number(positionValue.bodyY || 0))
+      const currentMaxScroll = Math.max(0, Number(positionValue.maxScroll || 0))
+      const resolvedPosition = resolveCaptureScrollPosition(y, actual, currentMaxScroll)
+      if (!resolvedPosition) throw new Error(`DevTools Chromium stopped at ${Math.round(actual)}px instead of tile ${index + 1} at ${y}px (current range ${Math.round(currentMaxScroll)}px).`)
+      if (resolvedPosition.clampedToEnd) {
+        documentHeight = Math.max(effectiveViewportHeight, Number(positionValue.scrollHeight || 0), resolvedPosition.top + Number(positionValue.viewportHeight || effectiveViewportHeight))
+        uniquePositions.splice(index + 1)
+      }
       const screenshot = await debug.sendCommand('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false, optimizeForSpeed: true })
       const tile = Buffer.from(screenshot.data, 'base64'); const hash = createHash('sha256').update(tile).digest('hex')
       if (index > 0 && hash === previousHash) consecutiveDuplicates++; else consecutiveDuplicates = 0
-      if (consecutiveDuplicates >= 1) throw new Error(`Chromium returned a repeated DevTools tile at ${y}px.`)
-      previousHash = hash; composites.push({ input: tile, top: y, left: 0 })
+      if (consecutiveDuplicates >= 1) throw new Error(`Chromium returned a repeated DevTools tile at ${resolvedPosition.top}px.`)
+      previousHash = hash; composites.push({ input: tile, top: resolvedPosition.top, left: 0 })
     }
     // Scan only after the full scroll pass so lazy-rendered footer and below-fold
     // elements participate in semantic matching. Coordinates are document-relative.
     const semantic = await debug.sendCommand('Runtime.evaluate', { expression: AUTOMATE_DOM_EXPRESSION, returnByValue: true })
     const stitched = await sharp({ create: { width, height: documentHeight, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).png({ compressionLevel: 6 }).toBuffer()
-    return { success: true, dataUrl: `data:image/png;base64,${stitched.toString('base64')}`, documentWidth, documentHeight, domNodes: semantic?.result?.value?.nodes || [], tiles: uniquePositions.length, mode: 'verified-cdp-tiles' }
+    return { success: true, dataUrl: `data:image/png;base64,${stitched.toString('base64')}`, documentWidth, documentHeight, domNodes: semantic?.result?.value?.nodes || [], tiles: composites.length, mode: 'verified-cdp-tiles' }
   } finally {
     try {
       await debug.sendCommand('Runtime.evaluate', { expression: `(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) item.element.style.visibility = item.visibility; document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` })
@@ -987,6 +995,20 @@ function registerIpcHandlers(): void {
       } else {
         mainWindow.maximize()
       }
+    }
+  })
+
+  ipcMain.handle('app:set-title-bar-overlay', async (_event, symbolColor: string): Promise<void> => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    try {
+      mainWindow.setTitleBarOverlay({
+        color: '#00000000',
+        symbolColor: typeof symbolColor === 'string' && symbolColor.trim() ? symbolColor : '#edefee',
+        height: 38
+      })
+    } catch {
+      // Window controls overlays are platform-specific; the renderer title bar
+      // remains usable on platforms where the native overlay is unavailable.
     }
   })
 

@@ -717,8 +717,20 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                     className={`inspection-html-overlay ${overlay.kind}`}
                     style={style}
                   >
-                    {(overlay.kind === 'font' || overlay.kind === 'boundary') && (
-                      <span>{overlay.text}</span>
+                    {overlay.kind === 'font' && <span>{overlay.text}</span>}
+                    {overlay.kind === 'boundary' && (
+                      <span>
+                        {(overlay.text || '').split(' · ').filter(Boolean).map((detail, index) => {
+                          const kind = detail.startsWith('M ')
+                            ? 'margin'
+                            : detail.startsWith('P ')
+                              ? 'padding'
+                              : detail.startsWith('Gap ')
+                                ? 'gap'
+                                : 'dimensions'
+                          return <b key={`${detail}-${index}`} className={`inspection-property-chip ${kind}`}>{detail}</b>
+                        })}
+                      </span>
                     )}
                   </div>
                 )

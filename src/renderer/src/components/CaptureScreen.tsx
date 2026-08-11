@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import type { MondayTicket, MondayLink } from './Dashboard'
 import mondayLogo from '../assets/monday-icon-svgrepo-com.svg'
+import parityIcon from '../assets/parity-512.png'
+import parityLightIcon from '../assets/parity-light-512.png'
 import './CaptureScreen.css'
 
 interface Props {
@@ -12,6 +14,20 @@ interface Props {
   initialSheetUrl?: string
   /** When true, attempt capture immediately (reopening a saved project) */
   autoCapture?: boolean
+}
+
+function ParityCaptureIcon({ size }: { size: number }) {
+  return (
+    <span
+      className="capture-parity-icon"
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label="Parity"
+    >
+      <img className="capture-parity-icon-dark" src={parityIcon} alt="" />
+      <img className="capture-parity-icon-light" src={parityLightIcon} alt="" />
+    </span>
+  )
 }
 
 /** Accurate detection for true WP login page (wp-login.php) or true 404 error page */
@@ -438,10 +454,7 @@ export default function CaptureScreen({
       <div className="capture-screen-backdrop">
         <div className="capture-card figma-loading-screen">
           <div className="figma-logo-wrap">
-            <svg width="40" height="40" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#27272a" stroke="#3f3f46" strokeWidth="1" />
-              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#f4f4f5" />
-            </svg>
+            <ParityCaptureIcon size={44} />
           </div>
           <div className="figma-loading-track">
             <div className="figma-loading-bar" />
@@ -463,10 +476,7 @@ export default function CaptureScreen({
             </svg>
           </button>
           <div className="capture-logo">
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#27272a" stroke="#3f3f46" strokeWidth="1" />
-              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#f4f4f5" />
-            </svg>
+            <ParityCaptureIcon size={30} />
             <h1>
               {initialStagingUrl ? 'Recapture Page' : 'New Capture'}
             </h1>

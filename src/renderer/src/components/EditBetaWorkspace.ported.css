@@ -299,7 +299,7 @@
 
 .edit-beta-box-margin {
   border: 1px dashed #f59e0b;
-  background: #f59e0b26;
+  background: rgba(245, 158, 11, .2);
 }
 
 .edit-beta-selection-box {
@@ -309,7 +309,9 @@
 .box-padding {
   position: absolute;
   display: block;
-  background: #f59e0b55;
+  background: rgba(34, 197, 94, .28);
+  outline: 1px dashed rgba(34, 197, 94, .82);
+  outline-offset: -1px;
   pointer-events: none;
 }
 
@@ -475,8 +477,9 @@
   bottom: -25px;
   padding: 4px 7px;
   border-radius: 4px;
-  background: #18181b;
-  color: #34d399;
+  border: 1px solid #ec4899;
+  background: rgba(80, 7, 36, .94);
+  color: #fbcfe8;
   white-space: nowrap;
   font: 700 10px/1.2 ui-monospace, monospace;
   display: flex;
@@ -487,7 +490,7 @@
 
 .edit-beta-dimension-badge b,
 .edit-beta-dimension-badge em {
-  color: #34d399;
+  color: #f9a8d4;
   font: inherit;
   font-style: normal;
 }
@@ -694,6 +697,18 @@
   cursor: text;
 }
 
+.box-value[class*="margin-"] {
+  border-color: rgba(255, 255, 255, .18);
+  background: #f59e0b;
+  color: #111827;
+}
+
+.box-value[class*="padding-"] {
+  border-color: rgba(255, 255, 255, .18);
+  background: #22c55e;
+  color: #052e16;
+}
+
 .box-value:hover,
 .box-value:focus {
   border-color: #fff;
@@ -716,8 +731,9 @@
   height: 18px;
   padding: 1px 2px;
   transform: none;
-  background: #09090b;
-  color: #34d399;
+  border-color: rgba(249, 168, 212, .35);
+  background: #500724;
+  color: #fce7f3;
 }
 
 /* Theme-aware Edit shell */

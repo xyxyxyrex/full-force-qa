@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import type { AppSettings, AppTheme } from '../../../shared/types'
-import { THEME_LIST, saveSettings, DEFAULT_HOTKEYS } from '../theme/themeSystem'
+import { useState, useEffect, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { AppHotkeys, AppSettings, AppTheme } from '../../../shared/types'
+import { THEME_LIST, saveSettings, DEFAULT_HOTKEYS, HOTKEY_DEFINITIONS } from '../theme/themeSystem'
+import { findHotkeyConflicts, hotkeyFromEvent, isReservedHotkey, normalizeHotkey } from '../utils/hotkeys'
 import './SettingsModal.css'
 
 interface Props {
@@ -15,6 +16,13 @@ type TabType = 'general' | 'hotkeys' | 'appearance' | 'integrations'
 export default function SettingsModal({ isOpen, settings, onClose, onSave }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>('general')
   const [formSettings, setFormSettings] = useState<AppSettings>(settings)
+  const [recordingHotkey, setRecordingHotkey] = useState<keyof AppHotkeys | null>(null)
+  const [hotkeyError, setHotkeyError] = useState('')
+
+  const hotkeyConflicts = useMemo(
+    () => findHotkeyConflicts(formSettings.hotkeys),
+    [formSettings.hotkeys]
+  )
 
   useEffect(() => {
     setFormSettings(settings)
@@ -38,7 +46,7 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
     saveSettings(updated)
   }
 
-  const handleHotkeyChange = (key: keyof typeof DEFAULT_HOTKEYS, val: string) => {
+  const handleHotkeyChange = (key: keyof AppHotkeys, val: string) => {
     setFormSettings((prev) => ({
       ...prev,
       hotkeys: {
@@ -53,9 +61,45 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
       ...prev,
       hotkeys: DEFAULT_HOTKEYS
     }))
+    setHotkeyError('')
+    setRecordingHotkey(null)
+  }
+
+  const handleHotkeyCapture = (event: ReactKeyboardEvent<HTMLInputElement>, key: keyof AppHotkeys) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if ((event.key === 'Backspace' || event.key === 'Delete') && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+      handleHotkeyChange(key, '')
+      setRecordingHotkey(null)
+      setHotkeyError('')
+      return
+    }
+    const next = hotkeyFromEvent(event.nativeEvent)
+    if (!next) return
+    if (isReservedHotkey(next)) {
+      setHotkeyError(`${next} is reserved by Electron or Chromium. Choose another shortcut.`)
+      return
+    }
+    const duplicate = (Object.entries(formSettings.hotkeys) as Array<[keyof AppHotkeys, string]>).find(
+      ([otherKey, binding]) => otherKey !== key && normalizeHotkey(binding) === next
+    )
+    if (duplicate) {
+      const definition = HOTKEY_DEFINITIONS.find((item) => item.key === duplicate[0])
+      setHotkeyError(`${next} is already assigned to ${definition?.label || duplicate[0]}.`)
+      return
+    }
+    handleHotkeyChange(key, next)
+    setRecordingHotkey(null)
+    setHotkeyError('')
+    event.currentTarget.blur()
   }
 
   const handleSave = () => {
+    if (hotkeyConflicts.size > 0) {
+      setActiveTab('hotkeys')
+      setHotkeyError('Resolve duplicate shortcuts before saving settings.')
+      return
+    }
     saveSettings(formSettings)
     onSave(formSettings)
     onClose()
@@ -179,36 +223,56 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
 
             {activeTab === 'hotkeys' && (
               <div className="settings-tab-section">
-                <div className="settings-section-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Keyboard Shortcuts</span>
-                  <button className="settings-action-btn" onClick={handleResetHotkeys} style={{ fontSize: 11, padding: '4px 10px' }}>
+                <div className="settings-section-heading hotkeys-heading">
+                  <span><strong>Keyboard Shortcuts</strong><small>Click a binding, then press the replacement combination. Backspace clears it.</small></span>
+                  <button className="settings-action-btn" onClick={handleResetHotkeys}>
                     Reset Defaults
                   </button>
                 </div>
-                <table className="hotkeys-table">
-                  <thead>
-                    <tr>
-                      <th>Action</th>
-                      <th>Shortcut</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(formSettings.hotkeys).map(([key, val]) => (
-                      <tr key={key}>
-                        <td style={{ textTransform: 'capitalize' }}>{key.replace(/([A-Z])/g, ' $1')}</td>
-                        <td>
-                          <input
-                            type="text"
-                            className="settings-text-input"
-                            style={{ width: 140, padding: '4px 8px', fontSize: 11 }}
-                            value={val}
-                            onChange={(e) => handleHotkeyChange(key as keyof typeof DEFAULT_HOTKEYS, e.target.value)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {hotkeyError && <div className="hotkey-error" role="alert">{hotkeyError}</div>}
+                <div className="hotkey-groups">
+                  {(['General', 'Inspection', 'Panels', 'Viewports', 'Workspaces', 'Annotate'] as const).map((group) => (
+                    <section className="hotkey-group" key={group}>
+                      <h3>{group}</h3>
+                      {HOTKEY_DEFINITIONS.filter((definition) => definition.group === group).map((definition) => {
+                        const value = formSettings.hotkeys[definition.key]
+                        const conflicting = hotkeyConflicts.has(definition.key)
+                        return (
+                          <div className={`hotkey-row ${conflicting ? 'conflict' : ''}`} key={definition.key}>
+                            <span className="hotkey-copy">
+                              <strong>{definition.label}</strong>
+                              <small>{definition.description}</small>
+                            </span>
+                            <span className="hotkey-recorder-wrap">
+                              <input
+                                type="text"
+                                readOnly
+                                className={`hotkey-recorder ${recordingHotkey === definition.key ? 'recording' : ''}`}
+                                value={recordingHotkey === definition.key ? '' : value}
+                                placeholder={recordingHotkey === definition.key ? 'Press keys…' : 'Unassigned'}
+                                onFocus={() => { setRecordingHotkey(definition.key); setHotkeyError('') }}
+                                onBlur={() => setRecordingHotkey((current) => current === definition.key ? null : current)}
+                                onKeyDown={(event) => handleHotkeyCapture(event, definition.key)}
+                                aria-label={`Shortcut for ${definition.label}`}
+                              />
+                              {!!value && (
+                                <button
+                                  type="button"
+                                  className="hotkey-clear"
+                                  title={`Clear ${definition.label} shortcut`}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => { handleHotkeyChange(definition.key, ''); setRecordingHotkey(null); setHotkeyError('') }}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+                                </button>
+                              )}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </section>
+                  ))}
+                </div>
               </div>
             )}
 

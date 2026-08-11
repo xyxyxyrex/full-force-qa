@@ -7,6 +7,8 @@ dist-viewer/
 Thumbs.db
 .env
 .python-build/
+__pycache__/
+*.py[cod]
 resources/visual-worker/visual-compare*
 *.rar
 *.zip

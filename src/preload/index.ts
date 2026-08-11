@@ -94,6 +94,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleMaximizeWindow(): Promise<void> {
     return ipcRenderer.invoke('app:toggleMaximizeWindow')
   },
+  setTitleBarOverlay(symbolColor: string): Promise<void> {
+    return ipcRenderer.invoke('app:set-title-bar-overlay', symbolColor)
+  },
   selectSnapshotDirectory(): Promise<{ success: boolean; path?: string }> {
     return ipcRenderer.invoke('settings:select-directory')
   },

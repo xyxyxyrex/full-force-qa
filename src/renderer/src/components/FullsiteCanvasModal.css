@@ -316,7 +316,47 @@
   transform-origin: bottom left;
 }
 
-.inspection-html-overlay.boundary > span { top: -42px; }
+.inspection-html-overlay.boundary > span {
+  top: -42px;
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+}
+
+.inspection-property-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.inspection-property-chip.margin {
+  border-color: rgba(245, 158, 11, .82);
+  background: rgba(120, 53, 15, .94);
+  color: #fef3c7;
+}
+
+.inspection-property-chip.padding {
+  border-color: rgba(34, 197, 94, .82);
+  background: rgba(20, 83, 45, .94);
+  color: #dcfce7;
+}
+
+.inspection-property-chip.dimensions {
+  border-color: rgba(236, 72, 153, .82);
+  background: rgba(131, 24, 67, .94);
+  color: #fbcfe8;
+}
+
+.inspection-property-chip.gap {
+  border-color: rgba(168, 85, 247, .82);
+  background: rgba(88, 28, 135, .94);
+  color: #f3e8ff;
+}
 
 .inspection-html-overlay.font > span {
   border-color: rgba(236, 72, 153, .5);

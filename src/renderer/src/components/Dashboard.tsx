@@ -686,11 +686,9 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     for (const p of localActive) {
       if (seenIds.has(p.id)) continue
 
-      if (p.id.startsWith('monday-')) {
-        const rawTicketId = p.id.replace('monday-', '')
-        if (!activeTicketIds.includes(rawTicketId)) {
-          continue // Exclude inactive Monday tickets
-        }
+      const linkedTicketId = p.mondayTicketId || (p.id.startsWith('monday-') ? p.id.slice('monday-'.length) : '')
+      if (linkedTicketId && !activeTicketIds.includes(linkedTicketId)) {
+        continue // Exclude every local page linked to an inactive Monday ticket
       }
 
       seenIds.add(p.id)
@@ -746,6 +744,35 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   }, [activeProjects, pinnedProjectIds])
 
   const folderGroups = useMemo(() => folders.map((folder) => ({ folder, projects: activeProjects.filter((project) => project.folderId === folder.id) })), [activeProjects, folders])
+
+  const getProjectTicketId = (project: DisplayProject) =>
+    project.mondayTicket?.id ||
+    project.mondayTicketId ||
+    (project.id.startsWith('monday-') ? project.id.slice('monday-'.length) : '')
+
+  const renderSetInactiveButton = (
+    project: DisplayProject,
+    className = 'active-project-inactive-btn'
+  ) => {
+    const ticketId = getProjectTicketId(project)
+    if (!ticketId || !activeTicketIds.includes(ticketId)) return null
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={(event) => {
+          event.stopPropagation()
+          void toggleActiveTicket(ticketId)
+        }}
+        title="Remove from Active Projects"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M5 12h14" />
+        </svg>
+        <span>Set Inactive</span>
+      </button>
+    )
+  }
 
   // Trash Projects
   const trashProjects = useMemo(() => {
@@ -984,9 +1011,22 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                           <button className="card-action-btn edit-btn" onClick={(e) => { e.stopPropagation(); onOpenProject(project, true) }} title="Edit Settings">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                           </button>
-                          <button className="card-action-btn delete-btn" onClick={(e) => { e.stopPropagation(); setDeleteConfirmProject(project) }} title="Move to Trash">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                          </button>
+                          {getProjectTicketId(project) ? (
+                            <button
+                              className="card-action-btn delete-btn"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void toggleActiveTicket(getProjectTicketId(project))
+                              }}
+                              title="Set Inactive"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14" /></svg>
+                            </button>
+                          ) : (
+                            <button className="card-action-btn delete-btn" onClick={(e) => { e.stopPropagation(); setDeleteConfirmProject(project) }} title="Move to Trash">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="project-card-body">
@@ -1000,6 +1040,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                             </span>
                           )}
                         </div>
+                        {renderSetInactiveButton(project)}
                       </div>
                     </div>
                   )
@@ -1114,6 +1155,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                               </span>
                             )}
                           </div>
+                          {renderSetInactiveButton(project)}
                         </div>
                       </div>
                     )
@@ -1184,20 +1226,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                             </svg>
                           </button>
-                          {isMonday || project.id.startsWith('monday-') ? (
-                            <button
-                              className="list-action-btn delete"
-                              onClick={() => {
-                                const tId = project.mondayTicket ? project.mondayTicket.id : project.id.replace('monday-', '')
-                                toggleActiveTicket(tId)
-                              }}
-                              title="Set Inactive"
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <line x1="18" y1="6" x2="6" y2="18" />
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                              </svg>
-                            </button>
+                          {getProjectTicketId(project) ? (
+                            renderSetInactiveButton(project, 'list-action-btn active-project-inactive-list-btn')
                           ) : (
                             <button
                               className="list-action-btn delete"

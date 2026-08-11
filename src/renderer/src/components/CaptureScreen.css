@@ -6,7 +6,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(9, 9, 11, 0.75);
+  background: color-mix(in srgb, var(--bg-app) 78%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   z-index: 9999;
@@ -23,14 +23,14 @@
 }
 
 .capture-card {
-  background: #18181b;
+  background: var(--modal-bg, var(--bg-card));
   border-radius: 14px;
   padding: 32px;
   width: 100%;
   max-width: 500px;
   max-height: calc(100vh - 48px);
   overflow-y: auto;
-  border: 1px solid #27272a;
+  border: 1px solid var(--border-color);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
   animation: cardPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
@@ -60,19 +60,19 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid #27272a;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  background: #27272a;
-  color: #a1a1aa;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.12s ease;
   flex-shrink: 0;
 }
 
 .back-btn:hover {
-  background: #3f3f46;
-  color: #f4f4f5;
-  border-color: #52525b;
+  background: var(--accent-light);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 .capture-logo {
@@ -81,10 +81,45 @@
   gap: 10px;
 }
 
+.capture-parity-icon {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 22%;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-color) 42%, transparent),
+    0 5px 16px color-mix(in srgb, var(--accent-color) 20%, transparent);
+}
+
+.capture-parity-icon img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.capture-parity-icon-light { display: none; }
+
+[data-theme="light"] .capture-parity-icon-dark,
+[data-theme="catppuccin-latte"] .capture-parity-icon-dark,
+[data-theme="solarized-light"] .capture-parity-icon-dark,
+[data-theme="sepia-paper"] .capture-parity-icon-dark,
+[data-theme="github-light"] .capture-parity-icon-dark,
+[data-theme="monochrome-light"] .capture-parity-icon-dark { display: none; }
+
+[data-theme="light"] .capture-parity-icon-light,
+[data-theme="catppuccin-latte"] .capture-parity-icon-light,
+[data-theme="solarized-light"] .capture-parity-icon-light,
+[data-theme="sepia-paper"] .capture-parity-icon-light,
+[data-theme="github-light"] .capture-parity-icon-light,
+[data-theme="monochrome-light"] .capture-parity-icon-light { display: block; }
+
 .capture-logo h1 {
   font-size: 18px;
   font-weight: 700;
-  color: #f4f4f5;
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
@@ -98,7 +133,7 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #e4e4e7;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
@@ -109,24 +144,24 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #27272a;
-  border: 1px solid #3f3f46;
-  color: #d4d4d8;
+  background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 52%, var(--border-color));
+  color: var(--accent-color);
   font-size: 11px;
   font-weight: 700;
 }
 
 .step-badge.optional {
-  background: #18181b;
-  border-color: #27272a;
-  color: #71717a;
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  color: var(--text-muted);
 }
 
 .capture-optional-tag {
   font-size: 10px;
   font-weight: 500;
-  color: #71717a;
-  background: #27272a;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
   padding: 1px 6px;
   border-radius: 4px;
   margin-left: 2px;
@@ -134,7 +169,7 @@
 
 .capture-hint {
   font-size: 12px;
-  color: #71717a;
+  color: var(--text-muted);
   margin: 0 0 8px;
   padding-left: 28px;
 }
@@ -147,10 +182,10 @@
 .capture-input {
   flex: 1;
   padding: 9px 12px;
-  background: #09090b;
-  border: 1px solid #27272a;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: #f4f4f5;
+  color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
   outline: none;
@@ -158,8 +193,8 @@
 }
 
 .capture-input:focus {
-  border-color: #52525b;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .capture-input:disabled {
@@ -167,12 +202,12 @@
 }
 
 .capture-input::placeholder {
-  color: #52525b;
+  color: var(--text-muted);
 }
 
 /* Monotone Input warning highlight */
 .input-warn {
-  border-color: #3f3f46 !important;
+  border-color: var(--border-hover) !important;
 }
 
 /* ── Sleek Monotone Buttons ───────────────────────────────────────────── */
@@ -196,61 +231,63 @@
 
 /* Primary Action Button (Capture) */
 .btn-primary {
-  background: #ffffff;
-  color: #09090b;
-  border: 1px solid #ffffff;
+  background: var(--accent-color);
+  color: var(--bg-app);
+  border: 1px solid var(--accent-color);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--accent-color) 28%, transparent);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #e4e4e7;
-  border-color: #e4e4e7;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent-color) 38%, transparent);
 }
 
 /* Secondary Button (Login / Clear) */
 .btn-secondary {
-  background: #27272a;
-  color: #e4e4e7;
-  border: 1px solid #3f3f46;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: #3f3f46;
-  color: #ffffff;
-  border-color: #52525b;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 /* Re-Login Monotone Button */
 .btn-relogin {
-  background: #27272a;
-  color: #f4f4f5;
-  border: 1px solid #52525b;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hover);
 }
 
 .btn-relogin:hover:not(:disabled) {
-  background: #3f3f46;
-  color: #ffffff;
+  background: var(--accent-light);
+  color: var(--accent-color);
 }
 
 /* Logged In Status Badge */
 .btn-done {
-  background: #27272a;
-  color: #a1a1aa;
-  border: 1px solid #3f3f46;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
   cursor: default;
 }
 
 .capture-btn.btn-clear {
   background: transparent;
-  border: 1px solid #27272a;
-  color: #71717a;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
   padding: 6px 10px;
   font-size: 12px;
 }
 
 .capture-btn.btn-clear:hover {
-  border-color: #3f3f46;
-  color: #e4e4e7;
-  background: #27272a;
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: var(--accent-light);
 }
 
 /* ── Error & Warning Monotone Banner ─────────────────────────────────── */
@@ -258,8 +295,8 @@
 .capture-error {
   display: flex;
   flex-direction: column;
-  background: #27272a;
-  border: 1px solid #3f3f46;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 12px 14px;
   margin-bottom: 16px;
@@ -269,7 +306,7 @@
 .capture-error-text {
   font-size: 12.5px;
   line-height: 1.45;
-  color: #d4d4d8;
+  color: var(--text-secondary);
 }
 
 .btn-proceed-force {
@@ -278,9 +315,9 @@
   padding: 8px 14px;
   font-size: 12.5px;
   font-weight: 600;
-  background: #f4f4f5;
-  color: #09090b;
-  border: 1px solid #ffffff;
+  background: var(--accent-color);
+  color: var(--bg-app);
+  border: 1px solid var(--accent-color);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -288,13 +325,13 @@
 }
 
 .btn-proceed-force:hover {
-  background: #e4e4e7;
-  border-color: #e4e4e7;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .capture-note {
   font-size: 12px;
-  color: #71717a;
+  color: var(--text-muted);
   margin-top: 16px;
   text-align: center;
 }
@@ -310,13 +347,18 @@
   padding: 48px;
   user-select: none;
   animation: cardPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border-color: color-mix(in srgb, var(--accent-color) 58%, var(--border-color));
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.62),
+    0 0 0 1px color-mix(in srgb, var(--accent-color) 18%, transparent),
+    0 0 32px color-mix(in srgb, var(--accent-color) 12%, transparent);
 }
 
 .figma-logo-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 4px 16px rgba(255, 255, 255, 0.08));
+  filter: drop-shadow(0 5px 18px color-mix(in srgb, var(--accent-color) 34%, transparent));
   animation: logoPulse 1.8s infinite ease-in-out;
 }
 
@@ -334,7 +376,8 @@
 .figma-loading-track {
   width: 140px;
   height: 3px;
-  background: #27272a;
+  background: var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px var(--border-color);
   border-radius: 2px;
   overflow: hidden;
   position: relative;
@@ -346,7 +389,8 @@
   left: 0;
   height: 100%;
   width: 40%;
-  background: #f4f4f5;
+  background: var(--accent-color);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-color) 55%, transparent);
   border-radius: 2px;
   animation: loadingSlide 1.2s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -360,7 +404,7 @@
 .figma-loading-text {
   font-size: 13px;
   font-weight: 500;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   letter-spacing: -0.01em;
   margin: 0;
   text-align: center;
@@ -377,11 +421,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #27272a;
-  border: 1px solid #3f3f46;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 4px 10px;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -389,9 +433,9 @@
 }
 
 .monday-quickfill-btn:hover {
-  background: #3f3f46;
-  color: #f4f4f5;
-  border-color: #52525b;
+  background: var(--accent-light);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 .monday-quickfill-dropdown {
@@ -399,8 +443,8 @@
   top: calc(100% + 6px);
   left: 0;
   width: 320px;
-  background: #18181b;
-  border: 1px solid #3f3f46;
+  background: var(--modal-bg, var(--bg-card));
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   max-height: 220px;
@@ -415,13 +459,13 @@
 }
 
 .monday-quickfill-ticket + .monday-quickfill-ticket {
-  border-top: 1px solid #27272a;
+  border-top: 1px solid var(--border-color);
 }
 
 .monday-quickfill-ticket-name {
   font-size: 11px;
   font-weight: 600;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   padding: 2px 4px 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -450,20 +494,20 @@
 }
 
 .monday-quickfill-link:hover {
-  background: #27272a;
+  background: var(--accent-light);
 }
 
 .monday-qf-label {
   font-size: 11px;
   font-weight: 600;
-  color: #d4d4d8;
+  color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .monday-qf-url {
   font-size: 10px;
-  color: #71717a;
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -473,8 +517,8 @@
 /* ── Top-Level Ticket Selector Banner ───────────────────────────────────── */
 
 .top-ticket-autofill-banner {
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 12px 14px;
   margin-bottom: 20px;
@@ -489,14 +533,14 @@
   gap: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #a1a1aa;
+  color: var(--text-secondary);
 }
 
 .autofill-ticket-select {
   width: 100%;
-  background: #09090b;
-  border: 1px solid #27272a;
-  color: #f4f4f5;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12.5px;
@@ -507,13 +551,13 @@
 }
 
 .autofill-ticket-select:focus {
-  border-color: #52525b;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .autofill-ticket-select option {
-  background: #18181b;
-  color: #f4f4f5;
+  background: var(--modal-bg, var(--bg-card));
+  color: var(--text-primary);
 }
 
 /* ── Comprehensive Monday Search Dropdown ───────────────────────────────── */
@@ -525,8 +569,8 @@
   width: 100%;
   min-width: 360px;
   max-width: 440px;
-  background: #18181b;
-  border: 1px solid #3f3f46;
+  background: var(--modal-bg, var(--bg-card));
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
   z-index: 999;
@@ -547,41 +591,41 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #09090b;
-  border: 1px solid #27272a;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 6px 10px;
 }
 
 .monday-search-input-wrap:focus-within {
-  border-color: #52525b;
+  border-color: var(--accent-color);
 }
 
 .monday-search-input {
   flex: 1;
   background: transparent;
   border: none;
-  color: #f4f4f5;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   outline: none;
 }
 
 .monday-search-input::placeholder {
-  color: #52525b;
+  color: var(--text-muted);
 }
 
 .monday-search-clear {
   background: none;
   border: none;
-  color: #71717a;
+  color: var(--text-muted);
   cursor: pointer;
   padding: 2px 4px;
   font-size: 11px;
 }
 
 .monday-search-clear:hover {
-  color: #e4e4e7;
+  color: var(--accent-color);
 }
 
 .monday-search-results {
@@ -597,15 +641,15 @@
   padding: 16px;
   text-align: center;
   font-size: 12px;
-  color: #71717a;
+  color: var(--text-muted);
 }
 
 .monday-search-ticket-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: #27272a;
-  border: 1px solid #3f3f46;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 8px 10px;
 }
@@ -619,9 +663,9 @@
 .monday-search-status-tag {
   font-size: 10px;
   font-weight: 700;
-  color: #e4e4e7;
-  background: #18181b;
-  border: 1px solid #3f3f46;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   padding: 1px 6px;
   border-radius: 4px;
   white-space: nowrap;
@@ -631,7 +675,7 @@
 .monday-search-ticket-title {
   font-size: 12px;
   font-weight: 600;
-  color: #f4f4f5;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -641,9 +685,9 @@
 .monday-multi-link-badge {
   font-size: 9.5px;
   font-weight: 700;
-  color: #60a5fa;
-  background: rgba(37, 99, 235, 0.15);
-  border: 1px solid rgba(96, 165, 250, 0.3);
+  color: var(--accent-color);
+  background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 38%, transparent);
   padding: 1px 6px;
   border-radius: 10px;
   white-space: nowrap;
@@ -660,35 +704,35 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #18181b;
-  border: 1px solid #3f3f46;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 5px;
   padding: 5px 8px;
   cursor: pointer;
   text-align: left;
   min-width: 0;
   transition: all 0.12s ease;
-  color: #f4f4f5;
+  color: var(--text-primary);
   font-family: inherit;
 }
 
 .monday-search-item-link-btn:hover {
-  background: #3f3f46;
-  border-color: #60a5fa;
-  color: #ffffff;
+  background: var(--accent-light);
+  border-color: var(--accent-color);
+  color: var(--text-primary);
 }
 
 .monday-search-link-label {
   font-size: 10.5px;
   font-weight: 600;
-  color: #e4e4e7;
+  color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .monday-search-url-text {
   font-size: 10.5px;
-  color: #60a5fa;
+  color: var(--accent-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

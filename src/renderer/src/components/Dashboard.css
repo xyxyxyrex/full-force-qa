@@ -386,6 +386,29 @@
   margin-top: auto;
 }
 
+.active-project-inactive-btn {
+  width: 100%;
+  min-height: 29px;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font: 650 11px/1 system-ui, sans-serif;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.active-project-inactive-btn:hover {
+  border-color: var(--accent-color);
+  background: var(--accent-light);
+  color: var(--accent-color);
+}
+
 .project-meta {
   font-size: 11px;
   color: var(--text-muted);
@@ -491,6 +514,19 @@
   background: rgba(248, 81, 73, 0.15);
   border-color: rgba(248, 81, 73, 0.3);
   color: #f85149;
+}
+
+.list-action-btn.active-project-inactive-list-btn {
+  white-space: nowrap;
+  border-color: var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.list-action-btn.active-project-inactive-list-btn:hover {
+  border-color: var(--accent-color);
+  background: var(--accent-light);
+  color: var(--accent-color);
 }
 
 /* Trash Section */

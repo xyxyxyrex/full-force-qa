@@ -403,72 +403,34 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
   editor.on('load', () => {
     const doc = editor.Canvas.getDocument()
 
-    // Register Escape key listener on iframe canvas & keymaps
-    try {
-      if ((editor as any).Keymaps) {
-        (editor as any).Keymaps.add('core:deselect-component', 'escape', (ed: any) => {
-          const sel: any = ed.getSelected()
-          if (sel) {
-            if (typeof sel.set === 'function') {
-              sel.set('status', '')
-              sel.set('active', false)
-              sel.set('selected', false)
-            }
-            if (typeof sel.deselect === 'function') sel.deselect()
-          }
-          if (typeof ed.select === 'function') {
-            ed.select([])
-            ed.select(undefined as any)
-          }
-          if (ed.Canvas) {
-            if (typeof ed.Canvas.clearSelection === 'function') ed.Canvas.clearSelection()
-            const toolsEl = ed.Canvas.getToolsEl ? ed.Canvas.getToolsEl() : null
-            if (toolsEl) {
-              const toolbars = toolsEl.querySelectorAll('.gjs-toolbar, .gjs-highlighter, .gjs-badge')
-              toolbars.forEach((el: HTMLElement) => { el.style.display = 'none' })
-            }
-          }
-        })
-      }
-    } catch (_) {}
-
-    if (doc) {
-      const handleEscapeDeselect = (e: KeyboardEvent) => {
-        if (e.key === 'Escape' || e.code === 'Escape') {
-          const target = e.target as HTMLElement
-          const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.tagName === 'SELECT')
-          if (!isInput) {
-            e.preventDefault()
-            e.stopPropagation()
-            const sel: any = editor.getSelected()
-            if (sel) {
-              if (typeof sel.set === 'function') {
-                sel.set('status', '')
-                sel.set('active', false)
-                sel.set('selected', false)
-              }
-              if (typeof sel.deselect === 'function') sel.deselect()
-            }
-            if (typeof (editor as any).select === 'function') {
-              (editor as any).select([])
-              ;(editor as any).select(undefined as any)
-            }
-            if ((editor as any).Canvas) {
-              const c = (editor as any).Canvas
-              if (typeof c.clearSelection === 'function') c.clearSelection()
-              const toolsEl = c.getToolsEl ? c.getToolsEl() : null
-              if (toolsEl) {
-                const toolbars = toolsEl.querySelectorAll('.gjs-toolbar, .gjs-highlighter, .gjs-badge')
-                toolbars.forEach((el: HTMLElement) => { el.style.display = 'none' })
-              }
-            }
-          }
+    // Keyboard events do not bubble out of the GrapesJS iframe. Relay their
+    // normalized input data to the workspace so user-defined bindings remain
+    // authoritative instead of installing hard-coded Escape/undo handlers.
+    if (doc?.defaultView?.parent) {
+      const relay = (phase: 'keydown' | 'keyup') => (event: KeyboardEvent) => {
+        const target = event.target as HTMLElement | null
+        const detail = {
+          key: event.key,
+          code: event.code,
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          shiftKey: event.shiftKey,
+          metaKey: event.metaKey,
+          repeat: event.repeat,
+          editable: !!target?.closest?.('input, textarea, select, [contenteditable="true"], [role="textbox"]'),
+          handled: false,
+        }
+        doc.defaultView!.parent.dispatchEvent(
+          new CustomEvent(`parity:embedded-${phase}`, { detail }),
+        )
+        if (detail.handled) {
+          event.preventDefault()
+          event.stopPropagation()
+          event.stopImmediatePropagation()
         }
       }
-      doc.addEventListener('keydown', handleEscapeDeselect, true)
-      if (doc.defaultView) {
-        doc.defaultView.addEventListener('keydown', handleEscapeDeselect, true)
-      }
+      doc.addEventListener('keydown', relay('keydown'), true)
+      doc.addEventListener('keyup', relay('keyup'), true)
     }
 
     // Ensure <base href="..."> from snapshotHtml is injected into doc.head first!

@@ -219,11 +219,39 @@ export interface AppHotkeys {
   quickSave: string
   undo: string
   redo: string
-  toggleRulers: string
-  toggleBoundaries: string
-  resetZoom: string
   deselect: string
   panMode: string
+  zoomIn: string
+  zoomOut: string
+  resetZoom: string
+  toggleRulers: string
+  toggleGuides: string
+  toggleBoundaries: string
+  cycleFontInspector: string
+  toggleLeftPanel: string
+  toggleBottomPanel: string
+  toggleRightPanel: string
+  viewportDesktop: string
+  viewportTablet: string
+  viewportMobile: string
+  toggleCanvasMode: string
+  workspaceEdit: string
+  workspaceLive: string
+  workspaceAudit: string
+  workspaceAutomate: string
+  toggleInteractionMode: string
+  activateEyedropper: string
+  toggleAnnotate: string
+  annotationSelect: string
+  annotationBox: string
+  annotationArrow: string
+  annotationRectangle: string
+  annotationCircle: string
+  annotationPen: string
+  annotationText: string
+  annotationBlur: string
+  toggleRecording: string
+  generateItems: string
 }
 
 export interface AppSettings {
@@ -305,6 +333,7 @@ export interface ElectronAPI {
   compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: Array<{ designY: number; liveY: number; confidence?: number }>, mode?: string) => Promise<{ success: boolean; engine?: string; detectionMode?: string; similarity?: number; changedPercent?: number; heatmapDataUrl?: string; regions?: Array<{ x: number; y: number; width: number; height: number; difference: number }>; anchors?: Array<{ designY: number; liveY: number; confidence: number }>; sections?: PageSection[]; error?: string; fallback?: boolean }>
   cancelVisualComparison: (jobId: string) => Promise<{ success: boolean }>
   toggleMaximizeWindow: () => Promise<void>
+  setTitleBarOverlay: (symbolColor: string) => Promise<void>
   selectSnapshotDirectory: () => Promise<{ success: boolean; path?: string }>
   createSnapshot: (params: {
     projectId: string

@@ -3,13 +3,87 @@ import type { AppTheme, AppSettings, AppHotkeys } from '../../../shared/types'
 export const DEFAULT_HOTKEYS: AppHotkeys = {
   quickSave: 'Ctrl + S',
   undo: 'Ctrl + Z',
-  redo: 'Ctrl + Y',
-  toggleRulers: 'Ctrl + R',
-  toggleBoundaries: 'Ctrl + B',
-  resetZoom: 'Ctrl + 0',
+  redo: 'Ctrl + Shift + Z',
   deselect: 'Escape',
-  panMode: 'Space + Click'
+  panMode: 'Space',
+  zoomIn: 'Ctrl + =',
+  zoomOut: 'Ctrl + -',
+  resetZoom: 'Ctrl + 0',
+  toggleRulers: 'Alt + R',
+  toggleGuides: 'Alt + G',
+  toggleBoundaries: 'Alt + B',
+  cycleFontInspector: 'Alt + F',
+  toggleLeftPanel: 'Ctrl + Shift + 1',
+  toggleBottomPanel: 'Ctrl + Shift + 2',
+  toggleRightPanel: 'Ctrl + Shift + 3',
+  viewportDesktop: 'Alt + Shift + 1',
+  viewportTablet: 'Alt + Shift + 2',
+  viewportMobile: 'Alt + Shift + 3',
+  toggleCanvasMode: 'Alt + Shift + M',
+  workspaceEdit: 'Alt + 1',
+  workspaceLive: 'Alt + 2',
+  workspaceAudit: 'Alt + 3',
+  workspaceAutomate: 'Alt + 4',
+  toggleInteractionMode: 'Alt + I',
+  activateEyedropper: 'Alt + E',
+  toggleAnnotate: 'Shift + A',
+  annotationSelect: 'V',
+  annotationBox: 'B',
+  annotationArrow: 'A',
+  annotationRectangle: 'R',
+  annotationCircle: 'C',
+  annotationPen: 'P',
+  annotationText: 'T',
+  annotationBlur: 'U',
+  toggleRecording: 'Alt + Shift + R',
+  generateItems: 'Alt + Shift + G'
 }
+
+export type HotkeyDefinitionGroup = 'General' | 'Inspection' | 'Panels' | 'Viewports' | 'Workspaces' | 'Annotate'
+
+export const HOTKEY_DEFINITIONS: Array<{
+  key: keyof AppHotkeys
+  label: string
+  description: string
+  group: HotkeyDefinitionGroup
+}> = [
+  { key: 'quickSave', label: 'Quick save', description: 'Persist the current editable page state', group: 'General' },
+  { key: 'undo', label: 'Undo', description: 'Move one step backward in workspace history', group: 'General' },
+  { key: 'redo', label: 'Redo', description: 'Move one step forward in workspace history', group: 'General' },
+  { key: 'deselect', label: 'Deselect', description: 'Clear the current element or annotation selection', group: 'General' },
+  { key: 'panMode', label: 'Pan canvas', description: 'Hold while dragging to pan the canvas', group: 'General' },
+  { key: 'zoomIn', label: 'Zoom in', description: 'Increase canvas zoom', group: 'General' },
+  { key: 'zoomOut', label: 'Zoom out', description: 'Decrease canvas zoom', group: 'General' },
+  { key: 'resetZoom', label: 'Reset zoom', description: 'Return canvas zoom and pan to 100%', group: 'General' },
+  { key: 'toggleRulers', label: 'Toggle rulers', description: 'Show or hide canvas rulers', group: 'Inspection' },
+  { key: 'toggleGuides', label: 'Toggle guides', description: 'Show or hide alignment guides', group: 'Inspection' },
+  { key: 'toggleBoundaries', label: 'Toggle boundaries', description: 'Enable or disable element boundaries', group: 'Inspection' },
+  { key: 'cycleFontInspector', label: 'Cycle font inspector', description: 'Selected element, all elements, then off', group: 'Inspection' },
+  { key: 'toggleLeftPanel', label: 'Toggle left panel', description: 'Show or hide annotations, layers, and history', group: 'Panels' },
+  { key: 'toggleBottomPanel', label: 'Toggle bottom panel', description: 'Show or hide the QA spreadsheet', group: 'Panels' },
+  { key: 'toggleRightPanel', label: 'Toggle right panel', description: 'Show or hide styles and audit tools', group: 'Panels' },
+  { key: 'viewportDesktop', label: 'Desktop viewport', description: 'Switch to the desktop template', group: 'Viewports' },
+  { key: 'viewportTablet', label: 'Tablet viewport', description: 'Switch to the tablet template', group: 'Viewports' },
+  { key: 'viewportMobile', label: 'Mobile viewport', description: 'Switch to the mobile template', group: 'Viewports' },
+  { key: 'toggleCanvasMode', label: 'Single / multi canvas', description: 'Toggle single and multi-device canvas modes', group: 'Viewports' },
+  { key: 'workspaceEdit', label: 'Open Edit workspace', description: 'Switch to direct editing', group: 'Workspaces' },
+  { key: 'workspaceLive', label: 'Open Live workspace', description: 'Switch to the interactive live page', group: 'Workspaces' },
+  { key: 'workspaceAudit', label: 'Open Audit workspace', description: 'Switch to QA audit tools', group: 'Workspaces' },
+  { key: 'workspaceAutomate', label: 'Open Automate workspace', description: 'Switch to automated comparison', group: 'Workspaces' },
+  { key: 'toggleInteractionMode', label: 'Edit / interact mode', description: 'Toggle page editing and native interaction', group: 'Workspaces' },
+  { key: 'activateEyedropper', label: 'Eyedropper mode', description: 'Inspect hovered element colors and copy their HEX value', group: 'Inspection' },
+  { key: 'toggleAnnotate', label: 'Toggle Annotate', description: 'Open or close the annotation toolbar', group: 'Annotate' },
+  { key: 'annotationSelect', label: 'Select tool', description: 'Use element and annotation selection', group: 'Annotate' },
+  { key: 'annotationBox', label: 'Selection box tool', description: 'Draw a dashed selection box', group: 'Annotate' },
+  { key: 'annotationArrow', label: 'Arrow tool', description: 'Draw an arrow annotation', group: 'Annotate' },
+  { key: 'annotationRectangle', label: 'Rectangle tool', description: 'Draw a rectangle annotation', group: 'Annotate' },
+  { key: 'annotationCircle', label: 'Circle tool', description: 'Draw a circular annotation', group: 'Annotate' },
+  { key: 'annotationPen', label: 'Pen tool', description: 'Draw a freehand annotation', group: 'Annotate' },
+  { key: 'annotationText', label: 'Text tool', description: 'Place a text annotation', group: 'Annotate' },
+  { key: 'annotationBlur', label: 'Blur tool', description: 'Redact an area', group: 'Annotate' },
+  { key: 'toggleRecording', label: 'Start / stop recording', description: 'Toggle before-and-after change recording', group: 'Annotate' },
+  { key: 'generateItems', label: 'Generate items', description: 'Open the ephemeral-link expiry picker', group: 'Annotate' }
+]
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'parity',

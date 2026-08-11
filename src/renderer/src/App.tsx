@@ -115,6 +115,13 @@ export default function App() {
   // Apply theme on initial mount and when theme changes
   useEffect(() => {
     applyTheme(settings.theme)
+    const frame = window.requestAnimationFrame(() => {
+      const symbolColor = getComputedStyle(document.documentElement)
+        .getPropertyValue('--text-primary')
+        .trim() || '#edefee'
+      void window.electronAPI.setTitleBarOverlay(symbolColor).catch(() => {})
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [settings.theme])
 
   useEffect(() => {
@@ -559,6 +566,19 @@ export default function App() {
             </svg>
             {(updateStatus.state === 'available' || updateStatus.state === 'downloaded') && <span className="app-update-dot" />}
           </button>
+          <button
+            type="button"
+            className={`app-settings-btn ${settingsOpen ? 'active' : ''}`}
+            onClick={() => setSettingsOpen(true)}
+            title="Settings"
+            aria-label="Settings"
+            aria-pressed={settingsOpen}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V22h-4v-.09A1.65 1.65 0 0 0 9 20.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3v-4h.09A1.65 1.65 0 0 0 4.6 10a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8.92 5 1.65 1.65 0 0 0 10 3.49V3h4v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.12.62.58 1.12 1.18 1.31l.42.13v4l-.09.03A1.65 1.65 0 0 0 19.4 15Z" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -585,6 +605,7 @@ export default function App() {
                 key={`${activeTab.id}:${activeTab.snapshotKey}`}
                 html={activeTab.snapshotHtml}
                 sourceUrl={activeTab.captureUrl}
+                hotkeys={settings.hotkeys}
                 project={activeTab.activeProject}
                 onReset={handleReset}
                 onNewCapture={goToDashboard}
