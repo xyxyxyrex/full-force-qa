@@ -474,6 +474,8 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   // Session-only: once pinned, the annotation itself is the persistent record —
   // no need for a second persistence layer the way triage state needs one.
   const [pinnedFindingIds, setPinnedFindingIds] = useState<Set<string>>(new Set())
+  // Starts empty on purpose — nothing is pinned until explicitly checked.
+  const [selectedForAnnotation, setSelectedForAnnotation] = useState<Set<string>>(new Set())
   const selectedFrame = useMemo(() => frames.find((frame) => frame.id === frameId), [frameId, frames])
 
   useEffect(() => {
@@ -719,16 +721,29 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     if (!spec) return
     onCreateAnnotation(spec)
     setPinnedFindingIds((current) => new Set(current).add(finding.id))
+    setSelectedForAnnotation((current) => { if (!current.has(finding.id)) return current; const next = new Set(current); next.delete(finding.id); return next })
   }
-  // Scoped to what the analyst hasn't already triaged away — pinning something
-  // just marked false-positive would contradict the triage action they just took.
-  const pinnableVisibleCount = useMemo(
-    () => visibleFindings.filter((f) => isPinnable(f) && !pinnedFindingIds.has(f.id)).length,
-    [visibleFindings, pinnedFindingIds]
+
+  // Nothing is selected by default and nothing gets sent unless explicitly
+  // checked — a bulk action that auto-includes everything untriaged means
+  // mistakes only get caught after the fact, as annotations that then need
+  // cleaning up. Selection persists across findings-tab switches so the
+  // analyst can review Tokens, then Layout, and accumulate a batch.
+  const toggleAnnotationSelection = (findingId: string) => {
+    setSelectedForAnnotation((current) => {
+      const next = new Set(current)
+      if (next.has(findingId)) next.delete(findingId)
+      else next.add(findingId)
+      return next
+    })
+  }
+  const selectedPinnableCount = useMemo(
+    () => findings.filter((f) => selectedForAnnotation.has(f.id) && isPinnable(f) && !pinnedFindingIds.has(f.id)).length,
+    [findings, selectedForAnnotation, pinnedFindingIds]
   )
-  const pinVisibleFindings = () => {
+  const pinSelectedFindings = () => {
     if (!onCreateAnnotation) return
-    const toPin = visibleFindings.filter((f) => isPinnable(f) && !pinnedFindingIds.has(f.id))
+    const toPin = findings.filter((f) => selectedForAnnotation.has(f.id) && isPinnable(f) && !pinnedFindingIds.has(f.id))
     if (!toPin.length) return
     const pinnedIds: string[] = []
     for (const finding of toPin) {
@@ -738,6 +753,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
       pinnedIds.push(finding.id)
     }
     setPinnedFindingIds((current) => { const next = new Set(current); for (const id of pinnedIds) next.add(id); return next })
+    setSelectedForAnnotation((current) => { const next = new Set(current); for (const id of pinnedIds) next.delete(id); return next })
   }
 
   // Severity-weighted counts — a defect list that can be triaged, not a raster
@@ -878,9 +894,9 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
               <div className="automate-card-head">
                 <div><h3>Findings ({filteredFindings.length})</h3><span>Click a finding to inspect its visual evidence</span></div>
                 <div className="automate-card-head-actions">
-                  {onCreateAnnotation && pinnableVisibleCount > 0 && (
-                    <button type="button" className="automate-pin-all-btn" onClick={pinVisibleFindings} title="Pin every untriaged finding below as a page annotation">
-                      Send {pinnableVisibleCount} to annotations
+                  {onCreateAnnotation && selectedPinnableCount > 0 && (
+                    <button type="button" className="automate-pin-all-btn" onClick={pinSelectedFindings} title="Pin the checked findings as page annotations">
+                      Send {selectedPinnableCount} selected to annotations
                     </button>
                   )}
                   {triagedCount > 0 && (
@@ -910,6 +926,18 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
                       aria-pressed={selectedFindingIndex === realIndex}
                       disabled={!finding.comparison}
                     >
+                      <span className="automate-finding-select-slot">
+                        {onCreateAnnotation && isPinnable(finding) && !pinnedFindingIds.has(finding.id) && (
+                          <input
+                            type="checkbox"
+                            className="automate-finding-select"
+                            checked={selectedForAnnotation.has(finding.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleAnnotationSelection(finding.id)}
+                            title="Select for the annotations batch"
+                          />
+                        )}
+                      </span>
                       <i />
                       <div>
                         <h4>{finding.title}</h4>

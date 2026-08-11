@@ -66,7 +66,9 @@
 .automate-image-stage { height: 610px; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 12px; background: var(--bg-app); }
 .automate-image-stage img { display: block; max-width: 100%; height: auto; box-shadow: 0 8px 25px rgba(0,0,0,0.4); }
 .automate-findings-list { max-height: 610px; overflow: auto; }
-.automate-findings-list > button { width: 100%; appearance: none; display: grid; grid-template-columns: 7px 1fr auto; gap: 9px; align-items: start; padding: 11px 12px; border: 0; border-bottom: 1px solid var(--border-color); background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background .14s ease, box-shadow .14s ease; }
+.automate-findings-list > button { width: 100%; appearance: none; display: grid; grid-template-columns: 16px 7px 1fr auto; gap: 9px; align-items: start; padding: 11px 12px; border: 0; border-bottom: 1px solid var(--border-color); background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background .14s ease, box-shadow .14s ease; }
+.automate-finding-select-slot { display: flex; align-items: center; justify-content: center; padding-top: 3px; }
+.automate-finding-select { width: 13px; height: 13px; accent-color: #a78bfa; cursor: pointer; }
 .automate-findings-list > button:hover { background: var(--bg-card-hover); }
 .automate-findings-list > button.selected { background: color-mix(in srgb, var(--accent-color) 14%, var(--bg-card)); box-shadow: inset 2px 0 var(--accent-color); }
 .automate-findings-list > button:disabled { cursor: default; opacity: .72; }
