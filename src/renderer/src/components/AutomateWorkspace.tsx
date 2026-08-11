@@ -461,7 +461,12 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const selectedFrame = useMemo(() => frames.find((frame) => frame.id === frameId), [frameId, frames])
 
   useEffect(() => {
-    const syncStatus = () => window.electronAPI.figmaTokenStatus().then((result) => setTokenConfigured(result.apiConfigured)).catch(() => { })
+    // This tab unmounts and remounts on every click (conditional render in
+    // EditorWorkspace), so a live API round-trip here means every click into
+    // Automate depends on Figma answering right now. Read the stored-token
+    // state instead — instant, no network — and only actually calling Figma
+    // (loadFrames / runComparison) will ever surface a truly revoked token.
+    const syncStatus = () => window.electronAPI.figmaTokenStatus(false).then((result) => setTokenConfigured(result.apiConfigured)).catch(() => { })
     void syncStatus()
     return window.electronAPI.onFigmaAuthChanged?.((result) => setTokenConfigured(result.apiConfigured))
   }, [])

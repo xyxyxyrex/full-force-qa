@@ -259,7 +259,7 @@ export interface ElectronAPI {
   openExternal: (url: string) => Promise<void>
   openDetachedWindow: (url: string, title?: string) => Promise<void>
   figmaLoginWindow: (url?: string) => Promise<void>
-  figmaTokenStatus: () => Promise<FigmaConnectionStatus>
+  figmaTokenStatus: (validateApi?: boolean) => Promise<FigmaConnectionStatus>
   setFigmaToken: (token: string) => Promise<{ success: boolean; configured: boolean; error?: string }>
   onFigmaAuthChanged: (callback: (status: FigmaConnectionStatus) => void) => () => void
   listFigmaFrames: (url: string) => Promise<{ success: boolean; fileName?: string; lastModified?: string; requestedNodeId?: string; frames?: Array<{ id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }>; styleNames?: Record<string, string>; error?: string }>

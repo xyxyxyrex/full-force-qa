@@ -113,7 +113,15 @@ async function getFigmaConnectionStatus(validateApi = true): Promise<FigmaConnec
   try {
     const response = await fetch('https://api.figma.com/v1/me', { headers: { 'X-Figma-Token': token } })
     if (!response.ok) {
-      return { connected: browserSession, apiConfigured: false, browserSession, error: `Figma API credential returned ${response.status}.` }
+      // Only 401/403 are actual evidence the stored credential is bad. Everything
+      // else — 429 rate-limited, a 5xx from Figma, any other transient status —
+      // says nothing about the token's validity, so it shouldn't force the user
+      // back through re-pasting a token that's still sitting there, encrypted,
+      // perfectly fine. Treat those the same as a network-level failure below.
+      if (response.status === 401 || response.status === 403) {
+        return { connected: browserSession, apiConfigured: false, browserSession, error: `Figma API credential returned ${response.status}.` }
+      }
+      return { connected: true, apiConfigured: true, browserSession, error: `Figma API returned ${response.status}; keeping the stored credential.` }
     }
     const me = await response.json() as any
     return {
@@ -901,7 +909,7 @@ function registerIpcHandlers(): void {
     })
   })
 
-  ipcMain.handle('figma:token-status', () => getFigmaConnectionStatus())
+  ipcMain.handle('figma:token-status', (_event, validateApi?: boolean) => getFigmaConnectionStatus(validateApi ?? true))
 
   ipcMain.handle('figma:set-token', async (_event, token: string) => {
     try {
