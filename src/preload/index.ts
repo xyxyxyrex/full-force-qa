@@ -65,8 +65,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   figmaLoginWindow(url?: string): Promise<void> {
     return ipcRenderer.invoke('app:figmaLoginWindow', url)
   },
-  figmaTokenStatus(): Promise<FigmaConnectionStatus> {
-    return ipcRenderer.invoke('figma:token-status')
+  figmaTokenStatus(validateApi?: boolean): Promise<FigmaConnectionStatus> {
+    return ipcRenderer.invoke('figma:token-status', validateApi)
   },
   setFigmaToken(token: string): Promise<{ success: boolean; configured: boolean; error?: string }> {
     return ipcRenderer.invoke('figma:set-token', token)

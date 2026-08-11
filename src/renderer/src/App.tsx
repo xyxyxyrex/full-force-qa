@@ -439,6 +439,16 @@ export default function App() {
     updateActiveTab((tab) => ({ ...tab, activeProject: tab.activeProject?.id === updatedProject.id ? updatedProject : tab.activeProject }))
   }
 
+  const handleProjectUpdated = useCallback(async (updatedProject: Project) => {
+    await window.electronAPI.saveProject(updatedProject)
+    setTabs((current) => current.map((tab) =>
+      tab.activeProject?.id === updatedProject.id
+        ? { ...tab, activeProject: updatedProject }
+        : tab
+    ))
+    window.dispatchEvent(new CustomEvent('qa_projects_updated'))
+  }, [])
+
   const handleReset = async () => {
     const activeTab = tabs.find(t => t.id === activeTabId)
     if (!activeTab || !activeTab.captureUrl) return
@@ -581,6 +591,7 @@ export default function App() {
                 onOpenSettings={() => setSettingsOpen(true)}
                 onPersistHtml={(updatedHtml) => persistTabHtml(activeTab.id, activeTab.snapshotKey, updatedHtml)}
                 onThumbnailCaptured={handleProjectThumbnailCaptured}
+                onProjectUpdated={handleProjectUpdated}
               />
             ) : activeTab.view === 'notes' ? (
               <NotesWorkspace onOpenDashboard={() => openUtilityView('dashboard')} />
