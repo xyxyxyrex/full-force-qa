@@ -896,13 +896,13 @@
 }
 
 .edit-beta-selection-toolbar button.edit-beta-toolbar-annotate {
-  color: #fb7185;
-  background: rgba(244, 63, 94, .12);
+  color: var(--accent-color);
+  background: var(--accent-light);
 }
 
 .edit-beta-selection-toolbar button.edit-beta-toolbar-annotate:hover {
-  color: #fff;
-  background: #e11d48;
+  color: var(--bg-app);
+  background: var(--accent-color);
 }
 
 .edit-beta-left-section.annotations.open {
@@ -925,8 +925,9 @@
 }
 
 .edit-beta-annotation-device.active {
-  border-color: #0e7490;
-  box-shadow: inset 2px 0 #22d3ee;
+  border-color: var(--accent-color);
+  box-shadow: inset 2px 0 var(--accent-color);
+  background: var(--accent-light);
 }
 
 .edit-beta-annotation-device-head {
@@ -953,7 +954,7 @@
 }
 
 .edit-beta-annotation-device-head small {
-  color: #67e8f9;
+  color: var(--accent-color);
   font: 9px/1.3 monospace;
 }
 
@@ -994,7 +995,10 @@
 
 .edit-beta-annotation-items button:last-child { border-bottom: 0; }
 .edit-beta-annotation-items button:hover { background: var(--bg-card-hover); }
-.edit-beta-annotation-items button.selected { background: #0e749033; }
+.edit-beta-annotation-items button.selected {
+  background: var(--accent-light);
+  box-shadow: inset 2px 0 var(--accent-color);
+}
 
 .edit-beta-annotation-items button > i {
   width: 6px;

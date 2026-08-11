@@ -31,6 +31,7 @@ import { toggleCanvasDuplicates } from "../utils/seoCanvasOverlay";
 import figmaIcon from "../assets/figma.png";
 import mondayIcon from "../assets/monday-icon-svgrepo-com.svg";
 import { fetchMondayTicketsApi, type MondayTicket } from "../utils/mondayApi";
+import { readThemeAccentColor } from "../theme/themeSystem";
 import "./EditorWorkspace.css";
 
 const defaultQaSheetData: Sheet[] = [
@@ -717,14 +718,39 @@ export default function EditorWorkspace({
   const [generateExpiryOpen, setGenerateExpiryOpen] = useState(false);
   const [shareExpirySeconds, setShareExpirySeconds] = useState(7 * 24 * 60 * 60);
   const [isAnnotateActive, setIsAnnotateActive] = useState(false);
+  const annotationsAvailable = workspaceTab === "editBeta" || workspaceTab === "audit";
   const [activeAnnotationTool, setActiveAnnotationTool] = useState<'select' | 'box' | 'arrow' | 'rect' | 'circle' | 'pen' | 'text' | 'blur'>('select');
-  const [annotationColor, setAnnotationColor] = useState('#ff0055');
+  const themeAccentColor = readThemeAccentColor();
+  const previousThemeAccentRef = useRef(themeAccentColor);
+  const [annotationColor, setAnnotationColor] = useState(() => themeAccentColor);
   const [fullsiteMasterImage, setFullsiteMasterImage] = useState<string | null>(null);
   const [fullsiteCaptureViewport, setFullsiteCaptureViewport] =
     useState<CaptureViewportInfo | null>(null);
   const [fullsiteCaptureKey, setFullsiteCaptureKey] = useState(0);
   const [fullsiteInspectionOverlays, setFullsiteInspectionOverlays] =
     useState<CaptureInspectionOverlay[]>([]);
+
+  useEffect(() => {
+    const previousAccent = previousThemeAccentRef.current;
+    previousThemeAccentRef.current = themeAccentColor;
+    setAnnotationColor((current) =>
+      current === previousAccent ? themeAccentColor : current,
+    );
+  }, [themeAccentColor]);
+
+  const annotationPalette = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          themeAccentColor,
+          "#f59e0b",
+          "#22c55e",
+          "#3b82f6",
+          "#ffffff",
+        ]),
+      ),
+    [themeAccentColor],
+  );
 
   // Live Annotations State & Event Handlers with Scroll Offset Tracking
   const [liveAnnotations, setLiveAnnotations] = useState<CanvasSelectionBox[]>([]);
@@ -788,7 +814,7 @@ export default function EditorWorkspace({
   );
 
   useEffect(() => {
-    if (!isAnnotateActive) return;
+    if (!annotationsAvailable || !isAnnotateActive) return;
     const interval = setInterval(async () => {
       try {
         const scrollY = (await editBetaRef.current?.getScrollY?.()) || 0;
@@ -796,10 +822,10 @@ export default function EditorWorkspace({
       } catch (err) {}
     }, 150);
     return () => clearInterval(interval);
-  }, [isAnnotateActive]);
+  }, [annotationsAvailable, isAnnotateActive]);
 
   useEffect(() => {
-    if (!isAnnotateActive) {
+    if (!annotationsAvailable || !isAnnotateActive) {
       setAnnotationFrame(null);
       return;
     }
@@ -830,7 +856,18 @@ export default function EditorWorkspace({
 
     animationFrame = requestAnimationFrame(trackActiveViewport);
     return () => cancelAnimationFrame(animationFrame);
-  }, [isAnnotateActive]);
+  }, [annotationsAvailable, isAnnotateActive]);
+
+  useEffect(() => {
+    if (annotationsAvailable) return;
+    setIsAnnotateActive(false);
+    setActiveAnnotationTool("select");
+    setIsDrawingLive(false);
+    setLiveDrawStart(null);
+    setLiveDrawCurrent(null);
+    setLiveDrawPoints([]);
+    setAnnotationFrame(null);
+  }, [annotationsAvailable]);
 
   const getAnnotationScale = () => ({
     x: annotationFrame ? annotationFrame.width / Math.max(1, annotationFrame.pageWidth) : 1,
@@ -2475,7 +2512,8 @@ export default function EditorWorkspace({
       }
     }
 
-    // Also size the native overlay iframe and live webview wrapper
+    // Keep captured canvases at the selected device size. Live uses the
+    // available workspace instead of an oversized, CSS-scaled device wrapper.
     const nativeFrame = liveIframeRef.current;
     if (nativeFrame) {
       nativeFrame.style.width = `${w}px`;
@@ -2483,8 +2521,8 @@ export default function EditorWorkspace({
     }
     const liveWrap = liveWebviewRef.current?.parentElement;
     if (liveWrap) {
-      liveWrap.style.width = `${w}px`;
-      liveWrap.style.height = `${h}px`;
+      liveWrap.style.width = "100%";
+      liveWrap.style.height = "100%";
     }
   }, []);
 
@@ -2670,13 +2708,20 @@ export default function EditorWorkspace({
     const handleNav = (e: any) => {
       if (e.url) setLiveUrl(e.url);
     };
+    const handleDomReady = () => {
+      try {
+        webview.setZoomFactor?.(Math.max(0.25, Math.min(3, zoomRef.current / 100)));
+      } catch {}
+    };
 
     webview.addEventListener("did-navigate", handleNav);
     webview.addEventListener("did-navigate-in-page", handleNav);
+    webview.addEventListener("dom-ready", handleDomReady);
     return () => {
       try {
         webview.removeEventListener("did-navigate", handleNav);
         webview.removeEventListener("did-navigate-in-page", handleNav);
+        webview.removeEventListener("dom-ready", handleDomReady);
       } catch {}
     };
   }, [workspaceTab]);
@@ -3466,10 +3511,15 @@ export default function EditorWorkspace({
       }
       const liveWrap = liveWebviewRef.current?.parentElement;
       if (liveWrap) {
-        liveWrap.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel / 100})`;
+        liveWrap.style.transform = "none";
         liveWrap.style.transformOrigin = "top left";
         liveWrap.style.transition = "none";
       }
+      try {
+        liveWebviewRef.current?.setZoomFactor?.(
+          Math.max(0.25, Math.min(3, zoomLevel / 100)),
+        );
+      } catch {}
       const frameEl = editorRef.current?.Canvas?.getFrameEl();
       const wrapperEl =
         frameEl?.parentElement ||
@@ -3565,6 +3615,14 @@ export default function EditorWorkspace({
   useEffect(() => {
     if (typeof window.electronAPI?.onGlobalEscape === "function") {
       const handleEscape = () => {
+        // The selected element lives inside a <webview>, so a site can consume
+        // its own Escape key event before the injected bridge sees it. Electron's
+        // global key notification is the reliable fallback for that case.
+        if (document.querySelector(".edit-beta-selection-toolbar")) {
+          editBetaRef.current?.deselect();
+          return;
+        }
+
         const active = document.activeElement as HTMLElement;
         const isEditable =
           active &&
@@ -5829,22 +5887,24 @@ export default function EditorWorkspace({
                   </span>
                 </button>
 
-                <button
-                  className={`workspace-action-btn annotate ${isAnnotateActive ? "active" : ""}`}
-                  onClick={() =>
-                    setIsAnnotateActive((previous) => {
-                      if (!previous) setActiveAnnotationTool("select");
-                      return !previous;
-                    })
-                  }
-                  title="Annotate: Toggle floating annotation tools to add shapes, arrows, text & mark regions"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                  </svg>
-                  <span className="workspace-action-label">ANNOTATE</span>
-                </button>
+                {annotationsAvailable && (
+                  <button
+                    className={`workspace-action-btn annotate ${isAnnotateActive ? "active" : ""}`}
+                    onClick={() =>
+                      setIsAnnotateActive((previous) => {
+                        if (!previous) setActiveAnnotationTool("select");
+                        return !previous;
+                      })
+                    }
+                    title="Annotate: Toggle floating annotation tools to add shapes, arrows, text & mark regions"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    </svg>
+                    <span className="workspace-action-label">ANNOTATE</span>
+                  </button>
+                )}
 
                 <div className="generate-items-control">
                   <button
@@ -7888,7 +7948,7 @@ export default function EditorWorkspace({
                 interactionMode={interactionMode}
                 revealAnimations={revealAnimations}
                 fontInspectorOn={fontInspectorOn}
-                annotateMode={isAnnotateActive}
+                annotateMode={annotationsAvailable && isAnnotateActive}
                 boundaries={{
                   enabled: boundariesOn,
                   showMargins,
@@ -7943,7 +8003,7 @@ export default function EditorWorkspace({
               />
             )}
 
-            {isAnnotateActive && (
+            {annotationsAvailable && isAnnotateActive && (
               <div
                 ref={annotationLayerRef}
                 className="annotate-drawing-canvas-overlay"
@@ -8002,7 +8062,8 @@ export default function EditorWorkspace({
                               : "none",
                         borderRadius: previewType === "circle" ? "50%" : 4,
                         pointerEvents: "none",
-                      }}
+                        "--annotation-color": annotationColor,
+                      } as React.CSSProperties}
                     >
                       <AnnotationShape annotation={preview.annotation} />
                     </div>
@@ -8042,7 +8103,8 @@ export default function EditorWorkspace({
                               : "none",
                         borderRadius: ann.type === "circle" ? "50%" : 4,
                         pointerEvents: activeAnnotationTool === "select" ? "none" : "auto",
-                      }}
+                        "--annotation-color": ann.color,
+                      } as React.CSSProperties}
                       onMouseDown={(e) => {
                         e.stopPropagation();
                         setSelectedLiveAnnId(ann.id);
@@ -8886,12 +8948,14 @@ export default function EditorWorkspace({
                 <div
                   className="live-browser-wrap"
                   style={{
-                    position: "relative",
-                    width: vpWidth,
-                    height: vpHeight,
-                    margin: "0 auto",
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    margin: 0,
                     overflow: "hidden",
                     background: "#fff",
+                    zIndex: 20,
                     display: workspaceTab === "live" ? "block" : "none",
                   }}
                 >
@@ -10124,9 +10188,13 @@ export default function EditorWorkspace({
                     html={html}
                     sourceUrl={sourceUrl}
                     editor={editorRef.current}
-                    selectedComponent={selectedComponent}
-                    iframeRef={liveIframeRef}
-                  />
+                     selectedComponent={selectedComponent}
+                     iframeRef={liveIframeRef}
+                     onDocumentChange={(doc, description) => {
+                       pushHistoryStep("Grammar fix", description, "edit");
+                       onPersistHtmlRef.current?.(serializeWorkspaceHtml(doc));
+                     }}
+                   />
                 </div>
               )}
             </div>
@@ -10983,7 +11051,7 @@ export default function EditorWorkspace({
       )}
 
       {/* Floating Bottom Annotation Toolbar (When Annotate is toggled) */}
-      {isAnnotateActive && (
+      {annotationsAvailable && isAnnotateActive && (
         <div className="floating-annotation-toolbar">
           <button
             className={`annotation-tool-btn ${activeAnnotationTool === "select" ? "active" : ""}`}
@@ -11079,7 +11147,7 @@ export default function EditorWorkspace({
           <div className="toolbar-divider" />
 
           <div className="annotation-colors">
-            {["#ff0055", "#f59e0b", "#22c55e", "#3b82f6", "#ffffff"].map((c) => (
+            {annotationPalette.map((c) => (
               <button
                 key={c}
                 className={`color-swatch ${annotationColor === c ? "active" : ""}`}
@@ -11130,6 +11198,7 @@ export default function EditorWorkspace({
         captureViewport={fullsiteCaptureViewport || activeAnnotationViewport}
         inspectionOverlays={fullsiteInspectionOverlays}
         expiresInSeconds={shareExpirySeconds}
+        defaultAnnotationColor={themeAccentColor}
         onItemsGenerated={populateMockSheetFromGeneratedItems}
       />
     </div>

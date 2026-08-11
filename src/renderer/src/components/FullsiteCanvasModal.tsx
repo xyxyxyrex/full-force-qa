@@ -74,6 +74,7 @@ interface Props {
   captureViewport?: CaptureViewportInfo
   inspectionOverlays?: CaptureInspectionOverlay[]
   expiresInSeconds?: number
+  defaultAnnotationColor?: string
   onItemsGenerated?: (items: CanvasSelectionBox[]) => void
 }
 
@@ -109,6 +110,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
   captureViewport,
   inspectionOverlays = [],
   expiresInSeconds = 604800,
+  defaultAnnotationColor = '#8a918e',
   onItemsGenerated,
 }) => {
   const [zoom, setZoom] = useState<number>(0.5) // Default 50% zoom for long sites
@@ -118,7 +120,8 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null)
   const [drawCurrent, setDrawCurrent] = useState<{ x: number; y: number } | null>(null)
   const [activeTool, setActiveTool] = useState<'box' | 'arrow' | 'rect' | 'circle' | 'pen' | 'text' | 'blur'>('box')
-  const [selectedColor, setSelectedColor] = useState<string>('#ff0055')
+  const previousDefaultColorRef = useRef(defaultAnnotationColor)
+  const [selectedColor, setSelectedColor] = useState<string>(defaultAnnotationColor)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const [generatingLinkId, setGeneratingLinkId] = useState<string | null>(null)
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number } | null>(null)
@@ -137,6 +140,14 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
   const autoGenerationStartedRef = useRef(false)
   const siteSlug = normalizeSiteSlug(pageTitle)
   const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-rz8.pages.dev'
+
+  useEffect(() => {
+    const previousDefault = previousDefaultColorRef.current
+    previousDefaultColorRef.current = defaultAnnotationColor
+    setSelectedColor((current) =>
+      current === previousDefault ? defaultAnnotationColor : current,
+    )
+  }, [defaultAnnotationColor])
 
   const withInspectionManifest = (
     annotations: CanvasSelectionBox[],
@@ -490,7 +501,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
       badgeNumber: boxes.length + 1,
       title: `Issue Section #${boxes.length + 1}`,
       notes: '',
-      color: selectedColor || '#ff0055',
+      color: selectedColor || defaultAnnotationColor,
       type: activeTool,
       coordinateSpace: 'page',
       xPx: leftPx,
@@ -561,8 +572,9 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
       left: `${left}px`,
       top: `${top}px`,
       width: `${width}px`,
-      height: `${height}px`
-    }
+      height: `${height}px`,
+      '--annotation-color': selectedColor,
+    } as React.CSSProperties
   }
 
   if (!isOpen || !masterDataUrl) return null
@@ -662,7 +674,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
               Annotated Items ({boxes.length})
             </span>
             {boxes.length === 0 ? (
-              <div style={{ fontSize: 11, color: '#71717a', padding: '12px 0' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '12px 0' }}>
                 No annotated items drawn yet. Click & drag anywhere on the canvas layout to create issue containers.
               </div>
             ) : (
@@ -678,7 +690,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                       <span className="sidebar-item-badge" style={{ backgroundColor: box.color }}>
                         #{box.badgeNumber}
                       </span>
-                      <strong style={{ fontSize: 12, color: '#fff', flex: 1 }}>{box.title}</strong>
+                      <strong style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>{box.title}</strong>
                     </div>
 
                     {box.notes && <RichTextContent className="sidebar-item-notes rich-text-content" html={box.notes} />}
@@ -758,8 +770,9 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                 top: `${(imageRect.y / naturalH) * 100}%`,
                 width: `${(imageRect.width / naturalW) * 100}%`,
                 height: `${(imageRect.height / naturalH) * 100}%`,
-                borderColor: box.color
-              }
+                borderColor: box.color,
+                '--annotation-color': box.color,
+              } as React.CSSProperties
 
               return (
                 <div

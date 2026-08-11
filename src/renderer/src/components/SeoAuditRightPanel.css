@@ -377,3 +377,115 @@
   border-radius: 2px;
   word-break: break-all;
 }
+
+.grammar-engine-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 25px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.grammar-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.grammar-status-dot.ready { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12); }
+.grammar-status-dot.scanning { background: var(--accent-color); animation: grammar-status-pulse 1s ease-in-out infinite; }
+.grammar-status-dot.error { background: #ef4444; }
+
+@keyframes grammar-status-pulse {
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+.grammar-scan-error,
+.grammar-scan-warning {
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.grammar-scan-error {
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.grammar-scan-warning {
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fcd34d;
+}
+
+.grammar-empty-state {
+  padding: 14px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.grammar-issue-card {
+  gap: 6px;
+}
+
+.grammar-issue-context {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grammar-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.grammar-suggestion-btn,
+.grammar-ignore-btn {
+  min-height: 23px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.grammar-suggestion-btn {
+  max-width: 150px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent-color) 55%, var(--border-color));
+  background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-input));
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grammar-suggestion-btn:hover {
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 22%, var(--bg-input));
+}
+
+.grammar-ignore-btn {
+  margin-left: auto;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.grammar-ignore-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}

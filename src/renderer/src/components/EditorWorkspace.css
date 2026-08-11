@@ -80,10 +80,10 @@
   gap: 6px;
   padding: 4px 10px;
   height: 28px;
-  background: rgba(255, 0, 85, 0.08);
-  border: 1px solid rgba(255, 0, 85, 0.3);
+  background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 45%, transparent);
   border-radius: 6px;
-  color: #ff0055;
+  color: var(--accent-color);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -95,24 +95,24 @@
 }
 
 .record-btn:hover {
-  background: rgba(255, 0, 85, 0.18);
-  border-color: rgba(255, 0, 85, 0.5);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--accent-color) 24%, transparent);
+  border-color: var(--accent-color);
+  color: var(--text-primary);
 }
 
 .record-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ff0055;
-  box-shadow: 0 0 8px #ff0055;
+  background: var(--accent-color);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent-color) 70%, transparent);
 }
 
 .record-btn.recording {
-  background: #ff0055;
-  border-color: #ff0055;
-  color: #ffffff;
-  box-shadow: 0 0 12px rgba(255, 0, 85, 0.4);
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: var(--bg-app);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-color) 45%, transparent);
   animation: recordPulse 1.5s infinite;
 }
 
@@ -124,13 +124,13 @@
 
 @keyframes recordPulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.6);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-color) 60%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(255, 0, 85, 0);
+    box-shadow: 0 0 0 8px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(255, 0, 85, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
@@ -202,11 +202,12 @@
 }
 
 .generate-items-control { position:relative; display:inline-flex; }
-.generate-expiry-popover { position:absolute; top:34px; right:0; z-index:1200; min-width:156px; padding:9px; border:1px solid rgba(255,255,255,.18); border-radius:8px; background:#202024; box-shadow:0 12px 30px rgba(0,0,0,.65); }
-.generate-expiry-popover>span { display:block; margin-bottom:7px; color:#a1a1aa; font:700 10px/1 "SFMono-Regular",Consolas,monospace; letter-spacing:.06em; text-transform:uppercase; }
+.generate-expiry-popover { position:absolute; top:34px; right:0; z-index:1200; min-width:156px; padding:9px; border:1px solid var(--border-hover); border-radius:8px; background:var(--modal-bg); box-shadow:0 12px 30px rgba(0,0,0,.42); }
+.generate-expiry-popover>span { display:block; margin-bottom:7px; color:var(--text-muted); font:700 10px/1 "SFMono-Regular",Consolas,monospace; letter-spacing:.06em; text-transform:uppercase; }
 .generate-expiry-popover>div { display:flex; gap:5px; }
-.generate-expiry-popover button { flex:1; min-height:28px; padding:4px 7px; border:1px solid #52525b; border-radius:5px; background:#27272a; color:#f4f4f5; font:700 11px/1 system-ui; cursor:pointer; }
-.generate-expiry-popover button:hover,.generate-expiry-popover button.selected { border-color:#ff0055; background:#ff00551f; color:#fff; }
+.generate-expiry-popover button { flex:1; min-height:28px; padding:4px 7px; border:1px solid var(--border-color); border-radius:5px; background:var(--bg-input); color:var(--text-primary); font:700 11px/1 system-ui; cursor:pointer; }
+.generate-expiry-popover button:hover { border-color:var(--accent-color); background:var(--accent-light); }
+.generate-expiry-popover button.selected { border-color:var(--accent-color); background:var(--accent-color); color:var(--bg-app); box-shadow:0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent); }
 
 .workspace-action-btn {
   display: inline-flex;
@@ -232,13 +233,13 @@
 }
 
 .workspace-action-btn.active {
-  color: #fff;
+  color: var(--bg-app);
   background: var(--accent-color);
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
 }
 
 .workspace-action-btn.record.active {
-  background: #dc2626;
+  background: var(--accent-color);
 }
 
 .workspace-action-btn:disabled {
@@ -254,7 +255,7 @@
 }
 
 .workspace-action-btn.record.active .record-dot {
-  background: #fff;
+  background: var(--bg-app);
   animation: recordBlink 1s infinite;
 }
 
@@ -2487,9 +2488,9 @@ body.is-panel-resizing {
   left: 50%;
   transform: translateX(-50%);
   z-index: 99999;
-  background: rgba(18, 18, 21, 0.94);
+  background: color-mix(in srgb, var(--modal-bg) 94%, transparent);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-hover);
   border-radius: 14px;
   padding: 6px 12px;
   display: flex;
@@ -2516,7 +2517,7 @@ body.is-panel-resizing {
   border-radius: 8px;
   background: transparent;
   border: none;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2525,20 +2526,20 @@ body.is-panel-resizing {
 }
 
 .annotation-tool-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
 }
 
 .annotation-tool-btn.active {
-  background: #ff0055;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(255, 0, 85, 0.35);
+  background: var(--accent-color);
+  color: var(--bg-app);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-color) 40%, transparent);
 }
 
 .toolbar-divider {
   width: 1px;
   height: 20px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--border-color);
   margin: 0 4px;
 }
 
@@ -2562,15 +2563,15 @@ body.is-panel-resizing {
 }
 
 .color-swatch.active {
-  border-color: #ffffff;
+  border-color: var(--text-primary);
   transform: scale(1.2);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .annotation-done-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e4e4e7;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 700;
   padding: 6px 14px;
@@ -2580,8 +2581,9 @@ body.is-panel-resizing {
 }
 
 .annotation-done-btn:hover {
-  background: #27272a;
-  color: #ffffff;
+  border-color: var(--accent-color);
+  background: var(--accent-light);
+  color: var(--text-primary);
 }
 
 /* ── Annotate Drawing Overlay (Blocks webview element hover/edit interference) ── */
@@ -2605,7 +2607,7 @@ body.is-panel-resizing {
 }
 
 .live-annotation-item.active-drawing {
-  background: rgba(255, 0, 85, 0.1);
+  background: color-mix(in srgb, var(--annotation-color, var(--accent-color)) 10%, transparent);
 }
 
 .annotation-vector-shape,

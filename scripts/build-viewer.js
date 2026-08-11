@@ -32,6 +32,10 @@ cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-favicon.svg
 cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-180.png'), join(outputDir, 'parity-180.png'))
 cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-192.png'), join(outputDir, 'parity-192.png'))
 cpSync(join(projectRoot, 'src', 'renderer', 'src', 'assets', 'parity-512.png'), join(outputDir, 'parity-512.png'))
+cpSync(
+  join(projectRoot, 'node_modules', '@supabase', 'supabase-js', 'dist', 'umd', 'supabase.js'),
+  join(outputDir, 'supabase.js'),
+)
 
 const htmlPath = join(outputDir, 'index.html')
 const html = readFileSync(htmlPath, 'utf8')
