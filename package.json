@@ -1,14 +1,14 @@
 {
-  "name": "qa-snapshot-editor",
-  "version": "1.0.0",
-  "description": "QA Snapshot Editor - Freeze and visually edit WordPress staging pages",
+  "name": "parity",
+  "version": "1.1.0",
+  "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node scripts/electron-dev.js electron-vite dev",
     "build": "node scripts/electron-dev.js electron-vite build",
     "build:viewer": "node scripts/build-viewer.js",
     "dev:viewer": "npm run build:viewer && wrangler pages dev",
-    "deploy:viewer": "npm run build:viewer && wrangler pages deploy dist-viewer --project-name qa-snapshots",
+    "deploy:viewer": "npm run build:viewer && wrangler pages deploy dist-viewer --project-name parity",
     "preview": "node scripts/electron-dev.js electron-vite preview",
     "build:visual-worker": "python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py",
     "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder",
@@ -39,9 +39,9 @@
     "wrangler": "^4.120.0"
   },
   "build": {
-    "appId": "com.qa-snapshot-editor",
-    "productName": "QA Snapshot Editor",
-    "artifactName": "QA-Snapshot-Editor-Setup-${version}.${ext}",
+    "appId": "com.fullforce.parity",
+    "productName": "Parity",
+    "artifactName": "Parity-Setup-${version}.${ext}",
     "asar": true,
     "directories": {
       "output": "dist"
@@ -59,6 +59,7 @@
       }
     ],
     "win": {
+      "icon": "build/icon.svg",
       "target": [
         {
           "target": "nsis",
@@ -67,11 +68,14 @@
       ]
     },
     "nsis": {
+      "guid": "5ef26538-4975-5aa9-a3b5-3c7d87c3904e",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Parity",
+      "uninstallDisplayName": "Parity"
     },
     "publish": [
       {

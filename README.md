@@ -1,6 +1,6 @@
-# QA Snapshot Editor
+# Parity
 
-QA Snapshot Editor is an Electron desktop application designed for quality assurance engineers, web developers, and designers working on website staging environments. The application provides tools to pull tickets from Monday.com, view staging pages side-by-side with live Figma frames, execute automated visual diffs via an OpenCV worker, perform visual inline editing on Chromium webviews, run automated SEO and grammar/spell checks, and track QA progress using an embedded spreadsheet.
+Parity is an Electron desktop application for quality assurance engineers, web developers, and designers reviewing website implementations. It pulls tickets from Monday.com, compares staging pages with live Figma frames, runs OpenCV visual diffs, supports visual inline editing in Chromium webviews, performs SEO and grammar checks, and tracks QA progress in an embedded spreadsheet.
 
 ---
 

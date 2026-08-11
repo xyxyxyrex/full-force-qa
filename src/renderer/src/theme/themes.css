@@ -1,6 +1,27 @@
 /* ── App Theme System CSS Tokens (16 Premium Themes) ───────────────────────── */
 
 :root,
+[data-theme="parity"] {
+  --bg-app: #151a18;
+  --bg-card: #1c2321;
+  --bg-card-hover: #252d2a;
+  --bg-elevated: #303835;
+  --bg-input: #252d2a;
+  --border-color: #3f4844;
+  --border-hover: #5f6864;
+  --text-primary: #edefee;
+  --text-secondary: #c1c7c4;
+  --text-muted: #8f9692;
+  --accent-color: #8a918e;
+  --accent-hover: #a7aeaa;
+  --accent-light: rgba(138, 145, 142, 0.2);
+  --header-bg: #1c2321;
+  --sidebar-bg: #151a18;
+  --modal-bg: #1c2321;
+  --brand-match: #1d9e75;
+  --brand-diff: #d85a30;
+}
+
 [data-theme="dark"] {
   --bg-app: #121214;
   --bg-card: #1c1c20;

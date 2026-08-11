@@ -3,6 +3,8 @@ import type { Project } from '../../../shared/types'
 import mondayLogo from '../assets/monday-icon-svgrepo-com.svg'
 import figmaIcon from '../assets/figma.png'
 import sheetsIcon from '../assets/sheets.png'
+import parityIcon from '../assets/parity-favicon.svg'
+import parityLightIcon from '../assets/parity-light-512.png'
 import { fetchMondayTicketsApi, MondayTicket, MondayLink } from '../utils/mondayApi'
 import './Dashboard.css'
 
@@ -667,18 +669,16 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         {/* Header */}
         <div className="dashboard-header">
           <div className="dashboard-title-row">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#4C8BF5" />
-              <path d="M8 12h16v2H8zm0 5h12v2H8zm0 5h8v2H8z" fill="#fff" />
-            </svg>
-            <h1>QA Snapshot Editor</h1>
+            <img className="dashboard-brand-icon parity-dark-icon" src={parityIcon} alt="" aria-hidden="true" />
+            <img className="dashboard-brand-icon parity-light-icon" src={parityLightIcon} alt="" aria-hidden="true" />
+            <h1 className="dashboard-wordmark">parity</h1>
           </div>
           <div className="dashboard-header-actions">
             {onOpenSettings && (
               <button
                 className="dashboard-settings-btn"
                 onClick={onOpenSettings}
-                title="Settings: Hotkeys, Snapshot Storage Directory, Theme Customization & Integrations"
+                title="Settings: hotkeys, snapshot storage, themes, and integrations"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',

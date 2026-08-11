@@ -663,6 +663,16 @@
   max-width: 400px;
 }
 
+.dashboard-brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.dashboard-wordmark {
+  font-family: "Space Grotesk", Inter, system-ui, sans-serif;
+}
+
 .generic-project-thumbnail {
   display: inline-flex;
   width: 30px;

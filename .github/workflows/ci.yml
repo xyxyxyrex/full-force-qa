@@ -34,7 +34,7 @@ jobs:
     env:
       VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
       VITE_SUPABASE_ANON_KEY: ci-placeholder-key
-      VITE_EPHEMERAL_VIEWER_URL: https://qa-snapshots.pages.dev
+      VITE_EPHEMERAL_VIEWER_URL: https://parity-rz8.pages.dev
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6

@@ -6,6 +6,10 @@ on:
     paths:
       - viewer/**
       - scripts/build-viewer.js
+      - src/renderer/src/assets/parity-180.png
+      - src/renderer/src/assets/parity-192.png
+      - src/renderer/src/assets/parity-512.png
+      - src/renderer/src/assets/parity-favicon.svg
       - wrangler.jsonc
       - package.json
       - package-lock.json
@@ -31,7 +35,7 @@ jobs:
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      VITE_EPHEMERAL_VIEWER_URL: https://qa-snapshots.pages.dev
+      VITE_EPHEMERAL_VIEWER_URL: ${{ secrets.VITE_EPHEMERAL_VIEWER_URL }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -47,6 +51,7 @@ jobs:
           test -n "$CF_ACCOUNT" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL"; exit 1; }
           test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY"; exit 1; }
+          test "$VITE_EPHEMERAL_VIEWER_URL" = "https://parity-rz8.pages.dev" || { echo "VITE_EPHEMERAL_VIEWER_URL must be https://parity-rz8.pages.dev"; exit 1; }
       - run: npm ci
       - run: npm run build:viewer
       - name: Deploy to Cloudflare Pages
@@ -56,4 +61,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          command: pages deploy dist-viewer --project-name=qa-snapshots --branch=${{ github.ref_name }} --commit-hash=${{ github.sha }}
+          command: pages deploy dist-viewer --project-name=parity --branch=${{ github.ref_name }} --commit-hash=${{ github.sha }}

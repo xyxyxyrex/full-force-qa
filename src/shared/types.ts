@@ -37,6 +37,7 @@ export interface SnapshotItem {
 }
 
 export type AppTheme =
+  | 'parity'
   | 'dark'
   | 'light'
   | 'catppuccin-mocha'

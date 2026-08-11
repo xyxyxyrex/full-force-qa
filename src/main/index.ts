@@ -1,10 +1,35 @@
 import 'dotenv/config'
 import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog, safeStorage, webContents as electronWebContents } from 'electron'
 import { join } from 'path'
-import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { spawn } from 'child_process'
 import sharp from 'sharp'
+
+const PARITY_APP_ID = 'com.fullforce.parity'
+
+function configureParityIdentity(): void {
+  app.setName('Parity')
+  app.setAppUserModelId(PARITY_APP_ID)
+
+  const appDataDir = app.getPath('appData')
+  const parityUserData = join(appDataDir, 'Parity')
+  if (!existsSync(parityUserData)) {
+    for (const legacyName of ['QA Snapshot Editor', 'qa-snapshot-editor']) {
+      const legacyUserData = join(appDataDir, legacyName)
+      if (!existsSync(legacyUserData)) continue
+      try {
+        cpSync(legacyUserData, parityUserData, { recursive: true, errorOnExist: false })
+      } catch (error) {
+        console.warn('[Parity] Unable to migrate legacy application data:', error)
+      }
+      break
+    }
+  }
+  app.setPath('userData', parityUserData)
+}
+
+configureParityIdentity()
 
 // Force Chromium engine to use English locale
 app.commandLine.appendSwitch('lang', 'en-US')
@@ -131,12 +156,13 @@ function createWindow(): void {
     height: 900,
     minWidth: 1024,
     minHeight: 600,
-    backgroundColor: '#1a1a1a',
+    title: 'Parity',
+    backgroundColor: '#151a18',
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#1a1a1a',
-      symbolColor: '#a1a1aa',
+      color: '#1c2321',
+      symbolColor: '#edefee',
       height: 38
     },
     webPreferences: {

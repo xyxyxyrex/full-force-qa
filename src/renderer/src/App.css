@@ -85,7 +85,7 @@ button, input, select, textarea, a, .clickable, .no-drag {
 .app-top-tab-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   height: 38px;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
@@ -96,12 +96,55 @@ button, input, select, textarea, a, .clickable, .no-drag {
   -webkit-app-region: drag;
 }
 
+.app-brand {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-right: 9px;
+  padding-right: 11px;
+  border-right: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  -webkit-app-region: drag;
+}
+
+.app-brand img {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+
+.parity-light-icon { display: none; }
+
+[data-theme="light"] .parity-dark-icon,
+[data-theme="catppuccin-latte"] .parity-dark-icon,
+[data-theme="solarized-light"] .parity-dark-icon,
+[data-theme="sepia-paper"] .parity-dark-icon,
+[data-theme="github-light"] .parity-dark-icon,
+[data-theme="monochrome-light"] .parity-dark-icon { display: none; }
+
+[data-theme="light"] .parity-light-icon,
+[data-theme="catppuccin-latte"] .parity-light-icon,
+[data-theme="solarized-light"] .parity-light-icon,
+[data-theme="sepia-paper"] .parity-light-icon,
+[data-theme="github-light"] .parity-light-icon,
+[data-theme="monochrome-light"] .parity-light-icon { display: block; }
+
 /* Explicitly make interactive controls clickable (non-draggable) */
 .app-tab-item,
 .app-tab-close,
 .app-new-tab-btn,
 .app-update-btn {
   -webkit-app-region: no-drag;
+}
+
+@media (max-width: 760px) {
+  .app-brand span { display: none; }
+  .app-brand { margin-right: 5px; padding-right: 7px; }
 }
 
 .app-update-btn {

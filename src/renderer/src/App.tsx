@@ -7,6 +7,8 @@ import { fetchMondayTicketsApi } from './utils/mondayApi'
 import SettingsModal from './components/SettingsModal'
 import { loadSettings, applyTheme } from './theme/themeSystem'
 import type { AppSettings } from '../../shared/types'
+import parityIcon from './assets/parity-favicon.svg'
+import parityLightIcon from './assets/parity-light-512.png'
 import './theme/themes.css'
 import './App.css'
 
@@ -67,7 +69,7 @@ export default function App() {
     if (updateStatus.state === 'downloaded') return `Version ${updateStatus.version} is ready. Click to restart and install.`
     if (updateStatus.state === 'checking') return 'Checking for updates…'
     if (updateStatus.state === 'error') return `${updateStatus.message || 'Update check failed'} Click to retry.`
-    if (updateStatus.state === 'not-available') return `QA Snapshot Editor ${updateStatus.currentVersion || ''} is up to date. Click to check again.`
+    if (updateStatus.state === 'not-available') return `Parity ${updateStatus.currentVersion || ''} is up to date. Click to check again.`
     return 'Check for updates'
   })()
 
@@ -376,6 +378,11 @@ export default function App() {
       {/* Permanent Integrated Titlebar & Multi-Project Tab Bar */}
       <div className="app-top-tab-bar-wrap" onDoubleClick={handleDoubleClickHeader}>
         <div className="app-top-tab-bar" onDoubleClick={handleDoubleClickHeader}>
+          <div className="app-brand" aria-label="Parity">
+            <img className="parity-dark-icon" src={parityIcon} alt="" aria-hidden="true" />
+            <img className="parity-light-icon" src={parityLightIcon} alt="" aria-hidden="true" />
+            <span>parity</span>
+          </div>
           <div className="tab-list" onDoubleClick={handleDoubleClickHeader}>
             {tabs.map((t) => {
               const isActive = t.id === activeTabId

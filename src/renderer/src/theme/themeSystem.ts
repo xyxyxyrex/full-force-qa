@@ -12,7 +12,7 @@ export const DEFAULT_HOTKEYS: AppHotkeys = {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'dark',
+  theme: 'parity',
   snapshotDirectory: 'Default (App Storage Path)',
   autoPurgeTrashDays: 14,
   captureDpiScale: 1,
@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 export const THEME_LIST: Array<{ id: AppTheme; name: string; description: string; previewBg: string; previewAccent: string }> = [
+  { id: 'parity', name: 'Parity', description: 'The default Ink and Paper workspace with neutral Slate controls', previewBg: '#1c2321', previewAccent: '#8a918e' },
   { id: 'dark', name: 'Dark Sleek', description: 'Monotone obsidian dark theme with blue accents', previewBg: '#121214', previewAccent: '#3b82f6' },
   { id: 'light', name: 'Light Clean', description: 'Crisp high-contrast light theme for bright spaces', previewBg: '#f8fafc', previewAccent: '#2563eb' },
   { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', description: 'Warm pastel dark theme with mauve highlights', previewBg: '#1e1e2e', previewAccent: '#cba6f7' },

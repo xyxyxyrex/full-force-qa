@@ -403,7 +403,7 @@ export async function generateEphemeralLink(
       .upload(filePath, blob, { contentType: 'image/png', upsert: false })
     if (uploadError) return { success: false, error: errorMessage('Item image upload failed', uploadError) }
 
-    const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://qa-snapshots.pages.dev'
+    const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-rz8.pages.dev'
     const queryParams = new URLSearchParams({
       site,
       id: sessionMasterId,

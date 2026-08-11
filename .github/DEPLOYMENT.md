@@ -5,9 +5,9 @@ This repository deploys three connected surfaces:
 | Surface | Workflow | Trigger | Destination |
 | --- | --- | --- | --- |
 | Desktop and viewer CI | `ci.yml` | Pull requests, `main`, or manual | GitHub Actions only |
-| Snapshot viewer | `deploy-cloudflare.yml` | Relevant changes on `main`, or manual | Cloudflare Pages Direct Upload project `qa-snapshots` |
+| Parity viewer | `deploy-cloudflare.yml` | Relevant changes on `main`, or manual | Cloudflare Pages Direct Upload project `parity` |
 | Database and Edge Functions | `deploy-supabase.yml` | Changes under `supabase/` on `main`, or manual | Linked Supabase production project |
-| Windows desktop release | `release-desktop.yml` | A matching `v*` tag, or manual | GitHub Release with NSIS update files |
+| Windows desktop release | `release-desktop.yml` | A matching `v*.*.*` tag, or manual | GitHub Release with NSIS update files |
 
 All deployment jobs reference a GitHub environment named `production`. Configure that environment and its secrets before pushing these workflows.
 
@@ -18,7 +18,7 @@ In `xyxyxyrex/full-force-qa`:
 1. Open **Settings → Environments**.
 2. Select **New environment**.
 3. Enter `production` exactly, then select **Configure environment**.
-4. Under **Deployment branches and tags**, allow the `main` branch and release tags matching `v*`.
+4. Under **Deployment branches and tags**, allow the `main` branch and release tags matching `v*.*.*`.
 5. Recommended: add a required reviewer and prevent self-review. A job cannot read environment secrets until its protection rules pass.
 6. Under **Environment secrets**, add the credentials listed below. Do not put credential values in workflow YAML, `.env.example`, issues, logs, or commits.
 
@@ -28,10 +28,11 @@ Official references: [GitHub deployment environments](https://docs.github.com/en
 
 | GitHub environment secret | Exact value to store | Used by | Sensitivity |
 | --- | --- | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Custom Cloudflare token with `Account → Cloudflare Pages → Edit` for the account containing `qa-snapshots` | Cloudflare deployment | Secret |
+| `CLOUDFLARE_API_TOKEN` | Custom Cloudflare token with `Account → Cloudflare Pages → Edit` for the account containing `parity` | Cloudflare deployment | Secret |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID containing the Pages project | Cloudflare deployment | Identifier |
 | `VITE_SUPABASE_URL` | Project URL, normally `https://<project-ref>.supabase.co` | Cloudflare viewer and desktop release | Public configuration |
 | `VITE_SUPABASE_ANON_KEY` | Prefer the current `sb_publishable_…` key; the legacy anon JWT also works | Cloudflare viewer and desktop release | Public client key |
+| `VITE_EPHEMERAL_VIEWER_URL` | `https://parity-rz8.pages.dev` | Desktop release and workflow validation | Public configuration |
 | `SUPABASE_ACCESS_TOKEN` | Supabase personal access token beginning with `sbp_` | Supabase CLI deployment | Secret |
 | `SUPABASE_DB_PASSWORD` | Password for the production project's `postgres` role | Supabase migrations | Secret |
 | `SUPABASE_PROJECT_ID` | Project reference from the Supabase dashboard URL | Supabase deployment | Identifier |
@@ -53,7 +54,7 @@ GitHub automatically creates `GITHUB_TOKEN` for every job; do not create a secre
 
 ### Deployment model: Wrangler Direct Upload
 
-The existing `qa-snapshots` Pages project was created and initially deployed with Wrangler. It is a **Direct Upload** project, not a Pages project connected to a GitHub repository.
+The `parity` Pages project is created and deployed with Wrangler. It is a **Direct Upload** project, not a Pages project connected to a GitHub repository.
 
 The deployment flow is therefore:
 
@@ -62,7 +63,7 @@ GitHub Actions
   → npm run build:viewer
   → prebuilt dist-viewer directory
   → wrangler pages deploy
-  → existing qa-snapshots Direct Upload project
+  → parity Direct Upload project
 ```
 
 Important consequences:
@@ -70,14 +71,15 @@ Important consequences:
 - Do **not** select **Connect to Git** or install the Cloudflare Workers & Pages GitHub App for this project.
 - Do **not** configure a build command, repository, or production-branch automation inside the Cloudflare Pages dashboard. GitHub Actions performs the build; Wrangler only uploads the resulting `dist-viewer` directory.
 - The GitHub workflow is an external CI client of Cloudflare. Its API token replaces the interactive `wrangler login` session used for local deployments.
-- Continue deploying to the existing project name `qa-snapshots`. Creating another Pages project would produce a different deployment history and potentially a different `pages.dev` hostname.
+- Deploy production revisions to the project name `parity`, which owns `https://parity-rz8.pages.dev`. The shorter global hostname `parity.pages.dev` is already owned by an unrelated Pages project and cannot be assigned to this account.
+- Cloudflare does not support changing a `*.pages.dev` subdomain in place. The former `qa-snapshots` Direct Upload project remains online temporarily so previously issued expiring links continue to resolve; do not delete it until the longest issued link has expired.
 - Cloudflare states that a Direct Upload project cannot later be converted to Git integration. A separate Pages project would be required if that deployment model were ever desired.
 
 The repository already contains the required Pages configuration in `wrangler.jsonc`:
 
 ```jsonc
 {
-  "name": "qa-snapshots",
+  "name": "parity",
   "pages_build_output_dir": "./dist-viewer"
 }
 ```
@@ -85,7 +87,7 @@ The repository already contains the required Pages configuration in `wrangler.js
 The production workflow ultimately runs the equivalent of:
 
 ```powershell
-npx wrangler pages deploy dist-viewer --project-name=qa-snapshots --branch=main
+npx wrangler pages deploy dist-viewer --project-name=parity --branch=main
 ```
 
 See Cloudflare's [Direct Upload guide](https://developers.cloudflare.com/pages/get-started/direct-upload/) and [Direct Upload with CI guide](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/).
@@ -98,19 +100,19 @@ See Cloudflare's [Direct Upload guide](https://developers.cloudflare.com/pages/g
 4. Under **Custom Token**, select **Get started**.
 5. Give it a recognizable name such as `full-force-qa-pages-production`.
 6. Add permission **Account → Cloudflare Pages → Edit**.
-7. Restrict **Account Resources** to the account containing the `qa-snapshots` Pages project.
+7. Restrict **Account Resources** to the account containing the `parity` Pages project.
 8. Review and create the token, then copy it immediately into the GitHub environment secret `CLOUDFLARE_API_TOKEN`.
 
 Do not use the Global API Key. The narrowly scoped custom token is sufficient for Wrangler Pages Direct Upload from GitHub Actions.
 
 ### Account ID and Pages project
 
-The Account ID identifies the Cloudflare account that already owns the Wrangler-created `qa-snapshots` project. It is not created by, and does not require, a Cloudflare/GitHub repository connection.
+The Account ID identifies the Cloudflare account that owns the Wrangler-created `parity` project. It is not created by, and does not require, a Cloudflare/GitHub repository connection.
 
 To retrieve and verify it from the dashboard:
 
 1. Open **Workers & Pages** in the correct Cloudflare account.
-2. Confirm the existing Pages project is named `qa-snapshots` exactly.
+2. Confirm the production Pages project is named `parity` exactly.
 3. Copy **Account ID** from the Workers & Pages **Account details** area, or from the account home menu.
 4. Store it as `CLOUDFLARE_ACCOUNT_ID` in the GitHub `production` environment.
 
@@ -119,10 +121,10 @@ To verify the same account and project with the local Wrangler authentication th
 ```powershell
 npx wrangler whoami
 npx wrangler pages project list
-npx wrangler pages deployment list --project-name qa-snapshots --environment production
+npx wrangler pages deployment list --project-name parity --environment production
 ```
 
-`wrangler whoami` displays the authenticated account membership and Account ID. `pages project list` must include `qa-snapshots`. If multiple Cloudflare accounts are available, use the Account ID belonging to the row that contains that project.
+`wrangler whoami` displays the authenticated account membership and Account ID. `pages project list` must include `parity`. If multiple Cloudflare accounts are available, use the Account ID belonging to the row that contains that project.
 
 Do not use the Zone ID; Pages deployment requires the Account ID. See [Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
 
@@ -189,6 +191,7 @@ gh secret set CLOUDFLARE_API_TOKEN --env production --repo xyxyxyrex/full-force-
 gh secret set CLOUDFLARE_ACCOUNT_ID --env production --repo xyxyxyrex/full-force-qa
 gh secret set VITE_SUPABASE_URL --env production --repo xyxyxyrex/full-force-qa
 gh secret set VITE_SUPABASE_ANON_KEY --env production --repo xyxyxyrex/full-force-qa
+gh secret set VITE_EPHEMERAL_VIEWER_URL --env production --repo xyxyxyrex/full-force-qa
 gh secret set SUPABASE_ACCESS_TOKEN --env production --repo xyxyxyrex/full-force-qa
 gh secret set SUPABASE_DB_PASSWORD --env production --repo xyxyxyrex/full-force-qa
 gh secret set SUPABASE_PROJECT_ID --env production --repo xyxyxyrex/full-force-qa
@@ -217,7 +220,7 @@ Run the workflows from the repository's **Actions** tab in this order:
 2. **Deploy Supabase** with `dry_run: true` — inspect the pending migration plan without applying it.
 3. **Deploy Supabase** with `dry_run: false` — apply migrations and deploy any Edge Functions.
 4. **Deploy Cloudflare Pages** — build the viewer with the production Supabase client values and deploy `dist-viewer`.
-5. Open `https://qa-snapshots.pages.dev` and test a newly generated master link and item link, including status changes, comments, rich-text images, and expiry behavior.
+5. Open `https://parity-rz8.pages.dev` and test a newly generated master link and item link, including status changes, comments, rich-text images, and expiry behavior.
 
 The workflows stop early with a named `Missing …` error if required secrets are absent. Supabase deployments are serialized so two schema pushes cannot run concurrently; Cloudflare deployments cancel an older pending run when a newer viewer revision is ready.
 
@@ -251,7 +254,7 @@ If any credential is exposed in logs, chat, source control, or an issue, rotate 
 
 - `HTTP 404` while listing environment secrets: create the `production` environment first and confirm you have repository admin access.
 - Cloudflare authentication failure: confirm the token uses **Account → Cloudflare Pages → Edit**, the resource includes the correct account, and `CLOUDFLARE_ACCOUNT_ID` is not a Zone ID.
-- Cloudflare project-not-found error: run `npx wrangler pages project list` with the original/local Wrangler account, confirm the project name is exactly `qa-snapshots`, then make sure GitHub uses that account's ID. Do not resolve this by creating or connecting a second Git-integrated project.
+- Cloudflare project-not-found error: run `npx wrangler pages project list` with the original/local Wrangler account, confirm the project name is exactly `parity`, then make sure GitHub uses that account's ID. Do not resolve this by connecting a separate Git-integrated project.
 - Supabase link failure: confirm the PAT's user can access the project, `SUPABASE_PROJECT_ID` is only the project reference, and the database password is current.
 - Viewer loads but data does not: confirm `VITE_SUPABASE_URL` and the publishable key belong to the same project, then review Supabase RLS and Storage policies.
 - Desktop integration is unconfigured: confirm both `VITE_` secrets exist in `production` and rebuild the desktop release; changing a secret cannot alter an already published installer.
