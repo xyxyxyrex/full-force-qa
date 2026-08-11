@@ -396,15 +396,16 @@ describe('findingToAnnotationSpec', () => {
 
   it('carries the live rect straight through, unscaled', () => {
     const spec = findingToAnnotationSpec(makeFinding(), 'Desktop', 1440, 900)
+    expect(spec?.sourceFindingId).toBe('f1')
     expect(spec?.rect).toEqual({ x: 40, y: 120, width: 160, height: 44 })
     expect(spec?.viewportWidth).toBe(1440)
     expect(spec?.viewportHeight).toBe(900)
   })
 
-  it('maps severity to the existing annotation swatch colours', () => {
-    expect(findingToAnnotationSpec(makeFinding({ severity: 'high' }), 'Desktop', 1440, 900)?.color).toBe('#ff0055')
-    expect(findingToAnnotationSpec(makeFinding({ severity: 'medium' }), 'Desktop', 1440, 900)?.color).toBe('#f59e0b')
-    expect(findingToAnnotationSpec(makeFinding({ severity: 'low' }), 'Desktop', 1440, 900)?.color).toBe('#3b82f6')
+  it('leaves annotation colour to the active Parity theme', () => {
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'high' }), 'Desktop', 1440, 900)?.color).toBeUndefined()
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'medium' }), 'Desktop', 1440, 900)?.color).toBeUndefined()
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'low' }), 'Desktop', 1440, 900)?.color).toBeUndefined()
   })
 
   it('derives deviceType from the breakpoint label, case-insensitively', () => {

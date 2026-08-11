@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppUpdateStatus, AutomateRunSummary, CaptureResult, FigmaConnectionStatus, FindingTriageMap, FindingTriageState, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
+import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   login(adminUrl: string): Promise<void> {
@@ -90,18 +90,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   cancelVisualComparison(jobId: string): Promise<{ success: boolean }> {
     return ipcRenderer.invoke('automate:visual-cancel', jobId)
-  },
-  getFindingTriage(projectId: string): Promise<FindingTriageMap> {
-    return ipcRenderer.invoke('automate:triage-get', projectId)
-  },
-  setFindingTriage(projectId: string, findingId: string, state: FindingTriageState | null): Promise<{ success: boolean }> {
-    return ipcRenderer.invoke('automate:triage-set', projectId, findingId, state)
-  },
-  saveAutomateRun(projectId: string, run: AutomateRunSummary): Promise<{ success: boolean }> {
-    return ipcRenderer.invoke('automate:run-save', projectId, run)
-  },
-  getAutomateRuns(projectId: string, frameId: string): Promise<AutomateRunSummary[]> {
-    return ipcRenderer.invoke('automate:run-list', projectId, frameId)
   },
   toggleMaximizeWindow(): Promise<void> {
     return ipcRenderer.invoke('app:toggleMaximizeWindow')

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AutomateRunSummary, FindingTriageMap, FindingTriageState, PageSection } from '../../../shared/types'
+import type { AutomateRunSummary, FindingTriageState, PageSection, ProjectAutomateState } from '../../../shared/types'
 import { extractSemanticAnchors, findingToAnnotationSpec, semanticFindings, stableId, type AnnotationFromFindingSpec, type ComparedRegion, type DomNode, type Finding, type TokenAssertion } from '../utils/visualCompare'
 import './AutomateWorkspace.css'
 
@@ -15,6 +15,9 @@ interface Props {
   projectId: string
   onOpenSettings?: () => void
   onCreateAnnotation?: (spec: AnnotationFromFindingSpec) => string
+  automateState: ProjectAutomateState
+  onAutomateStateChange: (state: ProjectAutomateState) => void
+  pinnedFindingIds?: string[]
 }
 
 function loadImage(src: string) {
@@ -434,7 +437,7 @@ function TokenIconBadge({ token }: { token: TokenAssertion }) {
   )
 }
 
-export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId, onOpenSettings, onCreateAnnotation }: Props) {
+export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId, onOpenSettings, onCreateAnnotation, automateState, onAutomateStateChange, pinnedFindingIds: persistedPinnedFindingIds = [] }: Props) {
   const webviewRef = useRef<any>(null)
   const [expandedTokensMap, setExpandedTokensMap] = useState<Record<number, boolean>>({})
   const comparisonRunRef = useRef(0)
@@ -465,18 +468,20 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [rawDesignNode, setRawDesignNode] = useState<any>(null)
   const [rawDomNodes, setRawDomNodes] = useState<DomNode[] | null>(null)
   const [rawVisualData, setRawVisualData] = useState<any>(null)
-  const [triage, setTriage] = useState<FindingTriageMap>({})
+  const triage = automateState.triage
   const [showTriaged, setShowTriaged] = useState(false)
   const [styleNames, setStyleNames] = useState<Record<string, string>>({})
   const [breakpoint, setBreakpoint] = useState<'Desktop' | 'Tablet' | 'Mobile'>('Desktop')
-  const [runHistory, setRunHistory] = useState<AutomateRunSummary[]>([])
   const [lastCompletedRunId, setLastCompletedRunId] = useState(0)
-  // Session-only: once pinned, the annotation itself is the persistent record —
-  // no need for a second persistence layer the way triage state needs one.
-  const [pinnedFindingIds, setPinnedFindingIds] = useState<Set<string>>(new Set())
+  // The persisted annotation itself is the source of truth for pin state.
+  const pinnedFindingIds = useMemo(() => new Set(persistedPinnedFindingIds), [persistedPinnedFindingIds])
   // Starts empty on purpose — nothing is pinned until explicitly checked.
   const [selectedForAnnotation, setSelectedForAnnotation] = useState<Set<string>>(new Set())
   const selectedFrame = useMemo(() => frames.find((frame) => frame.id === frameId), [frameId, frames])
+  const runHistory = useMemo(
+    () => selectedFrame ? automateState.runsByFrame[selectedFrame.id] || [] : [],
+    [automateState.runsByFrame, selectedFrame]
+  )
 
   useEffect(() => {
     // This tab unmounts and remounts on every click (conditional render in
@@ -488,7 +493,6 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     void syncStatus()
     return window.electronAPI.onFigmaAuthChanged?.((result) => applyTokenConfigured(result.apiConfigured))
   }, [])
-  useEffect(() => { window.electronAPI.getFindingTriage(projectId).then(setTriage).catch(() => { }) }, [projectId])
 
   // A frame's own width is a reasonable guess at its breakpoint; the analyst can
   // override it when tagging runs for history, since guesses aren't always right.
@@ -497,19 +501,11 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     setBreakpoint(selectedFrame.width < 600 ? 'Mobile' : selectedFrame.width < 1024 ? 'Tablet' : 'Desktop')
   }, [selectedFrame])
 
-  useEffect(() => {
-    if (!selectedFrame) { setRunHistory([]); return }
-    window.electronAPI.getAutomateRuns(projectId, selectedFrame.id).then(setRunHistory).catch(() => { })
-  }, [projectId, selectedFrame])
-
   const applyTriage = (findingId: string, state: FindingTriageState | null) => {
-    setTriage((prev) => {
-      const next = { ...prev }
-      if (state) next[findingId] = { state, at: Date.now() }
-      else delete next[findingId]
-      return next
-    })
-    void window.electronAPI.setFindingTriage(projectId, findingId, state)
+    const next = { ...triage }
+    if (state) next[findingId] = { state, at: Date.now() }
+    else delete next[findingId]
+    onAutomateStateChange({ ...automateState, triage: next })
   }
   useEffect(() => { if (figmaUrl && !designUrl) setDesignUrl(figmaUrl) }, [designUrl, figmaUrl])
   useEffect(() => {
@@ -720,7 +716,6 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     const spec = findingToAnnotationSpec(finding, breakpoint, captureWidth, liveDocumentHeight ?? captureViewportHeight)
     if (!spec) return
     onCreateAnnotation(spec)
-    setPinnedFindingIds((current) => new Set(current).add(finding.id))
     setSelectedForAnnotation((current) => { if (!current.has(finding.id)) return current; const next = new Set(current); next.delete(finding.id); return next })
   }
 
@@ -752,7 +747,6 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
       onCreateAnnotation(spec)
       pinnedIds.push(finding.id)
     }
-    setPinnedFindingIds((current) => { const next = new Set(current); for (const id of pinnedIds) next.add(id); return next })
     setSelectedForAnnotation((current) => { const next = new Set(current); for (const id of pinnedIds) next.delete(id); return next })
   }
 
@@ -790,10 +784,14 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
       conformanceScore: dfs.score,
       findingsCount: findings.length
     }
-    window.electronAPI.saveAutomateRun(projectId, summary)
-      .then(() => window.electronAPI.getAutomateRuns(projectId, selectedFrame.id))
-      .then(setRunHistory)
-      .catch(() => { })
+    const frameRuns = [summary, ...(automateState.runsByFrame[selectedFrame.id] || [])]
+      .filter((run, index, all) => all.findIndex((candidate) => candidate.id === run.id) === index)
+      .sort((left, right) => right.at - left.at)
+      .slice(0, 30)
+    onAutomateStateChange({
+      ...automateState,
+      runsByFrame: { ...automateState.runsByFrame, [selectedFrame.id]: frameRuns }
+    })
     // Deliberately keyed only on lastCompletedRunId — see comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastCompletedRunId])

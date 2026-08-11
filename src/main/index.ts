@@ -39,9 +39,9 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('lang', 'en-US')
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
-import { getProjects, saveProject, deleteProject, getProjectOwner, setProjectOwner, getFindingTriage, setFindingTriage, getAutomateRuns, saveAutomateRun } from './store'
+import { getProjects, saveProject, deleteProject, getProjectOwner, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
-import type { Project, CaptureResult, FigmaConnectionStatus, FindingTriageState, AutomateRunSummary, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState } from '../shared/types'
+import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState } from '../shared/types'
 import {
   checkForAppUpdates,
   downloadAppUpdate,
@@ -979,20 +979,6 @@ function registerIpcHandlers(): void {
     if (child) { child.kill(); activeVisualWorkers.delete(jobId); return { success: true } }
     return { success: false }
   })
-
-  ipcMain.handle('automate:triage-get', (_event, projectId: string) => getFindingTriage(projectId))
-
-  ipcMain.handle('automate:triage-set', (_event, projectId: string, findingId: string, state: FindingTriageState | null) => {
-    setFindingTriage(projectId, findingId, state)
-    return { success: true }
-  })
-
-  ipcMain.handle('automate:run-save', (_event, projectId: string, run: AutomateRunSummary) => {
-    saveAutomateRun(projectId, run)
-    return { success: true }
-  })
-
-  ipcMain.handle('automate:run-list', (_event, projectId: string, frameId: string) => getAutomateRuns(projectId, frameId))
 
   ipcMain.handle('app:toggleMaximizeWindow', async (): Promise<void> => {
     if (mainWindow) {

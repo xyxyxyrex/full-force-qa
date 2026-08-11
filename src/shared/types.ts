@@ -6,6 +6,42 @@ export interface CaptureResult {
   isSessionExpired?: boolean
 }
 
+export interface ProjectAnnotation {
+  id: string
+  badgeNumber: number
+  title: string
+  notes: string
+  color: string
+  type?: 'box' | 'arrow' | 'rect' | 'circle' | 'pen' | 'text' | 'blur'
+  elementPath?: string
+  sourceFindingId?: string
+  arrowPct?: { startX: number; startY: number; endX: number; endY: number }
+  pointsPct?: Array<{ x: number; y: number }>
+  coordinateSpace?: 'page'
+  xPx?: number
+  yPagePx?: number
+  topPagePx?: number
+  widthPx?: number
+  heightPx?: number
+  viewportWidth?: number
+  viewportHeight?: number
+  viewportKey?: string
+  deviceFrameId?: string
+  deviceName?: string
+  deviceType?: 'desktop' | 'tablet' | 'mobile' | 'custom'
+  rectPct: { x: number; y: number; width: number; height: number }
+}
+
+export interface ProjectAutomateState {
+  triage: FindingTriageMap
+  runsByFrame: Record<string, AutomateRunSummary[]>
+}
+
+export interface ProjectWorkspaceData {
+  annotations: ProjectAnnotation[]
+  automate: ProjectAutomateState
+}
+
 export interface Project {
   id: string
   name: string
@@ -20,6 +56,7 @@ export interface Project {
   deletedAt?: number
   folderId?: string
   mondayTicketId?: string
+  workspaceData?: ProjectWorkspaceData
   updatedAt?: number
 }
 
@@ -267,10 +304,6 @@ export interface ElectronAPI {
   captureAutomatePage: (webContentsId: number, viewportWidth: number, viewportHeight: number) => Promise<{ success: boolean; dataUrl?: string; documentWidth?: number; documentHeight?: number; domNodes?: any[]; tiles?: number; mode?: string; error?: string; fallback?: boolean }>
   compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: Array<{ designY: number; liveY: number; confidence?: number }>, mode?: string) => Promise<{ success: boolean; engine?: string; detectionMode?: string; similarity?: number; changedPercent?: number; heatmapDataUrl?: string; regions?: Array<{ x: number; y: number; width: number; height: number; difference: number }>; anchors?: Array<{ designY: number; liveY: number; confidence: number }>; sections?: PageSection[]; error?: string; fallback?: boolean }>
   cancelVisualComparison: (jobId: string) => Promise<{ success: boolean }>
-  getFindingTriage: (projectId: string) => Promise<FindingTriageMap>
-  setFindingTriage: (projectId: string, findingId: string, state: FindingTriageState | null) => Promise<{ success: boolean }>
-  saveAutomateRun: (projectId: string, run: AutomateRunSummary) => Promise<{ success: boolean }>
-  getAutomateRuns: (projectId: string, frameId: string) => Promise<AutomateRunSummary[]>
   toggleMaximizeWindow: () => Promise<void>
   selectSnapshotDirectory: () => Promise<{ success: boolean; path?: string }>
   createSnapshot: (params: {

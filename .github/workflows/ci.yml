@@ -25,7 +25,28 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm test
       - run: npm run build
+
+  visual-worker-build:
+    name: OpenCV worker build (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r python/requirements.txt
+      - run: python -m compileall -q python
+      - run: python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py
+      - name: Verify packaged worker
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "resources/visual-worker/visual-compare.exe")) {
+            throw "The packaged OpenCV worker was not created."
+          }
 
   viewer-build:
     name: Viewer build

@@ -8,7 +8,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import type { FigmaConnectionStatus, Project, SnapshotItem } from "../../../shared/types";
+import type { FigmaConnectionStatus, Project, ProjectAutomateState, SnapshotItem } from "../../../shared/types";
 import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
@@ -178,6 +178,7 @@ interface Props {
   onNewCapture: () => void;
   onPersistHtml?: (html: string) => void;
   onThumbnailCaptured?: (dataUrl: string) => void;
+  onProjectUpdated?: (project: Project) => void | Promise<void>;
 }
 
 type DevicePreset = "Desktop" | "Tablet" | "Mobile";
@@ -638,6 +639,7 @@ export default function EditorWorkspace({
   onOpenSettings,
   onPersistHtml,
   onThumbnailCaptured,
+  onProjectUpdated,
 }: Props & { onOpenSettings?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -753,7 +755,17 @@ export default function EditorWorkspace({
   );
 
   // Live Annotations State & Event Handlers with Scroll Offset Tracking
-  const [liveAnnotations, setLiveAnnotations] = useState<CanvasSelectionBox[]>([]);
+  const [liveAnnotations, setLiveAnnotations] = useState<CanvasSelectionBox[]>(
+    () => project?.workspaceData?.annotations || [],
+  );
+  const [automateState, setAutomateState] = useState<ProjectAutomateState>(
+    () => project?.workspaceData?.automate || { triage: {}, runsByFrame: {} },
+  );
+  const liveAnnotationsRef = useRef(liveAnnotations);
+  const projectRef = useRef(project);
+  const lastPersistedWorkspaceRef = useRef(
+    JSON.stringify(project?.workspaceData || { annotations: [], automate: { triage: {}, runsByFrame: {} } }),
+  );
   const [selectedLiveAnnId, setSelectedLiveAnnId] = useState<string | null>(null);
   const [isDrawingLive, setIsDrawingLive] = useState(false);
   const [liveDrawStart, setLiveDrawStart] = useState<{ x: number; y: number } | null>(null);
@@ -770,6 +782,32 @@ export default function EditorWorkspace({
   } | null>(null);
   const annotationLayerRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    liveAnnotationsRef.current = liveAnnotations;
+  }, [liveAnnotations]);
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
+
+  useEffect(() => {
+    const activeProject = projectRef.current;
+    if (!activeProject || !onProjectUpdated) return;
+    const annotations = liveAnnotations.map(({ ephemeralUrl: _ephemeralUrl, ...annotation }) => annotation);
+    const workspaceData = { annotations, automate: automateState };
+    const signature = JSON.stringify(workspaceData);
+    if (signature === lastPersistedWorkspaceRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      lastPersistedWorkspaceRef.current = signature;
+      const updatedProject: Project = { ...projectRef.current!, workspaceData, updatedAt: Date.now() };
+      Promise.resolve(onProjectUpdated(updatedProject)).catch(() => {
+        if (lastPersistedWorkspaceRef.current === signature) lastPersistedWorkspaceRef.current = "";
+      });
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [automateState, liveAnnotations, onProjectUpdated]);
 
   const activeAnnotationViewport = useMemo<CaptureViewportInfo>(() => {
     const width = Math.round(
@@ -1091,47 +1129,55 @@ export default function EditorWorkspace({
   // Pins an Automate finding as an annotation. Stays on whatever tab the caller
   // is on (Automate) rather than jumping to Live/Annotate — a bulk pin loops this
   // several times in a row and switching tabs on every call would be disruptive.
-  // Badge numbering is read from `current` inside the updater, not from the
-  // `liveAnnotations` closure, so a synchronous bulk-pin loop still gets correct
-  // sequential badge numbers despite React batching the state updates.
+  // The ref is updated synchronously so bulk pinning cannot create duplicates or
+  // reuse badge numbers while React batches the corresponding state update.
   const handleCreateAnnotationFromFinding = (spec: AnnotationFromFindingSpec): string => {
+    const width = Math.round(spec.viewportWidth);
+    const height = Math.round(spec.viewportHeight);
+    const key = viewportKey(width, height);
+    const existing = liveAnnotationsRef.current.find(
+      (annotation) =>
+        annotation.sourceFindingId === spec.sourceFindingId &&
+        annotationViewportKey(annotation) === key,
+    );
+    if (existing) return existing.id;
+
     const id = `automate_ann_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    setLiveAnnotations((current) => {
-      const width = Math.round(spec.viewportWidth);
-      const height = Math.round(spec.viewportHeight);
-      const key = viewportKey(width, height);
-      const badgeNumber =
-        current.filter((annotation) => annotationViewportKey(annotation) === key).length + 1;
-      const matchingFrame = activeFrames.find(
-        (frame) => frame.width === width && frame.height === height,
-      );
-      const annotation: CanvasSelectionBox = {
-        id,
-        badgeNumber,
-        type: "box",
-        title: spec.title,
-        notes: spec.notes,
-        color: spec.color,
-        coordinateSpace: "page",
-        xPx: Math.max(0, spec.rect.x),
-        yPagePx: Math.max(0, spec.rect.y),
-        widthPx: Math.max(1, spec.rect.width),
-        heightPx: Math.max(1, spec.rect.height),
-        viewportWidth: width,
-        viewportHeight: height,
-        viewportKey: key,
-        deviceFrameId: matchingFrame?.id,
-        deviceName: matchingFrame?.name || spec.deviceName,
-        deviceType: matchingFrame?.deviceType || spec.deviceType,
-        rectPct: {
-          x: (Math.max(0, spec.rect.x) / width) * 100,
-          y: (Math.max(0, spec.rect.y) / height) * 100,
-          width: (Math.max(1, spec.rect.width) / width) * 100,
-          height: (Math.max(1, spec.rect.height) / height) * 100,
-        },
-      };
-      return [...current, annotation];
-    });
+    const current = liveAnnotationsRef.current;
+    const badgeNumber =
+      current.filter((annotation) => annotationViewportKey(annotation) === key).length + 1;
+    const matchingFrame = activeFrames.find(
+      (frame) => frame.width === width && frame.height === height,
+    );
+    const annotation: CanvasSelectionBox = {
+      id,
+      badgeNumber,
+      type: "box",
+      sourceFindingId: spec.sourceFindingId,
+      title: spec.title,
+      notes: spec.notes,
+      color: spec.color || themeAccentColor,
+      coordinateSpace: "page",
+      xPx: Math.max(0, spec.rect.x),
+      yPagePx: Math.max(0, spec.rect.y),
+      widthPx: Math.max(1, spec.rect.width),
+      heightPx: Math.max(1, spec.rect.height),
+      viewportWidth: width,
+      viewportHeight: height,
+      viewportKey: key,
+      deviceFrameId: matchingFrame?.id,
+      deviceName: matchingFrame?.name || spec.deviceName,
+      deviceType: matchingFrame?.deviceType || spec.deviceType,
+      rectPct: {
+        x: (Math.max(0, spec.rect.x) / width) * 100,
+        y: (Math.max(0, spec.rect.y) / height) * 100,
+        width: (Math.max(1, spec.rect.width) / width) * 100,
+        height: (Math.max(1, spec.rect.height) / height) * 100,
+      },
+    };
+    const next = [...current, annotation];
+    liveAnnotationsRef.current = next;
+    setLiveAnnotations(next);
     return id;
   };
 
@@ -8189,6 +8235,11 @@ export default function EditorWorkspace({
                 projectId={activeProjectId}
                 onOpenSettings={onOpenSettings}
                 onCreateAnnotation={handleCreateAnnotationFromFinding}
+                automateState={automateState}
+                onAutomateStateChange={setAutomateState}
+                pinnedFindingIds={liveAnnotations
+                  .map((annotation) => annotation.sourceFindingId)
+                  .filter((id): id is string => !!id)}
               />
             )}
             {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar, Create Snapshot) */}

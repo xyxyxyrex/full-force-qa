@@ -768,20 +768,15 @@ export function extractSemanticAnchors(figmaRoot: any, domNodes: DomNode[], live
 // pipeline for free — nothing here talks to Supabase or the viewer directly.
 
 export interface AnnotationFromFindingSpec {
+  sourceFindingId: string
   title: string
   notes: string
-  color: string
+  color?: string
   rect: { x: number; y: number; width: number; height: number }
   viewportWidth: number
   viewportHeight: number
   deviceType: 'desktop' | 'tablet' | 'mobile'
   deviceName: string
-}
-
-const SEVERITY_ANNOTATION_COLOR: Record<'high' | 'medium' | 'low', string> = {
-  high: '#ff0055',
-  medium: '#f59e0b',
-  low: '#3b82f6'
 }
 
 function escapeHtml(value: string): string {
@@ -819,9 +814,9 @@ export function findingToAnnotationSpec(
   }
 
   return {
+    sourceFindingId: finding.id,
     title: finding.title,
     notes: notesParts.join(''),
-    color: SEVERITY_ANNOTATION_COLOR[finding.severity],
     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     viewportWidth,
     viewportHeight,

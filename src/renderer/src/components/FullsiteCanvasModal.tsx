@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import type { ProjectAnnotation } from '../../../shared/types'
 import {
   generateEphemeralLink,
   normalizeSiteSlug,
@@ -9,36 +10,7 @@ import {
 import { RichTextContent, RichTextEditor, plainTextFromRichText } from './RichTextEditor'
 import './FullsiteCanvasModal.css'
 
-export interface CanvasSelectionBox {
-  id: string
-  badgeNumber: number
-  title: string
-  notes: string
-  color: string
-  type?: 'box' | 'arrow' | 'rect' | 'circle' | 'pen' | 'text' | 'blur'
-  elementPath?: string
-  arrowPct?: { startX: number; startY: number; endX: number; endY: number }
-  pointsPct?: Array<{ x: number; y: number }>
-  coordinateSpace?: 'page'
-  // Absolute document pixel coordinates
-  xPx?: number
-  yPagePx?: number
-  topPagePx?: number
-  widthPx?: number
-  heightPx?: number
-  viewportWidth?: number
-  viewportHeight?: number
-  viewportKey?: string
-  deviceFrameId?: string
-  deviceName?: string
-  deviceType?: 'desktop' | 'tablet' | 'mobile' | 'custom'
-  // Rect in normalized percentages (0.0 to 100.0) relative to image width/height
-  rectPct: {
-    x: number
-    y: number
-    width: number
-    height: number
-  }
+export interface CanvasSelectionBox extends ProjectAnnotation {
   ephemeralUrl?: string
 }
 
