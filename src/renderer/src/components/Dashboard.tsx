@@ -175,6 +175,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   useEffect(() => {
     localStorage.setItem('qa_project_folders', JSON.stringify(folders))
     window.dispatchEvent(new CustomEvent('qa_folders_updated', { detail: folders }))
+    window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { folders } }))
   }, [folders])
 
   const reloadProjects = useCallback(() => { void window.electronAPI.getProjects().then(setProjects) }, [])
@@ -219,7 +220,10 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       if (!status.connected) {
         const legacyToken = localStorage.getItem('monday_api_token') || localStorage.getItem('monday_token') || localStorage.getItem('monday_api_key')
         if (legacyToken) {
-          const migrated = await window.electronAPI.mondaySetPersonalToken(legacyToken)
+          const migrated = await window.electronAPI.mondaySetPersonalToken(
+            legacyToken,
+            supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey },
+          )
           for (const key of ['monday_api_token', 'monday_token', 'monday_api_key']) localStorage.removeItem(key)
           if (migrated.success && migrated.status) status = migrated.status
         }
@@ -248,6 +252,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         ? prev.filter((id) => id !== ticketId)
         : [...prev, ticketId]
       localStorage.setItem('active_monday_ticket_ids', JSON.stringify(next))
+      window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { activeTicketIds: next } }))
       queueMicrotask(() => window.dispatchEvent(new CustomEvent('qa_active_ticket_ids_updated', { detail: next })))
       return next
     })
@@ -401,6 +406,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       if (res.success && res.status?.connected) {
         setMondayConnected(true)
         setMondayAccountName(res.status.user?.name || '')
+        window.dispatchEvent(new Event('parity:monday-connected'))
         await openMondaySources(true)
       } else if (res.error) setMondayError(res.error)
     } catch (e) {
@@ -420,10 +426,14 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     setMondaySyncing(true)
     setManualTokenError('')
     try {
-      const result = await window.electronAPI.mondaySetPersonalToken(trimmed)
+      const result = await window.electronAPI.mondaySetPersonalToken(
+        trimmed,
+        supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey },
+      )
       if (!result.success || !result.status?.connected) throw new Error(result.error || 'Monday rejected this token.')
       setMondayConnected(true)
       setMondayAccountName(result.status.user?.name || '')
+      window.dispatchEvent(new Event('parity:monday-connected'))
       setShowTokenFallbackModal(false)
       setManualTokenInput('')
       await openMondaySources(true)
@@ -441,6 +451,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     setMondayConnected(false)
     setMondayAccountName('')
     setMondayTickets([])
+    window.dispatchEvent(new Event('parity:monday-disconnected'))
   }
 
   const handleLaunchTicket = (ticket: MondayTicket) => {
@@ -721,6 +732,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       const isPinned = prev.includes(projectId)
       const updated = isPinned ? prev.filter((id) => id !== projectId) : [...prev, projectId]
       localStorage.setItem('pinned_project_ids', JSON.stringify(updated))
+      window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { pinnedProjectIds: updated } }))
       return updated
     })
   }

@@ -23,3 +23,6 @@ allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
 
 [functions.monday-oauth]
 verify_jwt = false
+
+[functions.parity-account]
+verify_jwt = false

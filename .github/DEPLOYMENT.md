@@ -37,7 +37,7 @@ Official references: [GitHub deployment environments](https://docs.github.com/en
 | `SUPABASE_DB_PASSWORD` | Password for the production project's `postgres` role | Supabase migrations | Secret |
 | `SUPABASE_PROJECT_ID` | Project reference from the Supabase dashboard URL | Supabase deployment | Identifier |
 | `MONDAY_CLIENT_ID` | Client ID from the Parity app in Monday Developer Center | Supabase `monday-oauth` function | Public identifier |
-| `MONDAY_CLIENT_SECRET` | Client secret from the same Monday app | Supabase `monday-oauth` function only | Secret |
+| `MONDAY_CLIENT_SECRET` | Client secret from the same Monday app | Supabase `monday-oauth` and private `parity-account` session signing | Secret |
 
 The name `VITE_SUPABASE_ANON_KEY` is retained for compatibility with the application, but its value should preferably be Supabase's newer publishable key. Never place an `sb_secret_…` or legacy `service_role` key in either `VITE_` value: Vite embeds these values into public viewer and desktop artifacts. Supabase requires Row Level Security to protect data accessed with publishable/anon credentials.
 
@@ -63,6 +63,14 @@ Create or update the Parity integration in Monday's Developer Center before depl
 5. Push the `supabase/` or Supabase workflow changes. The workflow sets the Edge Function secrets before deploying the function; the client secret is never bundled into Electron.
 
 The OAuth function exchanges and refreshes tokens at Monday's server-side OAuth 2.1 endpoint. Electron stores the returned access/refresh pair using the operating-system credential service. A personal API token can still be entered from the Dashboard as an advanced fallback; it receives the same encrypted local storage treatment.
+
+### Monday-backed Parity accounts
+
+Monday is the identity authority for Parity account data; it is not configured as a native Supabase Auth provider. After Monday authorization, Electron sends the access token only to the `parity-account` Edge Function. That function verifies the token with Monday's `me` query, issues a short-lived Parity data session, and performs owner-scoped database operations with the service role. Monday tokens, the Supabase service-role key, and the Parity data session are never exposed to the renderer.
+
+The `parity_accounts`, `parity_user_state`, `parity_projects`, and `parity_notes` tables have RLS enabled and grant no direct access to `anon` or `authenticated`. Every row is keyed by the verified Monday user ID. Settings, folders, project metadata, and rich-text note documents synchronize through the Edge Function. Project capture thumbnails and note attachment bytes remain in Electron's local `userData` directory; only attachment metadata and local URIs are stored in Supabase.
+
+Existing users may need to reconnect Monday once after upgrading if their encrypted credential predates the stored Supabase public configuration. Switching Monday users creates a separate local project store and loads only that user's Supabase records.
 
 The app pins Monday GraphQL calls to API version `2026-07`. Board and user selectors include only resources visible to the authorizing Monday user. Sync uses `items_page` cursor pagination and therefore supports boards larger than one page, while still remaining subject to the account's Monday API complexity, daily, minute, and concurrency limits.
 

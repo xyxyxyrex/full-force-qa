@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, Project } from '../shared/types'
+import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   login(adminUrl: string): Promise<void> {
@@ -11,14 +11,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mondayStatus() {
     return ipcRenderer.invoke('monday:status')
   },
-  mondaySetPersonalToken(token: string) {
-    return ipcRenderer.invoke('monday:set-personal-token', token)
+  mondaySetPersonalToken(token: string, config?: MondayPublicConfig) {
+    return ipcRenderer.invoke('monday:set-personal-token', token, config)
   },
   mondayDisconnect(config?: MondayPublicConfig) {
     return ipcRenderer.invoke('monday:disconnect', config)
   },
   mondayGraphQL(query: string, variables?: Record<string, unknown>) {
     return ipcRenderer.invoke('monday:graphql', query, variables)
+  },
+  accountBootstrap() {
+    return ipcRenderer.invoke('account:bootstrap')
+  },
+  accountSaveState(data: Partial<ParityAccountState>) {
+    return ipcRenderer.invoke('account:save-state', data)
+  },
+  accountSaveNote(note: NoteDocument) {
+    return ipcRenderer.invoke('account:save-note', note)
+  },
+  accountDeleteNote(noteId: string) {
+    return ipcRenderer.invoke('account:delete-note', noteId)
+  },
+  saveNoteAttachment(input: { dataUrl: string; name: string }) {
+    return ipcRenderer.invoke('notes:save-attachment', input)
+  },
+  deleteNoteAttachments(attachmentIds: string[]) {
+    return ipcRenderer.invoke('notes:delete-attachments', attachmentIds)
+  },
+  openNoteAttachment(uri: string) {
+    return ipcRenderer.invoke('notes:open-attachment', uri)
   },
   capture(url: string): Promise<CaptureResult> {
     return ipcRenderer.invoke('capture:start', url)

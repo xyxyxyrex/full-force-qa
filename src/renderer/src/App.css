@@ -22,6 +22,20 @@ body {
   color: var(--text-primary);
 }
 
+.app-workspace-host { flex:1; position:relative; overflow:hidden; height:calc(100vh - 38px); }
+.app-activity-hotzone { position:fixed; left:0; top:38px; bottom:0; width:7px; z-index:9998; }
+.app-activity-bar { position:fixed; left:0; top:38px; bottom:0; z-index:9999; width:50px; display:flex; flex-direction:column; padding:6px 4px; border-right:1px solid var(--border-color); background:color-mix(in srgb,var(--header-bg) 96%,transparent); box-shadow:5px 0 18px #0004; transform:translateX(-105%); opacity:0; transition:transform .16s ease,opacity .16s ease; -webkit-app-region:no-drag; }
+.app-activity-bar.visible { transform:translateX(0); opacity:1; }
+.app-activity-bar button { position:relative; width:41px; height:41px; display:grid; place-items:center; flex:none; border:0; border-left:2px solid transparent; border-radius:5px; background:transparent; color:var(--text-muted); cursor:pointer; }
+.app-activity-bar button:hover { background:var(--bg-hover); color:var(--text-primary); }
+.app-activity-bar button.active { border-left-color:var(--accent-color); background:var(--accent-light); color:var(--text-primary); }
+.app-activity-bar button.pinned { color:var(--accent-color); }
+.app-activity-bar button svg { width:23px; height:23px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.app-activity-bar button span { position:absolute; left:48px; top:50%; z-index:2; transform:translateY(-50%); opacity:0; pointer-events:none; white-space:nowrap; padding:5px 8px; border:1px solid var(--border-color); border-radius:5px; background:var(--bg-elevated); color:var(--text-primary); box-shadow:0 6px 18px #0008; font-size:10px; transition:opacity .1s ease; }
+.app-activity-bar button:hover span { opacity:1; }
+.app-activity-spacer { flex:1; }
+@media(prefers-reduced-motion:reduce){.app-activity-bar{transition:none}}
+
 /* Custom Window Titlebar Drag Regions */
 .dashboard-header,
 .workspace-top-bar,

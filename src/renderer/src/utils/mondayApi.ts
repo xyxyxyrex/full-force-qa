@@ -66,6 +66,7 @@ export function loadMondayPreferences(): MondaySyncPreferences | null {
 
 export function saveMondayPreferences(preferences: MondaySyncPreferences): void {
   localStorage.setItem(MONDAY_PREFERENCES_KEY, JSON.stringify(preferences))
+  window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { mondayPreferences: preferences } }))
 }
 
 async function mondayRequest(query: string, variables?: Record<string, unknown>): Promise<any> {

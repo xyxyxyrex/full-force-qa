@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog, safeStorage, webContents as electronWebContents } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog, safeStorage, protocol, webContents as electronWebContents } from 'electron'
 import { join } from 'path'
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -31,13 +31,17 @@ function configureParityIdentity(): void {
 
 configureParityIdentity()
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'parity-note', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
+])
+
 // Force Chromium engine to use English locale
 app.commandLine.appendSwitch('lang', 'en-US')
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
-import { getProjects, saveProject, deleteProject } from './store'
+import { getProjects, saveProject, deleteProject, getProjectOwner, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
-import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig } from '../shared/types'
+import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState } from '../shared/types'
 import {
   checkForAppUpdates,
   downloadAppUpdate,
@@ -48,6 +52,7 @@ import {
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
 import nspell from 'nspell'
+import { deleteLocalNoteAttachments, loadLocalNoteAttachment, openLocalNoteAttachment, saveLocalNoteAttachment } from './noteAttachments'
 
 function figmaTokenPath() {
   return join(app.getPath('userData'), 'figma-api-token.bin')
@@ -130,6 +135,14 @@ interface StoredMondayCredentials {
   oauthConfig?: MondayPublicConfig
 }
 
+interface ParityAccountSession {
+  token: string
+  expiresAt: number
+  user: { ownerKey: string; mondayUserId: string; name: string; email?: string }
+}
+
+let parityAccountSession: ParityAccountSession | null = null
+
 function mondayCredentialsPath() {
   return join(app.getPath('userData'), 'monday-credentials.bin')
 }
@@ -145,6 +158,7 @@ function readMondayCredentials(): StoredMondayCredentials | null {
 function writeMondayCredentials(credentials: StoredMondayCredentials | null): void {
   const file = mondayCredentialsPath()
   if (!credentials) {
+    parityAccountSession = null
     if (existsSync(file)) unlinkSync(file)
     return
   }
@@ -194,6 +208,152 @@ async function refreshMondayCredentials(credentials: StoredMondayCredentials): P
   }
   writeMondayCredentials(next)
   return next
+}
+
+function mondayCloudConfig(credentials: StoredMondayCredentials): MondayPublicConfig {
+  if (!credentials.oauthConfig) throw new Error('Reconnect Monday.com to enable private Supabase workspace sync.')
+  assertMondayProxyConfig(credentials.oauthConfig)
+  return credentials.oauthConfig
+}
+
+async function currentMondayCredentials(): Promise<StoredMondayCredentials> {
+  let credentials = readMondayCredentials()
+  if (!credentials?.accessToken) throw new Error('Connect Monday.com to use private cloud data.')
+  if (credentials.authType === 'oauth' && credentials.expiresAt && credentials.expiresAt - Date.now() < 5 * 60 * 1000) {
+    credentials = await refreshMondayCredentials(credentials)
+  }
+  return credentials
+}
+
+async function parityAccountRequest(action: string, payload: Record<string, unknown> = {}, retry = true): Promise<any> {
+  const credentials = await currentMondayCredentials()
+  const config = mondayCloudConfig(credentials)
+  const endpoint = `${config.supabaseUrl.replace(/\/$/, '')}/functions/v1/parity-account`
+
+  if (!parityAccountSession || parityAccountSession.expiresAt - Date.now() < 60_000) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: config.supabaseAnonKey,
+        Authorization: `Bearer ${credentials.accessToken}`
+      },
+      body: JSON.stringify({ action: 'session' })
+    })
+    const result = await response.json().catch(() => ({})) as any
+    if (!response.ok || !result.session_token) throw new Error(result.error || `Parity account login returned ${response.status}.`)
+    parityAccountSession = {
+      token: result.session_token,
+      expiresAt: Number(result.expires_at || 0),
+      user: result.user
+    }
+    setProjectOwner(parityAccountSession.user.ownerKey)
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: config.supabaseAnonKey,
+      Authorization: `Bearer ${parityAccountSession.token}`
+    },
+    body: JSON.stringify({ action, ...payload })
+  })
+  const result = await response.json().catch(() => ({})) as any
+  if (response.status === 401 && retry) {
+    parityAccountSession = null
+    return parityAccountRequest(action, payload, false)
+  }
+  if (!response.ok) throw new Error(result.error || `Parity account service returned ${response.status}.`)
+  return result
+}
+
+function cloudProject(project: Project): Project {
+  const next: Project = {
+    ...project,
+    updatedAt: project.updatedAt || project.lastOpenedAt || project.createdAt || Date.now()
+  }
+  if (next.thumbnailUrl?.startsWith('data:')) delete next.thumbnailUrl
+  return next
+}
+
+function pendingProjectDeletesPath(ownerKey: string): string {
+  const ownerHash = createHash('sha256').update(ownerKey).digest('hex').slice(0, 24)
+  return join(app.getPath('userData'), `pending-project-deletes-${ownerHash}.json`)
+}
+
+function readPendingProjectDeletes(ownerKey: string): string[] {
+  try {
+    const file = pendingProjectDeletesPath(ownerKey)
+    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : []
+  } catch { return [] }
+}
+
+function writePendingProjectDeletes(ownerKey: string, ids: string[]): void {
+  writeFileSync(pendingProjectDeletesPath(ownerKey), JSON.stringify([...new Set(ids)]), 'utf8')
+}
+
+async function flushPendingProjectDeletes(ownerKey: string): Promise<void> {
+  const pending = readPendingProjectDeletes(ownerKey)
+  if (!pending.length) return
+  const remaining: string[] = []
+  for (const projectId of pending) {
+    try {
+      await parityAccountRequest('delete_project', { projectId })
+    } catch {
+      remaining.push(projectId)
+    }
+  }
+  writePendingProjectDeletes(ownerKey, remaining)
+}
+
+async function bootstrapParityAccount(): Promise<ParityAccountBootstrap> {
+  try {
+    const result = await parityAccountRequest('bootstrap')
+    await flushPendingProjectDeletes(result.user.ownerKey)
+    const localProjects = getProjects()
+    const localById = new Map(localProjects.map((project) => [project.id, project]))
+    const remoteProjects = (Array.isArray(result.projects) ? result.projects : []) as Array<Project & { cloudUpdatedAt?: string }>
+
+    for (const remote of remoteProjects) {
+      const local = localById.get(remote.id)
+      const remoteVersion = remote.updatedAt || Date.parse(remote.cloudUpdatedAt || '') || 0
+      const localVersion = local?.updatedAt || local?.lastOpenedAt || local?.createdAt || 0
+      if (!local || remoteVersion > localVersion) {
+        const { cloudUpdatedAt: _cloudUpdatedAt, ...remoteProject } = remote
+        const merged = {
+          ...remoteProject,
+          thumbnailUrl: local?.thumbnailUrl || remoteProject.thumbnailUrl,
+          updatedAt: remoteVersion
+        }
+        saveProject(merged)
+        localById.set(remote.id, merged)
+      }
+    }
+
+    const remoteById = new Map(remoteProjects.map((project) => [project.id, project]))
+    const uploads = getProjects().filter((project) => {
+      const remote = remoteById.get(project.id)
+      if (!remote) return true
+      return (project.updatedAt || project.lastOpenedAt || 0) > (remote.updatedAt || Date.parse(remote.cloudUpdatedAt || '') || 0)
+    })
+    await Promise.allSettled(
+      uploads.map((project) => parityAccountRequest('save_project', { project: cloudProject(project) }))
+    )
+
+    return {
+      connected: true,
+      user: result.user,
+      state: result.state,
+      projects: getProjects(),
+      notes: Array.isArray(result.notes) ? result.notes : []
+    }
+  } catch (error) {
+    return {
+      connected: false,
+      error: error instanceof Error ? error.message : 'Unable to load private account data.'
+    }
+  }
 }
 
 async function mondayGraphQL(query: string, variables?: Record<string, unknown>, authRetry = true, rateRetry = 1): Promise<any> {
@@ -915,11 +1075,11 @@ function registerIpcHandlers(): void {
   // ── Monday.com OAuth: System default browser + localhost callback + PKCE ───────
   ipcMain.handle('monday:status', () => getMondayConnectionStatus())
 
-  ipcMain.handle('monday:set-personal-token', async (_event, token: string) => {
+  ipcMain.handle('monday:set-personal-token', async (_event, token: string, config?: MondayPublicConfig) => {
     try {
       const trimmed = token.trim()
       if (!trimmed) throw new Error('Enter a Monday personal API token.')
-      writeMondayCredentials({ accessToken: trimmed, authType: 'personal' })
+      writeMondayCredentials({ accessToken: trimmed, authType: 'personal', oauthConfig: config })
       const status = await getMondayConnectionStatus()
       if (!status.connected) {
         writeMondayCredentials(null)
@@ -1005,6 +1165,7 @@ function registerIpcHandlers(): void {
           })
 
           if (tokenData.access_token) {
+            parityAccountSession = null
             writeMondayCredentials({
               accessToken: tokenData.access_token,
               refreshToken: tokenData.refresh_token,
@@ -1115,10 +1276,82 @@ function registerIpcHandlers(): void {
     }
   })
 
-  // Projects: CRUD
+  // Monday-authenticated private account data. The renderer never receives a
+  // Monday access token or Supabase service credential.
+  ipcMain.handle('account:bootstrap', () => bootstrapParityAccount())
+  ipcMain.handle('account:save-state', async (_event, data: Partial<ParityAccountState>) => {
+    try {
+      const result = await parityAccountRequest('save_state', { data })
+      return { success: true, updatedAt: result.updatedAt }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unable to save account settings.' }
+    }
+  })
+  ipcMain.handle('account:save-note', async (_event, note: NoteDocument) => {
+    try {
+      const result = await parityAccountRequest('save_note', { note })
+      return { success: true, updatedAt: result.updatedAt }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unable to save note.' }
+    }
+  })
+  ipcMain.handle('account:delete-note', async (_event, noteId: string) => {
+    try {
+      await parityAccountRequest('delete_note', { noteId })
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unable to delete note.' }
+    }
+  })
+  ipcMain.handle('notes:save-attachment', async (_event, input: { dataUrl: string; name: string }) => {
+    try {
+      if (!parityAccountSession) await parityAccountRequest('bootstrap')
+      if (!parityAccountSession?.user.ownerKey) throw new Error('Connect Monday.com before attaching files.')
+      return { success: true, attachment: await saveLocalNoteAttachment(parityAccountSession.user.ownerKey, input) }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unable to save attachment.' }
+    }
+  })
+  ipcMain.handle('notes:delete-attachments', async (_event, attachmentIds: string[]) => {
+    try {
+      if (!parityAccountSession) await parityAccountRequest('bootstrap')
+      if (!parityAccountSession?.user.ownerKey) throw new Error('Connect Monday.com before deleting attachments.')
+      deleteLocalNoteAttachments(parityAccountSession.user.ownerKey, attachmentIds)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unable to delete attachments.' }
+    }
+  })
+  ipcMain.handle('notes:open-attachment', async (_event, uri: string) => {
+    try {
+      await openLocalNoteAttachment(uri)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unable to open attachment.' }
+    }
+  })
+
+  // Projects remain available offline and synchronize opportunistically when
+  // a Monday-authenticated cloud account is available.
   ipcMain.handle('projects:list', () => getProjects())
-  ipcMain.handle('projects:save', (_event, project: Project) => saveProject(project))
-  ipcMain.handle('projects:delete', (_event, id: string) => deleteProject(id))
+  ipcMain.handle('projects:save', async (_event, project: Project) => {
+    const next = { ...project, updatedAt: Date.now() }
+    saveProject(next)
+    try { await parityAccountRequest('save_project', { project: cloudProject(next) }) }
+    catch (error) { console.warn('[Parity Account] Project queued for the next sync:', error) }
+  })
+  ipcMain.handle('projects:delete', async (_event, id: string) => {
+    deleteProject(id)
+    const ownerKey = getProjectOwner()
+    if (!ownerKey) return
+    writePendingProjectDeletes(ownerKey, [...readPendingProjectDeletes(ownerKey), id])
+    try {
+      await parityAccountRequest('delete_project', { projectId: id })
+      writePendingProjectDeletes(ownerKey, readPendingProjectDeletes(ownerKey).filter((projectId) => projectId !== id))
+    } catch (error) {
+      console.warn('[Parity Account] Project deletion queued for the next sync:', error)
+    }
+  })
 
   // Snapshots: CRUD
   ipcMain.handle('snapshot:create', (_event, params) => createSnapshot(params))
@@ -1140,6 +1373,22 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  protocol.handle('parity-note', async (request) => {
+    const attachment = loadLocalNoteAttachment(request.url)
+    if (!attachment) return new Response('Attachment not found on this device.', { status: 404 })
+    const body = attachment.bytes.buffer.slice(
+      attachment.bytes.byteOffset,
+      attachment.bytes.byteOffset + attachment.bytes.byteLength,
+    ) as ArrayBuffer
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': attachment.mimeType,
+        'Cache-Control': 'private, max-age=31536000, immutable',
+        'Content-Security-Policy': "default-src 'none'"
+      }
+    })
+  })
   registerIpcHandlers()
   createWindow()
   initializeAppUpdater(() => mainWindow)

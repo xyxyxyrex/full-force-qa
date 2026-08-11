@@ -96,6 +96,48 @@ const defaultQaSheetData: Sheet[] = [
 const cloneQaSheetData = (data: Sheet[] = defaultQaSheetData): Sheet[] =>
   JSON.parse(JSON.stringify(data)) as Sheet[];
 
+function readStoredBoolean(key: string, fallback = false): boolean {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored === null ? fallback : stored === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function useStoredBoolean(
+  storageKey: string,
+  fallback = false,
+): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
+  const [value, setValue] = useState(() =>
+    readStoredBoolean(storageKey, fallback),
+  );
+
+  useEffect(() => {
+    setValue(readStoredBoolean(storageKey, fallback));
+  }, [fallback, storageKey]);
+
+  const setStoredValue = useCallback<
+    React.Dispatch<React.SetStateAction<boolean>>
+  >(
+    (nextValue) => {
+      setValue((currentValue) => {
+        const resolvedValue =
+          typeof nextValue === "function"
+            ? nextValue(currentValue)
+            : nextValue;
+        try {
+          localStorage.setItem(storageKey, String(resolvedValue));
+        } catch {}
+        return resolvedValue;
+      });
+    },
+    [storageKey],
+  );
+
+  return [value, setStoredValue];
+}
+
 function getGoogleSheetsEmbedUrl(rawUrl: string): string {
   if (!rawUrl) return "";
   let cleaned = rawUrl.trim();
@@ -1287,9 +1329,15 @@ export default function EditorWorkspace({
   const [rightPanelWidth, setRightPanelWidth] = useState(260);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [figmaSplitOpen, setFigmaSplitOpen] = useState(false);
+  const figmaPanelOpenStorageKey = `qa_${activeProjectId}_figma_panel_open`;
+  const bottomSheetOpenStorageKey = `qa_${activeProjectId}_bottom_sheet_open`;
+  const [figmaSplitOpen, setFigmaSplitOpen] = useStoredBoolean(
+    figmaPanelOpenStorageKey,
+  );
   const [figmaSplitWidth, setFigmaSplitWidth] = useState(550);
-  const [bottomSheetOpen, setBottomSheetOpen] = useState(true);
+  const [bottomSheetOpen, setBottomSheetOpen] = useStoredBoolean(
+    bottomSheetOpenStorageKey,
+  );
   const [bottomSheetHeight, setBottomSheetHeight] = useState(520);
   const [bottomSheetMaximized, setBottomSheetMaximized] = useState(false);
   const panelDragRef = useRef<{
@@ -1913,9 +1961,11 @@ export default function EditorWorkspace({
       localStorage.removeItem(`qa_${activeProjectId}_active_reference`);
       localStorage.removeItem(`qa_${activeProjectId}_overlay_label`);
     }
-    setFigmaSplitOpen(!!figUrl || !!figPng);
+    const restoreFigmaPanel = readStoredBoolean(figmaPanelOpenStorageKey);
+    setFigmaSplitOpen(restoreFigmaPanel && (!!figUrl || !!figPng));
   }, [
     activeProjectId,
+    figmaPanelOpenStorageKey,
     project?.id,
     project?.figmaUrl,
     project?.googleSheetUrl,
@@ -8815,7 +8865,8 @@ export default function EditorWorkspace({
                   <>
                     {/* LEFT PANEL: Standard Desktop Figma Live App / Reference PNG */}
                     {!figmaCardDismissed &&
-                      (storedFigmaUrl || figmaImage || figmaSplitOpen) &&
+                      figmaSplitOpen &&
+                      (storedFigmaUrl || figmaImage) &&
                       overlayMode === "side-by-side" && (
                         <div
                           className="figma-overlay-side"

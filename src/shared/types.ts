@@ -20,6 +20,74 @@ export interface Project {
   deletedAt?: number
   folderId?: string
   mondayTicketId?: string
+  updatedAt?: number
+}
+
+export interface ProjectFolder {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export interface ParityAccountUser {
+  ownerKey: string
+  mondayUserId: string
+  name: string
+  email?: string
+}
+
+export interface ParityAccountState {
+  settings?: Partial<AppSettings>
+  folders?: ProjectFolder[]
+  pinnedProjectIds?: string[]
+  activeTicketIds?: string[]
+  mondayPreferences?: {
+    boardIds: string[]
+    assignmentMode: 'me' | 'all' | 'users'
+    userIds: string[]
+  }
+  noteFolders?: NoteFolder[]
+  updatedAt?: string
+}
+
+export interface NoteFolder {
+  id: string
+  name: string
+  parentId?: string
+  createdAt: number
+}
+
+export interface NoteAttachment {
+  id: string
+  name: string
+  mimeType: string
+  sizeBytes: number
+  uri: string
+  kind: 'image' | 'file'
+}
+
+export interface NoteDocument {
+  id: string
+  title: string
+  contentHtml: string
+  plainText: string
+  folderId?: string
+  tags: string[]
+  pinned: boolean
+  archived: boolean
+  attachments: NoteAttachment[]
+  createdAt: number
+  updatedAt: number
+  cloudUpdatedAt?: string
+}
+
+export interface ParityAccountBootstrap {
+  connected: boolean
+  user?: ParityAccountUser
+  state?: ParityAccountState | null
+  projects?: Project[]
+  notes?: NoteDocument[]
+  error?: string
 }
 
 export interface SnapshotItem {
@@ -138,9 +206,16 @@ export interface ElectronAPI {
   login: (adminUrl: string) => Promise<void>
   mondayLogin: (config: MondayPublicConfig) => Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }>
   mondayStatus: () => Promise<MondayConnectionStatus>
-  mondaySetPersonalToken: (token: string) => Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }>
+  mondaySetPersonalToken: (token: string, config?: MondayPublicConfig) => Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }>
   mondayDisconnect: (config?: MondayPublicConfig) => Promise<{ success: boolean; error?: string }>
   mondayGraphQL: (query: string, variables?: Record<string, unknown>) => Promise<any>
+  accountBootstrap: () => Promise<ParityAccountBootstrap>
+  accountSaveState: (data: Partial<ParityAccountState>) => Promise<{ success: boolean; updatedAt?: string; error?: string }>
+  accountSaveNote: (note: NoteDocument) => Promise<{ success: boolean; updatedAt?: string; error?: string }>
+  accountDeleteNote: (noteId: string) => Promise<{ success: boolean; error?: string }>
+  saveNoteAttachment: (input: { dataUrl: string; name: string }) => Promise<{ success: boolean; attachment?: NoteAttachment; error?: string }>
+  deleteNoteAttachments: (attachmentIds: string[]) => Promise<{ success: boolean; error?: string }>
+  openNoteAttachment: (uri: string) => Promise<{ success: boolean; error?: string }>
   capture: (url: string) => Promise<CaptureResult>
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project) => Promise<void>

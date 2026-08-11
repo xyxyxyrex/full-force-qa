@@ -82,6 +82,7 @@ export function saveSettings(settings: AppSettings): void {
     localStorage.setItem('qa_app_settings', JSON.stringify(settings))
   } catch (_) {}
   applyTheme(settings.theme)
+  window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { settings } }))
 }
 
 export function applyTheme(theme: AppTheme): void {

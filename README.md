@@ -6,7 +6,12 @@ Parity is an Electron desktop application for quality assurance engineers, web d
 
 ## Core Workspaces and Features
 
-The application interface is structured into four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate`) accessible via top-bar tab navigation, along with persistent system overlays and settings.
+The application interface is structured into four project workspaces (`Live`, `Edit`, `Audit`, and `Automate`) plus Dashboard and private Notes views. A VS Code-style activity bar provides auto-hiding navigation and can be pinned open.
+
+### Private Notes and account sync
+- **Monday-backed identity**: Monday OAuth identifies the current Parity user. A server-side Supabase Edge Function verifies Monday identity and keeps each user's settings, folders, projects, and notes isolated.
+- **Notes workspace**: Provides folders, tags, pins, archive, search, filtering, sorting, and a rich-text editor with headings, lists, quotes, code blocks, links, compressed images, paste-to-attach, and local files.
+- **Local attachment storage**: Note attachment bytes and project capture thumbnails remain in Electron's local application-data directory. Supabase stores only the private rich-text documents, account state, project metadata, and attachment metadata.
 
 ### 1. Live Workspace (`live`)
 - **Monday.com Ticket Integration**: Uses OAuth 2.1 with PKCE, encrypted desktop credential storage, automatic refresh, and an editable board/assignee picker. Personal API tokens remain an advanced fallback and are encrypted by the operating system rather than stored in renderer storage.
