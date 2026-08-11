@@ -11,12 +11,14 @@
     "deploy:viewer": "npm run build:viewer && wrangler pages deploy dist-viewer --project-name qa-snapshots",
     "preview": "node scripts/electron-dev.js electron-vite preview",
     "build:visual-worker": "python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py",
-    "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder"
+    "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder",
+    "release:win": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --win nsis --publish always"
   },
   "dependencies": {
     "@fortune-sheet/react": "^1.0.4",
     "@supabase/supabase-js": "^2.112.2",
     "dictionary-en": "^4.0.0",
+    "electron-updater": "^6.8.9",
     "grapesjs": "^0.23.3",
     "harper.js": "^2.7.0",
     "nspell": "^2.1.5",
@@ -39,6 +41,8 @@
   "build": {
     "appId": "com.qa-snapshot-editor",
     "productName": "QA Snapshot Editor",
+    "artifactName": "QA-Snapshot-Editor-Setup-${version}.${ext}",
+    "asar": true,
     "directories": {
       "output": "dist"
     },
@@ -52,6 +56,29 @@
         "filter": [
           "visual-compare*"
         ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "xyxyxyrex",
+        "repo": "full-force-qa",
+        "releaseType": "release"
       }
     ]
   }
