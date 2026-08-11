@@ -760,3 +760,72 @@ export function extractSemanticAnchors(figmaRoot: any, domNodes: DomNode[], live
 
   return anchors.sort((a, b) => a.designY - b.designY)
 }
+
+// ── Bridge to the annotation system ──────────────────────────────────────────
+// Converts a Finding into the shape EditorWorkspace's annotation pipeline needs.
+// One direction only: an annotation created from a finding is indistinguishable
+// from a hand-drawn one afterward, so it rides the existing share/workflow/viewer
+// pipeline for free — nothing here talks to Supabase or the viewer directly.
+
+export interface AnnotationFromFindingSpec {
+  title: string
+  notes: string
+  color: string
+  rect: { x: number; y: number; width: number; height: number }
+  viewportWidth: number
+  viewportHeight: number
+  deviceType: 'desktop' | 'tablet' | 'mobile'
+  deviceName: string
+}
+
+const SEVERITY_ANNOTATION_COLOR: Record<'high' | 'medium' | 'low', string> = {
+  high: '#ff0055',
+  medium: '#f59e0b',
+  low: '#3b82f6'
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function breakpointToDeviceType(breakpoint: string): 'desktop' | 'tablet' | 'mobile' {
+  const lowered = breakpoint.toLowerCase()
+  if (lowered === 'mobile') return 'mobile'
+  if (lowered === 'tablet') return 'tablet'
+  return 'desktop'
+}
+
+/**
+ * Pass findings (nothing to fix) and findings with no live region (nothing to
+ * point at — e.g. "Container is shifted Npx horizontally") aren't pinnable.
+ */
+export function findingToAnnotationSpec(
+  finding: Finding, breakpoint: string, viewportWidth: number, viewportHeight: number
+): AnnotationFromFindingSpec | null {
+  if (finding.severity === 'pass') return null
+  const rect = finding.comparison?.live?.rect
+  if (!rect) return null
+
+  const notesParts = [`<p>${escapeHtml(finding.detail)}</p>`]
+  const failingTokens = (finding.tokens || []).filter((token) => !token.passed && !token.unresolved)
+  if (failingTokens.length) {
+    const rows = failingTokens.map((token) => `<li><strong>${escapeHtml(token.name)}</strong>: Figma ${escapeHtml(token.figma)} → CSS ${escapeHtml(token.css)}</li>`)
+    notesParts.push(`<ul>${rows.join('')}</ul>`)
+  }
+
+  return {
+    title: finding.title,
+    notes: notesParts.join(''),
+    color: SEVERITY_ANNOTATION_COLOR[finding.severity],
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    viewportWidth,
+    viewportHeight,
+    deviceType: breakpointToDeviceType(breakpoint),
+    deviceName: breakpoint
+  }
+}

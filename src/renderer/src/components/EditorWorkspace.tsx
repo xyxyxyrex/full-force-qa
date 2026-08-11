@@ -16,6 +16,7 @@ import SeoAuditRightPanel from "./SeoAuditRightPanel";
 import EditBetaWorkspace from "./EditBetaWorkspace";
 import type { EditBetaWorkspaceHandle } from "./EditBetaWorkspace";
 import AutomateWorkspace from "./AutomateWorkspace";
+import type { AnnotationFromFindingSpec } from "../utils/visualCompare";
 import NativeStylePanel from "./NativeStylePanel";
 import CssInspectorEditor from "./CssInspectorEditor";
 import BeforeAfterSnippingModal from "./BeforeAfterSnippingModal";
@@ -1048,6 +1049,53 @@ export default function EditorWorkspace({
     setSelectedLiveAnnId(annotation.id);
     setActiveAnnotationTool("select");
     setIsAnnotateActive(true);
+  };
+
+  // Pins an Automate finding as an annotation. Stays on whatever tab the caller
+  // is on (Automate) rather than jumping to Live/Annotate — a bulk pin loops this
+  // several times in a row and switching tabs on every call would be disruptive.
+  // Badge numbering is read from `current` inside the updater, not from the
+  // `liveAnnotations` closure, so a synchronous bulk-pin loop still gets correct
+  // sequential badge numbers despite React batching the state updates.
+  const handleCreateAnnotationFromFinding = (spec: AnnotationFromFindingSpec): string => {
+    const id = `automate_ann_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setLiveAnnotations((current) => {
+      const width = Math.round(spec.viewportWidth);
+      const height = Math.round(spec.viewportHeight);
+      const key = viewportKey(width, height);
+      const badgeNumber =
+        current.filter((annotation) => annotationViewportKey(annotation) === key).length + 1;
+      const matchingFrame = activeFrames.find(
+        (frame) => frame.width === width && frame.height === height,
+      );
+      const annotation: CanvasSelectionBox = {
+        id,
+        badgeNumber,
+        type: "box",
+        title: spec.title,
+        notes: spec.notes,
+        color: spec.color,
+        coordinateSpace: "page",
+        xPx: Math.max(0, spec.rect.x),
+        yPagePx: Math.max(0, spec.rect.y),
+        widthPx: Math.max(1, spec.rect.width),
+        heightPx: Math.max(1, spec.rect.height),
+        viewportWidth: width,
+        viewportHeight: height,
+        viewportKey: key,
+        deviceFrameId: matchingFrame?.id,
+        deviceName: matchingFrame?.name || spec.deviceName,
+        deviceType: matchingFrame?.deviceType || spec.deviceType,
+        rectPct: {
+          x: (Math.max(0, spec.rect.x) / width) * 100,
+          y: (Math.max(0, spec.rect.y) / height) * 100,
+          width: (Math.max(1, spec.rect.width) / width) * 100,
+          height: (Math.max(1, spec.rect.height) / height) * 100,
+        },
+      };
+      return [...current, annotation];
+    });
+    return id;
   };
 
   const getLiveDrawingPreview = () => {
@@ -8078,6 +8126,7 @@ export default function EditorWorkspace({
                 figmaUrl={storedFigmaUrl}
                 projectId={activeProjectId}
                 onOpenSettings={onOpenSettings}
+                onCreateAnnotation={handleCreateAnnotationFromFinding}
               />
             )}
             {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar, Create Snapshot) */}

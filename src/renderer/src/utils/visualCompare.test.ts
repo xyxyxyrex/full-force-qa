@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   deltaE,
   figmaColorToRgb,
+  findingToAnnotationSpec,
   fitVerticalDrift,
   hungarianAssignment,
   parseCssColorToRgb,
   semanticFindings,
   stableId,
   tokenScore,
-  type DomNode
+  type DomNode,
+  type Finding
 } from './visualCompare'
 
 describe('fitVerticalDrift', () => {
@@ -364,5 +366,72 @@ describe('semanticFindings — correspondence engine', () => {
     const findings = semanticFindings(root, domNodes, 600, 200)
     expect(findings.some((f) => f.title.includes('Missing design text'))).toBe(false)
     expect(findings.some((f) => f.title.includes('Save up to 40%') && f.title.includes('on your first order'))).toBe(true)
+  })
+})
+
+// ---- findingToAnnotationSpec: the bridge into the annotation system ----
+
+function makeFinding(overrides: Partial<Finding> = {}): Finding {
+  return {
+    id: 'f1',
+    severity: 'high',
+    title: 'Position mismatch: “CTA Button”',
+    detail: 'Matched <button> is displaced from its drift-corrected expected position.',
+    confidence: 92,
+    comparison: {
+      live: { rect: { x: 40, y: 120, width: 160, height: 44 }, pageWidth: 1440, pageHeight: 900, label: '<button>' }
+    },
+    ...overrides
+  }
+}
+
+describe('findingToAnnotationSpec', () => {
+  it('is not pinnable when the finding passed', () => {
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'pass' }), 'Desktop', 1440, 900)).toBeNull()
+  })
+
+  it('is not pinnable when there is no live region to point at', () => {
+    expect(findingToAnnotationSpec(makeFinding({ comparison: undefined }), 'Desktop', 1440, 900)).toBeNull()
+  })
+
+  it('carries the live rect straight through, unscaled', () => {
+    const spec = findingToAnnotationSpec(makeFinding(), 'Desktop', 1440, 900)
+    expect(spec?.rect).toEqual({ x: 40, y: 120, width: 160, height: 44 })
+    expect(spec?.viewportWidth).toBe(1440)
+    expect(spec?.viewportHeight).toBe(900)
+  })
+
+  it('maps severity to the existing annotation swatch colours', () => {
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'high' }), 'Desktop', 1440, 900)?.color).toBe('#ff0055')
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'medium' }), 'Desktop', 1440, 900)?.color).toBe('#f59e0b')
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'low' }), 'Desktop', 1440, 900)?.color).toBe('#3b82f6')
+  })
+
+  it('derives deviceType from the breakpoint label, case-insensitively', () => {
+    expect(findingToAnnotationSpec(makeFinding(), 'Mobile', 375, 812)?.deviceType).toBe('mobile')
+    expect(findingToAnnotationSpec(makeFinding(), 'tablet', 768, 1024)?.deviceType).toBe('tablet')
+    expect(findingToAnnotationSpec(makeFinding(), 'Desktop', 1440, 900)?.deviceType).toBe('desktop')
+    expect(findingToAnnotationSpec(makeFinding(), 'Desktop', 1440, 900)?.deviceName).toBe('Desktop')
+  })
+
+  it('includes failing token rows in the notes but not passing or unresolved ones', () => {
+    const spec = findingToAnnotationSpec(makeFinding({
+      tokens: [
+        { name: 'font-size', passed: false, figma: '40px', css: '32px' },
+        { name: 'font-weight', passed: true, figma: '700', css: '700' },
+        { name: 'line-height', passed: false, unresolved: true, figma: '24px', css: 'normal' }
+      ]
+    }), 'Desktop', 1440, 900)
+    expect(spec?.notes).toContain('font-size')
+    expect(spec?.notes).toContain('Figma 40px')
+    expect(spec?.notes).toContain('CSS 32px')
+    expect(spec?.notes).not.toContain('font-weight')
+    expect(spec?.notes).not.toContain('line-height')
+  })
+
+  it('escapes HTML-significant characters in the notes', () => {
+    const spec = findingToAnnotationSpec(makeFinding({ detail: 'Figma <b>bold</b> & "quoted" text' }), 'Desktop', 1440, 900)
+    expect(spec?.notes).toContain('&lt;b&gt;bold&lt;/b&gt;')
+    expect(spec?.notes).not.toContain('<b>bold</b>')
   })
 })

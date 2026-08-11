@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AutomateRunSummary, FindingTriageMap, FindingTriageState, PageSection } from '../../../shared/types'
-import { extractSemanticAnchors, semanticFindings, stableId, type ComparedRegion, type DomNode, type Finding, type TokenAssertion } from '../utils/visualCompare'
+import { extractSemanticAnchors, findingToAnnotationSpec, semanticFindings, stableId, type AnnotationFromFindingSpec, type ComparedRegion, type DomNode, type Finding, type TokenAssertion } from '../utils/visualCompare'
 import './AutomateWorkspace.css'
 
 interface FrameSummary { id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }
@@ -10,6 +10,7 @@ interface Props {
   figmaUrl?: string
   projectId: string
   onOpenSettings?: () => void
+  onCreateAnnotation?: (spec: AnnotationFromFindingSpec) => string
 }
 
 function loadImage(src: string) {
@@ -429,7 +430,7 @@ function TokenIconBadge({ token }: { token: TokenAssertion }) {
   )
 }
 
-export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId, onOpenSettings }: Props) {
+export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId, onOpenSettings, onCreateAnnotation }: Props) {
   const webviewRef = useRef<any>(null)
   const [expandedTokensMap, setExpandedTokensMap] = useState<Record<number, boolean>>({})
   const comparisonRunRef = useRef(0)
@@ -454,6 +455,9 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [breakpoint, setBreakpoint] = useState<'Desktop' | 'Tablet' | 'Mobile'>('Desktop')
   const [runHistory, setRunHistory] = useState<AutomateRunSummary[]>([])
   const [lastCompletedRunId, setLastCompletedRunId] = useState(0)
+  // Session-only: once pinned, the annotation itself is the persistent record —
+  // no need for a second persistence layer the way triage state needs one.
+  const [pinnedFindingIds, setPinnedFindingIds] = useState<Set<string>>(new Set())
   const selectedFrame = useMemo(() => frames.find((frame) => frame.id === frameId), [frameId, frames])
 
   useEffect(() => {
@@ -687,6 +691,34 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const triagedCount = useMemo(() => findings.filter((f) => triage[f.id]).length, [findings, triage])
   const visibleFindings = useMemo(() => showTriaged ? findings : findings.filter((f) => !triage[f.id]), [findings, triage, showTriaged])
 
+  const isPinnable = (finding: Finding) => finding.severity !== 'pass' && !!finding.comparison?.live
+  const pinFinding = (finding: Finding) => {
+    if (!onCreateAnnotation || pinnedFindingIds.has(finding.id)) return
+    const spec = findingToAnnotationSpec(finding, breakpoint, captureWidth, liveDocumentHeight ?? captureViewportHeight)
+    if (!spec) return
+    onCreateAnnotation(spec)
+    setPinnedFindingIds((current) => new Set(current).add(finding.id))
+  }
+  // Scoped to what the analyst hasn't already triaged away — pinning something
+  // just marked false-positive would contradict the triage action they just took.
+  const pinnableVisibleCount = useMemo(
+    () => visibleFindings.filter((f) => isPinnable(f) && !pinnedFindingIds.has(f.id)).length,
+    [visibleFindings, pinnedFindingIds]
+  )
+  const pinVisibleFindings = () => {
+    if (!onCreateAnnotation) return
+    const toPin = visibleFindings.filter((f) => isPinnable(f) && !pinnedFindingIds.has(f.id))
+    if (!toPin.length) return
+    const pinnedIds: string[] = []
+    for (const finding of toPin) {
+      const spec = findingToAnnotationSpec(finding, breakpoint, captureWidth, liveDocumentHeight ?? captureViewportHeight)
+      if (!spec) continue
+      onCreateAnnotation(spec)
+      pinnedIds.push(finding.id)
+    }
+    setPinnedFindingIds((current) => { const next = new Set(current); for (const id of pinnedIds) next.add(id); return next })
+  }
+
   // Severity-weighted counts — a defect list that can be triaged, not a raster
   // similarity percentage nobody can act on.
   const severityCounts = useMemo(() => ({
@@ -824,12 +856,19 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
             <section className="automate-findings">
               <div className="automate-card-head">
                 <div><h3>Findings ({filteredFindings.length})</h3><span>Click a finding to inspect its visual evidence</span></div>
-                {triagedCount > 0 && (
-                  <label className="automate-triage-toggle">
-                    <input type="checkbox" checked={showTriaged} onChange={(e) => setShowTriaged(e.target.checked)} />
-                    Show triaged ({triagedCount})
-                  </label>
-                )}
+                <div className="automate-card-head-actions">
+                  {onCreateAnnotation && pinnableVisibleCount > 0 && (
+                    <button type="button" className="automate-pin-all-btn" onClick={pinVisibleFindings} title="Pin every untriaged finding below as a page annotation">
+                      Send {pinnableVisibleCount} to annotations
+                    </button>
+                  )}
+                  {triagedCount > 0 && (
+                    <label className="automate-triage-toggle">
+                      <input type="checkbox" checked={showTriaged} onChange={(e) => setShowTriaged(e.target.checked)} />
+                      Show triaged ({triagedCount})
+                    </label>
+                  )}
+                </div>
               </div>
               <div className="automate-findings-tabs">
                 <button className={findingsFilter === 'all' ? 'active' : ''} onClick={() => setFindingsFilter('all')}>All ({visibleFindings.length})</button>
@@ -895,6 +934,13 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
                                 <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, 'accepted') }} title="Mark as an expected, known-acceptable difference">Accept as baseline</button>
                                 <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, 'false-positive') }} title="The matcher got this one wrong">False positive</button>
                               </>
+                            )}
+                            {onCreateAnnotation && isPinnable(finding) && (
+                              pinnedFindingIds.has(finding.id) ? (
+                                <span className="automate-pinned-badge" title="Already pinned as a page annotation">Pinned ✓</span>
+                              ) : (
+                                <button type="button" className="automate-pin-finding-btn" onClick={(e) => { e.stopPropagation(); pinFinding(finding) }} title="Pin at this position as a page annotation">Pin</button>
+                              )
                             )}
                           </div>
                         )}
