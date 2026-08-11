@@ -64,6 +64,8 @@ Create or update the Parity integration in Monday's Developer Center before depl
 
 The OAuth function exchanges and refreshes tokens at Monday's server-side OAuth 2.1 endpoint. Electron stores the returned access/refresh pair using the operating-system credential service. A personal API token can still be entered from the Dashboard as an advanced fallback; it receives the same encrypted local storage treatment.
 
+The deployed exchange defaults to compatibility mode. It attempts Monday OAuth 2.1 first and retries the legacy token endpoint only when Monday reports that the authorization grant is absent from the new token service. This keeps desktop login working while the **New OAuth Flow** toggle is being promoted between draft and live Monday app versions. Once every active app version uses OAuth 2.1, the optional Edge Function secret `MONDAY_OAUTH_FLOW=new` can disable the legacy compatibility path.
+
 ### Monday-backed Parity accounts
 
 Monday is the identity authority for Parity account data; it is not configured as a native Supabase Auth provider. After Monday authorization, Electron sends the access token only to the `parity-account` Edge Function. That function verifies the token with Monday's `me` query, issues a short-lived Parity data session, and performs owner-scoped database operations with the service role. Monday tokens, the Supabase service-role key, and the Parity data session are never exposed to the renderer.

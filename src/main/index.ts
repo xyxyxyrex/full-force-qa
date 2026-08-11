@@ -132,6 +132,7 @@ interface StoredMondayCredentials {
   refreshToken?: string
   expiresAt?: number
   authType: 'oauth' | 'personal'
+  oauthFlow?: 'oauth2.1' | 'legacy'
   oauthConfig?: MondayPublicConfig
 }
 
@@ -1132,6 +1133,7 @@ function registerIpcHandlers(): void {
 
     return new Promise((resolve) => {
       let resolved = false
+      let exchangeStarted = false
 
       // 1. Spin up a one-shot HTTP server to catch the OAuth redirect
       const server = createServer(async (req, res) => {
@@ -1155,6 +1157,15 @@ function registerIpcHandlers(): void {
           return
         }
 
+        // Authorization codes are single-use. Browser retries or duplicate
+        // callback navigation must never start a second token exchange.
+        if (exchangeStarted) {
+          res.writeHead(200, { 'Content-Type': 'text/html' })
+          res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#a1a1aa"><h2>Finishing connection&hellip;</h2><p>You can close this tab and return to Parity.</p></body></html>')
+          return
+        }
+        exchangeStarted = true
+
         // 2. Exchange the authorization code for an access token
         try {
           const tokenData = await mondayOauthProxy(config, {
@@ -1171,6 +1182,7 @@ function registerIpcHandlers(): void {
               refreshToken: tokenData.refresh_token,
               expiresAt: decodeJwtExpiry(tokenData.access_token, tokenData.expires_in),
               authType: 'oauth',
+              oauthFlow: tokenData.oauth_flow === 'legacy' ? 'legacy' : 'oauth2.1',
               oauthConfig: config
             })
             resolved = true
