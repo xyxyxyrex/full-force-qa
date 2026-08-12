@@ -36,6 +36,7 @@ import { nextCanvasZoomFromWheel } from "../utils/canvasZoom";
 import { findHotkeyCommand, isEditableHotkeyTarget, matchesHotkey, normalizeHotkey } from "../utils/hotkeys";
 import {
   annotationSequencePosition,
+  annotationSequencePath,
   buildAnnotationSequences,
   linkAnnotations,
   removeAnnotationFromSequences,
@@ -731,6 +732,7 @@ export default function EditorWorkspace({
   }, [hotkeys]);
 
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("editBeta");
+  const isLiveWorkspace = workspaceTab === "live";
   const [selectedComponent, setSelectedComponent] = useState<any>(null);
   const [activePreset, setActivePreset] = useState<DevicePreset>("Desktop");
   const [selectedDevicePresetName, setSelectedDevicePresetName] = useState<string | null>(
@@ -859,6 +861,18 @@ export default function EditorWorkspace({
     startY: number;
     currentX: number;
     currentY: number;
+  } | null>(null);
+  const [annotationSequenceClickSourceId, setAnnotationSequenceClickSourceId] =
+    useState<string | null>(null);
+  const [annotationSequenceTargetId, setAnnotationSequenceTargetId] =
+    useState<string | null>(null);
+  const annotationSequenceGestureRef = useRef<{
+    pointerId: number;
+    sourceId: string;
+    startClientX: number;
+    startClientY: number;
+    moved: boolean;
+    captureTarget: HTMLElement;
   } | null>(null);
   const [isDrawingLive, setIsDrawingLive] = useState(false);
   const [liveDrawStart, setLiveDrawStart] = useState<{ x: number; y: number } | null>(null);
@@ -1837,9 +1851,10 @@ export default function EditorWorkspace({
   const getCanvasFrame = useCallback(() => {
     const inner = canvasInnerRef.current;
     if (!inner) return null;
-    const wrapper =
-      liveIframeRef.current?.parentElement ||
-      editorRef.current?.Canvas.getFrameEl()?.parentElement;
+    const wrapper = isLiveWorkspace
+      ? liveWebviewRef.current?.parentElement
+      : liveIframeRef.current?.parentElement ||
+        editorRef.current?.Canvas.getFrameEl()?.parentElement;
     if (!wrapper) return null;
     const innerRect = inner.getBoundingClientRect();
     const wrapperRect = wrapper.getBoundingClientRect();
@@ -1849,7 +1864,7 @@ export default function EditorWorkspace({
       width: wrapperRect.width,
       height: wrapperRect.height,
     };
-  }, []);
+  }, [isLiveWorkspace]);
 
   // ── Font inspector state ──────────────────────
   const [fontInspectorMode, setFontInspectorMode] =
@@ -1878,8 +1893,38 @@ export default function EditorWorkspace({
       return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     };
     const handlePointerMove = (event: PointerEvent) => {
+      const gesture = annotationSequenceGestureRef.current;
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (
+        Math.hypot(
+          event.clientX - gesture.startClientX,
+          event.clientY - gesture.startClientY,
+        ) >= 4
+      ) {
+        gesture.moved = true;
+      }
       const point = pointInSurface(event);
       if (!point) return;
+      const target = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>("[data-sequence-target-id]");
+      const targetId =
+        target?.dataset.sequenceTargetId !== sourceId
+          ? target?.dataset.sequenceTargetId || null
+          : null;
+      setAnnotationSequenceTargetId(targetId);
+      if (target && targetId) {
+        const surface = overlayRef.current;
+        const surfaceBounds = surface?.getBoundingClientRect();
+        const targetBounds = target.getBoundingClientRect();
+        if (surfaceBounds) {
+          point.x = targetBounds.left + targetBounds.width / 2 - surfaceBounds.left;
+          point.y = targetBounds.top + targetBounds.height / 2 - surfaceBounds.top;
+        }
+      }
       setAnnotationSequenceDrag((current) =>
         current?.sourceId === sourceId
           ? { ...current, currentX: point.x, currentY: point.y }
@@ -1887,31 +1932,78 @@ export default function EditorWorkspace({
       );
     };
     const finishSequenceDrag = (event: PointerEvent) => {
+      const gesture = annotationSequenceGestureRef.current;
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       const target = document
         .elementFromPoint(event.clientX, event.clientY)
         ?.closest<HTMLElement>("[data-sequence-target-id]");
       const targetId = target?.dataset.sequenceTargetId;
-      if (targetId && targetId !== sourceId) {
+      if (event.type !== "pointercancel" && targetId && targetId !== sourceId) {
         setLiveAnnotations((current) => linkAnnotations(current, sourceId, targetId));
         setSelectedLiveAnnId(targetId);
+        setAnnotationSequenceClickSourceId(null);
+      } else if (event.type !== "pointercancel" && !gesture.moved) {
+        setAnnotationSequenceClickSourceId((current) =>
+          current === sourceId ? null : sourceId,
+        );
       }
+      try {
+        if (gesture.captureTarget.hasPointerCapture(gesture.pointerId)) {
+          gesture.captureTarget.releasePointerCapture(gesture.pointerId);
+        }
+      } catch {}
+      annotationSequenceGestureRef.current = null;
       setAnnotationSequenceDrag(null);
+      setAnnotationSequenceTargetId(null);
+      document.body.classList.remove("is-annotation-sequence-dragging");
     };
     const cancelSequenceDrag = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setAnnotationSequenceDrag(null);
+      if (event.key !== "Escape") return;
+      const gesture = annotationSequenceGestureRef.current;
+      if (gesture) {
+        try {
+          if (gesture.captureTarget.hasPointerCapture(gesture.pointerId)) {
+            gesture.captureTarget.releasePointerCapture(gesture.pointerId);
+          }
+        } catch {}
+      }
+      annotationSequenceGestureRef.current = null;
+      setAnnotationSequenceDrag(null);
+      setAnnotationSequenceTargetId(null);
+      setAnnotationSequenceClickSourceId(null);
+      document.body.classList.remove("is-annotation-sequence-dragging");
     };
 
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", finishSequenceDrag, { once: true });
-    window.addEventListener("pointercancel", finishSequenceDrag, { once: true });
-    window.addEventListener("keydown", cancelSequenceDrag);
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", finishSequenceDrag, true);
+    window.addEventListener("pointercancel", finishSequenceDrag, true);
+    window.addEventListener("keydown", cancelSequenceDrag, true);
     return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", finishSequenceDrag);
-      window.removeEventListener("pointercancel", finishSequenceDrag);
-      window.removeEventListener("keydown", cancelSequenceDrag);
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", finishSequenceDrag, true);
+      window.removeEventListener("pointercancel", finishSequenceDrag, true);
+      window.removeEventListener("keydown", cancelSequenceDrag, true);
     };
   }, [annotationSequenceDrag?.sourceId]);
+
+  useEffect(() => {
+    if (isAnnotateActive) return;
+    annotationSequenceGestureRef.current = null;
+    setAnnotationSequenceDrag(null);
+    setAnnotationSequenceTargetId(null);
+    setAnnotationSequenceClickSourceId(null);
+    document.body.classList.remove("is-annotation-sequence-dragging");
+  }, [isAnnotateActive]);
+
+  useEffect(
+    () => () => {
+      document.body.classList.remove("is-annotation-sequence-dragging");
+    },
+    [],
+  );
   const [showMargins, setShowMargins] = useState(true);
   const [showPaddings, setShowPaddings] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
@@ -2589,6 +2681,15 @@ export default function EditorWorkspace({
   const snapshotPanelDropdownRef = useRef<HTMLDivElement>(null);
   const [iframeScrollY, setIframeScrollY] = useState(0);
 
+  useEffect(() => {
+    if (!isLiveWorkspace) return;
+    setGenerateExpiryOpen(false);
+    setRulerDropdownOpen(false);
+    setBoundariesDropdownOpen(false);
+    setOverlayPanelOpen(false);
+    setSnapshotPanelOpen(false);
+  }, [isLiveWorkspace]);
+
   const nativeDomSnapshotsRef = useRef<string[]>([]);
 
   // ── Push a new action into the Photoshop History stack ──
@@ -2715,8 +2816,8 @@ export default function EditorWorkspace({
     }
     const liveWrap = liveWebviewRef.current?.parentElement;
     if (liveWrap) {
-      liveWrap.style.width = "100%";
-      liveWrap.style.height = "100%";
+      liveWrap.style.width = `${w}px`;
+      liveWrap.style.height = `${h}px`;
     }
   }, []);
 
@@ -3664,6 +3765,25 @@ export default function EditorWorkspace({
   }, [html]);
 
   // ── Preset buttons ────────────────────────────
+  useEffect(() => {
+    if (workspaceTab !== "layout") return;
+    const editor = editorRef.current as any;
+    if (!editor) return;
+
+    const layersTarget = document.getElementById("layers-container");
+    const selectorsTarget = document.getElementById("selector-container");
+    try {
+      if (layersTarget && editor.LayerManager?.render) {
+        layersTarget.replaceChildren(editor.LayerManager.render());
+      }
+      if (selectorsTarget && editor.SelectorManager?.render) {
+        selectorsTarget.replaceChildren(editor.SelectorManager.render([]));
+      }
+    } catch (error) {
+      console.warn("Unable to attach GrapesJS side-panel views:", error);
+    }
+  }, [html, layersExpanded, leftPanelOpen, rightPanelOpen, workspaceTab]);
+
   const switchPreset = (preset: DevicePreset) => {
     setActivePreset(preset);
     setMode("preset");
@@ -3750,16 +3870,18 @@ export default function EditorWorkspace({
         nativeWrap.style.transition = "none";
       }
       const liveWrap = liveWebviewRef.current?.parentElement;
-      if (liveWrap) {
-        liveWrap.style.transform = "none";
-        liveWrap.style.transformOrigin = "top left";
+      if (isLiveWorkspace && liveWrap) {
+        liveWrap.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel / 100})`;
+        liveWrap.style.transformOrigin = "top center";
         liveWrap.style.transition = "none";
       }
-      try {
-        // Live fills its workspace and is not part of the scaled Edit/Audit
-        // canvas. Keep its guest page at the browser's canonical 100% zoom.
-        liveWebviewRef.current?.setZoomFactor?.(1);
-      } catch {}
+      if (isLiveWorkspace) {
+        try {
+          // Canvas zoom scales the Live viewport frame; never reset the hidden
+          // Live guest while Edit owns zoom for the same site origin.
+          liveWebviewRef.current?.setZoomFactor?.(1);
+        } catch {}
+      }
       const frameEl = editorRef.current?.Canvas?.getFrameEl();
       const wrapperEl =
         frameEl?.parentElement ||
@@ -4233,6 +4355,25 @@ export default function EditorWorkspace({
   }, [workspaceTab]);
 
   useEffect(() => {
+    if (!isLiveWorkspace) return;
+    const webview = liveWebviewRef.current;
+    if (!webview) return;
+
+    // Live behaves like a normal browser until Free Transform is selected.
+    // In transform mode the host owns pointer input for resize, pan, and canvas
+    // zoom; Edit keeps its independent injected gesture bridge untouched.
+    webview.style.pointerEvents = mode === "free" ? "none" : "";
+    webview.style.cursor = mode === "free" ? "default" : "";
+
+    return () => {
+      if (liveWebviewRef.current) {
+        liveWebviewRef.current.style.pointerEvents = "";
+        liveWebviewRef.current.style.cursor = "";
+      }
+    };
+  }, [isLiveWorkspace, mode]);
+
+  useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {
       const isMiddleMouse = e.button === 1;
       const isSpaceLeftClick = e.button === 0 && isSpacePressedRef.current;
@@ -4497,9 +4638,10 @@ export default function EditorWorkspace({
 
     let raf: number;
     const track = () => {
-      const frameWrapper =
-        liveIframeRef.current?.parentElement ||
-        editorRef.current?.Canvas.getFrameEl()?.parentElement;
+      const frameWrapper = isLiveWorkspace
+        ? liveWebviewRef.current?.parentElement
+        : liveIframeRef.current?.parentElement ||
+          editorRef.current?.Canvas.getFrameEl()?.parentElement;
       if (!frameWrapper || !wrapEl) {
         raf = requestAnimationFrame(track);
         return;
@@ -4518,7 +4660,7 @@ export default function EditorWorkspace({
     };
     raf = requestAnimationFrame(track);
     return () => cancelAnimationFrame(raf);
-  }, [mode]);
+  }, [isLiveWorkspace, mode]);
 
   // ── Free-transform drag handles ───────────────
   const dragRef = useRef<{
@@ -4535,7 +4677,7 @@ export default function EditorWorkspace({
     () => () => {
       freeTransformCleanupRef.current?.();
     },
-    [],
+    [isLiveWorkspace],
   );
 
   const onHandlePointerDown = (
@@ -6387,7 +6529,7 @@ export default function EditorWorkspace({
   return (
     <div className="editor-workspace">
       {/* ── Top toolbar ──────────────────────────── */}
-      <div className="editor-toolbar">
+      <div className={`editor-toolbar ${isLiveWorkspace ? "is-live" : ""}`}>
         <div className="toolbar-left">
           <button
             className="toolbar-btn back-dashboard-btn"
@@ -6516,7 +6658,7 @@ export default function EditorWorkspace({
             workspaceTab === "audit") && (
             <div className="viewport-controls">
               {/* Interaction Mode Toggle: Edit Mode vs Interact Mode */}
-              <div className="device-switcher" style={{ marginRight: 4 }}>
+              <div className="device-switcher live-excluded" style={{ marginRight: 4 }}>
                 <button
                   className={`device-btn ${interactionMode === "edit" ? "active" : ""}`}
                   onClick={() => toggleInteractionMode("edit")}
@@ -6578,7 +6720,7 @@ export default function EditorWorkspace({
               {interactionMode === "eyedropper" && (
                 <button
                   type="button"
-                  className={`eyedropper-readout ${eyedropperSample ? "has-sample" : ""} ${eyedropperCopied ? "copied" : ""}`}
+                  className={`eyedropper-readout live-excluded ${eyedropperSample ? "has-sample" : ""} ${eyedropperCopied ? "copied" : ""}`}
                   onClick={() => void copyEyedropperHex()}
                   disabled={!eyedropperSample}
                   title={eyedropperSample ? `Copy ${eyedropperSample.hex}` : "Hover an element in the page to inspect its color"}
@@ -6595,7 +6737,7 @@ export default function EditorWorkspace({
               )}
 
               {/* Grouped Action Bar: RECORD | ANNOTATE | GENERATE ITEMS */}
-              <div className="workspace-action-group" role="group" aria-label="Capture and annotation actions">
+              <div className="workspace-action-group live-excluded" role="group" aria-label="Capture and annotation actions">
                 <button
                   className={`workspace-action-btn record ${isRecording ? "active" : ""}`}
                   onClick={isRecording ? handleStopRecording : handleStartRecording}
@@ -6671,7 +6813,7 @@ export default function EditorWorkspace({
 
               {/* Reveal Animations & Hidden Headings Toggle */}
               <button
-                className={`device-btn ${revealAnimations ? "active" : ""}`}
+                className={`device-btn live-excluded ${revealAnimations ? "active" : ""}`}
                 onClick={toggleRevealAnimations}
                 title="Reveal On-Scroll Animations & Hidden Headings"
                 style={{ marginRight: 4 }}
@@ -7067,10 +7209,10 @@ export default function EditorWorkspace({
                 </button>
               </div>
 
-              <div className="toolbar-divider" />
+              <div className="toolbar-divider live-excluded" />
 
               {/* Ruler & guides dropdown */}
-              <div className="ruler-dropdown-wrap" ref={rulerDropdownRef}>
+              <div className="ruler-dropdown-wrap live-excluded" ref={rulerDropdownRef}>
                 <button
                   className={`device-btn ${rulersOn || guides.length > 0 ? "active" : ""}`}
                   onClick={() => setRulerDropdownOpen((p) => !p)}
@@ -7174,7 +7316,7 @@ export default function EditorWorkspace({
 
               {/* Font inspector toggle */}
               <button
-                className={`device-btn font-inspector-toggle ${fontInspectorMode !== "off" ? "active" : ""} font-mode-${fontInspectorMode}`}
+                className={`device-btn font-inspector-toggle live-excluded ${fontInspectorMode !== "off" ? "active" : ""} font-mode-${fontInspectorMode}`}
                 onClick={toggleFontInspector}
                 title={
                   fontInspectorMode === "off"
@@ -7203,7 +7345,7 @@ export default function EditorWorkspace({
               </button>
 
               {/* Boundaries (element inspection) dropdown */}
-              <div className="ruler-dropdown-wrap" ref={boundariesDropdownRef}>
+              <div className="ruler-dropdown-wrap live-excluded" ref={boundariesDropdownRef}>
                 <button
                   className={`device-btn font-inspector-toggle ${boundariesOn ? "active" : ""} ${boundariesScope === "all" ? "font-mode-all" : ""}`}
                   onClick={() => setBoundariesDropdownOpen((p) => !p)}
@@ -7351,10 +7493,10 @@ export default function EditorWorkspace({
                 )}
               </div>
 
-              <div className="toolbar-divider" />
+              <div className="toolbar-divider live-excluded" />
 
               {/* Figma Design Overlay Dropdown */}
-              <div className="ruler-dropdown-wrap" ref={overlayDropdownRef}>
+              <div className="ruler-dropdown-wrap live-excluded" ref={overlayDropdownRef}>
                 <button
                   className={`device-btn ${overlayImage && overlayLabel === "Figma Design" ? "active" : ""}`}
                   onClick={() => {
@@ -7642,7 +7784,7 @@ export default function EditorWorkspace({
 
               {/* Separate Site Snapshot Comparison Dropdown Button */}
               <div
-                className="ruler-dropdown-wrap"
+                className="ruler-dropdown-wrap live-excluded"
                 ref={snapshotPanelDropdownRef}
               >
                 <button
@@ -8127,11 +8269,11 @@ export default function EditorWorkspace({
                 onChange={handleOverlayFileUpload}
               />
 
-              <div className="toolbar-divider" />
+              <div className="toolbar-divider live-excluded" />
 
               {/* Panel Toggle Group: Left, Bottom, Right */}
               <div
-                className="panel-toggle-group"
+                className="panel-toggle-group live-excluded"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -8205,7 +8347,7 @@ export default function EditorWorkspace({
 
         <div className="toolbar-right">
           <button
-            className="toolbar-btn refresh-btn"
+            className="toolbar-btn refresh-btn live-excluded"
             onClick={() =>
               workspaceTab === "editBeta"
                 ? editBetaRef.current?.reload()
@@ -8773,6 +8915,7 @@ export default function EditorWorkspace({
             </div>
           )}
         {leftPanelOpen &&
+          !isLiveWorkspace &&
           workspaceTab !== "editBeta" &&
           workspaceTab !== "automate" && (
             <div
@@ -8889,14 +9032,19 @@ export default function EditorWorkspace({
                 {annotationFrame && (
                   <div
                     ref={overlayRef}
-                    className="annotate-drawing-surface"
+                    className={`annotate-drawing-surface ${annotationSequenceDrag ? "is-sequence-dragging" : ""} ${annotationSequenceClickSourceId ? "is-sequence-click-linking" : ""}`}
                     style={{
                       position: "absolute",
                       left: annotationFrame.left,
                       top: annotationFrame.top,
                       width: annotationFrame.width,
                       height: annotationFrame.height,
-                      pointerEvents: activeAnnotationTool === "select" ? "none" : "auto",
+                      pointerEvents:
+                        annotationSequenceDrag || annotationSequenceClickSourceId
+                          ? "auto"
+                          : activeAnnotationTool === "select"
+                            ? "none"
+                            : "auto",
                       cursor: activeAnnotationTool === "text" ? "text" : "crosshair",
                     }}
                     onWheel={(e) => {
@@ -8924,7 +9072,7 @@ export default function EditorWorkspace({
                   aria-hidden="true"
                 >
                   <defs>
-                    <marker id="live-sequence-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <marker id="live-sequence-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
                       <path d="M 0 0 L 10 5 L 0 10 z" />
                     </marker>
                   </defs>
@@ -8940,12 +9088,11 @@ export default function EditorWorkspace({
                       const y1 = (sourceRect.y - currentScrollY) * scale.y - 12;
                       const x2 = targetRect.x * scale.x;
                       const y2 = (targetRect.y - currentScrollY) * scale.y - 12;
-                      const bend = Math.max(36, Math.abs(x2 - x1) * 0.42);
                       return (
                         <path
                           key={`${source.id}-${target.id}`}
                           className="annotation-sequence-path"
-                          d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
+                          d={annotationSequencePath(x1, y1, x2, y2)}
                           markerEnd="url(#live-sequence-arrow)"
                         />
                       );
@@ -8954,7 +9101,13 @@ export default function EditorWorkspace({
                   {annotationSequenceDrag && (
                     <path
                       className="annotation-sequence-path preview"
-                      d={`M ${annotationSequenceDrag.startX} ${annotationSequenceDrag.startY} C ${annotationSequenceDrag.startX + 48} ${annotationSequenceDrag.startY}, ${annotationSequenceDrag.currentX - 48} ${annotationSequenceDrag.currentY}, ${annotationSequenceDrag.currentX} ${annotationSequenceDrag.currentY}`}
+                      d={annotationSequencePath(
+                        annotationSequenceDrag.startX,
+                        annotationSequenceDrag.startY,
+                        annotationSequenceDrag.currentX,
+                        annotationSequenceDrag.currentY,
+                        48,
+                      )}
                       markerEnd="url(#live-sequence-arrow)"
                     />
                   )}
@@ -9050,24 +9203,58 @@ export default function EditorWorkspace({
                         <>
                           <button
                             type="button"
-                            className="annotation-sequence-node input"
+                            className={`annotation-sequence-node input ${annotationSequenceTargetId === ann.id ? "is-drag-target" : ""} ${annotationSequenceClickSourceId && annotationSequenceClickSourceId !== ann.id ? "is-click-target" : ""}`}
                             data-sequence-target-id={ann.id}
                             aria-label={`Link a previous annotation to ${ann.title}`}
-                            title="Drop a sequence connection here"
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={(e) => e.stopPropagation()}
+                            title={annotationSequenceClickSourceId ? "Click to complete the sequence connection" : "Drop a sequence connection here"}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              e.nativeEvent.stopImmediatePropagation();
+                            }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (
+                                annotationSequenceClickSourceId &&
+                                annotationSequenceClickSourceId !== ann.id
+                              ) {
+                                setLiveAnnotations((current) =>
+                                  linkAnnotations(
+                                    current,
+                                    annotationSequenceClickSourceId,
+                                    ann.id,
+                                  ),
+                                );
+                                setSelectedLiveAnnId(ann.id);
+                                setAnnotationSequenceClickSourceId(null);
+                              }
+                            }}
                           />
                           <button
                             type="button"
-                            className="annotation-sequence-node output"
+                            className={`annotation-sequence-node output ${annotationSequenceClickSourceId === ann.id ? "is-click-source" : ""}`}
                             aria-label={`Start a sequence connection from ${ann.title}`}
-                            title="Drag to another annotation to add the next step"
+                            title="Drag to an input node, or click then click another annotation's input node"
                             onPointerDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
+                              e.nativeEvent.stopImmediatePropagation();
                               const surface = overlayRef.current;
                               if (!surface) return;
                               const bounds = surface.getBoundingClientRect();
+                              const captureTarget = e.currentTarget;
+                              annotationSequenceGestureRef.current = {
+                                pointerId: e.pointerId,
+                                sourceId: ann.id,
+                                startClientX: e.clientX,
+                                startClientY: e.clientY,
+                                moved: false,
+                                captureTarget,
+                              };
+                              try {
+                                captureTarget.setPointerCapture(e.pointerId);
+                              } catch {}
+                              document.body.classList.add("is-annotation-sequence-dragging");
                               setSelectedLiveAnnId(ann.id);
                               setAnnotationSequenceDrag({
                                 sourceId: ann.id,
@@ -9077,7 +9264,37 @@ export default function EditorWorkspace({
                                 currentY: e.clientY - bounds.top,
                               });
                             }}
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.nativeEvent.stopImmediatePropagation();
+                              const gesture = annotationSequenceGestureRef.current;
+                              if (
+                                gesture?.sourceId === ann.id &&
+                                !gesture.moved
+                              ) {
+                                try {
+                                  if (
+                                    gesture.captureTarget.hasPointerCapture(
+                                      gesture.pointerId,
+                                    )
+                                  ) {
+                                    gesture.captureTarget.releasePointerCapture(
+                                      gesture.pointerId,
+                                    );
+                                  }
+                                } catch {}
+                                annotationSequenceGestureRef.current = null;
+                                setAnnotationSequenceDrag(null);
+                                setAnnotationSequenceTargetId(null);
+                                setAnnotationSequenceClickSourceId((current) =>
+                                  current === ann.id ? null : ann.id,
+                                );
+                                document.body.classList.remove(
+                                  "is-annotation-sequence-dragging",
+                                );
+                              }
+                            }}
                           />
                         </>
                       )}
@@ -9715,7 +9932,7 @@ export default function EditorWorkspace({
               </div>
             )}
             {/* Floating edge dock buttons when panels are collapsed */}
-            {!leftPanelOpen && workspaceTab !== "automate" && (
+            {!leftPanelOpen && !isLiveWorkspace && workspaceTab !== "automate" && (
               <button
                 className="panel-dock-btn dock-left"
                 onClick={() => setLeftPanelOpen(true)}
@@ -9736,7 +9953,7 @@ export default function EditorWorkspace({
               </button>
             )}
 
-            {!rightPanelOpen && workspaceTab !== "automate" && (
+            {!rightPanelOpen && !isLiveWorkspace && workspaceTab !== "automate" && (
               <button
                 className="panel-dock-btn dock-right"
                 onClick={() => setRightPanelOpen(true)}
@@ -9757,7 +9974,7 @@ export default function EditorWorkspace({
               </button>
             )}
 
-            {!bottomSheetOpen && workspaceTab !== "automate" && (
+            {!bottomSheetOpen && !isLiveWorkspace && workspaceTab !== "automate" && (
               <button
                 className="panel-dock-btn dock-bottom"
                 onClick={() => setBottomSheetOpen(true)}
@@ -9780,7 +9997,7 @@ export default function EditorWorkspace({
               </button>
             )}
             {/* Horizontal ruler */}
-            {rulersOn && (
+            {!isLiveWorkspace && rulersOn && (
               <div className="ruler-h-container">
                 <div className="ruler-corner" />
                 <canvas
@@ -9793,7 +10010,7 @@ export default function EditorWorkspace({
 
             <div className="canvas-with-vruler">
               {/* Vertical ruler */}
-              {rulersOn && (
+              {!isLiveWorkspace && rulersOn && (
                 <canvas
                   ref={vRulerRef}
                   className="ruler-v"
@@ -9806,7 +10023,7 @@ export default function EditorWorkspace({
                 ref={canvasInnerRef}
                 style={{ position: "relative", flex: 1, overflow: "hidden" }}
               >
-                {missingFonts.length > 0 && (
+                {!isLiveWorkspace && missingFonts.length > 0 && (
                   <div
                     className={`font-notice ${fontsAttempted ? "font-notice-warn" : ""}`}
                   >
@@ -9927,14 +10144,14 @@ export default function EditorWorkspace({
                 <div
                   className="live-browser-wrap"
                   style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    margin: 0,
+                    position: "relative",
+                    width: vpWidth,
+                    height: vpHeight,
+                    margin: "0 auto",
                     overflow: "hidden",
                     background: "#fff",
                     zIndex: 20,
+                    flexShrink: 0,
                     display: workspaceTab === "live" ? "block" : "none",
                   }}
                 >
@@ -9953,12 +10170,12 @@ export default function EditorWorkspace({
                       // as a large, non-interactive white area.
                       display: "flex",
                     }}
-                    allowpopups={true}
+                    allowpopups="true"
                   />
                 </div>
 
                 {/* ── IN-CANVAS 3-WAY SIDE-BY-SIDE / OVERLAY / DIFF ── */}
-                {canvasFrame && (
+                {!isLiveWorkspace && canvasFrame && (
                   <>
                     {/* LEFT PANEL: Standard Desktop Figma Live App / Reference PNG */}
                     {!figmaCardDismissed &&
@@ -10259,7 +10476,7 @@ export default function EditorWorkspace({
                                   background: "#1e1e1e",
                                 }}
                                 useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-                                allowpopups
+                                allowpopups="true"
                               />
                             ) : figmaImage ? (
                               <img

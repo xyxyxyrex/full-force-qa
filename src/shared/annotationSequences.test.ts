@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectAnnotation } from './types'
 import {
+  annotationSequencePath,
   annotationSequencePosition,
   buildAnnotationSequences,
   linkAnnotations,
@@ -18,6 +19,15 @@ const annotation = (id: string, badgeNumber: number): ProjectAnnotation => ({
 })
 
 describe('annotation sequences', () => {
+  it('approaches the arrow target from the correct horizontal direction', () => {
+    expect(annotationSequencePath(100, 20, 20, 40, 10)).toBe(
+      'M 100 20 C 66.4 20, 53.6 40, 20 40',
+    )
+    expect(annotationSequencePath(20, 20, 100, 40, 10)).toBe(
+      'M 20 20 C 53.6 20, 66.4 40, 100 40',
+    )
+  })
+
   it('creates a sequence with the first linked annotation as parent', () => {
     const linked = linkAnnotations([annotation('a', 1), annotation('b', 2)], 'a', 'b')
     expect(buildAnnotationSequences(linked)).toEqual([

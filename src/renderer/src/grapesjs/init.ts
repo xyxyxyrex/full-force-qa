@@ -360,6 +360,12 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
     }
   }
 
+  // GrapesJS initializes even while another workspace hides the Layout side
+  // panels. Detached elements are valid temporary targets until React mounts
+  // the visible panels and reparents these rendered views.
+  const selectorMount = document.querySelector('#selector-container') || document.createElement('div')
+  const layersMount = document.querySelector('#layers-container') || document.createElement('div')
+
   const editor = grapesjs.init({
     container,
     height: '100%',
@@ -388,12 +394,12 @@ export function initEditor(container: HTMLElement, snapshotHtml: string, options
       ]
     },
 
-    selectorManager: { appendTo: '#selector-container' },
+    selectorManager: { appendTo: selectorMount },
 
     // styleManager disabled — replaced by NativeStylePanel in EditorWorkspace
 
     layerManager: {
-      appendTo: '#layers-container',
+      appendTo: layersMount,
       showTextable: true,
       sortable: true
     } as any

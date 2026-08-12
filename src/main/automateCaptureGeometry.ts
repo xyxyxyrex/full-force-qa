@@ -3,8 +3,17 @@ export interface ResolvedScrollPosition {
   clampedToEnd: boolean
 }
 
+// Pages can adjust scroll anchoring by a few CSS pixels after lazy content or
+// sticky-header handlers settle. Tiles overlap by at least 64px, so accepting a
+// small landing delta and compositing at Chromium's actual position is seam-safe.
+export const CAPTURE_SCROLL_LANDING_TOLERANCE = 16
+
 const finiteNonNegative = (value: number): number =>
   Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0
+
+export function isCaptureStickyPosition(position: string): boolean {
+  return position === 'fixed' || position === 'sticky'
+}
 
 export function createCaptureScrollPositions(
   documentHeight: number,
@@ -29,7 +38,7 @@ export function resolveCaptureScrollPosition(
   requestedTop: number,
   actualTop: number,
   currentMaxScroll: number,
-  tolerance = 3,
+  tolerance = CAPTURE_SCROLL_LANDING_TOLERANCE,
 ): ResolvedScrollPosition | null {
   const requested = finiteNonNegative(requestedTop)
   const actual = finiteNonNegative(actualTop)

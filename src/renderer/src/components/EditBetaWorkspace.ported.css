@@ -1652,3 +1652,14 @@ body.is-viewport-resizing * {
   object-fit: contain;
   object-position: left center;
 }
+.edit-beta-capture-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}

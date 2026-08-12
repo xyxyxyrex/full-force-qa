@@ -5,7 +5,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writ
 import { tmpdir } from 'os'
 import { spawn } from 'child_process'
 import sharp from 'sharp'
-import { createCaptureScrollPositions, resolveCaptureScrollPosition } from './automateCaptureGeometry'
+import { createCaptureScrollPositions, isCaptureStickyPosition, resolveCaptureScrollPosition } from './automateCaptureGeometry'
 
 const PARITY_APP_ID = 'com.fullforce.parity'
 
@@ -690,26 +690,46 @@ const AUTOMATE_DOM_EXPRESSION = `(() => {
   return { nodes, pageWidth: Math.ceil(pageWidth), pageHeight: Math.ceil(pageHeight) };
 })()`
 
+function capturePromiseWithTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), Math.max(1, milliseconds))
+    promise.then(
+      (value) => { clearTimeout(timeout); resolve(value) },
+      (error) => { clearTimeout(timeout); reject(error) },
+    )
+  })
+}
+
 async function captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number) {
   const target = electronWebContents.fromId(webContentsId)
   if (!target || target.isDestroyed()) throw new Error('The staging capture browser is no longer available.')
   const debug = target.debugger
   const attachedHere = !debug.isAttached()
   if (attachedHere) debug.attach('1.3')
+  const captureDeadline = Date.now() + 60_000
+  const sendCaptureCommand = <T = any>(method: string, params?: Record<string, unknown>, maximumWait = 12_000): Promise<T> => {
+    const remaining = captureDeadline - Date.now()
+    if (remaining <= 0) return Promise.reject(new Error('Full-page capture exceeded 60 seconds.'))
+    return capturePromiseWithTimeout(
+      debug.sendCommand(method, params) as Promise<T>,
+      Math.min(maximumWait, remaining),
+      `${method} timed out during full-page capture.`,
+    )
+  }
   try {
     const width = Math.max(320, Math.round(viewportWidth))
     // Keep the emulated surface below the host webview's physical height. Some
     // Electron/Windows combinations return a blank tail when asked for 1200px.
     const tileHeight = Math.max(320, Math.min(1000, Math.round(viewportHeight)))
-    await debug.sendCommand('Page.enable')
-    await debug.sendCommand('Emulation.setDeviceMetricsOverride', { width, height: tileHeight, deviceScaleFactor: 1, mobile: false, screenWidth: width, screenHeight: tileHeight })
+    await sendCaptureCommand('Page.enable')
+    await sendCaptureCommand('Emulation.setDeviceMetricsOverride', { width, height: tileHeight, deviceScaleFactor: 1, mobile: false, screenWidth: width, screenHeight: tileHeight })
     // A visible scrollbar shrinks the content box by its own width, which shows
     // up as a spurious few-pixel horizontal defect on every element in the page.
-    try { await debug.sendCommand('Emulation.setScrollbarsHidden', { hidden: true }) } catch {}
-    await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const freeze = document.createElement('style'); freeze.id = '__qaAutomateFreeze'; freeze.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; caret-color: transparent !important; }'; document.head?.appendChild(freeze); const animations = document.getAnimations().map((animation) => ({ animation, playState: animation.playState })); for (const item of animations) item.animation.pause(); const positioned = []; for (const element of document.body?.querySelectorAll('*') || []) { const position = getComputedStyle(element).position; if (position === 'fixed' || position === 'sticky') positioned.push({ element, visibility: element.style.visibility }); } window.__qaAutomateAtomicState = { x: scrollX, y: scrollY, animations, positioned, scrollBehavior: document.documentElement.style.scrollBehavior }; document.documentElement.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,0); return document.readyState; })()`, awaitPromise: true })
+    try { await sendCaptureCommand('Emulation.setScrollbarsHidden', { hidden: true }) } catch {}
+    await sendCaptureCommand('Runtime.evaluate', { expression: `(() => { const shouldSuppressPosition = (${isCaptureStickyPosition.toString()}); const freeze = document.createElement('style'); freeze.id = '__qaAutomateFreeze'; freeze.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; caret-color: transparent !important; }'; document.head?.appendChild(freeze); const animations = document.getAnimations().map((animation) => ({ animation, playState: animation.playState })); for (const item of animations) item.animation.pause(); const positioned = []; const positionedElements = new WeakSet(); const rememberPositioned = (element) => { if (positionedElements.has(element)) return; positionedElements.add(element); positioned.push({ element, visibility: element.style.getPropertyValue('visibility'), visibilityPriority: element.style.getPropertyPriority('visibility') }); }; for (const element of document.body?.querySelectorAll('*') || []) { if (shouldSuppressPosition(getComputedStyle(element).position)) rememberPositioned(element); } window.__qaAutomateAtomicState = { x: scrollX, y: scrollY, animations, positioned, positionedElements, rememberPositioned, shouldSuppressPosition, scrollBehavior: document.documentElement.style.scrollBehavior }; document.documentElement.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,0); return document.readyState; })()`, awaitPromise: true })
     // Wait for the page to actually be ready to photograph — fonts and in-flight
     // images — rather than trusting a flat delay to have been long enough.
-    await debug.sendCommand('Runtime.evaluate', {
+    await sendCaptureCommand('Runtime.evaluate', {
       expression: `(async () => {
         try { await Promise.race([(document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve(), new Promise((resolve) => setTimeout(resolve, 3000))]); } catch {}
         const images = Array.from(document.images || []).slice(0, 400).filter((img) => !img.complete);
@@ -723,7 +743,7 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
       awaitPromise: true
     })
     await new Promise((resolve) => setTimeout(resolve, 220))
-    const measured = await debug.sendCommand('Runtime.evaluate', { expression: `(() => { const root = document.documentElement; const body = document.body; const scroller = document.scrollingElement || root; const viewportHeight = Math.max(1, Math.ceil(scroller.clientHeight || innerHeight || ${tileHeight})); const height = Math.ceil(Math.max(scroller.scrollHeight, root.scrollHeight, body?.scrollHeight || 0, viewportHeight)); const scrollRange = Math.ceil(Math.max(0, scroller.scrollHeight - scroller.clientHeight, root.scrollHeight - root.clientHeight, (body?.scrollHeight || 0) - (body?.clientHeight || 0))); return { width: Math.ceil(Math.max(root.scrollWidth, body?.scrollWidth || 0)), height, viewportHeight, scrollRange }; })()`, returnByValue: true })
+    const measured = await sendCaptureCommand('Runtime.evaluate', { expression: `(() => { const root = document.documentElement; const body = document.body; const scroller = document.scrollingElement || root; const viewportHeight = Math.max(1, Math.ceil(scroller.clientHeight || innerHeight || ${tileHeight})); const height = Math.ceil(Math.max(scroller.scrollHeight, root.scrollHeight, body?.scrollHeight || 0, viewportHeight)); const scrollRange = Math.ceil(Math.max(0, scroller.scrollHeight - scroller.clientHeight, root.scrollHeight - root.clientHeight, (body?.scrollHeight || 0) - (body?.clientHeight || 0))); return { width: Math.ceil(Math.max(root.scrollWidth, body?.scrollWidth || 0)), height, viewportHeight, scrollRange }; })()`, returnByValue: true })
     const measuredValue = measured?.result?.value || {}
     const documentWidth = Math.max(width, Number(measuredValue.width || width))
     const effectiveViewportHeight = Math.max(1, Number(measuredValue.viewportHeight || tileHeight))
@@ -734,8 +754,7 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
     let previousHash = ''; let consecutiveDuplicates = 0
     for (let index = 0; index < uniquePositions.length; index++) {
       const y = uniquePositions[index]
-      const positionedVisibility = y === 0 ? 'item.visibility' : "'hidden'"
-      const positioned = await debug.sendCommand('Runtime.evaluate', { expression: `(async () => { const state = window.__qaAutomateAtomicState; for (const item of state?.positioned || []) item.element.style.visibility = ${positionedVisibility}; const root = document.documentElement; const body = document.body; const scroller = document.scrollingElement || root; root.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,${y}); root.scrollTop=${y}; if (body) body.scrollTop=${y}; await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))); const viewportHeight = Math.max(1, Math.ceil(scroller.clientHeight || innerHeight || ${effectiveViewportHeight})); const scrollHeight = Math.ceil(Math.max(scroller.scrollHeight, root.scrollHeight, body?.scrollHeight || 0, viewportHeight)); const maxScroll = Math.ceil(Math.max(0, scroller.scrollHeight - scroller.clientHeight, root.scrollHeight - root.clientHeight, (body?.scrollHeight || 0) - (body?.clientHeight || 0))); return { y: scrollY, rootY: root.scrollTop, bodyY: body?.scrollTop || 0, scrollHeight, viewportHeight, maxScroll }; })()`, returnByValue: true, awaitPromise: true })
+      const positioned = await sendCaptureCommand('Runtime.evaluate', { expression: `(async () => { const state = window.__qaAutomateAtomicState; const restoreVisibility = (item) => { if (item.visibility) item.element.style.setProperty('visibility', item.visibility, item.visibilityPriority || ''); else item.element.style.removeProperty('visibility'); }; for (const item of state?.positioned || []) { if (${y} === 0) restoreVisibility(item); else item.element.style.setProperty('visibility','hidden','important'); } const root = document.documentElement; const body = document.body; const scroller = document.scrollingElement || root; root.style.setProperty('scroll-behavior','auto','important'); scrollTo(0,${y}); root.scrollTop=${y}; if (body) body.scrollTop=${y}; await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))); await new Promise((resolve) => setTimeout(resolve, 50)); if (${y} > 0 && state) { for (const element of body?.querySelectorAll('*') || []) { if (!state.shouldSuppressPosition(getComputedStyle(element).position)) continue; state.rememberPositioned(element); element.style.setProperty('visibility','hidden','important'); } await new Promise((resolve) => setTimeout(resolve, 0)); } const viewportHeight = Math.max(1, Math.ceil(scroller.clientHeight || innerHeight || ${effectiveViewportHeight})); const scrollHeight = Math.ceil(Math.max(scroller.scrollHeight, root.scrollHeight, body?.scrollHeight || 0, viewportHeight)); const maxScroll = Math.ceil(Math.max(0, scroller.scrollHeight - scroller.clientHeight, root.scrollHeight - root.clientHeight, (body?.scrollHeight || 0) - (body?.clientHeight || 0))); return { y: scrollY, rootY: root.scrollTop, bodyY: body?.scrollTop || 0, scrollHeight, viewportHeight, maxScroll, positioned: state?.positioned?.length || 0 }; })()`, returnByValue: true, awaitPromise: true })
       const positionValue = positioned?.result?.value || {}
       const actual = Math.max(Number(positionValue.y || 0), Number(positionValue.rootY || 0), Number(positionValue.bodyY || 0))
       const currentMaxScroll = Math.max(0, Number(positionValue.maxScroll || 0))
@@ -745,7 +764,7 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
         documentHeight = Math.max(effectiveViewportHeight, Number(positionValue.scrollHeight || 0), resolvedPosition.top + Number(positionValue.viewportHeight || effectiveViewportHeight))
         uniquePositions.splice(index + 1)
       }
-      const screenshot = await debug.sendCommand('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false, optimizeForSpeed: true })
+      const screenshot = await sendCaptureCommand('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false, optimizeForSpeed: true }, 15_000)
       const tile = Buffer.from(screenshot.data, 'base64'); const hash = createHash('sha256').update(tile).digest('hex')
       if (index > 0 && hash === previousHash) consecutiveDuplicates++; else consecutiveDuplicates = 0
       if (consecutiveDuplicates >= 1) throw new Error(`Chromium returned a repeated DevTools tile at ${resolvedPosition.top}px.`)
@@ -753,15 +772,15 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
     }
     // Scan only after the full scroll pass so lazy-rendered footer and below-fold
     // elements participate in semantic matching. Coordinates are document-relative.
-    const semantic = await debug.sendCommand('Runtime.evaluate', { expression: AUTOMATE_DOM_EXPRESSION, returnByValue: true })
+    const semantic = await sendCaptureCommand('Runtime.evaluate', { expression: AUTOMATE_DOM_EXPRESSION, returnByValue: true }, 15_000)
     const stitched = await sharp({ create: { width, height: documentHeight, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).png({ compressionLevel: 6 }).toBuffer()
     return { success: true, dataUrl: `data:image/png;base64,${stitched.toString('base64')}`, documentWidth, documentHeight, domNodes: semantic?.result?.value?.nodes || [], tiles: composites.length, mode: 'verified-cdp-tiles' }
   } finally {
     try {
-      await debug.sendCommand('Runtime.evaluate', { expression: `(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) item.element.style.visibility = item.visibility; document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` })
+      await capturePromiseWithTimeout(debug.sendCommand('Runtime.evaluate', { expression: `(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) { if (item.visibility) item.element.style.setProperty('visibility', item.visibility, item.visibilityPriority || ''); else item.element.style.removeProperty('visibility'); } document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` }), 2_000, 'Capture page cleanup timed out.')
     } catch {}
-    try { await debug.sendCommand('Emulation.setScrollbarsHidden', { hidden: false }) } catch {}
-    try { await debug.sendCommand('Emulation.clearDeviceMetricsOverride') } catch {}
+    try { await capturePromiseWithTimeout(debug.sendCommand('Emulation.setScrollbarsHidden', { hidden: false }), 2_000, 'Scrollbar cleanup timed out.') } catch {}
+    try { await capturePromiseWithTimeout(debug.sendCommand('Emulation.clearDeviceMetricsOverride'), 2_000, 'Viewport cleanup timed out.') } catch {}
     if (attachedHere && debug.isAttached()) debug.detach()
   }
 }

@@ -3,6 +3,18 @@ import type { ProjectAnnotation, ProjectAnnotationSequence } from './types'
 const orderOf = (annotation: ProjectAnnotation) =>
   Number.isFinite(annotation.sequenceOrder) ? Number(annotation.sequenceOrder) : Number.MAX_SAFE_INTEGER
 
+export function annotationSequencePath(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  minimumBend = 36,
+): string {
+  const direction = endX < startX ? -1 : 1
+  const bend = Math.max(minimumBend, Math.abs(endX - startX) * 0.42)
+  return `M ${startX} ${startY} C ${startX + direction * bend} ${startY}, ${endX - direction * bend} ${endY}, ${endX} ${endY}`
+}
+
 export function buildAnnotationSequences(
   annotations: readonly ProjectAnnotation[],
 ): ProjectAnnotationSequence[] {

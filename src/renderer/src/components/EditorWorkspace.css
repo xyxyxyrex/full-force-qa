@@ -1862,6 +1862,56 @@
   justify-content: center;
 }
 
+/* Live is intentionally browser-first. Editing-only tools stay mounted while
+   the toolbar changes workspace so they can animate out and restore without
+   layout jumps or stale popovers. */
+.viewport-controls > .live-excluded,
+.toolbar-right > .live-excluded {
+  max-width: 520px;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  transition:
+    max-width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-width 200ms ease,
+    visibility 0s linear;
+}
+
+.editor-toolbar.is-live .live-excluded {
+  max-width: 0 !important;
+  min-width: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-left-width: 0 !important;
+  border-right-width: 0 !important;
+  opacity: 0;
+  overflow: hidden !important;
+  pointer-events: none;
+  transform: translateY(-4px) scale(0.94);
+  visibility: hidden;
+  transition:
+    max-width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-width 200ms ease,
+    visibility 0s linear 240ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport-controls > .live-excluded,
+  .toolbar-right > .live-excluded {
+    transition-duration: 0.01ms;
+  }
+}
+
 .add-guides-dialog {
   width: min(460px, calc(100vw - 36px));
   max-height: calc(100vh - 36px);
@@ -3369,6 +3419,54 @@ body.is-panel-resizing {
 
 .annotation-sequence-node[data-sequence-target-id]:hover {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--annotation-color, var(--accent-color)) 36%, transparent), 0 3px 8px rgba(0, 0, 0, .7);
+}
+
+.annotate-drawing-surface.is-sequence-dragging {
+  z-index: 10002 !important;
+  cursor: grabbing !important;
+  user-select: none;
+  touch-action: none;
+}
+
+.annotate-drawing-surface.is-sequence-dragging .selection-box-overlay,
+.annotate-drawing-surface.is-sequence-click-linking .selection-box-overlay {
+  pointer-events: none !important;
+}
+
+.annotate-drawing-surface.is-sequence-dragging .annotation-sequence-node,
+.annotate-drawing-surface.is-sequence-click-linking .annotation-sequence-node {
+  pointer-events: auto !important;
+  opacity: 1;
+}
+
+.annotation-sequence-node.output.is-click-source {
+  transform: scale(1.3);
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--annotation-color, var(--accent-color)) 42%, transparent),
+    0 3px 10px rgba(0, 0, 0, .8);
+}
+
+.annotation-sequence-node.input.is-click-target {
+  animation: annotationSequenceTargetPulse 1s ease-in-out infinite;
+}
+
+.annotation-sequence-node.input.is-drag-target {
+  transform: scale(1.45) !important;
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--annotation-color, var(--accent-color)) 48%, transparent),
+    0 3px 12px rgba(0, 0, 0, .85);
+}
+
+body.is-annotation-sequence-dragging,
+body.is-annotation-sequence-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+@keyframes annotationSequenceTargetPulse {
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--annotation-color, var(--accent-color)) 35%, transparent);
+  }
 }
 
 .annotation-sequence-step {

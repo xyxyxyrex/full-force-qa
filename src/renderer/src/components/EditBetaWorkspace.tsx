@@ -20,6 +20,27 @@ import type {
   CaptureViewportInfo,
 } from "./FullsiteCanvasModal";
 import { plainTextFromRichText } from "./RichTextEditor";
+import { canvasViewportGeometry } from "../utils/canvasZoom";
+
+function rendererCaptureWithTimeout<T>(
+  promise: Promise<T>,
+  milliseconds: number,
+  message: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error(message)), milliseconds);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
 
 export type FontInspectorMode = "off" | "selected" | "all";
 export type InteractionMode = "edit" | "interact" | "eyedropper";
@@ -3663,6 +3684,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const [figmaFrameOffset, setFigmaFrameOffset] = useState({ x: 0, y: 0 });
     const [liveFrameOffset, setLiveFrameOffset] = useState({ x: 0, y: 0 });
     const [snapshotFrameOffset, setSnapshotFrameOffset] = useState({ x: 0, y: 0 });
+    const [capturePreviewDataUrl, setCapturePreviewDataUrl] = useState<string | null>(null);
 
     const annotationGroups = useMemo(() => {
       const groups = new Map<
@@ -3728,18 +3750,15 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       setPanning(false);
       setPan({ x: 0, y: 0 });
     }, []);
-    const scale = Math.max(0.25, zoom / 100);
-    const scaleRef = useRef(scale);
-    useEffect(() => {
-      scaleRef.current = scale;
-    }, [scale]);
+    const viewportGeometry = canvasViewportGeometry(width, height, zoom);
+    const scale = viewportGeometry.scale;
     const comparisonVisible = !!overlayImage && !!overlayVisible;
     const sideBySide = !!overlayVisible && overlayMode === "side-by-side";
     const figmaSideVisible =
       sideBySide && figmaPanelVisible && !!(figmaUrl || figmaImage);
     const snapshotSideVisible = sideBySide && !!snapshotImage;
-    const scaledWidth = width * scale;
-    const scaledHeight = height * scale;
+    const scaledWidth = viewportGeometry.displayedWidth;
+    const scaledHeight = viewportGeometry.displayedHeight;
     const siteOffsetX = figmaSideVisible ? scaledWidth + 24 : 0;
     const stageWidth =
       scaledWidth *
@@ -4532,10 +4551,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         const onLoad = async () => {
           setReady(false);
           try {
-            // Electron webviews do not reliably obey ancestor CSS transforms.
-            // Size the host in screen pixels and use guest zoom to preserve the
-            // requested responsive CSS viewport without an overflowing surface.
-            view.setZoomFactor?.(scaleRef.current);
+            // Canvas zoom belongs to the host transform. Keep the guest at 1x
+            // so its backing surface always matches the requested viewport.
+            view.setZoomFactor?.(1);
           } catch {}
           try {
             const currentUrl = typeof view.getURL === "function" ? view.getURL() : "";
@@ -4681,11 +4699,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     }, [activeFrameId, activeFrames, captureProjectThumbnail, canvasViewMode, constrainPan, onCanvasZoom, onEyedropperColorChange, onHotkeyCommand, onSelectActiveFrame, refreshLayers, sourceUrl]);
 
     useEffect(() => {
-      // Keep the guest surface within its scaled host. At (for example) 30%, a
-      // 573px host at 0.3 guest zoom still exposes a 1910 CSS-pixel viewport.
+      // Also normalize already-mounted guests after hot reloads or canvas zoom
+      // changes; older builds may have left them at the canvas scale.
       Object.values(webviewsMapRef.current).forEach((view) => {
         try {
-          view?.setZoomFactor?.(scale);
+          view?.setZoomFactor?.(1);
         } catch {}
       });
     }, [scale]);
@@ -5061,33 +5079,73 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         captureFullPage: async () => {
           const view = webviewRef.current as any;
           if (!view) return null;
-          await execute("window.__fullForceEditBeta?.prepareCapture?.('metadata') || true");
+          try {
+            await rendererCaptureWithTimeout(
+              execute("window.__fullForceEditBeta?.prepareCapture?.('metadata') || true"),
+              5_000,
+              "Timed out preparing the guest page for capture.",
+            );
+          } catch (error) {
+            console.warn("Guest capture preparation did not complete:", error);
+          }
           try {
             try {
-              const webContentsId = typeof view.getWebContentsId === "function" ? view.getWebContentsId() : null;
-              if (webContentsId) {
-                const viewportWidth = width || 1280;
-                const viewportHeight = height || 800;
-                const res = await window.electronAPI.captureAutomatePage(
+              const previewImage = await rendererCaptureWithTimeout(
+                view.capturePage(),
+                5_000,
+                "Timed out preparing the capture preview.",
+              );
+              const previewDataUrl = previewImage?.toDataURL?.();
+              if (typeof previewDataUrl === "string" && previewDataUrl.startsWith("data:image/")) {
+                setCapturePreviewDataUrl(previewDataUrl);
+                await new Promise<void>((resolve) =>
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+                );
+              }
+            } catch (error) {
+              console.warn("Unable to prepare the capture preview:", error);
+            }
+
+            const webContentsId = typeof view.getWebContentsId === "function" ? view.getWebContentsId() : null;
+            if (webContentsId && window.electronAPI?.captureAutomatePage) {
+              // The guest surface remains at its real responsive viewport
+              // dimensions and only its host frame is visually transformed.
+              // Reading offset dimensions preserves the v1.3.2/v1.3.3
+              // capture contract and prevents Chromium from repeating a
+              // smaller zoomed surface across a full-width screenshot.
+              const viewportWidth = activeViewportRef.current?.offsetWidth || width || 1280;
+              const viewportHeight = activeViewportRef.current?.offsetHeight || height || 800;
+              const res = await rendererCaptureWithTimeout(
+                window.electronAPI.captureAutomatePage(
                   webContentsId,
                   viewportWidth,
-                  viewportHeight
-                );
-                if (res && res.success && res.dataUrl) {
-                  return res.dataUrl;
-                }
-              }
-            } catch (err) {
-              console.warn("CDP full page capture notice, falling back:", err);
-            }
-            try {
-              const image = await view.capturePage();
-              return image ? image.toDataURL() : null;
-            } catch (err) {
+                  viewportHeight,
+                ),
+                68_000,
+                "Full-page capture did not finish within 68 seconds.",
+              );
+              if (res?.success && res.dataUrl) return res.dataUrl;
+              console.error("CDP full-page capture failed:", res?.error || "Unknown capture error");
               return null;
             }
+
+            // Compatibility fallback for environments without the full-page
+            // IPC bridge. Never use this when CDP reports a failure, because a
+            // viewport image must not be presented as a full-site capture.
+            const image = await view.capturePage();
+            return image ? image.toDataURL() : null;
           } finally {
-            await execute("window.__fullForceEditBeta?.finishCapture?.() || true");
+            try {
+              await rendererCaptureWithTimeout(
+                execute("window.__fullForceEditBeta?.finishCapture?.() || true"),
+                5_000,
+                "Timed out restoring the guest page after capture.",
+              );
+            } catch (error) {
+              console.warn("Guest capture restoration did not complete:", error);
+            } finally {
+              setCapturePreviewDataUrl(null);
+            }
           }
         },
         getScrollY: async () => {
@@ -5126,10 +5184,17 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           };
         },
         getCaptureInspection: async () => {
-          const result = await execute(
-            "window.__fullForceEditBeta?.getCaptureInspection?.() || []",
-          );
-          return Array.isArray(result) ? result : [];
+          try {
+            const result = await rendererCaptureWithTimeout(
+              execute("window.__fullForceEditBeta?.getCaptureInspection?.() || []"),
+              5_000,
+              "Timed out reading capture inspection metadata.",
+            );
+            return Array.isArray(result) ? result : [];
+          } catch (error) {
+            console.warn("Capture inspection metadata was unavailable:", error);
+            return [];
+          }
         },
         getPatches: async () => {
           const result = await execute("window.__fullForceEditBeta?.getPatches() || []");
@@ -6114,11 +6179,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                     </span>
                   </div>
                   {figmaUrl && (figmaViewMode === "live" || !figmaImage) ? (
-                    <webview
-                      ref={figmaWebviewRef}
-                      src={figmaUrl}
-                      partition="persist:figma"
-                      allowpopups={true}
+                      <webview
+                        ref={figmaWebviewRef}
+                        src={figmaUrl}
+                        partition="persist:figma"
+                        allowpopups="true"
                       useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
                     />
                   ) : figmaImage ? (
@@ -6169,8 +6234,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                         const isActive = !isMulti || frame.id === activeFrame?.id;
                         const fWidth = isMulti ? frame.width : width;
                         const fHeight = isMulti ? frame.height : height;
-                        const fScaledWidth = fWidth * scale;
-                        const fScaledHeight = fHeight * scale;
+                        const frameGeometry = canvasViewportGeometry(fWidth, fHeight, zoom);
+                        const fScaledWidth = frameGeometry.displayedWidth;
+                        const fScaledHeight = frameGeometry.displayedHeight;
                         
                         const frameOffset = isMulti ? (multiFrameOffsets[frame.id] || { x: 0, y: 0 }) : { x: 0, y: 0 };
                         const thisLeft = (isMulti ? currentLeft : liveFrameLeft) + frameOffset.x * scale;
@@ -6365,11 +6431,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                               ref={isActive ? activeViewportRef : undefined}
                               className="edit-beta-frame"
                               style={{
-                                width: fScaledWidth,
-                                height: fScaledHeight,
-                                transform: "none",
+                                width: frameGeometry.surfaceWidth,
+                                height: frameGeometry.surfaceHeight,
+                                transform: `scale(${scale})`,
+                                transformOrigin: "top left",
                                 pointerEvents: "auto",
-                                overflow: "hidden",
                               }}
                             >
                               <webview
@@ -6384,8 +6450,16 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                   }
                                 }}
                                 src={sourceUrl}
-                                allowpopups={true}
+                                allowpopups="true"
                               />
+                              {isActive && capturePreviewDataUrl && (
+                                <img
+                                  className="edit-beta-capture-preview"
+                                  src={capturePreviewDataUrl}
+                                  alt=""
+                                  aria-hidden="true"
+                                />
+                              )}
                             </div>
 
                             {isActive && mode === "edit" && selected && (

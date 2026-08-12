@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import type { ProjectAnnotation } from '../../../shared/types'
 import {
+  annotationSequencePath,
   annotationSequencePosition,
   buildAnnotationSequences,
   linkAnnotations,
@@ -101,6 +102,16 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
     startY: number
     currentX: number
     currentY: number
+  } | null>(null)
+  const [sequenceClickSourceId, setSequenceClickSourceId] = useState<string | null>(null)
+  const [sequenceTargetId, setSequenceTargetId] = useState<string | null>(null)
+  const sequenceGestureRef = useRef<{
+    pointerId: number
+    sourceId: string
+    startClientX: number
+    startClientY: number
+    moved: boolean
+    captureTarget: HTMLElement
   } | null>(null)
   const [isDrawing, setIsDrawing] = useState<boolean>(false)
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null)
@@ -233,8 +244,33 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
       }
     }
     const handlePointerMove = (event: PointerEvent) => {
+      const gesture = sequenceGestureRef.current
+      if (!gesture || event.pointerId !== gesture.pointerId) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      if (Math.hypot(event.clientX - gesture.startClientX, event.clientY - gesture.startClientY) >= 4) {
+        gesture.moved = true
+      }
       const point = pointInContainer(event)
       if (!point) return
+      const target = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>('[data-canvas-sequence-target-id]')
+      const targetId = target?.dataset.canvasSequenceTargetId !== sourceId
+        ? target?.dataset.canvasSequenceTargetId || null
+        : null
+      setSequenceTargetId(targetId)
+      if (target && targetId) {
+        const containerBounds = containerRef.current?.getBoundingClientRect()
+        const targetBounds = target.getBoundingClientRect()
+        if (containerBounds) {
+          const coordinateWidth = imgNaturalSize?.w || containerRef.current?.clientWidth || 1
+          const coordinateHeight = imgNaturalSize?.h || containerRef.current?.clientHeight || 1
+          point.x = ((targetBounds.left + targetBounds.width / 2 - containerBounds.left) / Math.max(1, containerBounds.width)) * coordinateWidth
+          point.y = ((targetBounds.top + targetBounds.height / 2 - containerBounds.top) / Math.max(1, containerBounds.height)) * coordinateHeight
+        }
+      }
       setSequenceDrag((current) =>
         current?.sourceId === sourceId
           ? { ...current, currentX: point.x, currentY: point.y }
@@ -242,31 +278,73 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
       )
     }
     const finishSequenceDrag = (event: PointerEvent) => {
+      const gesture = sequenceGestureRef.current
+      if (!gesture || event.pointerId !== gesture.pointerId) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
       const target = document
         .elementFromPoint(event.clientX, event.clientY)
         ?.closest<HTMLElement>('[data-canvas-sequence-target-id]')
       const targetId = target?.dataset.canvasSequenceTargetId
-      if (targetId && targetId !== sourceId) {
+      if (event.type !== 'pointercancel' && targetId && targetId !== sourceId) {
         setBoxes((current) => linkAnnotations(current, sourceId, targetId))
         setSelectedBoxId(targetId)
+        setSequenceClickSourceId(null)
+      } else if (event.type !== 'pointercancel' && !gesture.moved) {
+        setSequenceClickSourceId((current) => current === sourceId ? null : sourceId)
       }
+      try {
+        if (gesture.captureTarget.hasPointerCapture(gesture.pointerId)) {
+          gesture.captureTarget.releasePointerCapture(gesture.pointerId)
+        }
+      } catch {}
+      sequenceGestureRef.current = null
       setSequenceDrag(null)
+      setSequenceTargetId(null)
+      document.body.classList.remove('is-annotation-sequence-dragging')
     }
     const cancelSequenceDrag = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSequenceDrag(null)
+      if (event.key !== 'Escape') return
+      const gesture = sequenceGestureRef.current
+      if (gesture) {
+        try {
+          if (gesture.captureTarget.hasPointerCapture(gesture.pointerId)) {
+            gesture.captureTarget.releasePointerCapture(gesture.pointerId)
+          }
+        } catch {}
+      }
+      sequenceGestureRef.current = null
+      setSequenceDrag(null)
+      setSequenceTargetId(null)
+      setSequenceClickSourceId(null)
+      document.body.classList.remove('is-annotation-sequence-dragging')
     }
 
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', finishSequenceDrag, { once: true })
-    window.addEventListener('pointercancel', finishSequenceDrag, { once: true })
-    window.addEventListener('keydown', cancelSequenceDrag)
+    window.addEventListener('pointermove', handlePointerMove, true)
+    window.addEventListener('pointerup', finishSequenceDrag, true)
+    window.addEventListener('pointercancel', finishSequenceDrag, true)
+    window.addEventListener('keydown', cancelSequenceDrag, true)
     return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', finishSequenceDrag)
-      window.removeEventListener('pointercancel', finishSequenceDrag)
-      window.removeEventListener('keydown', cancelSequenceDrag)
+      window.removeEventListener('pointermove', handlePointerMove, true)
+      window.removeEventListener('pointerup', finishSequenceDrag, true)
+      window.removeEventListener('pointercancel', finishSequenceDrag, true)
+      window.removeEventListener('keydown', cancelSequenceDrag, true)
     }
   }, [sequenceDrag?.sourceId, imgNaturalSize?.h, imgNaturalSize?.w])
+
+  useEffect(() => {
+    if (isOpen) return
+    sequenceGestureRef.current = null
+    setSequenceDrag(null)
+    setSequenceTargetId(null)
+    setSequenceClickSourceId(null)
+    document.body.classList.remove('is-annotation-sequence-dragging')
+  }, [isOpen])
+
+  useEffect(() => () => {
+    document.body.classList.remove('is-annotation-sequence-dragging')
+  }, [])
 
   const getBoxImageRect = (box: CanvasSelectionBox) => {
     const naturalW = imgNaturalSize?.w || imgRef.current?.naturalWidth || 1
@@ -754,8 +832,13 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
         <div ref={viewportRef} className="fullsite-viewport">
           <div
             ref={containerRef}
-            className="master-image-container"
-            style={{ transform: `scale(${zoom})` }}
+            className={`master-image-container ${sequenceDrag ? 'is-sequence-dragging' : ''} ${sequenceClickSourceId ? 'is-sequence-click-linking' : ''}`}
+            style={{
+              width: imgNaturalSize?.w,
+              height: imgNaturalSize?.h,
+              flex: '0 0 auto',
+              zoom,
+            } as React.CSSProperties}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -770,7 +853,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                 aria-hidden="true"
               >
                 <defs>
-                  <marker id="canvas-sequence-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <marker id="canvas-sequence-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
                     <path d="M 0 0 L 10 5 L 0 10 z" />
                   </marker>
                 </defs>
@@ -785,12 +868,11 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                     const y1 = sourceRect.y - 18 / Math.max(.1, zoom)
                     const x2 = targetRect.x
                     const y2 = targetRect.y - 18 / Math.max(.1, zoom)
-                    const bend = Math.max(48 / Math.max(.1, zoom), Math.abs(x2 - x1) * .42)
                     return (
                       <path
                         key={`${source.id}-${target.id}`}
                         className="annotation-sequence-path"
-                        d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
+                        d={annotationSequencePath(x1, y1, x2, y2, 48 / Math.max(.1, zoom))}
                         markerEnd="url(#canvas-sequence-arrow)"
                       />
                     )
@@ -799,7 +881,13 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                 {sequenceDrag && (
                   <path
                     className="annotation-sequence-path preview"
-                    d={`M ${sequenceDrag.startX} ${sequenceDrag.startY} C ${sequenceDrag.startX + 48 / Math.max(.1, zoom)} ${sequenceDrag.startY}, ${sequenceDrag.currentX - 48 / Math.max(.1, zoom)} ${sequenceDrag.currentY}, ${sequenceDrag.currentX} ${sequenceDrag.currentY}`}
+                    d={annotationSequencePath(
+                      sequenceDrag.startX,
+                      sequenceDrag.startY,
+                      sequenceDrag.currentX,
+                      sequenceDrag.currentY,
+                      48 / Math.max(.1, zoom),
+                    )}
                     markerEnd="url(#canvas-sequence-arrow)"
                   />
                 )}
@@ -905,32 +993,74 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
 
                   <button
                     type="button"
-                    className="annotation-sequence-node input"
+                    className={`annotation-sequence-node input ${sequenceTargetId === box.id ? 'is-drag-target' : ''} ${sequenceClickSourceId && sequenceClickSourceId !== box.id ? 'is-click-target' : ''}`}
                     data-canvas-sequence-target-id={box.id}
                     aria-label={`Link a previous annotation to ${box.title}`}
-                    title="Drop a sequence connection here"
+                    title={sequenceClickSourceId ? 'Click to complete the sequence connection' : 'Drop a sequence connection here'}
                     style={{ '--annotation-inverse-zoom': String(1 / Math.max(.1, zoom)) } as React.CSSProperties}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      e.nativeEvent.stopImmediatePropagation()
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (sequenceClickSourceId && sequenceClickSourceId !== box.id) {
+                        setBoxes((current) => linkAnnotations(current, sequenceClickSourceId, box.id))
+                        setSelectedBoxId(box.id)
+                        setSequenceClickSourceId(null)
+                      }
+                    }}
                   />
                   <button
                     type="button"
-                    className="annotation-sequence-node output"
+                    className={`annotation-sequence-node output ${sequenceClickSourceId === box.id ? 'is-click-source' : ''}`}
                     aria-label={`Start a sequence connection from ${box.title}`}
-                    title="Drag to another annotation to add the next step"
+                    title="Drag to an input node, or click then click another annotation's input node"
                     style={{ '--annotation-inverse-zoom': String(1 / Math.max(.1, zoom)) } as React.CSSProperties}
                     onPointerDown={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
+                      e.nativeEvent.stopImmediatePropagation()
                       const container = containerRef.current
                       if (!container || !imgNaturalSize) return
                       const bounds = container.getBoundingClientRect()
                       const x = ((e.clientX - bounds.left) / Math.max(1, bounds.width)) * imgNaturalSize.w
                       const y = ((e.clientY - bounds.top) / Math.max(1, bounds.height)) * imgNaturalSize.h
+                      const captureTarget = e.currentTarget
+                      sequenceGestureRef.current = {
+                        pointerId: e.pointerId,
+                        sourceId: box.id,
+                        startClientX: e.clientX,
+                        startClientY: e.clientY,
+                        moved: false,
+                        captureTarget,
+                      }
+                      try {
+                        captureTarget.setPointerCapture(e.pointerId)
+                      } catch {}
+                      document.body.classList.add('is-annotation-sequence-dragging')
                       setSelectedBoxId(box.id)
                       setSequenceDrag({ sourceId: box.id, startX: x, startY: y, currentX: x, currentY: y })
                     }}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      e.nativeEvent.stopImmediatePropagation()
+                      const gesture = sequenceGestureRef.current
+                      if (gesture?.sourceId === box.id && !gesture.moved) {
+                        try {
+                          if (gesture.captureTarget.hasPointerCapture(gesture.pointerId)) {
+                            gesture.captureTarget.releasePointerCapture(gesture.pointerId)
+                          }
+                        } catch {}
+                        sequenceGestureRef.current = null
+                        setSequenceDrag(null)
+                        setSequenceTargetId(null)
+                        setSequenceClickSourceId((current) => current === box.id ? null : box.id)
+                        document.body.classList.remove('is-annotation-sequence-dragging')
+                      }
+                    }}
                   />
 
                   {/* Popover editor for selected box */}
