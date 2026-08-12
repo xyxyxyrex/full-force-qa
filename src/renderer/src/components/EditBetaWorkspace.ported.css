@@ -247,6 +247,13 @@
   border: 0;
   background: #60a5fa;
   padding: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+body.is-viewport-resizing * {
+  cursor: inherit !important;
+  user-select: none !important;
 }
 
 .edit-beta-resize-right {

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#1C2321">
+  <meta name="description" content="Parity is a focused desktop workspace for visual QA, implementation review, and shareable annotations.">
   <link rel="icon" type="image/svg+xml" href="/parity-favicon.svg">
   <link rel="apple-touch-icon" href="/parity-180.png">
   <link rel="manifest" href="/manifest.webmanifest">
@@ -13,6 +14,34 @@
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; padding:28px 16px 56px; background:var(--bg); color:var(--text); font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif; }
     button,input,textarea,select { font:inherit; }
+    [hidden] { display:none !important; }
+    body.landing-mode { padding:0; background:#0e1210; }
+    .landing { min-height:100vh; padding:24px; }
+    .landing-frame { width:min(1120px,100%); min-height:calc(100vh - 48px); display:flex; flex-direction:column; margin:0 auto; overflow:hidden; border:1px solid #303934; border-radius:24px; background:#161c19; box-shadow:0 24px 80px #0005; }
+    .landing-nav { min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:0 28px; border-bottom:1px solid #303934; }
+    .landing-brand { display:flex; align-items:center; gap:11px; color:#f2f5f3; font:700 17px/1 "Space Grotesk",Inter,system-ui,sans-serif; letter-spacing:-.02em; text-decoration:none; }
+    .landing-mark { width:30px; height:30px; display:grid; place-items:center; border:1px solid #3e4a44; border-radius:8px; background:#1c2321; }
+    .landing-mark svg { width:20px; height:20px; }
+    .github-link { min-height:38px; display:inline-flex; align-items:center; gap:8px; padding:0 14px; border:1px solid #46514c; border-radius:9px; color:#dce3df; font-weight:700; text-decoration:none; transition:border-color .16s,background .16s,color .16s; }
+    .github-link:hover,.github-link:focus-visible { border-color:#728078; outline:0; background:#202824; color:#fff; }
+    .landing-content { flex:1; display:grid; align-content:center; grid-template-columns:minmax(0,1.15fr) minmax(360px,.85fr); gap:72px; padding:64px 72px 78px; }
+    .landing-kicker { display:inline-flex; align-items:center; gap:9px; margin:0 0 22px; color:#9eaaa4; font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .landing-kicker::before { width:7px; height:7px; border-radius:50%; background:#44c593; box-shadow:0 0 0 4px #44c59318; content:""; }
+    .landing h1 { max-width:700px; margin:0; color:#f4f7f5; font:700 clamp(64px,8vw,118px)/.88 "Space Grotesk",Inter,system-ui,sans-serif; letter-spacing:-.075em; }
+    .landing-description { max-width:650px; margin:30px 0 0; color:#aeb8b2; font-size:clamp(17px,1.6vw,21px); line-height:1.6; letter-spacing:-.01em; }
+    .install-panel { align-self:center; padding:26px; border:1px solid #37423c; border-radius:16px; background:#111613; }
+    .install-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:22px; }
+    .install-label { margin:0; color:#f0f4f2; font-size:15px; font-weight:800; }
+    .install-note { margin:5px 0 0; color:#7f8b85; font-size:12px; }
+    .version { flex:0 0 auto; padding:5px 9px; border:1px solid #3d4943; border-radius:999px; color:#9eaaa4; font:700 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .command { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px 10px 10px 14px; border:1px solid #3a4640; border-radius:10px; background:#090d0b; }
+    .command code { min-width:0; overflow:auto; color:#d7eee4; font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; white-space:nowrap; scrollbar-width:none; }
+    .command code::-webkit-scrollbar { display:none; }
+    .copy-command { min-width:66px; min-height:34px; padding:0 11px; border:1px solid #48564f; border-radius:7px; background:#202924; color:#e7ece9; font-size:12px; font-weight:800; cursor:pointer; }
+    .copy-command:hover,.copy-command:focus-visible { border-color:#718078; outline:0; background:#29342e; }
+    .install-meta { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:16px; color:#707d76; font-size:11px; }
+    .release-link { color:#9eaaa4; text-decoration:none; }
+    .release-link:hover,.release-link:focus-visible { color:#fff; outline:0; text-decoration:underline; }
     .page { width:min(1180px,100%); margin:auto; }
     .header { display:flex; align-items:center; gap:12px; margin-bottom:22px; }
     .logo { width:38px; height:38px; display:grid; place-items:center; overflow:hidden; border-radius:9px; background:#1c2321; }
@@ -58,6 +87,10 @@
     .annotation.pulse { animation:annotationPulse 1.15s ease-out; }
     @keyframes annotationPulse { 0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--status-color,#9ca3af) 25%,transparent)} 45%{box-shadow:0 0 0 12px color-mix(in srgb,var(--status-color,#9ca3af) 45%,transparent);filter:brightness(1.3)} }
     .annotation-label { position:absolute; top:-25px; left:-2px; max-width:220px; padding:3px 7px; border-radius:4px; background:var(--status-color,#9ca3af); color:var(--status-foreground,#fff); font:700 11px/1.3 system-ui; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .annotation-sequence-layer { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+    .annotation-sequence-path { fill:none; stroke:#f472b6; stroke-width:2.1; stroke-linecap:round; vector-effect:non-scaling-stroke; filter:drop-shadow(0 2px 2px #000b); }
+    .annotation-sequence-layer marker path { fill:#f472b6; }
+    .annotation-sequence-step { display:inline-flex; margin-left:5px; padding:1px 5px; border-radius:999px; background:#0006; color:#fff; font-size:9px; }
     .message { max-width:620px; padding:22px; text-align:center; color:var(--muted); }
     .message.error { color:var(--danger); }
     .retry { margin-top:12px; }
@@ -79,10 +112,23 @@
     .annotation-picker { display:flex; flex-direction:column; gap:7px; margin-bottom:18px; }
     .annotation-choice { width:100%; display:flex; align-items:center; gap:8px; padding:4px; border:1px solid color-mix(in srgb,var(--status-color,#9ca3af) 55%,var(--border)); border-radius:7px; background:color-mix(in srgb,var(--status-color,#9ca3af) 7%,var(--elevated)); color:var(--text); }
     .annotation-choice.active { border-color:var(--status-color,#9ca3af); box-shadow:0 0 0 2px color-mix(in srgb,var(--status-color,#9ca3af) 20%,transparent); }
+    .annotation-sequence-group { display:flex; flex-direction:column; gap:6px; padding:7px; border:1px solid #f472b655; border-radius:9px; background:#f472b60a; }
+    .annotation-sequence-group-label { display:flex; align-items:center; gap:6px; padding:0 3px; color:#f9a8d4; font-size:10px; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+    .annotation-sequence-children { display:flex; flex-direction:column; gap:6px; padding-left:13px; border-left:2px solid #f472b655; }
+    .annotation-choice.sequence-parent { border-color:#f472b688; }
+    .annotation-choice.sequence-child .annotation-jump::before { color:#f9a8d4; content:'↳ '; }
     .annotation-jump { min-width:0; flex:1; padding:6px; border:0; background:transparent; color:inherit; text-align:left; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .status-select { flex:0 0 auto; width:112px; min-height:30px; padding:4px 24px 4px 7px; border:1px solid var(--status-color,#9ca3af); border-radius:5px; outline:0; background:#09090b; color:var(--status-color,#9ca3af); font-size:11px; font-weight:800; cursor:pointer; }
     .status-select:focus { box-shadow:0 0 0 2px color-mix(in srgb,var(--status-color,#9ca3af) 28%,transparent); }
     .status-select option { background:#18181c; color:#f4f4f5; }
+    .sequence-panel { margin:12px 0 15px; padding:11px; border:1px solid #f472b666; border-radius:9px; background:#f472b60d; }
+    .sequence-panel[hidden] { display:none; }
+    .sequence-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
+    .sequence-heading strong { color:#f9a8d4; font-size:11px; }
+    .sequence-heading span { color:var(--muted); font-size:10px; }
+    .sequence-controls { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+    .sequence-controls button { min-height:31px; padding:5px 9px; border:1px solid #52525b; border-radius:6px; background:#27272a; color:#fff; font-size:11px; font-weight:800; cursor:pointer; }
+    .sequence-controls button:disabled { opacity:.35; cursor:not-allowed; }
     .comments { display:flex; flex-direction:column; gap:9px; max-height:270px; margin:12px 0 17px; overflow:auto; }
     .comment { padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--elevated); }
     .comment-head { display:flex; justify-content:space-between; gap:8px; margin-bottom:4px; }
@@ -143,13 +189,50 @@
     .annotation-focus-meta { margin:0; color:var(--muted); font-size:11px; text-align:center; }
     .annotation-modal .sidebar { height:100%; min-height:0; overflow:auto; border-left:1px solid var(--border); }
     @media(max-width:900px){
+      .landing { padding:12px; }.landing-frame{min-height:calc(100vh - 24px);border-radius:16px}.landing-nav{min-height:62px;padding:0 18px}.landing-content{grid-template-columns:1fr;gap:44px;padding:54px 28px 46px}.landing h1{font-size:clamp(64px,22vw,96px)}.install-panel{width:100%}
       .body{grid-template-columns:1fr}.content{border-right:0;border-bottom:1px solid var(--border)}.sidebar{padding:18px}.meta{flex-direction:column}.expiry{padding-top:0}
       .annotation-modal{padding:0}.annotation-modal-dialog{height:100vh;border:0;border-radius:0}.annotation-modal-body{grid-template-columns:1fr;overflow:auto}#modalDetailsSlot{overflow:visible}.annotation-focus{min-height:48vh}.annotation-modal .sidebar{height:auto;overflow:visible;border-top:1px solid var(--border);border-left:0}.annotation-zoom-wrap{min-height:260px}
     }
   </style>
 </head>
 <body>
-  <main class="page">
+  <main class="landing" id="landing" hidden>
+    <section class="landing-frame" aria-labelledby="landingTitle">
+      <nav class="landing-nav" aria-label="Primary navigation">
+        <a class="landing-brand" href="/" aria-label="Parity home">
+          <span class="landing-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 8.5h14M5 15.5h14" stroke="#44c593" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+          <span>Parity</span>
+        </a>
+        <a class="github-link" href="https://github.com/xyxyxyrex/full-force-qa" target="_blank" rel="noreferrer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.03 1.78 2.71 1.26 3.37.97.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.29-5.27-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.16 1.18a10.93 10.93 0 0 1 5.76 0c2.19-1.49 3.15-1.18 3.15-1.18.63 1.59.23 2.77.11 3.06.74.81 1.19 1.84 1.19 3.1 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.06.79 2.14v3.18c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+          GitHub
+        </a>
+      </nav>
+      <div class="landing-content">
+        <div>
+          <p class="landing-kicker">Visual QA workspace for Windows</p>
+          <h1 id="landingTitle">Parity</h1>
+          <p class="landing-description">Compare implementations, annotate issues, and share focused reviews from one desktop workspace.</p>
+        </div>
+        <section class="install-panel" aria-labelledby="installTitle">
+          <div class="install-head">
+            <div><h2 class="install-label" id="installTitle">Install with PowerShell</h2><p class="install-note">Downloads the latest published release.</p></div>
+            <span class="version">v__PARITY_VERSION__</span>
+          </div>
+          <div class="command">
+            <code id="installCommand">irm https://parity-gfx.pages.dev/install.ps1 | iex</code>
+            <button class="copy-command" id="copyInstallCommand" type="button">Copy</button>
+          </div>
+          <div class="install-meta">
+            <span>Windows 10/11 · PowerShell 5.1+</span>
+            <a class="release-link" href="https://github.com/xyxyxyrex/full-force-qa/releases/latest" target="_blank" rel="noreferrer">Latest release ↗</a>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <main class="page" id="viewerPage">
     <header class="header">
       <div class="logo" aria-hidden="true"><svg viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1C2321"/><rect x="18" y="24" width="28" height="5" rx="2.5" fill="#1D9E75"/><rect x="18" y="35" width="28" height="5" rx="2.5" fill="#1D9E75"/></svg></div>
       <h1>parity</h1>
@@ -185,6 +268,16 @@
             <label for="activeStatus">Status</label>
             <select class="status-select" id="activeStatus" aria-label="Status for selected annotation"></select>
           </div>
+          <nav class="sequence-panel" id="sequencePanel" aria-label="Annotation sequence" hidden>
+            <div class="sequence-heading">
+              <strong id="sequenceTitle">Sequence</strong>
+              <span id="sequencePosition"></span>
+            </div>
+            <div class="sequence-controls">
+              <button type="button" id="sequencePrevious">← Previous</button>
+              <button type="button" id="sequenceNext">Next →</button>
+            </div>
+          </nav>
           <section class="detail-section">
             <h4>Description</h4>
             <div class="notes" id="notes" hidden></div>
@@ -262,18 +355,42 @@
     const SUPABASE_ANON_KEY = __SUPABASE_ANON_KEY__;
     const BUCKET = 'qa-ephemeral-snapshots';
     const params = new URLSearchParams(location.search);
+    const el = (id) => document.getElementById(id);
     const state = {
       site: params.get('site') || '',
       masterId: params.get('id') || '',
       itemNumber: Math.max(0, Number.parseInt(params.get('item') || '0', 10) || 0),
       snapshot: null,
       annotations: [],
+      sequences: [],
       inspections: [],
       activeAnnotationId: '',
       statuses: {},
       objectUrls: new Set(),
       modalAnnotationId: '',
     };
+    const isLanding = !state.site && !state.masterId && !params.get('img');
+    if (isLanding) {
+      document.body.classList.add('landing-mode');
+      el('landing').hidden = false;
+      el('viewerPage').hidden = true;
+      document.title = 'Parity — Visual QA workspace';
+      el('copyInstallCommand').addEventListener('click', async () => {
+        const command = el('installCommand').textContent.trim();
+        try {
+          await navigator.clipboard.writeText(command);
+        } catch (_) {
+          const input = document.createElement('textarea');
+          input.value = command;
+          document.body.append(input);
+          input.select();
+          document.execCommand('copy');
+          input.remove();
+        }
+        el('copyInstallCommand').textContent = 'Copied';
+        setTimeout(() => { el('copyInstallCommand').textContent = 'Copy'; }, 1600);
+      });
+    }
     const STATUS_OPTIONS = [
       { value:'requested', label:'Requested', color:'#9ca3af', foreground:'#111827' },
       { value:'in_progress', label:'In progress', color:'#eab308', foreground:'#111827' },
@@ -284,8 +401,6 @@
       { value:'enhancement', label:'Enhancement', color:'#f97316', foreground:'#431407' },
       { value:'pm_clarification', label:'PM clarification', color:'#ec4899', foreground:'#ffffff' },
     ];
-
-    const el = (id) => document.getElementById(id);
     const configured = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(SUPABASE_URL) && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith('__');
     const headers = () => ({ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` });
     const filter = (value) => encodeURIComponent(value);
@@ -469,16 +584,56 @@
 
     async function loadMetadata() {
       if (!state.site || !state.masterId) throw new Error('This snapshot link is incomplete.');
-      const rows = await api(`/rest/v1/qa_snapshots?select=site_slug,master_id,item_number,title,notes,color,object_path,annotations,expires_at&site_slug=eq.${filter(state.site)}&master_id=eq.${filter(state.masterId)}&item_number=eq.${state.itemNumber}&limit=1`);
+      const rows = await api(`/rest/v1/qa_snapshots?select=site_slug,master_id,item_number,title,notes,color,object_path,annotations,annotation_sequences,expires_at&site_slug=eq.${filter(state.site)}&master_id=eq.${filter(state.masterId)}&item_number=eq.${state.itemNumber}&limit=1`);
       if (!Array.isArray(rows) || !rows[0]) throw new Error('This capture was not uploaded, has expired, or no longer exists.');
       state.snapshot = rows[0];
       const rawAnnotations = Array.isArray(rows[0].annotations) ? rows[0].annotations : [];
       const inspectionManifest = rawAnnotations.find((entry) => entry?.kind === 'inspection-manifest');
       state.inspections = Array.isArray(inspectionManifest?.overlays) ? inspectionManifest.overlays : [];
       state.annotations = rawAnnotations.filter((entry) => entry?.kind !== 'inspection-manifest');
+      state.sequences = normalizeSequences(rows[0].annotation_sequences, state.annotations);
       state.activeAnnotationId = state.itemNumber > 0
         ? String(state.annotations[0]?.id || `item-${state.itemNumber}`)
         : String(state.annotations[0]?.id || 'master');
+    }
+
+    function normalizeSequences(rawSequences, annotations) {
+      const annotationIds = new Set(annotations.map((annotation) => String(annotation?.id || '')).filter(Boolean));
+      const normalized = (Array.isArray(rawSequences) ? rawSequences : []).flatMap((sequence) => {
+        const parentAnnotationId = String(sequence?.parentAnnotationId || '');
+        const ids = Array.isArray(sequence?.annotationIds)
+          ? sequence.annotationIds.map(String).filter((id) => annotationIds.has(id))
+          : [];
+        return parentAnnotationId && ids.length > 1 && ids[0] === parentAnnotationId
+          ? [{ parentAnnotationId, annotationIds:ids }]
+          : [];
+      });
+      if (normalized.length) return normalized;
+
+      const groups = new Map();
+      annotations.forEach((annotation) => {
+        const parentId = String(annotation?.sequenceParentId || '');
+        if (!parentId || !annotationIds.has(parentId)) return;
+        const members = groups.get(parentId) || [];
+        members.push(annotation);
+        groups.set(parentId, members);
+      });
+      return Array.from(groups.entries()).flatMap(([parentAnnotationId, members]) => {
+        const annotationIds = members
+          .sort((a,b) => (Number(a.sequenceOrder) || 0) - (Number(b.sequenceOrder) || 0))
+          .map((annotation) => String(annotation.id));
+        return annotationIds.length > 1 && annotationIds[0] === parentAnnotationId
+          ? [{ parentAnnotationId, annotationIds }]
+          : [];
+      });
+    }
+
+    function sequenceForAnnotation(annotationId) {
+      return state.sequences.find((sequence) => sequence.annotationIds.includes(String(annotationId))) || null;
+    }
+
+    function annotationById(annotationId) {
+      return state.annotations.find((annotation) => String(annotation?.id || '') === String(annotationId));
     }
 
     async function loadStatuses() {
@@ -770,6 +925,28 @@
       activeStatus.value = annotationStatus(id);
       applyStatusStyle(activeStatus, id);
       el('annotationModalTitle').textContent = `#${badgeNumber} ${title}`;
+      updateSequencePanel(id);
+    }
+
+    function updateSequencePanel(annotationId) {
+      const panel = el('sequencePanel');
+      const sequence = sequenceForAnnotation(annotationId);
+      panel.hidden = !sequence;
+      if (!sequence) return;
+      const index = sequence.annotationIds.indexOf(String(annotationId));
+      const parent = annotationById(sequence.parentAnnotationId);
+      el('sequenceTitle').textContent = `Sequence: ${parent?.title || 'Parent annotation'}`;
+      el('sequencePosition').textContent = `Step ${index + 1} of ${sequence.annotationIds.length}`;
+      el('sequencePrevious').disabled = index <= 0;
+      el('sequenceNext').disabled = index < 0 || index >= sequence.annotationIds.length - 1;
+    }
+
+    function navigateSequence(offset) {
+      const sequence = sequenceForAnnotation(state.activeAnnotationId);
+      if (!sequence) return;
+      const currentIndex = sequence.annotationIds.indexOf(state.activeAnnotationId);
+      const target = annotationById(sequence.annotationIds[currentIndex + offset]);
+      if (target) setActiveAnnotation(target, true);
     }
 
     let annotationModalReturnFocus = null;
@@ -830,10 +1007,10 @@
       }
     }
 
-    function addAnnotationChoice(picker, annotation, index) {
+    function addAnnotationChoice(container, annotation, index, sequenceRole = '') {
       const id = String(annotation?.id || (state.itemNumber ? `item-${state.itemNumber}` : `annotation-${index + 1}`));
       const choice = document.createElement('div');
-      choice.className = 'annotation-choice';
+      choice.className = `annotation-choice${sequenceRole ? ` sequence-${sequenceRole}` : ''}`;
       choice.dataset.annotationId = id;
 
       const jump = document.createElement('button');
@@ -855,7 +1032,36 @@
       select.addEventListener('change', () => void setAnnotationStatus(id, select.value));
       choice.append(jump, select);
       applyStatusStyle(choice, id);
-      picker.append(choice);
+      container.append(choice);
+    }
+
+    function renderSequenceConnections(layer, image) {
+      if (!state.sequences.length) return;
+      const svgNode = (name) => document.createElementNS('http://www.w3.org/2000/svg', name);
+      const svg = svgNode('svg');
+      svg.setAttribute('class','annotation-sequence-layer');
+      svg.setAttribute('viewBox','0 0 100 100');
+      svg.setAttribute('preserveAspectRatio','none');
+      const defs = svgNode('defs');
+      const marker = svgNode('marker');
+      marker.setAttribute('id','viewer-sequence-arrow'); marker.setAttribute('viewBox','0 0 10 10');
+      marker.setAttribute('refX','8'); marker.setAttribute('refY','5'); marker.setAttribute('markerWidth','7');
+      marker.setAttribute('markerHeight','7'); marker.setAttribute('orient','auto-start-reverse');
+      const head = svgNode('path'); head.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); marker.append(head); defs.append(marker); svg.append(defs);
+      state.sequences.forEach((sequence) => {
+        sequence.annotationIds.slice(0,-1).forEach((sourceId,index) => {
+          const source = annotationById(sourceId); const target = annotationById(sequence.annotationIds[index+1]);
+          if (!source || !target) return;
+          const sourceRect = annotationPercentRect(source,image); const targetRect = annotationPercentRect(target,image);
+          const x1=sourceRect.left+sourceRect.width; const y1=sourceRect.top;
+          const x2=targetRect.left; const y2=targetRect.top;
+          const bend=Math.max(3.5,Math.abs(x2-x1)*.42);
+          const path=svgNode('path'); path.setAttribute('class','annotation-sequence-path');
+          path.setAttribute('d',`M ${x1} ${y1} C ${x1+bend} ${y1}, ${x2-bend} ${y2}, ${x2} ${y2}`);
+          path.setAttribute('marker-end','url(#viewer-sequence-arrow)'); svg.append(path);
+        });
+      });
+      layer.append(svg);
     }
 
     function renderAnnotations() {
@@ -872,6 +1078,8 @@
         return;
       }
 
+      renderSequenceConnections(layer, image);
+
       state.annotations.forEach((annotation, index) => {
         const id = String(annotation.id || `annotation-${index + 1}`);
         const rect = annotationPercentRect(annotation, image);
@@ -886,11 +1094,34 @@
         const label = document.createElement('span');
         label.className = 'annotation-label';
         label.textContent = `#${annotation.badgeNumber || index + 1} ${annotation.title || 'Annotation'}`;
+        const sequence = sequenceForAnnotation(id);
+        if (sequence) {
+          const step = document.createElement('span'); step.className='annotation-sequence-step';
+          step.textContent = `${sequence.annotationIds.indexOf(id)+1}/${sequence.annotationIds.length}`; label.append(step);
+        }
         box.append(label);
         box.addEventListener('click', () => openAnnotationModal(annotation));
         layer.append(box);
+      });
 
-        addAnnotationChoice(picker, annotation, index);
+      const sequencedIds = new Set();
+      state.sequences.forEach((sequence, sequenceIndex) => {
+        const parent = annotationById(sequence.parentAnnotationId);
+        if (!parent) return;
+        const group = document.createElement('div'); group.className='annotation-sequence-group';
+        const heading = document.createElement('div'); heading.className='annotation-sequence-group-label';
+        heading.textContent = `Sequence ${sequenceIndex + 1} · ${sequence.annotationIds.length} steps`; group.append(heading);
+        addAnnotationChoice(group, parent, state.annotations.indexOf(parent), 'parent');
+        const children = document.createElement('div'); children.className='annotation-sequence-children';
+        sequence.annotationIds.slice(1).forEach((id) => {
+          const annotation = annotationById(id); if (!annotation) return;
+          addAnnotationChoice(children, annotation, state.annotations.indexOf(annotation), 'child');
+        });
+        group.append(children); picker.append(group);
+        sequence.annotationIds.forEach((id) => sequencedIds.add(id));
+      });
+      state.annotations.forEach((annotation,index) => {
+        if (!sequencedIds.has(String(annotation.id))) addAnnotationChoice(picker, annotation, index);
       });
       setActiveAnnotation(state.annotations[0]);
     }
@@ -1155,12 +1386,19 @@
       }
     });
     el('activeStatus').addEventListener('change', () => void setAnnotationStatus(state.activeAnnotationId, el('activeStatus').value));
+    el('sequencePrevious').addEventListener('click', () => navigateSequence(-1));
+    el('sequenceNext').addEventListener('click', () => navigateSequence(1));
     el('closeAnnotationModal').addEventListener('click', closeAnnotationModal);
     el('annotationModal').addEventListener('click', (event) => { if (event.target === el('annotationModal')) closeAnnotationModal(); });
     document.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape') return;
-      if (!el('imageLightbox').hidden) closeImageLightbox();
-      else closeAnnotationModal();
+      if (event.key === 'Escape') {
+        if (!el('imageLightbox').hidden) closeImageLightbox();
+        else closeAnnotationModal();
+        return;
+      }
+      if (el('annotationModal').hidden || event.target?.matches?.('input,textarea,select,[contenteditable="true"]')) return;
+      if (event.key === 'ArrowLeft') { event.preventDefault(); navigateSequence(-1); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); navigateSequence(1); }
     });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && state.snapshot) void reconcileRealtimeState();
@@ -1173,7 +1411,7 @@
     });
 
     addEventListener('beforeunload', () => { state.objectUrls.forEach((url) => URL.revokeObjectURL(url)); });
-    void initialize();
+    if (!isLanding) void initialize();
   </script>
 </body>
 </html>

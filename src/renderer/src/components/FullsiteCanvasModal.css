@@ -323,6 +323,23 @@
   padding: 3px;
 }
 
+.fullsite-sequence-links {
+  width: 100%;
+  height: 100%;
+  z-index: 9;
+}
+
+.master-image-container .annotation-sequence-node {
+  transform: scale(var(--annotation-inverse-zoom, 1));
+  transform-origin: center;
+}
+
+.master-image-container .selection-box-overlay:hover .annotation-sequence-node,
+.master-image-container .selection-box-overlay.selection-box-active .annotation-sequence-node,
+.master-image-container .annotation-sequence-node:hover {
+  transform: scale(var(--annotation-inverse-zoom, 1)) scale(1.18);
+}
+
 .inspection-property-chip {
   display: inline-flex;
   align-items: center;

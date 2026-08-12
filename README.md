@@ -126,6 +126,16 @@ full-force-seo/
 
 ## Installation and Setup
 
+### Install the latest Windows release
+
+Run this command in PowerShell:
+
+```powershell
+irm https://parity-gfx.pages.dev/install.ps1 | iex
+```
+
+The bootstrapper resolves the latest published GitHub release, verifies its SHA-256 digest when GitHub provides one, and launches the Windows installer.
+
 ### Engine Requirements
 - **Node.js**: Version 18.x or 20.x recommended
 - **npm**: Package manager (uses `package-lock.json`)
@@ -152,7 +162,7 @@ Create a `.env` file in the project root using the public Supabase and viewer va
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-publishable-or-legacy-anon-key
-VITE_EPHEMERAL_VIEWER_URL=https://parity-rz8.pages.dev
+VITE_EPHEMERAL_VIEWER_URL=https://parity-gfx.pages.dev
 ```
 Monday's client secret belongs only in Supabase Edge Function secrets. Figma personal access tokens are entered in the application and encrypted with Electron `safeStorage`; do not add either secret to `.env`.
 

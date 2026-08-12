@@ -43,6 +43,7 @@ export function attachLiveEditor(
   let revealAnimations = options.revealAnimations ?? false
   let currentZoom = options.zoom || 100
   let selectedEl: HTMLElement | null = null
+  const selectedEls = new Set<HTMLElement>()
   let hoverEl: HTMLElement | null = null
   let toolbarOffsetX = 0
   let toolbarOffsetY = 0
@@ -670,13 +671,35 @@ export function attachLiveEditor(
     }
   }
 
-  const selectElement = (target: HTMLElement) => {
+  const selectElement = (target: HTMLElement, additive = false) => {
+    if (!additive) {
+      selectedEls.forEach((element) => {
+        element.removeAttribute('data-live-selected')
+        element.removeAttribute('contenteditable')
+      })
+      selectedEls.clear()
+    } else if (selectedEls.has(target)) {
+      target.removeAttribute('data-live-selected')
+      target.removeAttribute('contenteditable')
+      selectedEls.delete(target)
+      const remaining = Array.from(selectedEls)
+      selectedEl = remaining[remaining.length - 1] || null
+      if (selectedEl) {
+        renderToolbar(selectedEl)
+        options.onSelect(extractInfo(selectedEl), selectedEl)
+      } else {
+        removeToolbar()
+        options.onSelect(null, null)
+      }
+      return
+    }
+
     if (selectedEl && selectedEl !== target) {
-      selectedEl.removeAttribute('data-live-selected')
       selectedEl.removeAttribute('contenteditable')
     }
 
     selectedEl = target
+    selectedEls.add(target)
     selectedEl.setAttribute('data-live-selected', 'true')
 
     if (selectedEl.children.length === 0 || selectedEl.tagName.match(/^(P|H[1-6]|SPAN|A|BUTTON|LI|LABEL|TD|TH)$/i)) {
@@ -984,11 +1007,15 @@ export function attachLiveEditor(
     // 2. Intercept link tags to prevent browser redirects
     const anchor = target.closest('a') as HTMLAnchorElement | null
 
-    if (mode === 'interact' || paused) {
+    if (paused) {
       if (anchor) {
         e.preventDefault()
         e.stopPropagation()
       }
+      return
+    }
+
+    if (mode === 'interact') {
       // Toggle FAQ / Reveal-type accordion cards on click in Live mode!
       if (handleAccordionToggle(target)) {
         e.preventDefault()
@@ -1007,13 +1034,15 @@ export function attachLiveEditor(
         e.stopPropagation()
         return
       }
+      // Everything else remains native in Live mode, including links, forms,
+      // scrolling, and the browser history managed by the surrounding nav.
       return
     }
 
     e.preventDefault()
     e.stopPropagation()
 
-    selectElement(target)
+    selectElement(target, e.ctrlKey || e.metaKey)
   }
 
   const handleInput = () => {
@@ -1039,10 +1068,11 @@ export function attachLiveEditor(
     style.remove()
     animStyle.remove()
     removeToolbar()
-    if (selectedEl) {
-      selectedEl.removeAttribute('data-live-selected')
-      selectedEl.removeAttribute('contenteditable')
-    }
+    selectedEls.forEach((element) => {
+      element.removeAttribute('data-live-selected')
+      element.removeAttribute('contenteditable')
+    })
+    selectedEls.clear()
     if (hoverEl) {
       hoverEl.removeAttribute('data-live-hover')
     }
@@ -1053,10 +1083,10 @@ export function attachLiveEditor(
       mode = newOpts.mode
       if (mode === 'interact') {
         removeToolbar()
-        if (selectedEl) {
-          selectedEl.removeAttribute('data-live-selected')
-          selectedEl.removeAttribute('contenteditable')
-        }
+        selectedEls.forEach((element) => {
+          element.removeAttribute('data-live-selected')
+          element.removeAttribute('contenteditable')
+        })
         if (hoverEl) {
           hoverEl.removeAttribute('data-live-hover')
         }

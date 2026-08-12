@@ -3,6 +3,8 @@ import {
   BUCKET_NAME,
   supabaseConfigurationError,
 } from '../../../shared/supabaseClient'
+import { buildAnnotationSequences } from '../../../shared/annotationSequences'
+import type { ProjectAnnotation } from '../../../shared/types'
 
 const DEFAULT_EXPIRY_SECONDS = 604800
 let expiryCleanupStarted = false
@@ -160,6 +162,19 @@ interface SnapshotMetadataParams {
   expiresAt: string
 }
 
+function sequenceAnnotations(entries: unknown[]): ProjectAnnotation[] {
+  return entries.filter(
+    (entry): entry is ProjectAnnotation =>
+      typeof entry === 'object' && entry !== null &&
+      typeof (entry as { id?: unknown }).id === 'string' &&
+      typeof (entry as { badgeNumber?: unknown }).badgeNumber === 'number' &&
+      typeof (entry as { title?: unknown }).title === 'string' &&
+      typeof (entry as { notes?: unknown }).notes === 'string' &&
+      typeof (entry as { color?: unknown }).color === 'string' &&
+      typeof (entry as { rectPct?: unknown }).rectPct === 'object',
+  )
+}
+
 export function normalizeSiteSlug(value?: string): string {
   return (value || 'website-default')
     .toLowerCase()
@@ -181,6 +196,7 @@ function requireSupabaseConfiguration(): string | null {
 }
 
 async function saveSnapshotMetadata(params: SnapshotMetadataParams): Promise<string | null> {
+  const annotations = params.annotations || []
   const { error } = await supabase
     .from('qa_snapshots')
     .upsert(
@@ -192,7 +208,8 @@ async function saveSnapshotMetadata(params: SnapshotMetadataParams): Promise<str
         notes: params.notes || '',
         color: params.color || '#ff0055',
         object_path: params.objectPath,
-        annotations: params.annotations || [],
+        annotations,
+        annotation_sequences: buildAnnotationSequences(sequenceAnnotations(annotations)),
         expires_at: params.expiresAt,
         updated_at: new Date().toISOString(),
       },
@@ -403,7 +420,7 @@ export async function generateEphemeralLink(
       .upload(filePath, blob, { contentType: 'image/png', upsert: false })
     if (uploadError) return { success: false, error: errorMessage('Item image upload failed', uploadError) }
 
-    const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-rz8.pages.dev'
+    const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-gfx.pages.dev'
     const queryParams = new URLSearchParams({
       site,
       id: sessionMasterId,

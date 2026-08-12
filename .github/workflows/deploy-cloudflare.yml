@@ -51,9 +51,16 @@ jobs:
           test -n "$CF_ACCOUNT" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL"; exit 1; }
           test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY"; exit 1; }
-          test "$VITE_EPHEMERAL_VIEWER_URL" = "https://parity-rz8.pages.dev" || { echo "VITE_EPHEMERAL_VIEWER_URL must be https://parity-rz8.pages.dev"; exit 1; }
+          test "$VITE_EPHEMERAL_VIEWER_URL" = "https://parity-gfx.pages.dev" || { echo "VITE_EPHEMERAL_VIEWER_URL must be https://parity-gfx.pages.dev"; exit 1; }
       - run: npm ci
       - run: npm run build:viewer
+      - name: Validate landing page installer
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          test -f dist-viewer/install.ps1
+          grep -F "v$VERSION" dist-viewer/index.html
+          grep -F "\$FallbackVersion = '$VERSION'" dist-viewer/install.ps1
+          ! grep -R "__PARITY_VERSION__" dist-viewer
       - name: Deploy to Cloudflare Pages
         id: deploy
         uses: cloudflare/wrangler-action@v4
@@ -61,4 +68,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          command: pages deploy dist-viewer --project-name=parity --branch=${{ github.ref_name }} --commit-hash=${{ github.sha }}
+          command: pages deploy dist-viewer --project-name=parity-gfx --branch=${{ github.ref_name }} --commit-hash=${{ github.sha }}

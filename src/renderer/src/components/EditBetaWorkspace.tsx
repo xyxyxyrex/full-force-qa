@@ -42,6 +42,7 @@ interface Props {
   annotateMode?: boolean;
   boundaries: {
     enabled: boolean;
+    scope: "selected" | "all";
     showMargins: boolean;
     showPaddings: boolean;
     showDimensions: boolean;
@@ -194,7 +195,7 @@ interface BridgeOptions {
 function installEditBetaBridge() {
   const guestWindow = window as any;
   if (guestWindow.__fullForceEditBeta) {
-    if (guestWindow.__fullForceEditBeta.version === 14) {
+    if (guestWindow.__fullForceEditBeta.version === 15) {
       guestWindow.__fullForceEditBeta.enable();
       return true;
     }
@@ -205,6 +206,7 @@ function installEditBetaBridge() {
 
   let mode = "edit";
   let selected: HTMLElement | null = null;
+  const selectedElements = new Set<HTMLElement>();
   let hovered: HTMLElement | null = null;
   let historyIndex = -1;
   const history: any[] = [];
@@ -222,6 +224,7 @@ function installEditBetaBridge() {
     annotateMode: false,
     boundaries: {
       enabled: false,
+      scope: "selected",
       showMargins: true,
       showPaddings: true,
       showDimensions: true,
@@ -297,6 +300,12 @@ function installEditBetaBridge() {
     inset: "0",
     pointerEvents: "none",
   });
+  const selectionOutlines = document.createElement("div");
+  Object.assign(selectionOutlines.style, {
+    position: "fixed",
+    inset: "0",
+    pointerEvents: "none",
+  });
   const eyedropperOutline = document.createElement("div");
   Object.assign(eyedropperOutline.style, {
     position: "fixed",
@@ -341,16 +350,17 @@ function installEditBetaBridge() {
     fontWeight: "600",
   });
   eyedropperTooltip.append(eyedropperSwatch, eyedropperValue, eyedropperHint);
-  shadow.append(highlights, measurements, marginBox, paddingBox, box, label, eyedropperOutline, eyedropperTooltip);
+  shadow.append(highlights, measurements, selectionOutlines, marginBox, paddingBox, box, label, eyedropperOutline, eyedropperTooltip);
   document.documentElement.appendChild(host);
   const captureInspectionHost = document.createElement("div");
   captureInspectionHost.setAttribute("data-fullforce-beta-ui", "true");
   Object.assign(captureInspectionHost.style, {
-    position: "absolute",
-    top: "0",
-    left: "0",
-    width: "0",
-    height: "0",
+    position: "fixed",
+    inset: "0",
+    width: "100vw",
+    height: "100vh",
+    overflow: "hidden",
+    contain: "strict",
     zIndex: "2147483646",
     pointerEvents: "none",
   });
@@ -388,13 +398,23 @@ function installEditBetaBridge() {
   const renderCaptureInspection = () => {
     captureInspectionFrame = 0;
     captureInspectionLayer.replaceChildren();
+    const connectedSelections = Array.from(selectedElements).filter(
+      (element) => element.isConnected,
+    );
     const selectedFontVisible =
-      options.fontInspectorMode === "selected" && !!selected?.isConnected;
+      options.fontInspectorMode === "selected" && connectedSelections.length > 0;
+    const selectedBoundariesVisible =
+      options.boundaries.enabled &&
+      options.boundaries.scope === "selected" &&
+      connectedSelections.length > 0;
     const showProperties =
       options.fontInspectorMode === "all" ||
       selectedFontVisible ||
-      ((options.annotateMode || captureInspectionForced) &&
-        (options.boundaries.enabled || options.rulers.enabled || options.rulers.guidesEnabled));
+      (options.boundaries.enabled &&
+        (options.boundaries.scope === "all" || selectedBoundariesVisible)) ||
+      options.rulers.enabled ||
+      options.rulers.guidesEnabled ||
+      ((options.annotateMode || captureInspectionForced) && options.boundaries.enabled);
     const nextDisplay = showProperties ? "" : "none";
     if (captureInspectionHost.style.display !== nextDisplay) {
       captureInspectionHost.style.display = nextDisplay;
@@ -413,6 +433,8 @@ function installEditBetaBridge() {
     Object.assign(captureInspectionLayer.style, {
       width: `${documentWidth}px`,
       height: `${documentHeight}px`,
+      transform: `translate(${-scrollX}px, ${-scrollY}px)`,
+      transformOrigin: "top left",
     });
 
     if (options.rulers.enabled) {
@@ -516,7 +538,12 @@ function installEditBetaBridge() {
       }
     }
 
-    const allElements = Array.from(document.body.querySelectorAll<HTMLElement>("*"));
+    const inspectEveryElement =
+      options.fontInspectorMode === "all" ||
+      (options.boundaries.enabled && options.boundaries.scope === "all");
+    const allElements = inspectEveryElement
+      ? Array.from(document.body.querySelectorAll<HTMLElement>("*"))
+      : connectedSelections;
     let rendered = 0;
     for (const element of allElements) {
       if (rendered >= 800 || isUi(element)) continue;
@@ -547,15 +574,20 @@ function installEditBetaBridge() {
           element.tagName,
         );
       const boundaryDetails: string[] = [];
-      const propertyBadges: Array<{
+      type PropertyBadge = {
         text: string;
         color: string;
         background: string;
         border: string;
-      }> = [];
+      };
+      const boundaryBadges: PropertyBadge[] = [];
+      const fontBadges: PropertyBadge[] = [];
       let fontDetail = "";
+      const shouldShowBoundary =
+        options.boundaries.enabled &&
+        (options.boundaries.scope === "all" || selectedElements.has(element));
 
-      if (options.boundaries.enabled) {
+      if (shouldShowBoundary) {
         inspectionElement("qa-capture-boundary", {
           position: "absolute",
           left: `${left}px`,
@@ -569,14 +601,17 @@ function installEditBetaBridge() {
         if (options.boundaries.showDimensions) {
           const detail = `${Math.round(rect.width)}×${Math.round(rect.height)}`;
           boundaryDetails.push(detail);
-          propertyBadges.push({ text: detail, color: "#fbcfe8", background: "rgba(131,24,67,.94)", border: "rgba(236,72,153,.82)" });
+          // Selected elements already have the editable dimensions badge at
+          // bottom-right; avoid repeating it in the top-right box-model chips.
+          if (!selectedElements.has(element))
+            boundaryBadges.push({ text: detail, color: "#fbcfe8", background: "rgba(131,24,67,.94)", border: "rgba(236,72,153,.82)" });
         }
         if (options.boundaries.showMargins) {
           const values = [computed.marginTop, computed.marginRight, computed.marginBottom, computed.marginLeft]
             .map((value) => Math.round(parseFloat(value) || 0));
           const detail = `M ${values.join("/")}`;
           boundaryDetails.push(detail);
-          propertyBadges.push({ text: detail, color: "#fef3c7", background: "rgba(120,53,15,.94)", border: "rgba(245,158,11,.82)" });
+          boundaryBadges.push({ text: detail, color: "#fef3c7", background: "rgba(120,53,15,.94)", border: "rgba(245,158,11,.82)" });
           const mt = values[0], mr = values[1], mb = values[2], ml = values[3];
           if (mt || mr || mb || ml) {
             inspectionElement("qa-capture-margin", {
@@ -595,7 +630,7 @@ function installEditBetaBridge() {
             .map((value) => Math.round(parseFloat(value) || 0));
           const detail = `P ${values.join("/")}`;
           boundaryDetails.push(detail);
-          propertyBadges.push({ text: detail, color: "#dcfce7", background: "rgba(20,83,45,.94)", border: "rgba(34,197,94,.82)" });
+          boundaryBadges.push({ text: detail, color: "#dcfce7", background: "rgba(20,83,45,.94)", border: "rgba(34,197,94,.82)" });
           const pt = values[0], pr = values[1], pb = values[2], pl = values[3];
           if (pt || pr || pb || pl) {
             inspectionElement("qa-capture-padding", {
@@ -612,18 +647,18 @@ function installEditBetaBridge() {
         if (options.boundaries.showGaps && computed.gap && computed.gap !== "normal") {
           const detail = `Gap ${computed.gap}`;
           boundaryDetails.push(detail);
-          propertyBadges.push({ text: detail, color: "#f3e8ff", background: "rgba(88,28,135,.94)", border: "rgba(168,85,247,.82)" });
+          boundaryBadges.push({ text: detail, color: "#f3e8ff", background: "rgba(88,28,135,.94)", border: "rgba(168,85,247,.82)" });
         }
       }
 
       const shouldShowFont =
         textElement &&
         (options.fontInspectorMode === "all" ||
-          (options.fontInspectorMode === "selected" && element === selected));
+          (options.fontInspectorMode === "selected" && selectedElements.has(element)));
       if (shouldShowFont) {
         const family = computed.fontFamily.split(",")[0].replace(/["']/g, "").trim() || "Sans";
         fontDetail = `${family} ${computed.fontSize}/${computed.fontWeight}`;
-        propertyBadges.push({ text: fontDetail, color: "#bae6fd", background: "rgba(12,74,110,.94)", border: "rgba(56,189,248,.82)" });
+        fontBadges.push({ text: fontDetail, color: "#bae6fd", background: "rgba(12,74,110,.94)", border: "rgba(56,189,248,.82)" });
       }
 
       if (boundaryDetails.length) {
@@ -655,24 +690,51 @@ function installEditBetaBridge() {
         });
       }
 
-      if (propertyBadges.length && (options.boundaries.enabled || textElement)) {
-        const badgeHost = inspectionElement("qa-capture-property-badges", {
-          position: "absolute",
-          left: `${Math.max(22, Math.min(documentWidth - 8, left))}px`,
-          top: `${Math.max(options.rulers.enabled ? 23 : 0, top - 17)}px`,
-          maxWidth: `${Math.max(100, Math.min(360, rect.width + 180))}px`,
-          overflow: "hidden",
-          display: "flex",
-          gap: "2px",
-          font: "700 8px/1.25 system-ui,sans-serif",
-          whiteSpace: "nowrap",
-        });
-        for (const badge of propertyBadges) {
+      const renderBadgeGroup = (
+        badges: PropertyBadge[],
+        alignment: "left" | "right",
+      ) => {
+        if (!badges.length) return;
+        const canvasScale = Math.max(0.25, options.zoomScale || 1);
+        const inverseZoom = 1 / canvasScale;
+        const physicalWidth = rect.width * canvasScale;
+        const availableWidth = Math.max(54, physicalWidth / 2 - 4);
+        const minimumTop = options.rulers.enabled ? 23 : 0;
+        const badgeTop =
+          top * canvasScale >= minimumTop + 20
+            ? top - 19 * inverseZoom
+            : top + 2 * inverseZoom;
+        const horizontalAnchor = Math.max(
+          0,
+          Math.min(documentWidth, alignment === "left" ? left : left + rect.width),
+        );
+        const badgeHost = inspectionElement(
+          `qa-capture-property-badges qa-capture-property-badges-${alignment}`,
+          {
+            position: "absolute",
+            ...(alignment === "left"
+              ? { left: `${horizontalAnchor}px` }
+              : { right: `${Math.max(0, documentWidth - horizontalAnchor)}px` }),
+            top: `${badgeTop}px`,
+            maxWidth: `${availableWidth}px`,
+            overflow: "hidden",
+            display: "flex",
+            justifyContent: alignment === "right" ? "flex-end" : "flex-start",
+            gap: "3px",
+            font: "700 9px/1.25 system-ui,sans-serif",
+            whiteSpace: "nowrap",
+            transform: `scale(${inverseZoom})`,
+            transformOrigin: alignment === "right" ? "top right" : "top left",
+            zIndex: "4",
+          },
+        );
+        for (const badge of badges) {
           const chip = document.createElement("span");
           chip.textContent = badge.text;
           Object.assign(chip.style, {
+            minWidth: "0",
             overflow: "hidden",
-            padding: "2px 5px",
+            padding: "2px 6px",
             border: `1px solid ${badge.border}`,
             borderRadius: "3px",
             background: badge.background,
@@ -682,7 +744,12 @@ function installEditBetaBridge() {
           });
           badgeHost.appendChild(chip);
         }
-      }
+      };
+
+      // Keep typography and box-model data on opposite corners so both remain
+      // readable when the same element is inspected at a low canvas zoom.
+      renderBadgeGroup(fontBadges, "left");
+      renderBadgeGroup(boundaryBadges, "right");
       rendered++;
     }
     lastCaptureInspectionSnapshot = nextInspectionSnapshot;
@@ -958,7 +1025,36 @@ function installEditBetaBridge() {
       cssSource: getCssSource(el, styles),
     };
   };
+  const renderSelectionOutlines = () => {
+    selectionOutlines.replaceChildren();
+    if (mode !== "edit") return;
+    let index = 0;
+    for (const element of Array.from(selectedElements)) {
+      if (!element.isConnected) {
+        selectedElements.delete(element);
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+      const outline = document.createElement("div");
+      const isPrimary = element === selected;
+      Object.assign(outline.style, {
+        position: "fixed",
+        left: `${rect.left}px`,
+        top: `${rect.top}px`,
+        width: `${rect.width}px`,
+        height: `${rect.height}px`,
+        boxSizing: "border-box",
+        border: isPrimary ? "2px solid #2563eb" : "2px solid #8b5cf6",
+        background: isPrimary ? "rgba(37,99,235,.035)" : "rgba(139,92,246,.035)",
+        pointerEvents: "none",
+      });
+      outline.setAttribute("data-selection-index", String(++index));
+      selectionOutlines.appendChild(outline);
+    }
+  };
   const positionOverlay = () => {
+    renderSelectionOutlines();
     if (!selected || !selected.isConnected || mode !== "edit") {
       box.style.display = "none";
       label.style.display = "none";
@@ -975,23 +1071,7 @@ function installEditBetaBridge() {
       width: `${rect.width}px`,
       height: `${rect.height}px`,
     });
-    label.textContent = `${selected.tagName.toLowerCase()}${selected.id ? `#${selected.id}` : ""}  ${Math.round(rect.width)}×${Math.round(rect.height)}`;
-    Object.assign(label.style, {
-      display: "block",
-      left: `${Math.max(0, rect.left)}px`,
-      top: `${Math.max(0, rect.top - 23)}px`,
-    });
-    if (options.boundaries.enabled) {
-      const dimensionDetails = options.boundaries.showDimensions
-        ? `  ${Math.round(rect.width)}×${Math.round(rect.height)}`
-        : "";
-      const gapValue = cs.gap && cs.gap !== "normal" ? cs.gap : "";
-      const gapDetails =
-        options.boundaries.showGaps && gapValue ? `  gap ${gapValue}` : "";
-      label.textContent = `${selected.tagName.toLowerCase()}${selected.id ? `#${selected.id}` : ""}${dimensionDetails}${gapDetails}`;
-    }
-    if (options.fontInspectorMode !== "off")
-      label.textContent += `  ${cs.fontFamily.split(",")[0]} ${cs.fontSize}/${cs.fontWeight}`;
+    label.style.display = "none";
     if (options.boundaries.enabled && options.boundaries.showMargins) {
       const mt = parseFloat(cs.marginTop) || 0;
       const mr = parseFloat(cs.marginRight) || 0;
@@ -1018,12 +1098,12 @@ function installEditBetaBridge() {
         height: `${Math.max(0, rect.height - pt - pb)}px`,
       });
     } else paddingBox.style.display = "none";
-    // The host editor renders selection handles and box-model chrome above the
-    // webview. Keep only the optional font label inside the guest page.
+    // The responsive inspection layer owns the font and boundary chips.
+    // Keeping this legacy guest label would duplicate the top-left font chip.
     box.style.display = "none";
     marginBox.style.display = "none";
     paddingBox.style.display = "none";
-    if (options.fontInspectorMode === "off") label.style.display = "none";
+    label.style.display = "none";
   };
   const renderMeasurements = () => {
     measurementFrame = 0;
@@ -1234,9 +1314,17 @@ function installEditBetaBridge() {
       selected?.blur();
     }
   };
-  const select = (el: HTMLElement | null) => {
+  const select = (el: HTMLElement | null, additive = false) => {
     if (inlineEditing && inlineEditing !== el) finishInlineEdit(true);
-    selected = el;
+    if (!additive) selectedElements.clear();
+    if (el && additive && selectedElements.has(el)) {
+      selectedElements.delete(el);
+      const remaining = Array.from(selectedElements);
+      selected = remaining[remaining.length - 1] || null;
+    } else {
+      if (el) selectedElements.add(el);
+      selected = el;
+    }
     hovered = null;
     positionOverlay();
     scheduleMeasurements();
@@ -1247,6 +1335,7 @@ function installEditBetaBridge() {
     const activeInlineEditor = inlineEditing;
     if (inlineEditing) finishInlineEdit(true);
     selected = null;
+    selectedElements.clear();
     hovered = null;
     if (activeInlineEditor?.isConnected) activeInlineEditor.blur();
     try {
@@ -1458,6 +1547,8 @@ function installEditBetaBridge() {
     const target = (hovered || event.target) as HTMLElement;
     if (
       inlineEditing &&
+      !event.ctrlKey &&
+      !event.metaKey &&
       (event.target === inlineEditing ||
         inlineEditing.contains(event.target as Node))
     )
@@ -1468,8 +1559,10 @@ function installEditBetaBridge() {
     if ((window as any).__fullForceFrameId) {
       console.info(`__FULLFORCE_FRAME_CLICK__${(window as any).__fullForceFrameId}`);
     }
-    select(target);
-    beginInlineEdit(target, event.clientX, event.clientY);
+    const additive = event.ctrlKey || event.metaKey;
+    select(target, additive);
+    if (!additive && selected === target)
+      beginInlineEdit(target, event.clientX, event.clientY);
   };
   const onFramePointerDown = () => {
     if ((window as any).__fullForceFrameId) {
@@ -1716,7 +1809,7 @@ function installEditBetaBridge() {
   window.addEventListener("resize", scheduleHighlights, true);
 
   const api = {
-    version: 14,
+    version: 15,
     enable() {
       host.style.display = "";
       positionOverlay();
@@ -2295,6 +2388,7 @@ function installEditBetaBridge() {
     },
     applyPatches(nextPatches: any[]) {
       const previousSelection = selected;
+      const previousSelections = Array.from(selectedElements);
       for (const patch of nextPatches || []) {
         const target = resolve(patch.path);
         if (!target) continue;
@@ -2313,6 +2407,10 @@ function installEditBetaBridge() {
           api.reorder(patch.targetPath, patch.placement);
       }
       selected = previousSelection?.isConnected ? previousSelection : null;
+      selectedElements.clear();
+      previousSelections.forEach((element) => {
+        if (element.isConnected) selectedElements.add(element);
+      });
       positionOverlay();
       return historyIndex + 1;
     },
@@ -2333,6 +2431,7 @@ function installEditBetaBridge() {
       stylePreviews.clear();
       cssSourcePreviews.clear();
       selected = null;
+      selectedElements.clear();
       clearHighlights();
       positionOverlay();
       return true;
@@ -2358,6 +2457,7 @@ function installEditBetaBridge() {
       if (measurementFrame) cancelAnimationFrame(measurementFrame);
       measurementFrame = 0;
       measurements.replaceChildren();
+      selectionOutlines.replaceChildren();
       if (captureInspectionFrame) cancelAnimationFrame(captureInspectionFrame);
       captureInspectionFrame = 0;
       captureInspectionObserver.disconnect();
@@ -3430,6 +3530,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const webviewsMapRef = useRef<Record<string, any>>({});
     const figmaWebviewRef = useRef<any>(null);
     const canvasRef = useRef<HTMLElement>(null);
+    const viewportResizeCleanupRef = useRef<(() => void) | null>(null);
     const panRef = useRef({ x: 0, y: 0 });
     const bridgePanRef = useRef({
       active: false,
@@ -3628,6 +3729,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       setPan({ x: 0, y: 0 });
     }, []);
     const scale = Math.max(0.25, zoom / 100);
+    const scaleRef = useRef(scale);
+    useEffect(() => {
+      scaleRef.current = scale;
+    }, [scale]);
     const comparisonVisible = !!overlayImage && !!overlayVisible;
     const sideBySide = !!overlayVisible && overlayMode === "side-by-side";
     const figmaSideVisible =
@@ -4427,10 +4532,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         const onLoad = async () => {
           setReady(false);
           try {
-            // Electron persists zoom per origin. Always normalize the guest
-            // before reading element geometry; the outer canvas frame is the
-            // only layer that is allowed to scale in Edit mode.
-            view.setZoomFactor?.(1);
+            // Electron webviews do not reliably obey ancestor CSS transforms.
+            // Size the host in screen pixels and use guest zoom to preserve the
+            // requested responsive CSS viewport without an overflowing surface.
+            view.setZoomFactor?.(scaleRef.current);
           } catch {}
           try {
             const currentUrl = typeof view.getURL === "function" ? view.getURL() : "";
@@ -4576,15 +4681,14 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     }, [activeFrameId, activeFrames, captureProjectThumbnail, canvasViewMode, constrainPan, onCanvasZoom, onEyedropperColorChange, onHotkeyCommand, onSelectActiveFrame, refreshLayers, sourceUrl]);
 
     useEffect(() => {
-      // Reassert 100% page zoom whenever canvas magnification changes. This
-      // repairs webviews that inherited a remembered origin zoom while keeping
-      // element and annotation coordinates in stable CSS/page pixels.
+      // Keep the guest surface within its scaled host. At (for example) 30%, a
+      // 573px host at 0.3 guest zoom still exposes a 1910 CSS-pixel viewport.
       Object.values(webviewsMapRef.current).forEach((view) => {
         try {
-          view?.setZoomFactor?.(1);
+          view?.setZoomFactor?.(scale);
         } catch {}
       });
-    }, [zoom]);
+    }, [scale]);
 
     useEffect(() => {
       if (!ready) return;
@@ -4962,8 +5066,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             try {
               const webContentsId = typeof view.getWebContentsId === "function" ? view.getWebContentsId() : null;
               if (webContentsId) {
-                const viewportWidth = activeViewportRef.current?.offsetWidth || width || 1280;
-                const viewportHeight = activeViewportRef.current?.offsetHeight || height || 800;
+                const viewportWidth = width || 1280;
+                const viewportHeight = height || 800;
                 const res = await window.electronAPI.captureAutomatePage(
                   webContentsId,
                   viewportWidth,
@@ -5017,8 +5121,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             top: rect.top,
             width: rect.width,
             height: rect.height,
-            pageWidth: viewport.offsetWidth,
-            pageHeight: viewport.offsetHeight,
+            pageWidth: width,
+            pageHeight: height,
           };
         },
         getCaptureInspection: async () => {
@@ -5070,36 +5174,113 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       );
       return () => cancelAnimationFrame(frame);
     }, [collapsedLayers, layers, leftSections.layers, selected?.path]);
-    const beginResize = (event: React.MouseEvent, axis: "x" | "y" | "both") => {
+    useEffect(
+      () => () => {
+        viewportResizeCleanupRef.current?.();
+      },
+      [],
+    );
+
+    const beginResize = (
+      event: React.PointerEvent<HTMLButtonElement>,
+      axis: "x" | "y" | "both",
+    ) => {
+      if (event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
+      viewportResizeCleanupRef.current?.();
+
+      const handle = event.currentTarget;
+      const pointerId = event.pointerId;
       const startX = event.clientX;
       const startY = event.clientY;
       const startWidth = width;
       const startHeight = height;
-      const onMove = (moveEvent: MouseEvent) => {
+      let latestX = startX;
+      let latestY = startY;
+      let animationFrame = 0;
+      let finished = false;
+
+      const blockedSurfaces = Array.from(
+        canvasRef.current?.querySelectorAll<HTMLElement>("iframe, webview") || [],
+      ).map((element) => ({ element, pointerEvents: element.style.pointerEvents }));
+      blockedSurfaces.forEach(({ element }) => {
+        element.style.pointerEvents = "none";
+      });
+
+      const previousCursor = document.body.style.cursor;
+      const previousUserSelect = document.body.style.userSelect;
+      document.body.classList.add("is-viewport-resizing");
+      document.body.style.cursor =
+        axis === "x" ? "ew-resize" : axis === "y" ? "ns-resize" : "nwse-resize";
+      document.body.style.userSelect = "none";
+
+      try {
+        handle.setPointerCapture(pointerId);
+      } catch {}
+
+      const applyLatestSize = () => {
+        animationFrame = 0;
         const nextWidth =
           axis === "y"
             ? startWidth
             : Math.max(
                 100,
-                Math.round(startWidth + (moveEvent.clientX - startX) / scale),
+                Math.round(startWidth + (latestX - startX) / scale),
               );
         const nextHeight =
           axis === "x"
             ? startHeight
             : Math.max(
                 100,
-                Math.round(startHeight + (moveEvent.clientY - startY) / scale),
+                Math.round(startHeight + (latestY - startY) / scale),
               );
         onViewportResize(nextWidth, nextHeight);
       };
-      const onUp = () => {
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
+
+      const onMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) return;
+        moveEvent.preventDefault();
+        latestX = moveEvent.clientX;
+        latestY = moveEvent.clientY;
+        if (!animationFrame)
+          animationFrame = requestAnimationFrame(applyLatestSize);
       };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
+
+      const finish = (upEvent?: PointerEvent) => {
+        if (finished || (upEvent && upEvent.pointerId !== pointerId)) return;
+        finished = true;
+        if (upEvent) {
+          latestX = upEvent.clientX;
+          latestY = upEvent.clientY;
+        }
+        if (animationFrame) cancelAnimationFrame(animationFrame);
+        applyLatestSize();
+        window.removeEventListener("pointermove", onMove, true);
+        window.removeEventListener("pointerup", finish, true);
+        window.removeEventListener("pointercancel", finish, true);
+        window.removeEventListener("blur", onBlur);
+        try {
+          if (handle.hasPointerCapture(pointerId))
+            handle.releasePointerCapture(pointerId);
+        } catch {}
+        blockedSurfaces.forEach(({ element, pointerEvents }) => {
+          element.style.pointerEvents = pointerEvents;
+        });
+        document.body.classList.remove("is-viewport-resizing");
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousUserSelect;
+        if (viewportResizeCleanupRef.current === cleanup)
+          viewportResizeCleanupRef.current = null;
+      };
+
+      const cleanup = () => finish();
+      const onBlur = () => finish();
+      viewportResizeCleanupRef.current = cleanup;
+      window.addEventListener("pointermove", onMove, true);
+      window.addEventListener("pointerup", finish, true);
+      window.addEventListener("pointercancel", finish, true);
+      window.addEventListener("blur", onBlur);
     };
     const beginCanvasPan = (event: React.MouseEvent) => {
       if (
@@ -6184,11 +6365,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                               ref={isActive ? activeViewportRef : undefined}
                               className="edit-beta-frame"
                               style={{
-                                width: fWidth,
-                                height: fHeight,
-                                transform: `scale(${scale})`,
-                                transformOrigin: "top left",
+                                width: fScaledWidth,
+                                height: fScaledHeight,
+                                transform: "none",
                                 pointerEvents: "auto",
+                                overflow: "hidden",
                               }}
                             >
                               <webview
@@ -6272,19 +6453,19 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                 <button
                                   className="edit-beta-resize-handle edit-beta-resize-right"
                                   style={{ left: fScaledWidth - 3 }}
-                                  onMouseDown={(event) => beginResize(event, "x")}
+                                  onPointerDown={(event) => beginResize(event, "x")}
                                   aria-label="Resize viewport width"
                                 />
                                 <button
                                   className="edit-beta-resize-handle edit-beta-resize-bottom"
                                   style={{ left: fScaledWidth / 2 }}
-                                  onMouseDown={(event) => beginResize(event, "y")}
+                                  onPointerDown={(event) => beginResize(event, "y")}
                                   aria-label="Resize viewport height"
                                 />
                                 <button
                                   className="edit-beta-resize-handle edit-beta-resize-corner"
                                   style={{ left: fScaledWidth - 5 }}
-                                  onMouseDown={(event) => beginResize(event, "both")}
+                                  onPointerDown={(event) => beginResize(event, "both")}
                                   aria-label="Resize viewport"
                                 />
                               </>

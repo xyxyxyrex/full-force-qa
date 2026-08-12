@@ -20,6 +20,7 @@ function readLocalEnv() {
 const localEnv = readLocalEnv()
 const supabaseUrl = process.env.VITE_SUPABASE_URL || localEnv.VITE_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || localEnv.VITE_SUPABASE_ANON_KEY || ''
+const packageVersion = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8')).version
 
 if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(supabaseUrl) || !supabaseAnonKey) {
   throw new Error('Viewer build requires VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
@@ -41,6 +42,10 @@ const htmlPath = join(outputDir, 'index.html')
 const html = readFileSync(htmlPath, 'utf8')
   .replace('__SUPABASE_URL__', JSON.stringify(supabaseUrl))
   .replace('__SUPABASE_ANON_KEY__', JSON.stringify(supabaseAnonKey))
+  .replaceAll('__PARITY_VERSION__', packageVersion)
 
 writeFileSync(htmlPath, html)
+const installerPath = join(outputDir, 'install.ps1')
+const installer = readFileSync(installerPath, 'utf8').replaceAll('__PARITY_VERSION__', packageVersion)
+writeFileSync(installerPath, installer)
 console.log('Built Cloudflare Pages viewer in dist-viewer.')

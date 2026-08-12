@@ -29,7 +29,16 @@ export interface ProjectAnnotation {
   deviceFrameId?: string
   deviceName?: string
   deviceType?: 'desktop' | 'tablet' | 'mobile' | 'custom'
+  /** The first annotation in a linked sequence. Present only for sequenced annotations. */
+  sequenceParentId?: string
+  /** Zero-based position within the parent annotation's sequence. */
+  sequenceOrder?: number
   rectPct: { x: number; y: number; width: number; height: number }
+}
+
+export interface ProjectAnnotationSequence {
+  parentAnnotationId: string
+  annotationIds: string[]
 }
 
 export interface ProjectAutomateState {

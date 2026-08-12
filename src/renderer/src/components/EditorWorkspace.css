@@ -1,7 +1,11 @@
 .editor-workspace {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
   background: var(--bg-app);
 }
 
@@ -12,6 +16,7 @@
   align-items: center;
   justify-content: space-between;
   height: 48px;
+  min-height: 48px;
   padding: 0 10px;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
@@ -1742,6 +1747,37 @@
   outline-offset: 2px;
 }
 
+.boundary-scope-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 0 8px 2px;
+  padding: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-input);
+}
+
+.boundary-scope-options button {
+  min-height: 29px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 650 9.5px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.boundary-scope-options button:hover {
+  color: var(--text-primary);
+}
+
+.boundary-scope-options button.active {
+  border-color: color-mix(in srgb, var(--accent-color) 48%, var(--border-color));
+  background: var(--accent-light);
+  color: var(--accent-color);
+}
+
 .tool-menu-action {
   min-height: 38px;
   font-size: 10.5px;
@@ -2133,6 +2169,13 @@
   position: absolute;
   background: transparent;
   pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+body.is-free-transforming * {
+  cursor: inherit !important;
+  user-select: none !important;
 }
 
 /* Visible bar — always shown */
@@ -3265,6 +3308,95 @@ body.is-panel-resizing {
   box-sizing: border-box;
   overflow: visible;
   background: rgba(0, 0, 0, 0.02);
+}
+
+.annotation-sequence-links {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.annotation-sequence-links marker path {
+  fill: var(--accent-color);
+}
+
+.annotation-sequence-path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent-color) 88%, white);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .72));
+}
+
+.annotation-sequence-path.preview {
+  stroke-dasharray: 7 5;
+  animation: annotationSequenceDash .55s linear infinite;
+}
+
+@keyframes annotationSequenceDash {
+  to { stroke-dashoffset: -12; }
+}
+
+.annotation-sequence-node {
+  position: absolute;
+  top: -18px;
+  z-index: 8;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 3px solid #111113;
+  border-radius: 50%;
+  background: var(--annotation-color, var(--accent-color));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .92), 0 3px 8px rgba(0, 0, 0, .7);
+  cursor: crosshair;
+  pointer-events: auto;
+  opacity: .72;
+  transition: transform .14s ease, opacity .14s ease, box-shadow .14s ease;
+  touch-action: none;
+}
+
+.annotation-sequence-node.input { left: -9px; }
+.annotation-sequence-node.output { right: -9px; }
+.selection-box-overlay:hover .annotation-sequence-node,
+.selection-box-overlay.selection-box-active .annotation-sequence-node,
+.annotation-sequence-node:hover {
+  opacity: 1;
+  transform: scale(1.18);
+}
+
+.annotation-sequence-node[data-sequence-target-id]:hover {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--annotation-color, var(--accent-color)) 36%, transparent), 0 3px 8px rgba(0, 0, 0, .7);
+}
+
+.annotation-sequence-step {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .34);
+  color: white;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.annotation-sequence-unlink {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.annotation-sequence-unlink:hover {
+  border-color: var(--accent-color);
+  color: var(--text-primary);
 }
 
 .live-annotation-item {

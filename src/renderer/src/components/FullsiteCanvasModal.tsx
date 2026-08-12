@@ -1,5 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import type { ProjectAnnotation } from '../../../shared/types'
+import {
+  annotationSequencePosition,
+  buildAnnotationSequences,
+  linkAnnotations,
+  removeAnnotationFromSequences,
+  unlinkAnnotation,
+} from '../../../shared/annotationSequences'
 import {
   generateEphemeralLink,
   normalizeSiteSlug,
@@ -88,6 +95,13 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
   const [zoom, setZoom] = useState<number>(0.5) // Default 50% zoom for long sites
   const [boxes, setBoxes] = useState<CanvasSelectionBox[]>(initialBoxes)
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null)
+  const [sequenceDrag, setSequenceDrag] = useState<{
+    sourceId: string
+    startX: number
+    startY: number
+    currentX: number
+    currentY: number
+  } | null>(null)
   const [isDrawing, setIsDrawing] = useState<boolean>(false)
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null)
   const [drawCurrent, setDrawCurrent] = useState<{ x: number; y: number } | null>(null)
@@ -111,7 +125,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const autoGenerationStartedRef = useRef(false)
   const siteSlug = normalizeSiteSlug(pageTitle)
-  const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-rz8.pages.dev'
+  const viewerBaseUrl = import.meta.env?.VITE_EPHEMERAL_VIEWER_URL || 'https://parity-gfx.pages.dev'
 
   useEffect(() => {
     const previousDefault = previousDefaultColorRef.current
@@ -201,6 +215,58 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
   }
 
   const masterSiteUrl = buildMasterSiteUrl(masterUpload.result)
+  const annotationSequences = useMemo(() => buildAnnotationSequences(boxes), [boxes])
+
+  useEffect(() => {
+    const sourceId = sequenceDrag?.sourceId
+    if (!sourceId) return
+
+    const pointInContainer = (event: PointerEvent) => {
+      const container = containerRef.current
+      if (!container) return null
+      const bounds = container.getBoundingClientRect()
+      const coordinateWidth = imgNaturalSize?.w || container.clientWidth
+      const coordinateHeight = imgNaturalSize?.h || container.clientHeight
+      return {
+        x: ((event.clientX - bounds.left) / Math.max(1, bounds.width)) * coordinateWidth,
+        y: ((event.clientY - bounds.top) / Math.max(1, bounds.height)) * coordinateHeight,
+      }
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      const point = pointInContainer(event)
+      if (!point) return
+      setSequenceDrag((current) =>
+        current?.sourceId === sourceId
+          ? { ...current, currentX: point.x, currentY: point.y }
+          : current,
+      )
+    }
+    const finishSequenceDrag = (event: PointerEvent) => {
+      const target = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest<HTMLElement>('[data-canvas-sequence-target-id]')
+      const targetId = target?.dataset.canvasSequenceTargetId
+      if (targetId && targetId !== sourceId) {
+        setBoxes((current) => linkAnnotations(current, sourceId, targetId))
+        setSelectedBoxId(targetId)
+      }
+      setSequenceDrag(null)
+    }
+    const cancelSequenceDrag = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSequenceDrag(null)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', finishSequenceDrag, { once: true })
+    window.addEventListener('pointercancel', finishSequenceDrag, { once: true })
+    window.addEventListener('keydown', cancelSequenceDrag)
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', finishSequenceDrag)
+      window.removeEventListener('pointercancel', finishSequenceDrag)
+      window.removeEventListener('keydown', cancelSequenceDrag)
+    }
+  }, [sequenceDrag?.sourceId, imgNaturalSize?.h, imgNaturalSize?.w])
 
   const getBoxImageRect = (box: CanvasSelectionBox) => {
     const naturalW = imgNaturalSize?.w || imgRef.current?.naturalWidth || 1
@@ -501,7 +567,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
 
   const handleDeleteBox = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    setBoxes((prev) => prev.filter((b) => b.id !== id))
+    setBoxes((prev) => removeAnnotationFromSequences(prev, id))
     if (selectedBoxId === id) setSelectedBoxId(null)
   }
 
@@ -696,6 +762,50 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
           >
             <img ref={imgRef} src={masterDataUrl} alt="Fullsite Master Capture" onLoad={handleImageLoad} />
 
+            {imgNaturalSize && (
+              <svg
+                className="annotation-sequence-links fullsite-sequence-links"
+                viewBox={`0 0 ${imgNaturalSize.w} ${imgNaturalSize.h}`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <defs>
+                  <marker id="canvas-sequence-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                  </marker>
+                </defs>
+                {annotationSequences.flatMap((sequence) =>
+                  sequence.annotationIds.slice(0, -1).map((sourceId, index) => {
+                    const source = boxes.find((box) => box.id === sourceId)
+                    const target = boxes.find((box) => box.id === sequence.annotationIds[index + 1])
+                    if (!source || !target) return null
+                    const sourceRect = getBoxImageRect(source)
+                    const targetRect = getBoxImageRect(target)
+                    const x1 = sourceRect.x + sourceRect.width
+                    const y1 = sourceRect.y - 18 / Math.max(.1, zoom)
+                    const x2 = targetRect.x
+                    const y2 = targetRect.y - 18 / Math.max(.1, zoom)
+                    const bend = Math.max(48 / Math.max(.1, zoom), Math.abs(x2 - x1) * .42)
+                    return (
+                      <path
+                        key={`${source.id}-${target.id}`}
+                        className="annotation-sequence-path"
+                        d={`M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`}
+                        markerEnd="url(#canvas-sequence-arrow)"
+                      />
+                    )
+                  }),
+                )}
+                {sequenceDrag && (
+                  <path
+                    className="annotation-sequence-path preview"
+                    d={`M ${sequenceDrag.startX} ${sequenceDrag.startY} C ${sequenceDrag.startX + 48 / Math.max(.1, zoom)} ${sequenceDrag.startY}, ${sequenceDrag.currentX - 48 / Math.max(.1, zoom)} ${sequenceDrag.currentY}, ${sequenceDrag.currentX} ${sequenceDrag.currentY}`}
+                    markerEnd="url(#canvas-sequence-arrow)"
+                  />
+                )}
+              </svg>
+            )}
+
             <div
               className="inspection-html-layer"
               aria-label="Captured inspection properties"
@@ -745,6 +855,7 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
             {/* Rendered Selection Containers */}
             {boxes.map((box) => {
               const isSelected = selectedBoxId === box.id
+              const sequencePosition = annotationSequencePosition(boxes, box.id)
               const imageRect = getBoxImageRect(box)
               const naturalW = imgNaturalSize?.w || 1
               const naturalH = imgNaturalSize?.h || 1
@@ -785,7 +896,42 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                   <CanvasAnnotationShape box={box} />
                   <div className="box-header-badge" style={{ backgroundColor: box.color }}>
                     <span>#{box.badgeNumber} {box.title}</span>
+                    {sequencePosition && (
+                      <strong className="annotation-sequence-step">
+                        {sequencePosition.index + 1}/{sequencePosition.total}
+                      </strong>
+                    )}
                   </div>
+
+                  <button
+                    type="button"
+                    className="annotation-sequence-node input"
+                    data-canvas-sequence-target-id={box.id}
+                    aria-label={`Link a previous annotation to ${box.title}`}
+                    title="Drop a sequence connection here"
+                    style={{ '--annotation-inverse-zoom': String(1 / Math.max(.1, zoom)) } as React.CSSProperties}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <button
+                    type="button"
+                    className="annotation-sequence-node output"
+                    aria-label={`Start a sequence connection from ${box.title}`}
+                    title="Drag to another annotation to add the next step"
+                    style={{ '--annotation-inverse-zoom': String(1 / Math.max(.1, zoom)) } as React.CSSProperties}
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      const container = containerRef.current
+                      if (!container || !imgNaturalSize) return
+                      const bounds = container.getBoundingClientRect()
+                      const x = ((e.clientX - bounds.left) / Math.max(1, bounds.width)) * imgNaturalSize.w
+                      const y = ((e.clientY - bounds.top) / Math.max(1, bounds.height)) * imgNaturalSize.h
+                      setSelectedBoxId(box.id)
+                      setSequenceDrag({ sourceId: box.id, startX: x, startY: y, currentX: x, currentY: y })
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
 
                   {/* Popover editor for selected box */}
                   {isSelected && (
@@ -846,6 +992,18 @@ export const FullsiteCanvasModal: React.FC<Props> = ({
                           Delete
                         </button>
                       </div>
+                      {sequencePosition && (
+                        <button
+                          className="annotation-sequence-unlink"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setBoxes((current) => unlinkAnnotation(current, box.id))
+                          }}
+                        >
+                          Remove from sequence
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

@@ -56,10 +56,12 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_ANON_KEY)) {
             throw "Missing VITE_SUPABASE_ANON_KEY in the production environment."
           }
-          if ($env:VITE_EPHEMERAL_VIEWER_URL -ne "https://parity-rz8.pages.dev") {
-            throw "VITE_EPHEMERAL_VIEWER_URL must be https://parity-rz8.pages.dev."
+          if ($env:VITE_EPHEMERAL_VIEWER_URL -ne "https://parity-gfx.pages.dev") {
+            throw "VITE_EPHEMERAL_VIEWER_URL must be https://parity-gfx.pages.dev."
           }
       - run: npm ci
+      - name: Build landing page installer
+        run: npm run build:viewer
       - name: Install visual comparison builder
         run: python -m pip install -r python/requirements.txt
       - name: Build installer and update artifacts
@@ -72,6 +74,7 @@ jobs:
             "dist/Parity-Setup-$version.exe"
             "dist/Parity-Setup-$version.exe.blockmap"
             "dist/latest.yml"
+            "dist-viewer/install.ps1"
           )
           foreach ($asset in $assets) {
             if (-not (Test-Path -LiteralPath $asset)) {

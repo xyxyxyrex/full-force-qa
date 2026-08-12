@@ -32,7 +32,7 @@ Official references: [GitHub deployment environments](https://docs.github.com/en
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID containing the Pages project | Cloudflare deployment | Identifier |
 | `VITE_SUPABASE_URL` | Project URL, normally `https://<project-ref>.supabase.co` | Cloudflare viewer and desktop release | Public configuration |
 | `VITE_SUPABASE_ANON_KEY` | Prefer the current `sb_publishable_…` key; the legacy anon JWT also works | Cloudflare viewer and desktop release | Public client key |
-| `VITE_EPHEMERAL_VIEWER_URL` | `https://parity-rz8.pages.dev` | Desktop release and workflow validation | Public configuration |
+| `VITE_EPHEMERAL_VIEWER_URL` | `https://parity-gfx.pages.dev` | Desktop release and workflow validation | Public configuration |
 | `SUPABASE_ACCESS_TOKEN` | Supabase personal access token beginning with `sbp_` | Supabase CLI deployment | Secret |
 | `SUPABASE_DB_PASSWORD` | Password for the production project's `postgres` role | Supabase migrations | Secret |
 | `SUPABASE_PROJECT_ID` | Project reference from the Supabase dashboard URL | Supabase deployment | Identifier |
@@ -99,7 +99,7 @@ Important consequences:
 - Do **not** select **Connect to Git** or install the Cloudflare Workers & Pages GitHub App for this project.
 - Do **not** configure a build command, repository, or production-branch automation inside the Cloudflare Pages dashboard. GitHub Actions performs the build; Wrangler only uploads the resulting `dist-viewer` directory.
 - The GitHub workflow is an external CI client of Cloudflare. Its API token replaces the interactive `wrangler login` session used for local deployments.
-- Deploy production revisions to the project name `parity`, which owns `https://parity-rz8.pages.dev`. The shorter global hostname `parity.pages.dev` is already owned by an unrelated Pages project and cannot be assigned to this account.
+- Deploy production revisions to the project name `parity-gfx`, which owns `https://parity-gfx.pages.dev`. Keep the former `parity` project at `https://parity-rz8.pages.dev` online so previously issued expiring links continue to resolve.
 - Cloudflare does not support changing a `*.pages.dev` subdomain in place. The former `qa-snapshots` Direct Upload project remains online temporarily so previously issued expiring links continue to resolve; do not delete it until the longest issued link has expired.
 - Cloudflare states that a Direct Upload project cannot later be converted to Git integration. A separate Pages project would be required if that deployment model were ever desired.
 
@@ -115,7 +115,7 @@ The repository already contains the required Pages configuration in `wrangler.js
 The production workflow ultimately runs the equivalent of:
 
 ```powershell
-npx wrangler pages deploy dist-viewer --project-name=parity --branch=main
+npx wrangler pages deploy dist-viewer --project-name=parity-gfx --branch=main
 ```
 
 See Cloudflare's [Direct Upload guide](https://developers.cloudflare.com/pages/get-started/direct-upload/) and [Direct Upload with CI guide](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/).
@@ -140,7 +140,7 @@ The Account ID identifies the Cloudflare account that owns the Wrangler-created 
 To retrieve and verify it from the dashboard:
 
 1. Open **Workers & Pages** in the correct Cloudflare account.
-2. Confirm the production Pages project is named `parity` exactly.
+2. Confirm the production Pages project is named `parity-gfx` exactly.
 3. Copy **Account ID** from the Workers & Pages **Account details** area, or from the account home menu.
 4. Store it as `CLOUDFLARE_ACCOUNT_ID` in the GitHub `production` environment.
 
@@ -149,7 +149,7 @@ To verify the same account and project with the local Wrangler authentication th
 ```powershell
 npx wrangler whoami
 npx wrangler pages project list
-npx wrangler pages deployment list --project-name parity --environment production
+npx wrangler pages deployment list --project-name parity-gfx --environment production
 ```
 
 `wrangler whoami` displays the authenticated account membership and Account ID. `pages project list` must include `parity`. If multiple Cloudflare accounts are available, use the Account ID belonging to the row that contains that project.
@@ -248,7 +248,7 @@ Run the workflows from the repository's **Actions** tab in this order:
 2. **Deploy Supabase** with `dry_run: true` — inspect the pending migration plan without applying it.
 3. **Deploy Supabase** with `dry_run: false` — apply migrations and deploy any Edge Functions.
 4. **Deploy Cloudflare Pages** — build the viewer with the production Supabase client values and deploy `dist-viewer`.
-5. Open `https://parity-rz8.pages.dev` and test a newly generated master link and item link, including status changes, comments, rich-text images, and expiry behavior.
+5. Open `https://parity-gfx.pages.dev` and test a newly generated master link and item link, including status changes, comments, rich-text images, and expiry behavior.
 
 The workflows stop early with a named `Missing …` error if required secrets are absent. Supabase deployments are serialized so two schema pushes cannot run concurrently; Cloudflare deployments cancel an older pending run when a newer viewer revision is ready.
 
@@ -266,7 +266,7 @@ git push origin main
 git push origin v1.0.1
 ```
 
-The release workflow validates the tag, builds the Windows NSIS installer, and publishes the installer, blockmap, and `latest.yml` to GitHub Releases. Keep the release published rather than draft; desktop clients cannot discover draft releases. The current public repository allows clients to fetch releases without embedding a GitHub credential. See [electron-builder auto update](https://www.electron.build/docs/features/auto-update/).
+The release workflow validates the tag, builds the Windows NSIS installer, and publishes the installer, blockmap, `latest.yml`, and version-stamped `install.ps1` to GitHub Releases. The Cloudflare Pages build serves the same bootstrapper at `https://parity-gfx.pages.dev/install.ps1`; it resolves the newest published release at runtime and uses the package version as an API-failure fallback. Keep the release published rather than draft; desktop clients and the bootstrapper cannot discover draft releases. The current public repository allows clients to fetch releases without embedding a GitHub credential. See [electron-builder auto update](https://www.electron.build/docs/features/auto-update/).
 
 ## 7. Rotation and recovery
 

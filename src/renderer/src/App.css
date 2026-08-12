@@ -16,15 +16,16 @@ body {
 }
 
 #root {
+  --app-titlebar-height: 38px;
   height: 100vh;
   width: 100vw;
   background: var(--bg-app);
   color: var(--text-primary);
 }
 
-.app-workspace-host { flex:1; position:relative; overflow:hidden; height:calc(100vh - 38px); }
-.app-activity-hotzone { position:fixed; left:0; top:38px; bottom:0; width:7px; z-index:9998; }
-.app-activity-bar { position:fixed; left:0; top:38px; bottom:0; z-index:9999; width:50px; display:flex; flex-direction:column; padding:6px 4px; border-right:1px solid var(--border-color); background:color-mix(in srgb,var(--header-bg) 96%,transparent); box-shadow:5px 0 18px #0004; transform:translateX(-105%); opacity:0; transition:transform .16s ease,opacity .16s ease; -webkit-app-region:no-drag; }
+.app-workspace-host { position:absolute; inset:var(--app-titlebar-height) 0 0; min-width:0; min-height:0; overflow:hidden; }
+.app-activity-hotzone { position:fixed; left:0; top:var(--app-titlebar-height); bottom:0; width:7px; z-index:9998; }
+.app-activity-bar { position:fixed; left:0; top:var(--app-titlebar-height); bottom:0; z-index:9999; width:50px; display:flex; flex-direction:column; padding:6px 4px; border-right:1px solid var(--border-color); background:color-mix(in srgb,var(--header-bg) 96%,transparent); box-shadow:5px 0 18px #0004; transform:translateX(-105%); opacity:0; transition:transform .16s ease,opacity .16s ease; -webkit-app-region:no-drag; }
 .app-activity-bar.visible { transform:translateX(0); opacity:1; }
 .app-activity-bar button { position:relative; width:41px; height:41px; display:grid; place-items:center; flex:none; border:0; border-left:2px solid transparent; border-radius:5px; background:transparent; color:var(--text-muted); cursor:pointer; }
 .app-activity-bar button:hover { background:var(--bg-hover); color:var(--text-primary); }
@@ -89,7 +90,8 @@ button, input, select, textarea, a, .clickable, .no-drag {
 .app-top-tab-bar-wrap {
   position: relative;
   width: 100%;
-  height: 38px;
+  height: var(--app-titlebar-height);
+  min-height: var(--app-titlebar-height);
   background: var(--header-bg);
   z-index: 10000;
   flex-shrink: 0;
@@ -100,7 +102,7 @@ button, input, select, textarea, a, .clickable, .no-drag {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  height: 38px;
+  height: 100%;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
   padding: 0 214px 0 8px; /* Title-bar actions + Windows native window buttons */
