@@ -329,6 +329,9 @@ export interface ElectronAPI {
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project) => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  loadWorkspaceHtml: (tabId: string) => Promise<string | null>
+  saveWorkspaceHtml: (tabId: string, html: string) => Promise<void>
+  deleteWorkspaceHtml: (tabId: string) => Promise<void>
   clearCache: () => Promise<{ success: boolean }>
   openExternal: (url: string) => Promise<void>
   openDetachedWindow: (url: string, title?: string) => Promise<void>

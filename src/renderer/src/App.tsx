@@ -213,21 +213,50 @@ export default function App() {
 
   const [isPinned, setIsPinned] = useState<boolean>(() => localStorage.getItem('tab_bar_pinned') === 'true')
 
-  // Persist tab configuration & snapshot HTML in sessionStorage across page reloads (Ctrl+R / F5)
+  // Persist only lightweight tab metadata in sessionStorage. Captured pages can
+  // exceed Chromium's Web Storage quota, so their HTML lives in Electron's
+  // filesystem-backed workspace cache instead.
   useEffect(() => {
     try {
       const serialized = tabs.map((t) => {
-        if (t.snapshotHtml) {
-          sessionStorage.setItem(`fullforce_snapshot_html_${t.id}`, t.snapshotHtml)
-        }
+        sessionStorage.removeItem(`fullforce_snapshot_html_${t.id}`)
         return {
           ...t,
           snapshotHtml: null
         }
       })
       sessionStorage.setItem('fullforce_app_tabs', JSON.stringify(serialized))
+      sessionStorage.removeItem('fullforce_captured_html')
     } catch {}
   }, [tabs])
+
+  useEffect(() => {
+    let cancelled = false
+    const hydrateWorkspaceHtml = async () => {
+      // Migrate snapshots left by older releases before their Web Storage keys
+      // are discarded, then load filesystem-backed snapshots for current tabs.
+      await Promise.all(tabs.filter((tab) => isRenderableSnapshot(tab.snapshotHtml)).map((tab) =>
+        window.electronAPI.saveWorkspaceHtml(tab.id, tab.snapshotHtml!).catch((error) => {
+          console.warn('[Workspace HTML] Unable to migrate legacy tab:', error)
+        })
+      ))
+      const editorTabs = tabs.filter((tab) => tab.view === 'editor' && !tab.snapshotHtml)
+      if (editorTabs.length === 0) return
+      const loaded = await Promise.all(editorTabs.map(async (tab) => ({
+        tabId: tab.id,
+        html: await window.electronAPI.loadWorkspaceHtml(tab.id)
+      })))
+      if (cancelled) return
+      const byTabId = new Map(loaded.filter((item) => isRenderableSnapshot(item.html)).map((item) => [item.tabId, item.html!]))
+      if (byTabId.size > 0) {
+        setTabs((current) => current.map((tab) => byTabId.has(tab.id) ? { ...tab, snapshotHtml: byTabId.get(tab.id)! } : tab))
+      }
+    }
+    void hydrateWorkspaceHtml().catch((error) => console.warn('[Workspace HTML] Unable to restore tabs:', error))
+    return () => { cancelled = true }
+    // Restore the tabs captured by the initial session metadata exactly once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     sessionStorage.setItem('fullforce_active_tab_id', activeTabId)
@@ -236,7 +265,10 @@ export default function App() {
   useEffect(() => {
     const resetOpenWorkspaces = () => {
       setTabs((current) => {
-        for (const tab of current) sessionStorage.removeItem(`fullforce_snapshot_html_${tab.id}`)
+        for (const tab of current) {
+          sessionStorage.removeItem(`fullforce_snapshot_html_${tab.id}`)
+          void window.electronAPI.deleteWorkspaceHtml(tab.id)
+        }
         const id = `tab-dashboard-${Date.now()}`
         setActiveTabId(id)
         return [{ id, title: 'Dashboard', view: 'dashboard', snapshotHtml: null, captureUrl: '', snapshotKey: 0, activeProject: null, prefillAdmin: '', prefillStaging: '', skipAutoCapture: false }]
@@ -292,6 +324,7 @@ export default function App() {
   const handleCloseTab = (tabIdToClose: string, e: React.MouseEvent) => {
     e.stopPropagation()
     sessionStorage.removeItem(`fullforce_snapshot_html_${tabIdToClose}`)
+    void window.electronAPI.deleteWorkspaceHtml(tabIdToClose)
     setTabs(prev => {
       const remaining = prev.filter(t => t.id !== tabIdToClose)
       if (remaining.length === 0) {
@@ -422,8 +455,12 @@ export default function App() {
     await window.electronAPI.saveProject(project)
     window.dispatchEvent(new CustomEvent('qa_projects_updated'))
     const tabId = activeTabId
-    sessionStorage.setItem(`fullforce_snapshot_html_${tabId}`, html)
-    sessionStorage.setItem('fullforce_captured_html', html)
+    try {
+      await window.electronAPI.saveWorkspaceHtml(tabId, html)
+    } catch (error) {
+      // A cache write must never prevent a successful capture from opening.
+      console.warn('[Workspace HTML] Capture will remain available in memory:', error)
+    }
 
     updateActiveTab(t => ({
       ...t,
@@ -467,6 +504,7 @@ export default function App() {
         updateActiveTab(t => ({ ...t, view: 'capture' }))
         return
       }
+      void window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html).catch(() => {})
       updateActiveTab(t => ({ ...t, snapshotHtml: result.html!, snapshotKey: t.snapshotKey + 1 }))
     } else if (result.is404 || result.isSessionExpired) {
       updateActiveTab(t => ({ ...t, view: 'capture' }))
@@ -507,10 +545,9 @@ export default function App() {
       const currentTab = prev.find((tab) => tab.id === tabId)
       // Ignore teardown from an editor that was replaced by a newer recapture.
       if (!currentTab || currentTab.snapshotKey !== mountedSnapshotKey) return prev
-      try {
-        sessionStorage.setItem(`fullforce_snapshot_html_${tabId}`, updatedHtml)
-        sessionStorage.setItem('fullforce_captured_html', updatedHtml)
-      } catch {}
+      void window.electronAPI.saveWorkspaceHtml(tabId, updatedHtml).catch((error) => {
+        console.warn('[Workspace HTML] Unable to persist editor changes:', error)
+      })
       return prev.map((tab) => tab.id === tabId ? { ...tab, snapshotHtml: updatedHtml } : tab)
     })
   }

@@ -4,14 +4,15 @@
   height: 100%;
   box-sizing: border-box;
   background: var(--bg-app);
-  padding: 40px 32px 64px 32px;
+  padding: clamp(20px, 3vw, 40px) clamp(16px, 3vw, 40px) 64px;
   overflow-y: auto;
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .dashboard-inner {
-  max-width: 1080px;
+  width: 100%;
+  max-width: none;
   margin: 0 auto;
 }
 
@@ -259,8 +260,12 @@
 /* Project Cards Grid */
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 16px;
+}
+
+.project-grid > .project-card {
+  min-width: 0;
 }
 
 .project-card {
@@ -416,6 +421,60 @@
 }
 
 /* Tabular List View */
+.project-list-table {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.project-list-table .list-header,
+.project-list-table .list-row {
+  display: grid;
+  grid-template-columns: 36px minmax(180px, 2fr) minmax(130px, 1.3fr) minmax(90px, .8fr) minmax(86px, .7fr) minmax(90px, auto);
+  align-items: center;
+  column-gap: 12px;
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.project-list-table .list-header {
+  min-height: 36px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.project-list-table .list-row {
+  min-height: 54px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  transition: background .12s ease, box-shadow .12s ease;
+}
+
+.project-list-table .list-row:last-child { border-bottom: 0; }
+.project-list-table .list-row:hover { background: var(--bg-card-hover); box-shadow: inset 3px 0 var(--accent-color); }
+.project-list-table .list-row.is-pinned-row { box-shadow: inset 3px 0 #38bdf8; }
+.project-list-table .col-name { min-width: 0; display: flex; align-items: center; gap: 10px; color: var(--text-primary); font-weight: 650; }
+.project-list-table .col-name > span, .project-list-table .col-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-list-table .col-domain, .project-list-table .col-time { color: var(--text-muted); }
+.project-list-table .col-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.project-list-table .list-icon { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border: 1px solid var(--border-color); border-radius: 6px; color: #fff; font-size: 11px; font-weight: 700; }
+.project-list-table .list-pin-btn { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.project-list-table .list-pin-btn:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.project-list-table .card-status-badge { display: inline-flex; max-width: 100%; overflow: hidden; padding: 3px 8px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; font-size: 8px; text-transform: uppercase; }
+.project-list-table .list-action-btn { width: 29px; height: 29px; justify-content: center; padding: 0; border-color: var(--border-color); background: var(--bg-elevated); color: var(--text-secondary); }
+.project-list-table .list-action-btn:hover { border-color: var(--accent-color); background: var(--accent-light); color: var(--accent-color); }
+.project-list-table .active-project-inactive-list-btn { width: auto; padding: 0 9px; }
+.project-list-table .list-action-btn.delete:hover { border-color: rgba(248,81,73,.45); background: rgba(248,81,73,.13); color: #f85149; }
+
 .project-list {
   display: flex;
   flex-direction: column;
@@ -1751,7 +1810,7 @@
 .dashboard-folder:hover .dashboard-folder-actions { opacity: 1; }
 .dashboard-folder-actions button { border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); padding: 4px 7px; cursor: pointer; font-size: 9px; }
 .dashboard-folder-actions button:hover { background: var(--bg-card-hover); color: var(--text-primary); }
-.dashboard-folder-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 258px)); gap: 12px; padding: 14px; border-top: 1px solid var(--border-color); }
+.dashboard-folder-projects { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; padding: 14px; border-top: 1px solid var(--border-color); }
 .dashboard-folder-project { min-width: 0; height: 198px; display: flex; overflow: hidden; flex-direction: column; padding: 0; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-app); color: var(--text-primary); cursor: pointer; text-align: left; transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease; }
 .dashboard-folder-project:hover { transform: translateY(-2px); border-color: var(--border-hover); background: var(--bg-card-hover); box-shadow: 0 8px 22px rgba(0,0,0,.2); }
 .dashboard-folder-project.dragging, .project-card:active[draggable="true"], .list-row:active[draggable="true"] { opacity: .48; }
@@ -1767,6 +1826,51 @@
 .folder-project-meta em { color: var(--text-muted); font-size: 9px; font-style: normal; }
 .folder-project-meta i { max-width: 105px; overflow: hidden; padding: 3px 8px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-elevated); color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; font-size: 8px; font-style: normal; text-transform: uppercase; }
 .dashboard-folder-empty { grid-column: 1/-1; padding: 16px; color: var(--text-muted); text-align: center; font-size: 10px; }
+
+.dashboard-folder-projects.is-list-view { display: flex; flex-direction: column; gap: 0; padding: 0; }
+.dashboard-folder-projects.is-list-view .dashboard-folder-project { width: 100%; height: 54px; flex-direction: row; align-items: center; border-width: 0 0 1px; border-radius: 0; background: transparent; box-shadow: none; transform: none; }
+.dashboard-folder-projects.is-list-view .dashboard-folder-project:last-child { border-bottom: 0; }
+.dashboard-folder-projects.is-list-view .dashboard-folder-project:hover { background: var(--bg-card-hover); box-shadow: inset 3px 0 var(--accent-color); transform: none; }
+.dashboard-folder-projects.is-list-view .folder-project-preview { width: 54px; height: 53px; flex: 0 0 54px; }
+.dashboard-folder-projects.is-list-view .folder-project-preview .generic-project-thumbnail { width: 24px; height: 18px; }
+.dashboard-folder-projects.is-list-view .folder-project-content { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(130px, 1.3fr) minmax(180px, 1fr); align-items: center; gap: 12px; padding: 0 14px; }
+.dashboard-folder-projects.is-list-view .folder-project-content small { margin: 0; }
+.dashboard-folder-projects.is-list-view .folder-project-meta { margin: 0; }
+
+.dashboard-trash-list { display: flex; flex-direction: column; }
+.dashboard-trash-list .project-card { min-height: 64px; flex-direction: row; }
+.dashboard-trash-list .project-thumbnail { width: 76px; height: auto; min-height: 64px; flex: 0 0 76px; }
+.dashboard-trash-list .project-card-body { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; }
+.dashboard-trash-list .project-name, .dashboard-trash-list .project-url { margin: 0; }
+.dashboard-trash-list .trash-actions { justify-content: flex-end; margin: 0; }
+
+@media (max-width: 900px) {
+  .dashboard-header { align-items: flex-start; gap: 16px; }
+  .dashboard-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .dashboard-controls-bar { align-items: stretch; flex-direction: column; }
+  .search-box { width: 100%; max-width: none; }
+  .controls-right { width: 100%; justify-content: flex-end; }
+  .project-list-table .list-header, .project-list-table .list-row { grid-template-columns: 36px minmax(160px, 2fr) minmax(85px, .8fr) minmax(82px, .7fr) auto; }
+  .project-list-table .col-domain { display: none; }
+  .dashboard-folder-projects.is-list-view .folder-project-content { grid-template-columns: minmax(150px, 2fr) minmax(110px, 1fr) minmax(130px, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .dashboard { padding: 16px 12px 48px; }
+  .dashboard-header { flex-direction: column; }
+  .dashboard-header-actions { width: 100%; justify-content: stretch; }
+  .dashboard-header-actions > button { flex: 1; justify-content: center; }
+  .controls-right { display: grid; grid-template-columns: 1fr 1fr auto; }
+  .dashboard-new-folder-btn, .sort-dropdown-wrap, .sort-select { width: 100%; }
+  .project-list-table .list-header, .project-list-table .list-row { grid-template-columns: 32px minmax(120px, 1fr) auto; padding: 0 8px; column-gap: 8px; }
+  .project-list-table .col-status, .project-list-table .col-time { display: none; }
+  .project-list-table .active-project-inactive-list-btn span { display: none; }
+  .project-list-table .active-project-inactive-list-btn { width: 29px; padding: 0; }
+  .dashboard-folder-projects.is-list-view .folder-project-content { grid-template-columns: minmax(0, 1fr) auto; }
+  .dashboard-folder-projects.is-list-view .folder-project-content small { display: none; }
+  .dashboard-trash-list .project-card-body { grid-template-columns: minmax(0, 1fr) auto; }
+  .dashboard-trash-list .project-url { display: none; }
+}
 
 .project-context-menu, .project-context-submenu {
   position: fixed;

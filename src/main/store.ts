@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs'
 import { createHash } from 'crypto'
 import type { Project } from '../shared/types'
 
@@ -9,6 +9,7 @@ let activeOwnerKey: string | null = null
 const LEGACY_STORE_FILE = () => join(app.getPath('userData'), 'projects.json')
 const ACTIVE_OWNER_FILE = () => join(app.getPath('userData'), 'active-project-owner.txt')
 const LEGACY_CLAIM_FILE = () => join(app.getPath('userData'), 'legacy-projects-claimed.txt')
+const WORKSPACE_HTML_DIR = () => join(app.getPath('userData'), 'workspace-html')
 
 function ownerHash(ownerKey: string): string {
   return createHash('sha256').update(ownerKey).digest('hex').slice(0, 24)
@@ -86,4 +87,36 @@ export function saveProject(project: Project): void {
 
 export function deleteProject(id: string): void {
   writeAll(readAll().filter((p) => p.id !== id))
+}
+
+function workspaceHtmlFile(tabId: string): string {
+  const key = createHash('sha256').update(tabId).digest('hex')
+  return join(WORKSPACE_HTML_DIR(), `${key}.html`)
+}
+
+export function loadWorkspaceHtml(tabId: string): string | null {
+  try {
+    const file = workspaceHtmlFile(tabId)
+    return existsSync(file) ? readFileSync(file, 'utf8') : null
+  } catch {
+    return null
+  }
+}
+
+export function saveWorkspaceHtml(tabId: string, html: string): void {
+  const directory = WORKSPACE_HTML_DIR()
+  mkdirSync(directory, { recursive: true })
+  const file = workspaceHtmlFile(tabId)
+  const temporaryFile = `${file}.tmp`
+  writeFileSync(temporaryFile, html, 'utf8')
+  try {
+    renameSync(temporaryFile, file)
+  } catch {
+    try { unlinkSync(file) } catch {}
+    renameSync(temporaryFile, file)
+  }
+}
+
+export function deleteWorkspaceHtml(tabId: string): void {
+  try { unlinkSync(workspaceHtmlFile(tabId)) } catch {}
 }

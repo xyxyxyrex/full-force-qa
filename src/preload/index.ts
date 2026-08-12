@@ -53,6 +53,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteProject(id: string): Promise<void> {
     return ipcRenderer.invoke('projects:delete', id)
   },
+  loadWorkspaceHtml(tabId: string): Promise<string | null> {
+    return ipcRenderer.invoke('workspace-html:load', tabId)
+  },
+  saveWorkspaceHtml(tabId: string, html: string): Promise<void> {
+    return ipcRenderer.invoke('workspace-html:save', tabId, html)
+  },
+  deleteWorkspaceHtml(tabId: string): Promise<void> {
+    return ipcRenderer.invoke('workspace-html:delete', tabId)
+  },
   clearCache(): Promise<{ success: boolean }> {
     return ipcRenderer.invoke('app:clear-cache')
   },

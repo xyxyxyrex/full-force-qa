@@ -40,7 +40,7 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('lang', 'en-US')
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
-import { getProjects, saveProject, deleteProject, getProjectOwner, setProjectOwner } from './store'
+import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadWorkspaceHtml, saveProject, saveWorkspaceHtml, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
 import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState } from '../shared/types'
 import {
@@ -1579,6 +1579,9 @@ function registerIpcHandlers(): void {
       console.warn('[Parity Account] Project deletion queued for the next sync:', error)
     }
   })
+  ipcMain.handle('workspace-html:load', (_event, tabId: string) => loadWorkspaceHtml(tabId))
+  ipcMain.handle('workspace-html:save', (_event, tabId: string, html: string) => saveWorkspaceHtml(tabId, html))
+  ipcMain.handle('workspace-html:delete', (_event, tabId: string) => deleteWorkspaceHtml(tabId))
 
   // Snapshots: CRUD
   ipcMain.handle('snapshot:create', (_event, params) => createSnapshot(params))

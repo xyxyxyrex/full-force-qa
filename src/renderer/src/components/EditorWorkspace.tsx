@@ -3148,7 +3148,7 @@ export default function EditorWorkspace({
     const doc = liveIframeRef.current?.contentDocument;
     if (doc && doc.documentElement) {
       const updatedHtml = doc.documentElement.outerHTML;
-      sessionStorage.setItem("fullforce_captured_html", updatedHtml);
+      onPersistHtmlRef.current?.(updatedHtml);
     }
   }, []);
 
@@ -3186,7 +3186,7 @@ export default function EditorWorkspace({
           const currentDoc = liveIframeRef.current?.contentDocument;
           if (currentDoc && currentDoc.documentElement) {
             const updatedHtml = currentDoc.documentElement.outerHTML;
-            sessionStorage.setItem("fullforce_captured_html", updatedHtml);
+            onPersistHtmlRef.current?.(updatedHtml);
           }
           pushHistoryStep("Change Style", `${prop}: ${val}`);
         }, 150);
@@ -3408,7 +3408,7 @@ export default function EditorWorkspace({
         const currentDoc = liveIframeRef.current?.contentDocument;
         if (currentDoc && currentDoc.documentElement) {
           const updatedHtml = currentDoc.documentElement.outerHTML;
-          sessionStorage.setItem("fullforce_captured_html", updatedHtml);
+          onPersistHtmlRef.current?.(updatedHtml);
         }
         pushHistoryStep("edit", "Updated page element", "edit");
       },
