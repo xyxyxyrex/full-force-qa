@@ -160,7 +160,46 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 export function applyTheme(theme: AppTheme): void {
-  document.documentElement.setAttribute('data-theme', theme)
+  const root = document.documentElement
+  root.setAttribute('data-theme', theme)
+  const styles = getComputedStyle(root)
+  const accent = styles.getPropertyValue('--accent-color').trim()
+  const accentHover = styles.getPropertyValue('--accent-hover').trim() || accent
+  root.style.setProperty('--accent-foreground', accessibleAccentForeground(accent))
+  root.style.setProperty('--accent-hover-foreground', accessibleAccentForeground(accentHover))
+  root.style.setProperty('--button-text', 'var(--accent-foreground)')
+}
+
+function parseCssRgb(value: string): [number, number, number] | null {
+  const color = value.trim()
+  const shortHex = color.match(/^#([\da-f])([\da-f])([\da-f])$/i)
+  if (shortHex) {
+    return shortHex.slice(1).map((part) => parseInt(`${part}${part}`, 16)) as [number, number, number]
+  }
+  const hex = color.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})(?:[\da-f]{2})?$/i)
+  if (hex) {
+    return hex.slice(1, 4).map((part) => parseInt(part, 16)) as [number, number, number]
+  }
+  const rgb = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
+  if (!rgb) return null
+  return rgb.slice(1, 4).map((part) => Math.max(0, Math.min(255, Number(part)))) as [number, number, number]
+}
+
+function relativeLuminance([red, green, blue]: [number, number, number]): number {
+  const linear = [red, green, blue].map((channel) => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+}
+
+export function accessibleAccentForeground(background: string): '#000000' | '#ffffff' {
+  const rgb = parseCssRgb(background)
+  if (!rgb) return '#ffffff'
+  const luminance = relativeLuminance(rgb)
+  const contrastWithBlack = (luminance + 0.05) / 0.05
+  const contrastWithWhite = 1.05 / (luminance + 0.05)
+  return contrastWithBlack >= contrastWithWhite ? '#000000' : '#ffffff'
 }
 
 export function readThemeAccentColor(): string {

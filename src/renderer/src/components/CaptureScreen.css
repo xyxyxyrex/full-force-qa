@@ -232,13 +232,14 @@
 /* Primary Action Button (Capture) */
 .btn-primary {
   background: var(--accent-color);
-  color: var(--bg-app);
+  color: var(--accent-foreground);
   border: 1px solid var(--accent-color);
   box-shadow: 0 3px 12px color-mix(in srgb, var(--accent-color) 28%, transparent);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
+  color: var(--accent-hover-foreground);
   border-color: var(--accent-hover);
   box-shadow: 0 4px 16px color-mix(in srgb, var(--accent-color) 38%, transparent);
 }
@@ -316,7 +317,7 @@
   font-size: 12.5px;
   font-weight: 600;
   background: var(--accent-color);
-  color: var(--bg-app);
+  color: var(--accent-foreground);
   border: 1px solid var(--accent-color);
   border-radius: 6px;
   cursor: pointer;

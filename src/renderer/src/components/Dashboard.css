@@ -77,7 +77,7 @@
   gap: 8px;
   padding: 10px 20px;
   background: var(--accent-color);
-  color: #ffffff;
+  color: var(--accent-foreground);
   border: none;
   border-radius: 8px;
   font-size: 14px;
@@ -90,6 +90,7 @@
 
 .new-project-btn:hover {
   background: var(--accent-hover);
+  color: var(--accent-hover-foreground);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
   transform: translateY(-1px);
 }
@@ -1522,7 +1523,7 @@
   align-items: center;
   gap: 6px;
   background: var(--accent-color);
-  color: #ffffff;
+  color: var(--accent-foreground);
   border: none;
   padding: 6px 12px;
   border-radius: 6px;
@@ -1534,6 +1535,7 @@
 
 .launch-qa-btn:hover {
   background: var(--accent-hover);
+  color: var(--accent-hover-foreground);
   transform: scale(1.02);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }

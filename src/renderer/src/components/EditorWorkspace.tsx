@@ -33,6 +33,7 @@ import mondayIcon from "../assets/monday-icon-svgrepo-com.svg";
 import { fetchMondayTicketsApi, type MondayTicket } from "../utils/mondayApi";
 import { DEFAULT_HOTKEYS, readThemeAccentColor } from "../theme/themeSystem";
 import { nextCanvasZoomFromWheel } from "../utils/canvasZoom";
+import { isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { findHotkeyCommand, isEditableHotkeyTarget, matchesHotkey, normalizeHotkey } from "../utils/hotkeys";
 import {
   annotationSequencePosition,
@@ -4266,17 +4267,44 @@ export default function EditorWorkspace({
       const startY = e.screenY;
       const startPanX = panOffsetRef.current.x;
       const startPanY = panOffsetRef.current.y;
+      const buttonMask = mouseButtonMask(e.button);
+      const sourceDocument = (e.target as Node | null)?.ownerDocument || document;
+      const sourceWindow = sourceDocument.defaultView;
+      const nativeIframe = liveIframeRef.current;
+      const startedInsideNativeIframe =
+        sourceDocument !== document &&
+        sourceDocument === nativeIframe?.contentDocument;
+      const sourceRoot = sourceDocument.documentElement;
+      const sourceBody = sourceDocument.body;
+      const previousSourceRootCursor = sourceRoot?.style.cursor || "";
+      const previousSourceBodyCursor = sourceBody?.style.cursor || "";
+      let active = true;
 
       document.body.style.cursor = "grabbing";
+      if (sourceWindow && sourceWindow !== window) {
+        if (sourceRoot) sourceRoot.style.cursor = "grabbing";
+        if (sourceBody) sourceBody.style.cursor = "grabbing";
+      }
       liveEditorRef.current?.setPaused(true);
-      if (liveIframeRef.current)
-        liveIframeRef.current.style.pointerEvents = "none";
-      if (liveWebviewRef.current)
-        liveWebviewRef.current.style.pointerEvents = "none";
-      const gFrame = editorRef.current?.Canvas?.getFrameEl();
-      if (gFrame) gFrame.style.pointerEvents = "none";
+      const blockedSurfaces = ([
+        startedInsideNativeIframe ? null : nativeIframe,
+        liveWebviewRef.current,
+        editorRef.current?.Canvas?.getFrameEl(),
+      ] as Array<HTMLElement | null | undefined>)
+        .filter((surface): surface is HTMLElement => Boolean(surface))
+        .map((surface) => ({
+          surface,
+          pointerEvents: surface.style.pointerEvents,
+        }));
+      blockedSurfaces.forEach(({ surface }) => {
+        surface.style.pointerEvents = "none";
+      });
 
       const onMove = (ev: MouseEvent) => {
+        if (!isMouseButtonHeld(ev.buttons, buttonMask)) {
+          cleanup();
+          return;
+        }
         ev.preventDefault();
         const dx = ev.screenX - startX;
         const dy = ev.screenY - startY;
@@ -4284,26 +4312,51 @@ export default function EditorWorkspace({
       };
 
       const cleanup = () => {
-        panSessionRef.current = null;
+        if (!active) return;
+        active = false;
+        if (panSessionRef.current?.cleanup === cleanup) {
+          panSessionRef.current = null;
+        }
         document.body.style.cursor = isSpacePressedRef.current ? "grab" : "";
+        if (sourceWindow && sourceWindow !== window) {
+          if (sourceRoot) sourceRoot.style.cursor = previousSourceRootCursor;
+          if (sourceBody) sourceBody.style.cursor = previousSourceBodyCursor;
+        }
         if (!isSpacePressedRef.current) liveEditorRef.current?.setPaused(false);
-        if (liveIframeRef.current)
-          liveIframeRef.current.style.pointerEvents = "";
-        if (liveWebviewRef.current)
-          liveWebviewRef.current.style.pointerEvents = "";
-        const gf = editorRef.current?.Canvas?.getFrameEl();
-        if (gf) gf.style.pointerEvents = "";
+        blockedSurfaces.forEach(({ surface, pointerEvents }) => {
+          surface.style.pointerEvents = pointerEvents;
+        });
         window.removeEventListener("mousemove", onMove, true);
         window.removeEventListener("mouseup", onUp, true);
+        window.removeEventListener("pointerup", onPointerEnd, true);
+        window.removeEventListener("pointercancel", onPointerEnd, true);
         window.removeEventListener("blur", onCancel);
+        document.removeEventListener("mouseenter", onDocumentMouseEnter, true);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        if (sourceWindow && sourceWindow !== window) {
+          sourceWindow.removeEventListener("mousemove", onMove, true);
+          sourceWindow.removeEventListener("mouseup", onUp, true);
+          sourceWindow.removeEventListener("pointerup", onPointerEnd, true);
+          sourceWindow.removeEventListener("pointercancel", onPointerEnd, true);
+          sourceWindow.removeEventListener("blur", onCancel);
+        }
       };
 
       const onUp = (ev: MouseEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
         // Accept any button release to be safe — avoid leaked sessions
         cleanup();
       };
 
       const onCancel = () => cleanup();
+      const onPointerEnd = () => cleanup();
+      const onDocumentMouseEnter = (ev: MouseEvent) => {
+        if (!isMouseButtonHeld(ev.buttons, buttonMask)) cleanup();
+      };
+      const onVisibilityChange = () => {
+        if (document.hidden) cleanup();
+      };
 
       panSessionRef.current = {
         startX,
@@ -4316,7 +4369,20 @@ export default function EditorWorkspace({
 
       window.addEventListener("mousemove", onMove, true);
       window.addEventListener("mouseup", onUp, true);
+      window.addEventListener("pointerup", onPointerEnd, true);
+      window.addEventListener("pointercancel", onPointerEnd, true);
       window.addEventListener("blur", onCancel);
+      document.addEventListener("mouseenter", onDocumentMouseEnter, true);
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      if (sourceWindow && sourceWindow !== window) {
+        // Audit/Layout gestures begin inside the native iframe. Keep listening
+        // in that originating window instead of disabling it mid-gesture.
+        sourceWindow.addEventListener("mousemove", onMove, true);
+        sourceWindow.addEventListener("mouseup", onUp, true);
+        sourceWindow.addEventListener("pointerup", onPointerEnd, true);
+        sourceWindow.addEventListener("pointercancel", onPointerEnd, true);
+        sourceWindow.addEventListener("blur", onCancel);
+      }
     },
     [updateCanvasPanTransform],
   );
@@ -11390,6 +11456,7 @@ export default function EditorWorkspace({
                     sourceUrl={sourceUrl}
                     editor={editorRef.current}
                      selectedComponent={selectedComponent}
+                     canvasZoom={zoom}
                      iframeRef={liveIframeRef}
                      onDocumentChange={(doc, description) => {
                        pushHistoryStep("Grammar fix", description, "edit");

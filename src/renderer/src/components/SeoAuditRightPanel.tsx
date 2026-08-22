@@ -10,6 +10,15 @@ import {
   type TextIssue
 } from '../utils/grammarSpellAudit'
 import type { Editor } from 'grapesjs'
+import { auditOverlayGeometry } from '../utils/auditOverlayScale'
+import { auditOverlayModeLabel, nextAuditOverlayMode, type AuditOverlayMode } from '../utils/auditOverlayMode'
+import {
+  AUDIT_MEDIA_SELECTOR,
+  auditMediaResourceUrl,
+  auditMediaTypeLabel,
+  dataUrlByteLength,
+  formatAuditResourceSize
+} from '../utils/auditResourceSize'
 import './SeoAuditRightPanel.css'
 
 interface Props {
@@ -17,17 +26,20 @@ interface Props {
   sourceUrl: string
   editor: Editor | null
   selectedComponent: any
+  canvasZoom: number
   iframeRef?: React.RefObject<HTMLIFrameElement>
   onDocumentChange?: (doc: Document, description: string) => void
 }
 
 type SectorKey = 'grammarSpell' | 'selected' | 'meta' | 'headers' | 'images' | 'links' | 'duplicates' | 'assets'
+type AuditOverlayKey = 'showLinks' | 'showAltText' | 'showHrefs' | 'showHeadings' | 'showGrammarSpell' | 'showFileSizes'
 
 export default function SeoAuditRightPanel({
   html,
   sourceUrl,
   editor,
   selectedComponent,
+  canvasZoom,
   iframeRef,
   onDocumentChange
 }: Props) {
@@ -50,16 +62,47 @@ export default function SeoAuditRightPanel({
   const [grammarScanError, setGrammarScanError] = useState('')
   const [ignoredIssueKeys, setIgnoredIssueKeys] = useState<Set<string>>(() => new Set())
 
-  const [auditOverlays, setAuditOverlays] = useState({
-    showLinks: false,
-    showAltText: false,
-    showHrefs: false,
-    showHeadings: false,
-    showGrammarSpell: false
+  const [auditOverlays, setAuditOverlays] = useState<Record<AuditOverlayKey, AuditOverlayMode>>({
+    showLinks: 'off',
+    showAltText: 'off',
+    showHrefs: 'off',
+    showHeadings: 'off',
+    showGrammarSpell: 'off',
+    showFileSizes: 'off'
   })
+  const clickedOverlayElementsRef = useRef<Record<AuditOverlayKey, Set<Element>>>({
+    showLinks: new Set(), showAltText: new Set(), showHrefs: new Set(),
+    showHeadings: new Set(), showGrammarSpell: new Set(), showFileSizes: new Set()
+  })
+  const hoveredOverlayElementsRef = useRef<Record<AuditOverlayKey, Element | null>>({
+    showLinks: null, showAltText: null, showHrefs: null,
+    showHeadings: null, showGrammarSpell: null, showFileSizes: null
+  })
+  const [resourceFileSizes, setResourceFileSizes] = useState<Record<string, number | null>>({})
+  const resourceSizeRequestRef = useRef(0)
 
-  const toggleOverlay = (key: keyof typeof auditOverlays) => {
-    setAuditOverlays((prev) => ({ ...prev, [key]: !prev[key] }))
+  const toggleOverlay = (key: AuditOverlayKey) => {
+    setAuditOverlays((prev) => {
+      const next = nextAuditOverlayMode(prev[key])
+      if (next === 'off') {
+        clickedOverlayElementsRef.current[key].clear()
+        hoveredOverlayElementsRef.current[key] = null
+      }
+      return { ...prev, [key]: next }
+    })
+  }
+  const overlayButtonClass = (key: AuditOverlayKey) => {
+    const mode = auditOverlays[key]
+    return `seo-overlay-btn mode-${mode} ${mode !== 'off' ? 'active' : ''}`
+  }
+  const overlayButtonTitle = (key: AuditOverlayKey, name: string) => {
+    const mode = auditOverlays[key]
+    return `${name}: ${auditOverlayModeLabel(mode)}. Next: ${auditOverlayModeLabel(nextAuditOverlayMode(mode))}`
+  }
+  const overlayModeBadge = (key: AuditOverlayKey) => {
+    const mode = auditOverlays[key]
+    if (mode === 'off') return null
+    return <span className="seo-overlay-mode-badge" aria-hidden="true">{mode === 'hover' ? 'H' : mode === 'click' ? 'C' : 'A'}</span>
   }
 
   // Calculate SEO audit report
@@ -86,6 +129,69 @@ export default function SeoAuditRightPanel({
     }
     return null
   }, [editor, iframeRef])
+
+  useEffect(() => {
+    if (auditOverlays.showFileSizes === 'off') return
+    const requestId = ++resourceSizeRequestRef.current
+    const iframe = iframeRef?.current
+
+    const inspectResources = async () => {
+      const targetDoc = getIframeDoc()
+      if (!targetDoc?.body) return
+      const targets = Array.from(targetDoc.querySelectorAll(AUDIT_MEDIA_SELECTOR))
+      const urls = Array.from(new Set(targets.map(auditMediaResourceUrl).filter(Boolean)))
+      const measured: Record<string, number | null> = {}
+      const remoteUrls: string[] = []
+
+      for (const url of urls) {
+        const inlineSize = dataUrlByteLength(url)
+        if (inlineSize != null) {
+          measured[url] = inlineSize
+          continue
+        }
+        try {
+          const entries = targetDoc.defaultView?.performance.getEntriesByName(url) || []
+          const entry = entries[entries.length - 1] as PerformanceResourceTiming | undefined
+          const timingSize = Number(entry?.encodedBodySize || entry?.transferSize || 0)
+          if (timingSize > 0) {
+            measured[url] = timingSize
+            continue
+          }
+        } catch {}
+        remoteUrls.push(url)
+      }
+
+      if (requestId !== resourceSizeRequestRef.current) return
+      setResourceFileSizes(measured)
+      if (remoteUrls.length === 0 || typeof window.electronAPI?.getResourceFileSizes !== 'function') return
+
+      try {
+        const results = await window.electronAPI.getResourceFileSizes(remoteUrls, sourceUrl)
+        if (requestId !== resourceSizeRequestRef.current) return
+        setResourceFileSizes((current) => {
+          const next = { ...current }
+          results.forEach((result) => { next[result.url] = result.sizeBytes })
+          return next
+        })
+      } catch {
+        if (requestId !== resourceSizeRequestRef.current) return
+        setResourceFileSizes((current) => {
+          const next = { ...current }
+          remoteUrls.forEach((url) => { if (!(url in next)) next[url] = null })
+          return next
+        })
+      }
+    }
+
+    const timer = window.setTimeout(() => void inspectResources(), 50)
+    const handleLoad = () => void inspectResources()
+    iframe?.addEventListener('load', handleLoad)
+    return () => {
+      window.clearTimeout(timer)
+      iframe?.removeEventListener('load', handleLoad)
+      resourceSizeRequestRef.current += 1
+    }
+  }, [auditOverlays.showFileSizes, getIframeDoc, iframeRef, sourceUrl])
 
   const [grammarReport, setGrammarReport] = useState<GrammarSpellReport>({
     totalIssues: 0,
@@ -182,6 +288,95 @@ export default function SeoAuditRightPanel({
       return null
     }
 
+    const overlayKeys = Object.keys(auditOverlays) as AuditOverlayKey[]
+    let interactionDoc: Document | null = null
+    let grammarTargetElements = new Set<Element>()
+    const selectorFor = (key: AuditOverlayKey) => {
+      if (key === 'showLinks') return 'a'
+      if (key === 'showAltText') return 'img'
+      if (key === 'showHrefs') return 'button, [role="button"], input[type="button"], input[type="submit"], .btn, .button'
+      if (key === 'showHeadings') return 'h1, h2, h3, h4, h5, h6'
+      if (key === 'showFileSizes') return AUDIT_MEDIA_SELECTOR
+      return ''
+    }
+    const targetFor = (key: AuditOverlayKey, start: Element | null): Element | null => {
+      if (!start) return null
+      if (key !== 'showGrammarSpell') {
+        const selector = selectorFor(key)
+        const match = selector ? start.closest(selector) : null
+        return match?.ownerDocument === interactionDoc ? match : null
+      }
+      let current: Element | null = start
+      while (current && current !== interactionDoc?.body) {
+        if (grammarTargetElements.has(current)) return current
+        current = current.parentElement
+      }
+      return null
+    }
+    const shouldShow = (key: AuditOverlayKey, element: Element) => {
+      const mode = auditOverlays[key]
+      if (mode === 'all') return true
+      if (mode === 'hover') return hoveredOverlayElementsRef.current[key] === element
+      if (mode === 'click') return clickedOverlayElementsRef.current[key].has(element)
+      return false
+    }
+    const eventElement = (target: EventTarget | null) => {
+      const node = target as Element | null
+      return node?.nodeType === 1 ? node : null
+    }
+    const onPointerOver = (event: PointerEvent) => {
+      let changed = false
+      const start = eventElement(event.target)
+      overlayKeys.forEach((key) => {
+        if (auditOverlays[key] !== 'hover') return
+        const target = targetFor(key, start)
+        if (hoveredOverlayElementsRef.current[key] === target) return
+        hoveredOverlayElementsRef.current[key] = target
+        changed = true
+      })
+      if (changed) updateOverlays()
+    }
+    const onPointerOut = (event: PointerEvent) => {
+      let changed = false
+      const related = eventElement(event.relatedTarget)
+      overlayKeys.forEach((key) => {
+        if (auditOverlays[key] !== 'hover') return
+        const target = targetFor(key, related)
+        if (hoveredOverlayElementsRef.current[key] === target) return
+        hoveredOverlayElementsRef.current[key] = target
+        changed = true
+      })
+      if (changed) updateOverlays()
+    }
+    const onOverlayClick = (event: MouseEvent) => {
+      const start = eventElement(event.target)
+      let handled = false
+      overlayKeys.forEach((key) => {
+        if (auditOverlays[key] !== 'click') return
+        const target = targetFor(key, start)
+        if (!target) return
+        const selected = clickedOverlayElementsRef.current[key]
+        if (selected.has(target)) selected.delete(target)
+        else selected.add(target)
+        handled = true
+      })
+      if (!handled) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      updateOverlays()
+    }
+    const bindInteractions = (doc: Document) => {
+      if (interactionDoc === doc) return
+      interactionDoc?.removeEventListener('pointerover', onPointerOver, true)
+      interactionDoc?.removeEventListener('pointerout', onPointerOut, true)
+      interactionDoc?.removeEventListener('click', onOverlayClick, true)
+      interactionDoc = doc
+      interactionDoc.addEventListener('pointerover', onPointerOver, true)
+      interactionDoc.addEventListener('pointerout', onPointerOut, true)
+      interactionDoc.addEventListener('click', onOverlayClick, true)
+    }
+
     const updateOverlays = () => {
       const iframeDoc = getIframeDoc()
       if (!iframeDoc || !iframeDoc.body) return
@@ -190,12 +385,28 @@ export default function SeoAuditRightPanel({
       const oldContainer = iframeDoc.getElementById('__audit-overlay-container')
       if (oldContainer) oldContainer.remove()
 
-      const { showLinks, showAltText, showHrefs, showHeadings, showGrammarSpell } = auditOverlays
-      if (!showLinks && !showAltText && !showHrefs && !showHeadings && !showGrammarSpell) return
+      const { showLinks, showAltText, showHrefs, showHeadings, showGrammarSpell, showFileSizes } = auditOverlays
+      if (overlayKeys.every((key) => auditOverlays[key] === 'off')) return
+      bindInteractions(iframeDoc)
+      overlayKeys.forEach((key) => {
+        clickedOverlayElementsRef.current[key].forEach((element) => {
+          if (!element.isConnected || element.ownerDocument !== iframeDoc)
+            clickedOverlayElementsRef.current[key].delete(element)
+        })
+      })
+      grammarTargetElements = new Set(
+        visibleGrammarIssues
+          .map((issue) => locateIssueElement(iframeDoc, issue))
+          .filter((element): element is HTMLElement => Boolean(element)),
+      )
 
       const win = iframeDoc.defaultView || window
       const scrollX = win.scrollX || 0
       const scrollY = win.scrollY || 0
+      const { inverseScale, stackStep, underlineThickness } = auditOverlayGeometry(canvasZoom)
+      const themeStyles = getComputedStyle(document.documentElement)
+      const overlayAccent = themeStyles.getPropertyValue('--accent-color').trim() || '#8a918e'
+      const overlayForeground = themeStyles.getPropertyValue('--accent-foreground').trim() || '#ffffff'
 
       // Single top-level overlay container in iframeDoc.body
       const container = iframeDoc.createElement('div')
@@ -210,8 +421,8 @@ export default function SeoAuditRightPanel({
         const badge = iframeDoc.createElement('div')
         badge.style.cssText = `
           position: absolute;
-          left: ${Math.max(4, rect.left + scrollX + 4)}px;
-          top: ${Math.max(4, rect.top + scrollY + 4 + stackIndex * 22)}px;
+          left: ${Math.max(4 * inverseScale, rect.left + scrollX + 4 * inverseScale)}px;
+          top: ${Math.max(4 * inverseScale, rect.top + scrollY + 4 * inverseScale + stackIndex * stackStep)}px;
           background: ${bgColor};
           color: ${textColor};
           font-size: 10px;
@@ -225,71 +436,96 @@ export default function SeoAuditRightPanel({
           white-space: nowrap;
           box-shadow: 0 2px 8px rgba(0,0,0,0.6);
           border: 1px solid rgba(255,255,255,0.25);
+          transform: scale(${inverseScale});
+          transform-origin: top left;
+          max-width: ${360 * inverseScale}px;
+          overflow: hidden;
+          text-overflow: ellipsis;
         `
         badge.textContent = text
         container.appendChild(badge)
       }
 
       // 1. Show Alt Text
-      if (showAltText) {
+      if (showAltText !== 'off') {
         iframeDoc.querySelectorAll('img').forEach((img) => {
+          if (!shouldShow('showAltText', img)) return
           const alt = img.getAttribute('alt')
           if (alt != null && alt.trim() !== '') {
-            drawBadge(img, `alt: "${alt.trim().slice(0, 35)}"`, '#10b981')
+            drawBadge(img, `alt: "${alt.trim().slice(0, 35)}"`, overlayAccent, overlayForeground)
           } else {
-            drawBadge(img, 'MISSING ALT', '#ef4444')
+            drawBadge(img, 'MISSING ALT', overlayAccent, overlayForeground)
           }
         })
       }
 
       // 2. Show Links
-      if (showLinks) {
+      if (showLinks !== 'off') {
         iframeDoc.querySelectorAll('a').forEach((a) => {
+          if (!shouldShow('showLinks', a)) return
           const href = a.getAttribute('href') || '#'
-          drawBadge(a, `link: ${href.slice(0, 40)}`, '#3b82f6')
+          drawBadge(a, `link: ${href.slice(0, 40)}`, overlayAccent, overlayForeground)
         })
       }
 
       // 3. Show Hrefs
-      if (showHrefs) {
+      if (showHrefs !== 'off') {
         iframeDoc.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"], .btn, .button').forEach((btn) => {
+          if (!shouldShow('showHrefs', btn)) return
           const href = btn.getAttribute('href') || btn.getAttribute('onclick') || btn.getAttribute('type') || 'button'
-          drawBadge(btn, `href: ${href.slice(0, 40)}`, '#8b5cf6')
+          drawBadge(btn, `href: ${href.slice(0, 40)}`, overlayAccent, overlayForeground)
         })
       }
 
       // 4. Show Headings
-      if (showHeadings) {
+      if (showHeadings !== 'off') {
         iframeDoc.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+          if (!shouldShow('showHeadings', h)) return
           const tag = h.tagName.toUpperCase()
           const snippet = (h.textContent || '').trim().slice(0, 30)
-          drawBadge(h, `${tag}: ${snippet}`, '#f59e0b', '#000000')
+          drawBadge(h, `${tag}: ${snippet}`, overlayAccent, overlayForeground)
         })
       }
 
       // 5. Show Grammar & Spell Overlays
-      if (showGrammarSpell) {
+      if (showGrammarSpell !== 'off') {
         const stackByElement = new Map<HTMLElement, number>()
         visibleGrammarIssues.forEach((issue) => {
           const targetEl = locateIssueElement(iframeDoc, issue)
           if (targetEl) {
+            if (!shouldShow('showGrammarSpell', targetEl)) return
             const stackIndex = stackByElement.get(targetEl) || 0
             stackByElement.set(targetEl, stackIndex + 1)
             drawBadge(
               targetEl,
               `${issue.category || issue.type}: ${issue.wordOrPhrase}`,
-              issue.type === 'spelling' ? '#ef4444' : '#f59e0b',
-              issue.type === 'spelling' ? '#ffffff' : '#111827',
+              overlayAccent,
+              overlayForeground,
               stackIndex
             )
             const range = issueDomRange(iframeDoc, issue)
             Array.from(range?.getClientRects() || []).forEach((rect) => {
               if (rect.width < 1 || rect.height < 1) return
               const underline = iframeDoc.createElement('div')
-              underline.style.cssText = `position:absolute;left:${rect.left + scrollX}px;top:${rect.bottom + scrollY - 2}px;width:${rect.width}px;height:2px;background:${issue.type === 'spelling' ? '#ef4444' : '#f59e0b'};border-radius:2px;box-shadow:0 0 4px currentColor;`
+              underline.style.cssText = `position:absolute;left:${rect.left + scrollX}px;top:${rect.bottom + scrollY - underlineThickness}px;width:${rect.width}px;height:${underlineThickness}px;background:${overlayAccent};border-radius:${underlineThickness}px;box-shadow:0 0 ${4 * inverseScale}px currentColor;`
               container.appendChild(underline)
             })
           }
+        })
+      }
+
+      // 6. Show downloaded file size for rendered media resources.
+      if (showFileSizes !== 'off') {
+        iframeDoc.querySelectorAll(AUDIT_MEDIA_SELECTOR).forEach((element) => {
+          if (!shouldShow('showFileSizes', element)) return
+          const resourceUrl = auditMediaResourceUrl(element)
+          if (!resourceUrl) return
+          const hasMeasurement = Object.prototype.hasOwnProperty.call(resourceFileSizes, resourceUrl)
+          const bytes = resourceFileSizes[resourceUrl]
+          const sizeLabel = hasMeasurement
+            ? bytes == null ? 'Unknown' : formatAuditResourceSize(bytes)
+            : 'Measuring...'
+          drawBadge(element, `${auditMediaTypeLabel(element)} · ${sizeLabel}`, overlayAccent, overlayForeground)
         })
       }
     }
@@ -298,20 +534,24 @@ export default function SeoAuditRightPanel({
 
     // Interval loop while active
     let interval: any = null
-    const hasAnyActive = Object.values(auditOverlays).some(Boolean)
+    const hasAnyActive = Object.values(auditOverlays).some((mode) => mode !== 'off')
     if (hasAnyActive) {
       interval = setInterval(updateOverlays, 250)
     }
 
     return () => {
       if (interval) clearInterval(interval)
+      interactionDoc?.removeEventListener('pointerover', onPointerOver, true)
+      interactionDoc?.removeEventListener('pointerout', onPointerOut, true)
+      interactionDoc?.removeEventListener('click', onOverlayClick, true)
+      interactionDoc = null
       const iframeDoc = getIframeDoc()
       if (iframeDoc) {
         const c = iframeDoc.getElementById('__audit-overlay-container')
         if (c) c.remove()
       }
     }
-  }, [auditOverlays, editor, html, iframeRef, visibleGrammarIssues])
+  }, [auditOverlays, canvasZoom, editor, html, iframeRef, resourceFileSizes, visibleGrammarIssues])
 
   // Scroll to and highlight issue element inside live iframe DOM
   const scrollToAndHighlightIssue = (issue: TextIssue) => {
@@ -334,8 +574,10 @@ export default function SeoAuditRightPanel({
       const origTransition = targetEl.style.transition
 
       targetEl.style.transition = 'all 0.2s ease-in-out'
-      targetEl.style.outline = '2px solid #ef4444'
-      targetEl.style.boxShadow = '0 0 16px rgba(239, 68, 68, 0.75)'
+      const hostTheme = getComputedStyle(document.documentElement)
+      const accent = hostTheme.getPropertyValue('--accent-color').trim() || '#8a918e'
+      targetEl.style.outline = `2px solid ${accent}`
+      targetEl.style.boxShadow = `0 0 0 4px ${accent}`
 
       setTimeout(() => {
         targetEl.style.outline = origOutline
@@ -475,59 +717,83 @@ export default function SeoAuditRightPanel({
         <div className="seo-toggle-bar-title">Canvas Overlays</div>
         <div className="seo-toggle-btn-group">
           <button
-            className={`seo-overlay-btn ${auditOverlays.showLinks ? 'active' : ''}`}
+            className={overlayButtonClass('showLinks')}
             onClick={() => toggleOverlay('showLinks')}
-            title="Show Links"
+            title={overlayButtonTitle('showLinks', 'Links overlay')}
+            aria-label={overlayButtonTitle('showLinks', 'Links overlay')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
+            {overlayModeBadge('showLinks')}
           </button>
 
           <button
-            className={`seo-overlay-btn ${auditOverlays.showAltText ? 'active' : ''}`}
+            className={overlayButtonClass('showAltText')}
             onClick={() => toggleOverlay('showAltText')}
-            title="Show Alt Text"
+            title={overlayButtonTitle('showAltText', 'Alt text overlay')}
+            aria-label={overlayButtonTitle('showAltText', 'Alt text overlay')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
               <circle cx="8.5" cy="8.5" r="1.5" />
               <polyline points="21 15 16 10 5 21" />
             </svg>
+            {overlayModeBadge('showAltText')}
           </button>
 
           <button
-            className={`seo-overlay-btn ${auditOverlays.showHrefs ? 'active' : ''}`}
+            className={overlayButtonClass('showHrefs')}
             onClick={() => toggleOverlay('showHrefs')}
-            title="Show Hrefs"
+            title={overlayButtonTitle('showHrefs', 'Button target overlay')}
+            aria-label={overlayButtonTitle('showHrefs', 'Button target overlay')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="12" r="6" />
               <circle cx="12" cy="12" r="2" />
             </svg>
+            {overlayModeBadge('showHrefs')}
           </button>
 
           <button
-            className={`seo-overlay-btn ${auditOverlays.showHeadings ? 'active' : ''}`}
+            className={overlayButtonClass('showHeadings')}
             onClick={() => toggleOverlay('showHeadings')}
-            title="Show Headings"
+            title={overlayButtonTitle('showHeadings', 'Headings overlay')}
+            aria-label={overlayButtonTitle('showHeadings', 'Headings overlay')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 12h8m-8-6v12m8-12v12m5-6h3" />
             </svg>
+            {overlayModeBadge('showHeadings')}
           </button>
 
           <button
-            className={`seo-overlay-btn ${auditOverlays.showGrammarSpell ? 'active' : ''}`}
+            className={overlayButtonClass('showGrammarSpell')}
             onClick={() => toggleOverlay('showGrammarSpell')}
-            title="Show Grammar & Spell Overlays"
+            title={overlayButtonTitle('showGrammarSpell', 'Grammar and spelling overlay')}
+            aria-label={overlayButtonTitle('showGrammarSpell', 'Grammar and spelling overlay')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
             </svg>
+            {overlayModeBadge('showGrammarSpell')}
+          </button>
+
+          <button
+            className={overlayButtonClass('showFileSizes')}
+            onClick={() => toggleOverlay('showFileSizes')}
+            title={overlayButtonTitle('showFileSizes', 'Media file size overlay')}
+            aria-label={overlayButtonTitle('showFileSizes', 'Media file size overlay')}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <path d="M8 13h8M8 17h5" />
+            </svg>
+            {overlayModeBadge('showFileSizes')}
           </button>
         </div>
       </div>
@@ -542,7 +808,7 @@ export default function SeoAuditRightPanel({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>GRAMMAR & SPELL CHECK ({grammarCounts.total})</span>
                 <button
-                  style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                  className="grammar-rescan-btn"
                   onClick={(e) => {
                     e.stopPropagation()
                     void runAuditScan(true)
@@ -556,7 +822,7 @@ export default function SeoAuditRightPanel({
                 </button>
               </div>
               {grammarCounts.total > 0 && (
-                <span className="sector-badge-warn" style={{ background: 'rgba(239,68,68,0.18)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600 }}>
+                <span className="grammar-issue-count">
                   {grammarCounts.total} ISSUES
                 </span>
               )}
@@ -582,21 +848,21 @@ export default function SeoAuditRightPanel({
                 <div className="grammar-scan-warning" key={warning}>{warning}</div>
               ))}
               {/* Filter Sub-Tabs */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="grammar-filter-tabs">
                 <button
-                  style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'all' ? '#3f3f46' : 'transparent', color: grammarFilter === 'all' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'all' ? 600 : 400 }}
+                  className={`grammar-filter-btn ${grammarFilter === 'all' ? 'active' : ''}`}
                   onClick={() => setGrammarFilter('all')}
                 >
                   All ({grammarCounts.total})
                 </button>
                 <button
-                  style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'spelling' ? '#3f3f46' : 'transparent', color: grammarFilter === 'spelling' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'spelling' ? 600 : 400 }}
+                  className={`grammar-filter-btn ${grammarFilter === 'spelling' ? 'active' : ''}`}
                   onClick={() => setGrammarFilter('spelling')}
                 >
                   Spelling ({grammarCounts.spelling})
                 </button>
                 <button
-                  style={{ padding: '2px 8px', fontSize: 10, borderRadius: 10, border: 'none', cursor: 'pointer', background: grammarFilter === 'grammar' ? '#3f3f46' : 'transparent', color: grammarFilter === 'grammar' ? '#fff' : '#a1a1aa', fontWeight: grammarFilter === 'grammar' ? 600 : 400 }}
+                  className={`grammar-filter-btn ${grammarFilter === 'grammar' ? 'active' : ''}`}
                   onClick={() => setGrammarFilter('grammar')}
                 >
                   Grammar ({grammarCounts.grammar})
@@ -614,38 +880,26 @@ export default function SeoAuditRightPanel({
                       key={issue.id}
                       className="list-item-row grammar-issue-card"
                       onClick={() => scrollToAndHighlightIssue(issue)}
-                      style={{ cursor: 'pointer', padding: '8px 10px', background: '#18181b', borderRadius: 4, marginBottom: 4, border: '1px solid rgba(255,255,255,0.06)' }}
                       title="Click to scroll to and highlight this issue on canvas"
                     >
-                      <div className="item-url-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <div className="item-url-row grammar-issue-heading">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span className="chip-badge" style={{ background: '#27272a', color: '#e4e4e7', padding: '1px 5px', borderRadius: 3, fontSize: 10 }}>{issue.elementTag}</span>
-                          <span
-                            style={{
-                              fontSize: 9,
-                              fontWeight: 600,
-                              padding: '1px 5px',
-                              borderRadius: 4,
-                              textTransform: 'uppercase',
-                              background: issue.type === 'spelling' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                              color: issue.type === 'spelling' ? '#fca5a5' : '#fcd34d',
-                              border: issue.type === 'spelling' ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(245,158,11,0.3)'
-                            }}
-                          >
+                          <span className="chip-badge grammar-element-badge">{issue.elementTag}</span>
+                          <span className="grammar-type-badge">
                             {issue.type}
                           </span>
                         </div>
-                        <span style={{ fontSize: 10, color: '#a1a1aa' }}>Locate ↗</span>
+                        <span className="grammar-locate-label">Locate ↗</span>
                       </div>
 
-                      <div className="item-text" style={{ fontSize: 11, color: '#f4f4f5', fontWeight: 600, marginBottom: 2 }}>
+                      <div className="item-text grammar-issue-phrase">
                         "{issue.wordOrPhrase}"
                       </div>
                       
-                      <div style={{ fontSize: 10, color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                      <div className="grammar-issue-message">
                         <span>{issue.message}</span>
                         {issue.suggestion && (
-                          <span style={{ color: '#10b981', fontWeight: 600 }}>
+                          <span className="grammar-inline-suggestion">
                             • Suggest: "{issue.suggestion}"
                           </span>
                         )}

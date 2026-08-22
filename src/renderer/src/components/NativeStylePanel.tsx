@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import SmoothColorPicker from './SmoothColorPicker'
+import { layoutModeFromDisplay, normalizeBoxModelValue } from '../utils/viewportLayoutPatches'
 
 /* ═══════════════════════════════════════════════════════════
    NativeStylePanel — Figma-style compact style inspector
@@ -8,6 +9,12 @@ import SmoothColorPicker from './SmoothColorPicker'
 interface Props {
   selectedElement: HTMLElement | null
   onStyleChange: (property: string, value: string, isFinalCommit?: boolean) => void
+  onLayoutStylesChange?: (values: Record<string, string>, isFinalCommit?: boolean) => void
+  isContainer?: boolean
+  parentDisplay?: string
+  activeViewportLabel?: string
+  layoutOverlayEnabled?: boolean
+  onLayoutOverlayChange?: (enabled: boolean) => void
   styleRevision?: number
   computedStyles?: Record<string, string> | null
 }
@@ -128,6 +135,36 @@ const IcoLineHeight = () => <svg width="14" height="14" viewBox="0 0 14 14" fill
 const IcoTextIndent = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="5" y="2" width="8" height="1.2" rx=".6"/><rect x="1" y="5.5" width="12" height="1.2" rx=".6"/><rect x="1" y="9" width="12" height="1.2" rx=".6"/><rect x="1" y="12.5" width="8" height="1.2" rx=".6"/><path d="M1 2L3.5 3.5L1 5" stroke="currentColor" strokeWidth=".9" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
 const IcoWordSpacing = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><text x=".5" y="9" fontSize="7" fontWeight="700" fontFamily="Arial">W</text><path d="M10.5 4v6" stroke="currentColor" strokeWidth=".8" strokeDasharray="1.2 1" fill="none"/><text x="11" y="9" fontSize="7" fontWeight="700" fontFamily="Arial">S</text></svg>
 
+const LayoutModeIcon = ({ mode }: { mode: 'block' | 'flex' | 'grid' }) => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+    {mode === 'block' && <><rect x="2" y="2" width="12" height="4" rx="1"/><rect x="2" y="8" width="12" height="6" rx="1"/></>}
+    {mode === 'flex' && <><rect x="1.5" y="3" width="3.5" height="10" rx="1"/><rect x="6.25" y="3" width="3.5" height="10" rx="1"/><rect x="11" y="3" width="3.5" height="10" rx="1"/></>}
+    {mode === 'grid' && <><rect x="2" y="2" width="5" height="5" rx=".6"/><rect x="9" y="2" width="5" height="5" rx=".6"/><rect x="2" y="9" width="5" height="5" rx=".6"/><rect x="9" y="9" width="5" height="5" rx=".6"/></>}
+  </svg>
+)
+
+const DirectionIcon = ({ direction }: { direction: string }) => {
+  const vertical = direction.includes('column')
+  const reverse = direction.includes('reverse')
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+    {vertical ? <><rect x="3" y="2" width="10" height="3" rx=".8"/><rect x="3" y="7" width="10" height="3" rx=".8"/><path d={reverse ? 'M8 14V11m0 0-2 2m2-2 2 2' : 'M8 11v3m0 0-2-2m2 2 2-2'}/></> : <><rect x="2" y="3" width="3" height="10" rx=".8"/><rect x="7" y="3" width="3" height="10" rx=".8"/><path d={reverse ? 'M14 8h-3m0 0 2-2m-2 2 2 2' : 'M11 8h3m0 0-2-2m2 2-2 2'}/></>}
+  </svg>
+}
+
+const DistributionIcon = ({ value, vertical = false }: { value: string; vertical?: boolean }) => {
+  const points: Record<string, number[]> = {
+    'flex-start': [3, 6], center: [6, 9], 'flex-end': [10, 13],
+    'space-between': [2, 14], 'space-around': [4, 12], 'space-evenly': [5, 11],
+    start: [3, 6], end: [10, 13], stretch: [3, 13], auto: [6, 10],
+  }
+  const [a, b] = points[value] || points.center
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2">
+    {vertical ? <><path d="M2 1v14" opacity=".35"/><rect x="4" y={a - 1} width="9" height="2" rx=".5"/><rect x="4" y={b - 1} width="9" height="2" rx=".5"/></> : <><path d="M1 2h14" opacity=".35"/><rect x={a - 1} y="4" width="2" height="9" rx=".5"/><rect x={b - 1} y="4" width="2" height="9" rx=".5"/></>}
+  </svg>
+}
+
+const OverlayIcon = () => <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M6 2v12M10 2v12M2 6h12M2 10h12" opacity=".7"/></svg>
+
 // ─── Shared Styles ─────────────────────────────────────────
 
 const base = {
@@ -137,6 +174,7 @@ const base = {
   muted: 'var(--text-secondary)',
   dim: 'var(--text-muted)',
   accent: 'var(--accent-color)',
+  accentForeground: 'var(--accent-foreground, #ffffff)',
 }
 
 const inputBase: React.CSSProperties = {
@@ -156,6 +194,126 @@ function SectorHeader({ title, open, onToggle }: { title: string; open: boolean;
       <span style={{ fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.8px', color: base.muted }}>{title}</span>
     </div>
   )
+}
+
+type BoxEdges = { top: string; right: string; bottom: string; left: string }
+
+function compactMetric(value: string) {
+  const trimmed = String(value || '0').trim()
+  if (!trimmed.endsWith('px')) return trimmed || '0'
+  const numeric = Number.parseFloat(trimmed)
+  if (!Number.isFinite(numeric)) return trimmed
+  return Number.isInteger(numeric) ? String(numeric) : String(Math.round(numeric * 100) / 100)
+}
+
+function EditableBoxMetric({ value, label, style, onPreview, onCommit }: {
+  value: string
+  label: string
+  style?: React.CSSProperties
+  onPreview: (value: string) => void
+  onCommit: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(() => compactMetric(value))
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { if (!editing) setDraft(compactMetric(value)) }, [editing, value])
+  const normalized = (next: string) => normalizeBoxModelValue(next, value)
+  const commit = (next: string) => {
+    const result = normalized(next)
+    setDraft(compactMetric(result))
+    setEditing(false)
+    onCommit(result)
+  }
+
+  return <input
+    value={draft}
+    aria-label={label}
+    title={`${label}: ${value}`}
+    spellCheck={false}
+    onFocus={(event) => { setEditing(true); event.currentTarget.select() }}
+    onChange={(event) => {
+      const next = event.currentTarget.value
+      setDraft(next)
+      if (next.trim()) onPreview(normalized(next))
+    }}
+    onBlur={(event) => commit(event.currentTarget.value)}
+    onKeyDown={(event) => {
+      if (event.key === 'Enter') event.currentTarget.blur()
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        const current = Number.parseFloat(draft)
+        if (!Number.isFinite(current)) return
+        event.preventDefault()
+        const next = String(current + (event.key === 'ArrowUp' ? 1 : -1))
+        setDraft(next)
+        onPreview(normalized(next))
+      }
+    }}
+    style={{
+      zIndex: 2, width: 34, height: 14, padding: '0 2px', boxSizing: 'border-box',
+      border: editing ? `1px solid ${base.accent}` : '1px solid transparent', borderRadius: 2,
+      outline: 'none', background: editing ? base.bg : 'color-mix(in srgb, var(--bg-app) 88%, transparent)',
+      color: base.text, textAlign: 'center', font: '8px/12px ui-monospace, monospace', cursor: 'text',
+      ...style,
+    }}
+  />
+}
+
+function BoxModelLayer({ name, values, properties, background, border, onChange, children }: {
+  name: string
+  values: BoxEdges
+  properties: Record<keyof BoxEdges, string>
+  background: string
+  border?: string
+  onChange: (property: string, value: string, isFinal: boolean) => void
+  children: React.ReactNode
+}) {
+  const metric = (side: keyof BoxEdges, style: React.CSSProperties) => <EditableBoxMetric
+    value={values[side]}
+    label={`${name} ${side}`}
+    style={{ position: 'absolute', ...style }}
+    onPreview={(value) => onChange(properties[side], value, false)}
+    onCommit={(value) => onChange(properties[side], value, true)}
+  />
+  return <div style={{ position: 'relative', width: '100%', height: '100%', boxSizing: 'border-box', padding: '17px 24px', background, border }}>
+    <span style={{ position: 'absolute', left: 5, top: 3, color: base.text, fontSize: '8px', lineHeight: 1, fontFamily: 'ui-monospace, monospace' }}>{name}</span>
+    {metric('top', { top: 1, left: '50%', transform: 'translateX(-50%)' })}
+    {metric('right', { right: 1, top: '50%', transform: 'translateY(-50%)' })}
+    {metric('bottom', { bottom: 1, left: '50%', transform: 'translateX(-50%)' })}
+    {metric('left', { left: 1, top: '50%', transform: 'translateY(-50%)' })}
+    {children}
+  </div>
+}
+
+function BoxModelDiagram({ styles, computedStyles, onChange }: { styles: StyleState; computedStyles?: Record<string, string> | null; onChange: (property: string, value: string, isFinal: boolean) => void }) {
+  const computed = (property: string, fallback: string) => computedStyles?.[property] || fallback
+  const margin = {
+    top: computed('margin-top', styles.marginTop), right: computed('margin-right', styles.marginRight),
+    bottom: computed('margin-bottom', styles.marginBottom), left: computed('margin-left', styles.marginLeft),
+  }
+  const border = {
+    top: computed('border-top-width', styles.borderWidth), right: computed('border-right-width', styles.borderWidth),
+    bottom: computed('border-bottom-width', styles.borderWidth), left: computed('border-left-width', styles.borderWidth),
+  }
+  const padding = {
+    top: computed('padding-top', styles.paddingTop), right: computed('padding-right', styles.paddingRight),
+    bottom: computed('padding-bottom', styles.paddingBottom), left: computed('padding-left', styles.paddingLeft),
+  }
+  const width = computed('width', styles.width)
+  const height = computed('height', styles.height)
+  const description = `Margin ${Object.values(margin).join(' ')}, border ${Object.values(border).join(' ')}, padding ${Object.values(padding).join(' ')}, content ${width} by ${height}`
+
+  return <div role="group" aria-label={`Editable box model. ${description}`} style={{ height: 154, padding: 5, overflow: 'hidden', border: `1px solid ${base.border}`, borderRadius: 6, background: 'var(--bg-app)', boxSizing: 'border-box' }}>
+    <BoxModelLayer name="margin" values={margin} properties={{ top: 'margin-top', right: 'margin-right', bottom: 'margin-bottom', left: 'margin-left' }} onChange={onChange} background="color-mix(in srgb, #d6c94f 42%, var(--bg-input))" border="1px dashed color-mix(in srgb, #f4e84a 75%, var(--border-color))">
+      <BoxModelLayer name="border" values={border} properties={{ top: 'border-top-width', right: 'border-right-width', bottom: 'border-bottom-width', left: 'border-left-width' }} onChange={onChange} background="color-mix(in srgb, #9b743d 48%, var(--bg-input))">
+        <BoxModelLayer name="padding" values={padding} properties={{ top: 'padding-top', right: 'padding-right', bottom: 'padding-bottom', left: 'padding-left' }} onChange={onChange} background="color-mix(in srgb, #9b6cf4 55%, var(--bg-input))">
+          <div style={{ width: '100%', height: '100%', minHeight: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, border: '1px dashed color-mix(in srgb, #22d3ee 80%, var(--border-color))', background: 'color-mix(in srgb, #06b6d4 68%, var(--bg-input))', color: base.text, boxSizing: 'border-box', whiteSpace: 'nowrap' }}>
+            <EditableBoxMetric value={width} label="Content width" onPreview={(value) => onChange('width', value, false)} onCommit={(value) => onChange('width', value, true)} />
+            <span aria-hidden="true" style={{ font: '8px/1 ui-monospace, monospace' }}>×</span>
+            <EditableBoxMetric value={height} label="Content height" onPreview={(value) => onChange('height', value, false)} onCommit={(value) => onChange('height', value, true)} />
+          </div>
+        </BoxModelLayer>
+      </BoxModelLayer>
+    </BoxModelLayer>
+  </div>
 }
 
 /** Compact input + unit selector */
@@ -223,7 +381,7 @@ function IconBtnGroup({ options, value, onChange }: {
           style={{
             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: value === opt.id ? base.accent : 'transparent',
-            color: value === opt.id ? '#fff' : base.muted,
+            color: value === opt.id ? base.accentForeground : base.muted,
             border: 'none', padding: '5px 0', cursor: 'pointer',
             fontSize: '10px', fontWeight: value === opt.id ? 600 : 400, fontFamily: 'inherit',
             transition: 'background 0.1s, color 0.1s',
@@ -334,6 +492,11 @@ function OpacityRow({ value, onPreview, onCommit }: {
 // ─── State ─────────────────────────────────────────────────
 
 interface StyleState {
+  display: string; flexDirection: string; flexWrap: string
+  justifyContent: string; alignItems: string; alignContent: string; justifyItems: string
+  rowGap: string; columnGap: string; gridTemplateColumns: string; gridTemplateRows: string; gridAutoFlow: string
+  order: string; flexGrow: string; flexShrink: string; flexBasis: string
+  alignSelf: string; justifySelf: string; gridColumn: string; gridRow: string
   fontFamily: string; fontSize: string; fontWeight: string
   letterSpacing: string; lineHeight: string; color: string
   textAlign: string; textDecoration: string; textTransform: string
@@ -351,6 +514,10 @@ interface StyleState {
 }
 
 const DEFAULT: StyleState = {
+  display: 'block', flexDirection: 'row', flexWrap: 'nowrap',
+  justifyContent: 'normal', alignItems: 'normal', alignContent: 'normal', justifyItems: 'normal',
+  rowGap: '0px', columnGap: '0px', gridTemplateColumns: 'none', gridTemplateRows: 'none', gridAutoFlow: 'row',
+  order: '0', flexGrow: '0', flexShrink: '1', flexBasis: 'auto', alignSelf: 'auto', justifySelf: 'auto', gridColumn: 'auto', gridRow: 'auto',
   fontFamily: '', fontSize: '16px', fontWeight: '400',
   letterSpacing: 'normal', lineHeight: 'normal', color: '#000000',
   textAlign: 'left', textDecoration: 'none', textTransform: 'none',
@@ -367,14 +534,20 @@ const DEFAULT: StyleState = {
 
 // ─── Main Component ────────────────────────────────────────
 
-export default function NativeStylePanel({ selectedElement, onStyleChange, styleRevision, computedStyles }: Props) {
+export default function NativeStylePanel({ selectedElement, onStyleChange, onLayoutStylesChange, isContainer = false, parentDisplay = '', activeViewportLabel = 'Active viewport', layoutOverlayEnabled = false, onLayoutOverlayChange, styleRevision, computedStyles }: Props) {
   const [styles, setStyles] = useState<StyleState>(DEFAULT)
-  const [sectors, setSectors] = useState({ typography: true, spacing: true, size: true, appearance: false })
+  const [sectors, setSectors] = useState({ layout: true, typography: true, spacing: true, size: true, appearance: false })
 
   useEffect(() => {
     if (computedStyles) {
       const value = (property: string, fallback: string) => computedStyles[property] || fallback
       setStyles({
+        display: value('display', 'block'), flexDirection: value('flex-direction', 'row'), flexWrap: value('flex-wrap', 'nowrap'),
+        justifyContent: value('justify-content', 'normal'), alignItems: value('align-items', 'normal'), alignContent: value('align-content', 'normal'), justifyItems: value('justify-items', 'normal'),
+        rowGap: value('row-gap', value('gap', '0px')), columnGap: value('column-gap', value('gap', '0px')),
+        gridTemplateColumns: value('grid-template-columns', 'none'), gridTemplateRows: value('grid-template-rows', 'none'), gridAutoFlow: value('grid-auto-flow', 'row'),
+        order: value('order', '0'), flexGrow: value('flex-grow', '0'), flexShrink: value('flex-shrink', '1'), flexBasis: value('flex-basis', 'auto'),
+        alignSelf: value('align-self', 'auto'), justifySelf: value('justify-self', 'auto'), gridColumn: value('grid-column', 'auto'), gridRow: value('grid-row', 'auto'),
         fontFamily: value('font-family', ''), fontSize: value('font-size', '16px'),
         fontWeight: value('font-weight', '400'), letterSpacing: value('letter-spacing', 'normal'),
         lineHeight: value('line-height', 'normal'), color: rgbToHex(value('color', '#000000')),
@@ -404,6 +577,12 @@ export default function NativeStylePanel({ selectedElement, onStyleChange, style
     }
 
     setStyles({
+      display: cs.display || 'block', flexDirection: cs.flexDirection || 'row', flexWrap: cs.flexWrap || 'nowrap',
+      justifyContent: cs.justifyContent || 'normal', alignItems: cs.alignItems || 'normal', alignContent: cs.alignContent || 'normal', justifyItems: cs.justifyItems || 'normal',
+      rowGap: cs.rowGap || cs.gap || '0px', columnGap: cs.columnGap || cs.gap || '0px',
+      gridTemplateColumns: cs.gridTemplateColumns || 'none', gridTemplateRows: cs.gridTemplateRows || 'none', gridAutoFlow: cs.gridAutoFlow || 'row',
+      order: cs.order || '0', flexGrow: cs.flexGrow || '0', flexShrink: cs.flexShrink || '1', flexBasis: cs.flexBasis || 'auto',
+      alignSelf: cs.alignSelf || 'auto', justifySelf: cs.justifySelf || 'auto', gridColumn: cs.gridColumn || 'auto', gridRow: cs.gridRow || 'auto',
       fontFamily: cs.fontFamily || '', fontSize: cs.fontSize || '16px',
       fontWeight: cs.fontWeight || '400', letterSpacing: cs.letterSpacing || 'normal',
       lineHeight: cs.lineHeight || 'normal', color: rgbToHex(cs.color),
@@ -435,6 +614,25 @@ export default function NativeStylePanel({ selectedElement, onStyleChange, style
   const handle = useCallback((k: keyof StyleState, p: string) => (v: string, f = true) => {
     setStyles(s => ({ ...s, [k]: v })); if (f) apply(p, v); else preview(p, v)
   }, [apply, preview])
+  const applyLayout = useCallback((values: Record<string, string>, isFinal = true) => {
+    const stateKeys: Record<string, keyof StyleState> = {
+      display: 'display', 'flex-direction': 'flexDirection', 'flex-wrap': 'flexWrap',
+      'justify-content': 'justifyContent', 'align-items': 'alignItems', 'align-content': 'alignContent', 'justify-items': 'justifyItems',
+      'row-gap': 'rowGap', 'column-gap': 'columnGap', 'grid-template-columns': 'gridTemplateColumns', 'grid-template-rows': 'gridTemplateRows', 'grid-auto-flow': 'gridAutoFlow',
+      order: 'order', 'flex-grow': 'flexGrow', 'flex-shrink': 'flexShrink', 'flex-basis': 'flexBasis',
+      'align-self': 'alignSelf', 'justify-self': 'justifySelf', 'grid-column': 'gridColumn', 'grid-row': 'gridRow',
+      'margin-top': 'marginTop', 'margin-right': 'marginRight', 'margin-bottom': 'marginBottom', 'margin-left': 'marginLeft',
+      'padding-top': 'paddingTop', 'padding-right': 'paddingRight', 'padding-bottom': 'paddingBottom', 'padding-left': 'paddingLeft',
+      'border-top-width': 'borderWidth', width: 'width', height: 'height',
+    }
+    setStyles(current => {
+      const next = { ...current }
+      Object.entries(values).forEach(([property, value]) => { const key = stateKeys[property]; if (key) (next as any)[key] = value })
+      return next
+    })
+    if (onLayoutStylesChange) onLayoutStylesChange(values, isFinal)
+    else Object.entries(values).forEach(([property, value]) => onStyleChange(property, value, isFinal))
+  }, [onLayoutStylesChange, onStyleChange])
 
   const toggle = (k: keyof typeof sectors) => setSectors(s => ({ ...s, [k]: !s[k] }))
 
@@ -444,9 +642,95 @@ export default function NativeStylePanel({ selectedElement, onStyleChange, style
 
   const divider: React.CSSProperties = { borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }
   const row2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }
+  const layoutMode = layoutModeFromDisplay(styles.display)
+  const parentLayoutMode = layoutModeFromDisplay(parentDisplay)
+  const isLayoutChild = parentDisplay.includes('flex') || parentDisplay.includes('grid')
+  const fieldLabel: React.CSSProperties = { color: base.dim, fontSize: '9px', fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' }
+  const textField: React.CSSProperties = { ...inputBase, borderRadius: '3px', padding: '5px 6px', width: '100%' }
 
   return (
     <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '11px', color: base.text }}>
+
+      <div style={divider}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+          <SectorHeader title="Layout" open={sectors.layout} onToggle={() => toggle('layout')} />
+          {onLayoutOverlayChange && <button type="button" onClick={() => onLayoutOverlayChange(!layoutOverlayEnabled)} aria-pressed={layoutOverlayEnabled} aria-label="Toggle flex and grid overlay" title={`Layout overlay for ${activeViewportLabel}`} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '24px', padding: 0, borderRadius: '4px', border: `1px solid ${layoutOverlayEnabled ? base.accent : base.border}`, background: layoutOverlayEnabled ? base.accent : base.bg, color: layoutOverlayEnabled ? base.accentForeground : base.muted, cursor: 'pointer' }}><OverlayIcon /></button>}
+        </div>
+        {sectors.layout && <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', marginTop: '8px' }}>
+          {(isContainer || layoutMode === 'flex' || layoutMode === 'grid') && <BoxModelDiagram styles={styles} computedStyles={computedStyles} onChange={(property, value, isFinal) => applyLayout({ [property]: value }, isFinal)} />}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+            <span style={fieldLabel}>Container</span>
+            <span title="Layout changes apply only to this viewport" style={{ maxWidth: '62%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: base.dim, fontSize: '9px', padding: '2px 5px', border: `1px solid ${base.border}`, borderRadius: '999px' }}>{activeViewportLabel}</span>
+          </div>
+          <IconBtnGroup value={layoutMode} onChange={(value) => applyLayout({ display: value })} options={[
+            { id: 'block', icon: <LayoutModeIcon mode="block" />, title: 'Block layout' },
+            { id: 'flex', icon: <LayoutModeIcon mode="flex" />, title: 'Flex layout' },
+            { id: 'grid', icon: <LayoutModeIcon mode="grid" />, title: 'Grid layout' },
+          ]} />
+
+          {layoutMode === 'flex' && <>
+            <div style={row2}>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Direction</div><IconBtnGroup value={styles.flexDirection} onChange={(value) => applyLayout({ 'flex-direction': value })} options={[
+                { id: 'row', icon: <DirectionIcon direction="row" />, title: 'Row' }, { id: 'row-reverse', icon: <DirectionIcon direction="row-reverse" />, title: 'Row reverse' },
+                { id: 'column', icon: <DirectionIcon direction="column" />, title: 'Column' }, { id: 'column-reverse', icon: <DirectionIcon direction="column-reverse" />, title: 'Column reverse' },
+              ]} /></div>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Wrap</div><select value={styles.flexWrap} onChange={(event) => applyLayout({ 'flex-wrap': event.target.value })} style={{ ...textField, cursor: 'pointer' }}><option value="nowrap">No wrap</option><option value="wrap">Wrap</option><option value="wrap-reverse">Reverse</option></select></div>
+            </div>
+            <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Distribute</div><IconBtnGroup value={styles.justifyContent} onChange={(value) => applyLayout({ 'justify-content': value })} options={['flex-start','center','flex-end','space-between','space-around','space-evenly'].map(value => ({ id: value, icon: <DistributionIcon value={value} />, title: `Justify ${value}` }))} /></div>
+            <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Align</div><IconBtnGroup value={styles.alignItems} onChange={(value) => applyLayout({ 'align-items': value })} options={['flex-start','center','flex-end','stretch','baseline'].map(value => ({ id: value, icon: <DistributionIcon value={value} vertical />, title: `Align ${value}` }))} /></div>
+            <div style={row2}>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Row gap</div><DimInput value={styles.rowGap} onChange={(value, final) => applyLayout({ 'row-gap': value }, final)} /></div>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Column gap</div><DimInput value={styles.columnGap} onChange={(value, final) => applyLayout({ 'column-gap': value }, final)} /></div>
+            </div>
+          </>}
+
+          {layoutMode === 'grid' && <>
+            <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Columns</div><input value={styles.gridTemplateColumns} onChange={(event) => applyLayout({ 'grid-template-columns': event.target.value })} placeholder="repeat(3, 1fr)" style={textField} /></div>
+            <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Rows</div><input value={styles.gridTemplateRows} onChange={(event) => applyLayout({ 'grid-template-rows': event.target.value })} placeholder="auto 1fr auto" style={textField} /></div>
+            <div style={row2}>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Auto flow</div><select value={styles.gridAutoFlow} onChange={(event) => applyLayout({ 'grid-auto-flow': event.target.value })} style={{ ...textField, cursor: 'pointer' }}><option value="row">Row</option><option value="column">Column</option><option value="row dense">Row dense</option><option value="column dense">Column dense</option></select></div>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Item align</div><select value={styles.alignItems} onChange={(event) => applyLayout({ 'align-items': event.target.value, 'justify-items': event.target.value })} style={{ ...textField, cursor: 'pointer' }}><option value="start">Start</option><option value="center">Center</option><option value="end">End</option><option value="stretch">Stretch</option></select></div>
+            </div>
+            <div>
+              <div style={{ ...fieldLabel, marginBottom: 4 }}>Content alignment</div>
+              <div role="group" aria-label="Grid content alignment" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 3, padding: 5, border: `1px solid ${base.border}`, borderRadius: 5, background: base.bg }}>
+                {(['start','center','end'] as const).flatMap(vertical => (['start','center','end'] as const).map(horizontal => {
+                  const active = styles.alignContent.includes(vertical) && styles.justifyContent.includes(horizontal)
+                  return <button key={`${vertical}-${horizontal}`} title={`${vertical} ${horizontal}`} onClick={() => applyLayout({ 'align-content': vertical, 'justify-content': horizontal })} style={{ height: 20, border: 'none', borderRadius: 3, background: active ? base.accent : 'transparent', color: active ? base.accentForeground : base.dim, cursor: 'pointer', padding: 0 }}><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx={horizontal === 'start' ? 3 : horizontal === 'center' ? 7 : 11} cy={vertical === 'start' ? 3 : vertical === 'center' ? 7 : 11} r="1.6"/></svg></button>
+                }))}
+              </div>
+            </div>
+            <div style={row2}>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Row gap</div><DimInput value={styles.rowGap} onChange={(value, final) => applyLayout({ 'row-gap': value }, final)} /></div>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Column gap</div><DimInput value={styles.columnGap} onChange={(value, final) => applyLayout({ 'column-gap': value }, final)} /></div>
+            </div>
+          </>}
+
+          {isLayoutChild && <div style={{ borderTop: `1px solid ${base.border}`, paddingTop: 9, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><span style={fieldLabel}>Child in {parentLayoutMode}</span><span style={{ color: base.dim, fontSize: 9 }}>Parent layout</span></div>
+            {parentLayoutMode === 'flex' ? <>
+              <div style={row2}>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Order</div><input value={styles.order} onChange={(event) => applyLayout({ order: event.target.value })} style={textField} /></div>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Basis</div><DimInput value={styles.flexBasis} onChange={(value, final) => applyLayout({ 'flex-basis': value }, final)} /></div>
+              </div>
+              <div style={row2}>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Grow</div><input value={styles.flexGrow} onChange={(event) => applyLayout({ 'flex-grow': event.target.value })} style={textField} /></div>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Shrink</div><input value={styles.flexShrink} onChange={(event) => applyLayout({ 'flex-shrink': event.target.value })} style={textField} /></div>
+              </div>
+              <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Self alignment</div><IconBtnGroup value={styles.alignSelf} onChange={(value) => applyLayout({ 'align-self': value })} options={['auto','flex-start','center','flex-end','stretch'].map(value => ({ id: value, icon: <DistributionIcon value={value} vertical />, title: `Align self ${value}` }))} /></div>
+            </> : <>
+              <div style={row2}>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Column</div><input value={styles.gridColumn} onChange={(event) => applyLayout({ 'grid-column': event.target.value })} placeholder="auto / span 2" style={textField} /></div>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Row</div><input value={styles.gridRow} onChange={(event) => applyLayout({ 'grid-row': event.target.value })} placeholder="auto" style={textField} /></div>
+              </div>
+              <div style={row2}>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Align self</div><select value={styles.alignSelf} onChange={(event) => applyLayout({ 'align-self': event.target.value })} style={{ ...textField, cursor: 'pointer' }}><option value="auto">Auto</option><option value="start">Start</option><option value="center">Center</option><option value="end">End</option><option value="stretch">Stretch</option></select></div>
+                <div><div style={{ ...fieldLabel, marginBottom: 4 }}>Justify self</div><select value={styles.justifySelf} onChange={(event) => applyLayout({ 'justify-self': event.target.value })} style={{ ...textField, cursor: 'pointer' }}><option value="auto">Auto</option><option value="start">Start</option><option value="center">Center</option><option value="end">End</option><option value="stretch">Stretch</option></select></div>
+              </div>
+            </>}
+          </div>}
+        </div>}
+      </div>
 
       {/* ═══ TYPOGRAPHY ═══ */}
       <div style={divider}>
@@ -529,10 +813,10 @@ export default function NativeStylePanel({ selectedElement, onStyleChange, style
               onSideChange={(side, v, f) => handle(`margin${side[0].toUpperCase()+side.slice(1)}` as keyof StyleState, `margin-${side}`)(v, f)} />
             <CrossEditor centerLabel="Padding" values={{ top: styles.paddingTop, right: styles.paddingRight, bottom: styles.paddingBottom, left: styles.paddingLeft }}
               onSideChange={(side, v, f) => handle(`padding${side[0].toUpperCase()+side.slice(1)}` as keyof StyleState, `padding-${side}`)(v, f)} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {layoutMode === 'block' && <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ color: base.dim, fontSize: '10px', fontWeight: 600, flexShrink: 0, width: '26px' }}>Gap</span>
               <DimInput value={styles.gap} units={['px','em','rem','%']} onChange={handle('gap','gap')} />
-            </div>
+            </div>}
           </div>
         )}
       </div>

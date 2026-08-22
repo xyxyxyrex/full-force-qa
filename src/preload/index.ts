@@ -65,6 +65,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearCache(): Promise<{ success: boolean }> {
     return ipcRenderer.invoke('app:clear-cache')
   },
+  getResourceFileSizes(urls: string[], refererUrl?: string) {
+    return ipcRenderer.invoke('app:get-resource-file-sizes', urls, refererUrl)
+  },
   openExternal(url: string): Promise<void> {
     return ipcRenderer.invoke('app:openExternal', url)
   },

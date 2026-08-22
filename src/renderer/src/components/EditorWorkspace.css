@@ -189,7 +189,7 @@
 
 .workspace-tab-btn.active {
   background: var(--accent-color);
-  color: #ffffff;
+  color: var(--accent-foreground);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
@@ -1359,11 +1359,12 @@
 
 .font-notice-load {
   background: var(--accent-color);
-  color: #ffffff;
+  color: var(--accent-foreground);
 }
 
 .font-notice-load:hover:not(:disabled) {
   background: var(--accent-hover);
+  color: var(--accent-hover-foreground);
 }
 
 .font-notice-dismiss {
@@ -3291,7 +3292,7 @@ body.is-panel-resizing {
 
 .annotation-tool-btn.active {
   background: var(--accent-color);
-  color: var(--bg-app);
+  color: var(--accent-foreground);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-color) 40%, transparent);
 }
 

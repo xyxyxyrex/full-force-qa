@@ -21,6 +21,9 @@ import type {
 } from "./FullsiteCanvasModal";
 import { plainTextFromRichText } from "./RichTextEditor";
 import { canvasViewportGeometry } from "../utils/canvasZoom";
+import { isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
+import { normalizeClassNames } from "../utils/editBetaClasses";
+import { mergeViewportPatches } from "../utils/viewportLayoutPatches";
 
 function rendererCaptureWithTimeout<T>(
   promise: Promise<T>,
@@ -175,6 +178,8 @@ interface RemoteElement {
     rect: { left: number; top: number; width: number; height: number };
   }>;
   textEditable: boolean;
+  childElementCount: number;
+  parentDisplay: string;
   cssSource: string;
 }
 
@@ -216,7 +221,7 @@ interface BridgeOptions {
 function installEditBetaBridge() {
   const guestWindow = window as any;
   if (guestWindow.__fullForceEditBeta) {
-    if (guestWindow.__fullForceEditBeta.version === 15) {
+    if (guestWindow.__fullForceEditBeta.version === 17) {
       guestWindow.__fullForceEditBeta.enable();
       return true;
     }
@@ -327,6 +332,13 @@ function installEditBetaBridge() {
     inset: "0",
     pointerEvents: "none",
   });
+  const layoutOverlay = document.createElement("div");
+  Object.assign(layoutOverlay.style, {
+    position: "fixed",
+    inset: "0",
+    pointerEvents: "none",
+  });
+  let layoutOverlayEnabled = false;
   const eyedropperOutline = document.createElement("div");
   Object.assign(eyedropperOutline.style, {
     position: "fixed",
@@ -371,7 +383,7 @@ function installEditBetaBridge() {
     fontWeight: "600",
   });
   eyedropperTooltip.append(eyedropperSwatch, eyedropperValue, eyedropperHint);
-  shadow.append(highlights, measurements, selectionOutlines, marginBox, paddingBox, box, label, eyedropperOutline, eyedropperTooltip);
+  shadow.append(highlights, measurements, layoutOverlay, selectionOutlines, marginBox, paddingBox, box, label, eyedropperOutline, eyedropperTooltip);
   document.documentElement.appendChild(host);
   const captureInspectionHost = document.createElement("div");
   captureInspectionHost.setAttribute("data-fullforce-beta-ui", "true");
@@ -945,6 +957,9 @@ function installEditBetaBridge() {
       "border",
       "border-width",
       "border-top-width",
+      "border-right-width",
+      "border-bottom-width",
+      "border-left-width",
       "border-style",
       "border-top-style",
       "border-color",
@@ -958,14 +973,18 @@ function installEditBetaBridge() {
       "justify-content",
       "align-items",
       "align-content",
+      "justify-items",
+      "justify-self",
       "align-self",
       "flex-direction",
       "flex-wrap",
       "flex-grow",
       "flex-shrink",
       "flex-basis",
+      "order",
       "grid-template-columns",
       "grid-template-rows",
+      "grid-auto-flow",
       "grid-column",
       "grid-row",
       "overflow",
@@ -1043,8 +1062,82 @@ function installEditBetaBridge() {
         : null,
       siblings,
       textEditable,
+      childElementCount: Array.from(el.children).filter((child) => !isUi(child)).length,
+      parentDisplay: parent ? getComputedStyle(parent).display : "",
       cssSource: getCssSource(el, styles),
     };
+  };
+  const renderLayoutOverlay = () => {
+    layoutOverlay.replaceChildren();
+    if (!layoutOverlayEnabled || !selected || !selected.isConnected) return;
+    const style = getComputedStyle(selected);
+    const display = style.display;
+    if (display !== "flex" && display !== "inline-flex" && display !== "grid" && display !== "inline-grid") return;
+    const rect = selected.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const accent = display.includes("grid") ? "#a855f7" : "#06b6d4";
+    const makeBox = (left: number, top: number, width: number, height: number, border: string, background = "transparent") => {
+      const element = document.createElement("div");
+      Object.assign(element.style, {
+        position: "fixed",
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${Math.max(0, width)}px`,
+        height: `${Math.max(0, height)}px`,
+        boxSizing: "border-box",
+        border,
+        background,
+        pointerEvents: "none",
+      });
+      layoutOverlay.appendChild(element);
+      return element;
+    };
+    makeBox(rect.left, rect.top, rect.width, rect.height, `2px solid ${accent}`, `${accent}0d`);
+    const badge = document.createElement("div");
+    const gapLabel = [style.rowGap, style.columnGap].filter((value, index, all) => value && (index === 0 || value !== all[0])).join(" × ");
+    badge.textContent = `${display.includes("grid") ? "GRID" : "FLEX"}${gapLabel ? ` · gap ${gapLabel}` : ""}`;
+    Object.assign(badge.style, {
+      position: "fixed",
+      left: `${rect.left}px`,
+      top: `${Math.max(2, rect.top - 22)}px`,
+      padding: "3px 6px",
+      borderRadius: "4px",
+      background: accent,
+      color: "#071116",
+      font: "700 10px/1.2 ui-monospace,monospace",
+      pointerEvents: "none",
+    });
+    layoutOverlay.appendChild(badge);
+    Array.from(selected.children).forEach((child) => {
+      if (isUi(child)) return;
+      const childRect = child.getBoundingClientRect();
+      if (!childRect.width || !childRect.height) return;
+      makeBox(childRect.left, childRect.top, childRect.width, childRect.height, `1px dashed ${accent}`, `${accent}12`);
+    });
+    if (!display.includes("grid")) return;
+    const pxTracks = (value: string) => Array.from(value.matchAll(/([\d.]+)px/g), (match) => Number(match[1])).filter(Number.isFinite);
+    const columns = pxTracks(style.gridTemplateColumns);
+    const rows = pxTracks(style.gridTemplateRows);
+    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+    const borderTop = parseFloat(style.borderTopWidth) || 0;
+    const contentLeft = rect.left + borderLeft + (parseFloat(style.paddingLeft) || 0);
+    const contentTop = rect.top + borderTop + (parseFloat(style.paddingTop) || 0);
+    const contentWidth = Math.max(0, rect.width - borderLeft - (parseFloat(style.borderRightWidth) || 0) - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0));
+    const contentHeight = Math.max(0, rect.height - borderTop - (parseFloat(style.borderBottomWidth) || 0) - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0));
+    const columnGap = parseFloat(style.columnGap) || 0;
+    const rowGap = parseFloat(style.rowGap) || 0;
+    let x = contentLeft;
+    columns.slice(0, -1).forEach((track) => {
+      x += track;
+      if (columnGap) makeBox(x, contentTop, columnGap, contentHeight, "none", `${accent}26`);
+      x += columnGap;
+    });
+    let y = contentTop;
+    rows.slice(0, -1).forEach((track) => {
+      y += track;
+      if (rowGap) makeBox(contentLeft, y, contentWidth, rowGap, "none", `${accent}26`);
+      y += rowGap;
+    });
   };
   const renderSelectionOutlines = () => {
     selectionOutlines.replaceChildren();
@@ -1076,6 +1169,7 @@ function installEditBetaBridge() {
   };
   const positionOverlay = () => {
     renderSelectionOutlines();
+    renderLayoutOverlay();
     if (!selected || !selected.isConnected || mode !== "edit") {
       box.style.display = "none";
       label.style.display = "none";
@@ -1596,6 +1690,7 @@ function installEditBetaBridge() {
   document.addEventListener("click", onClick, true);
   let spacePressed = false;
   let panActive = false;
+  let panButtonMask = 0;
   let panShortcutCode = "";
   let panSequence = 0;
   let zoomSequence = 0;
@@ -1605,7 +1700,7 @@ function installEditBetaBridge() {
   };
   const emitPan = (active: boolean, event?: MouseEvent) =>
     console.info(
-      `__FULLFORCE_PAN__${JSON.stringify({ screenX: event?.screenX || 0, screenY: event?.screenY || 0, active, sequence: ++panSequence })}`,
+      `__FULLFORCE_PAN__${JSON.stringify({ screenX: event?.screenX || 0, screenY: event?.screenY || 0, buttons: event?.buttons || 0, buttonMask: panButtonMask, active, sequence: ++panSequence })}`,
     );
   const normalizedShortcut = (binding: string) => {
     const parts = String(binding || "").split("+").map((part) => part.trim()).filter(Boolean);
@@ -1681,6 +1776,7 @@ function installEditBetaBridge() {
       if (panActive) {
         panActive = false;
         emitPan(false);
+        panButtonMask = 0;
       }
     }
   };
@@ -1695,17 +1791,32 @@ function installEditBetaBridge() {
     event.stopImmediatePropagation();
     suppressClickAfterPan = true;
     panActive = true;
-    emitPan(true, event);
-  };
-  const onPanMove = (event: MouseEvent) => {
-    if (!panActive) return;
+    panButtonMask = event.button === 1 ? 4 : 1;
     emitPan(true, event);
   };
   const onPanUp = (event: MouseEvent) => {
     if (panActive) {
       panActive = false;
       emitPan(false, event);
+      panButtonMask = 0;
     }
+  };
+  const onPanMove = (event: MouseEvent) => {
+    if (!panActive) return;
+    if ((event.buttons & panButtonMask) !== panButtonMask) {
+      onPanUp(event);
+      return;
+    }
+    emitPan(true, event);
+  };
+  const onPanCancel = () => {
+    if (!panActive) return;
+    panActive = false;
+    emitPan(false);
+    panButtonMask = 0;
+  };
+  const onPanVisibilityChange = () => {
+    if (document.hidden) onPanCancel();
   };
   const onZoomWheel = (event: WheelEvent) => {
     if (!event.ctrlKey && !event.metaKey) return;
@@ -1721,6 +1832,10 @@ function installEditBetaBridge() {
   document.addEventListener("mousedown", onPanDown, true);
   document.addEventListener("mousemove", onPanMove, true);
   document.addEventListener("mouseup", onPanUp, true);
+  document.addEventListener("pointerup", onPanUp, true);
+  document.addEventListener("pointercancel", onPanCancel, true);
+  document.addEventListener("visibilitychange", onPanVisibilityChange);
+  window.addEventListener("blur", onPanCancel);
   document.addEventListener("wheel", onZoomWheel, {
     capture: true,
     passive: false,
@@ -1830,7 +1945,7 @@ function installEditBetaBridge() {
   window.addEventListener("resize", scheduleHighlights, true);
 
   const api = {
-    version: 15,
+    version: 17,
     enable() {
       host.style.display = "";
       positionOverlay();
@@ -2317,6 +2432,78 @@ function installEditBetaBridge() {
       );
       return true;
     },
+    setViewportStyles(values: Record<string, string>) {
+      if (!selected) return false;
+      const viewportId = String(guestWindow.__fullForceFrameId || "single-default");
+      Object.entries(values || {}).forEach(([property, value]) => {
+        const previousLength = history.length;
+        api.setStyle(property, value);
+        if (history.length > previousLength) {
+          const entry = history[history.length - 1] as any;
+          if (entry?.patch) entry.patch.viewportId = viewportId;
+        }
+      });
+      positionOverlay();
+      return describe(selected);
+    },
+    previewViewportStyles(values: Record<string, string>) {
+      if (!selected) return false;
+      Object.entries(values || {}).forEach(([property, value]) =>
+        api.previewStyle(property, value),
+      );
+      return describe(selected);
+    },
+    setLayoutOverlay(enabled: boolean) {
+      layoutOverlayEnabled = Boolean(enabled);
+      renderLayoutOverlay();
+      return layoutOverlayEnabled;
+    },
+    setClasses(value: string) {
+      if (!selected) return false;
+      const el = selected;
+      const rect = el.getBoundingClientRect();
+      const path = getPath(el);
+      const before = el.getAttribute("class") || "";
+      const after = Array.from(
+        new Set(
+          String(value || "")
+            .split(/\s+/)
+            .map((name) => name.trim())
+            .filter(Boolean),
+        ),
+      ).join(" ");
+      if (before === after) return describe(el);
+      const apply = (classNames: string) =>
+        classNames
+          ? el.setAttribute("class", classNames)
+          : el.removeAttribute("class");
+      const redo = () => apply(after);
+      const undo = () => apply(before);
+      redo();
+      commit(
+        { label: `${el.tagName.toLowerCase()} · classes updated`, undo, redo },
+        {
+          type: "attribute",
+          path,
+          name: "class",
+          value: after,
+          beforeValue: before,
+          rect: {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            vw: window.innerWidth || document.documentElement.clientWidth || 1920,
+            vh: window.innerHeight || document.documentElement.clientHeight || 1080,
+          },
+          tag: el.tagName.toLowerCase(),
+        },
+      );
+      positionOverlay();
+      scheduleMeasurements();
+      scheduleCaptureInspection();
+      return describe(el);
+    },
     duplicate() {
       if (!selected?.parentNode) return false;
       const original = selected;
@@ -2410,10 +2597,13 @@ function installEditBetaBridge() {
     applyPatches(nextPatches: any[]) {
       const previousSelection = selected;
       const previousSelections = Array.from(selectedElements);
+      const viewportId = String(guestWindow.__fullForceFrameId || "single-default");
       for (const patch of nextPatches || []) {
+        if (patch.viewportId && patch.viewportId !== viewportId) continue;
         const target = resolve(patch.path);
         if (!target) continue;
         selected = target;
+        const previousLength = history.length;
         if (patch.type === "style") api.setStyle(patch.property, patch.value);
         else if (patch.type === "cssText") api.setCssText(patch.value);
         else if (patch.type === "cssSource") api.setCssSource(patch.value);
@@ -2426,6 +2616,10 @@ function installEditBetaBridge() {
         else if (patch.type === "move") api.move(patch.direction);
         else if (patch.type === "reorder")
           api.reorder(patch.targetPath, patch.placement);
+        if (patch.viewportId && history.length > previousLength) {
+          const entry = history[history.length - 1] as any;
+          if (entry?.patch) entry.patch.viewportId = patch.viewportId;
+        }
       }
       selected = previousSelection?.isConnected ? previousSelection : null;
       selectedElements.clear();
@@ -2468,6 +2662,10 @@ function installEditBetaBridge() {
       document.removeEventListener("mousedown", onPanDown, true);
       document.removeEventListener("mousemove", onPanMove, true);
       document.removeEventListener("mouseup", onPanUp, true);
+      document.removeEventListener("pointerup", onPanUp, true);
+      document.removeEventListener("pointercancel", onPanCancel, true);
+      document.removeEventListener("visibilitychange", onPanVisibilityChange);
+      window.removeEventListener("blur", onPanCancel);
       document.removeEventListener("wheel", onZoomWheel, true);
       window.removeEventListener("scroll", refreshViewportOverlays, true);
       window.removeEventListener("resize", refreshViewportOverlays, true);
@@ -2508,6 +2706,7 @@ function installEditBetaBridge() {
         rectAfter: p.rectAfter || p.rect,
         rect: p.rectAfter || p.rect,
         tag: p.tag,
+        viewportId: p.viewportId,
       }));
     },
   };
@@ -3552,6 +3751,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const figmaWebviewRef = useRef<any>(null);
     const canvasRef = useRef<HTMLElement>(null);
     const viewportResizeCleanupRef = useRef<(() => void) | null>(null);
+    const canvasPanCleanupRef = useRef<(() => void) | null>(null);
     const panRef = useRef({ x: 0, y: 0 });
     const bridgePanRef = useRef({
       active: false,
@@ -3559,6 +3759,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       startY: 0,
       startPanX: 0,
       startPanY: 0,
+      buttonMask: 0,
+      blockedSurface: null as HTMLElement | null,
+      blockedPointerEvents: "",
       lastSequence: 0,
     });
     const resizePreviewPendingRef = useRef<Record<string, string>>({});
@@ -3614,8 +3817,26 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [url, setUrl] = useState(sourceUrl);
-    const [textDraft, setTextDraft] = useState("");
     const [styleDrafts, setStyleDrafts] = useState<Record<string, string>>({});
+    const activeViewportId = useMemo(() => {
+      if (canvasViewMode !== "multi") return "single-default";
+      const enabledFrames = activeFrames.filter((frame) => frame.enabled);
+      return (
+        enabledFrames.find((frame) => frame.id === activeFrameId)?.id ||
+        enabledFrames[0]?.id ||
+        activeFrameId ||
+        "single-default"
+      );
+    }, [activeFrameId, activeFrames, canvasViewMode]);
+    const activeViewportLabel = useMemo(() => {
+      if (canvasViewMode !== "multi") return `${width}×${height}`;
+      const frame = activeFrames.find((candidate) => candidate.id === activeViewportId);
+      return frame ? `${frame.name} · ${frame.width}×${frame.height}` : "Active viewport";
+    }, [activeFrames, activeViewportId, canvasViewMode, height, width]);
+    const [layoutOverlayViewports, setLayoutOverlayViewports] = useState<
+      Record<string, boolean>
+    >({});
+    const layoutOverlayEnabled = Boolean(layoutOverlayViewports[activeViewportId]);
     const [attrName, setAttrName] = useState("");
     const [attrValue, setAttrValue] = useState("");
     const [classDraft, setClassDraft] = useState("");
@@ -3654,8 +3875,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       new Set(),
     );
     const [selectedFonts, setSelectedFonts] = useState<Set<string>>(new Set());
-    const [colorsOpen, setColorsOpen] = useState(true);
-    const [fontsOpen, setFontsOpen] = useState(true);
+    const [colorsOpen, setColorsOpen] = useState(false);
+    const [fontsOpen, setFontsOpen] = useState(false);
     const [leftPanelWidth, setLeftPanelWidth] = useState(() =>
       Math.max(
         210,
@@ -3745,11 +3966,19 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     }>({ x: null, y: null, active: false });
     const [pageScrollY, setPageScrollY] = useState(0);
     const resetPan = useCallback(() => {
+      canvasPanCleanupRef.current?.();
       panRef.current = { x: 0, y: 0 };
+      const bridgeSession = bridgePanRef.current;
+      if (bridgeSession.blockedSurface) {
+        bridgeSession.blockedSurface.style.pointerEvents =
+          bridgeSession.blockedPointerEvents;
+        bridgeSession.blockedSurface = null;
+      }
       bridgePanRef.current.active = false;
       setPanning(false);
       setPan({ x: 0, y: 0 });
     }, []);
+
     const viewportGeometry = canvasViewportGeometry(width, height, zoom);
     const scale = viewportGeometry.scale;
     const comparisonVisible = !!overlayImage && !!overlayVisible;
@@ -4385,6 +4614,62 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       ],
     );
 
+    useEffect(() => {
+      const finishBridgePan = () => {
+        const session = bridgePanRef.current;
+        if (session.blockedSurface) {
+          session.blockedSurface.style.pointerEvents =
+            session.blockedPointerEvents;
+          session.blockedSurface = null;
+        }
+        if (!session.active) return;
+        session.active = false;
+        session.buttonMask = 0;
+        setPanning(false);
+      };
+      const onMouseMove = (event: MouseEvent) => {
+        const session = bridgePanRef.current;
+        if (
+          !session.active ||
+          !isMouseButtonHeld(event.buttons, session.buttonMask)
+        ) return;
+        const next = constrainPan(
+          session.startPanX + event.screenX - session.startX,
+          session.startPanY + event.screenY - session.startY,
+        );
+        panRef.current = next;
+        setPan(next);
+      };
+      const onMouseEnter = (event: MouseEvent) => {
+        const session = bridgePanRef.current;
+        if (
+          session.active &&
+          !isMouseButtonHeld(event.buttons, session.buttonMask)
+        ) finishBridgePan();
+      };
+      const onVisibilityChange = () => {
+        if (document.hidden) finishBridgePan();
+      };
+
+      window.addEventListener("mousemove", onMouseMove, true);
+      window.addEventListener("mouseup", finishBridgePan, true);
+      window.addEventListener("pointerup", finishBridgePan, true);
+      window.addEventListener("pointercancel", finishBridgePan, true);
+      window.addEventListener("blur", finishBridgePan);
+      document.addEventListener("mouseenter", onMouseEnter, true);
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      return () => {
+        window.removeEventListener("mousemove", onMouseMove, true);
+        window.removeEventListener("mouseup", finishBridgePan, true);
+        window.removeEventListener("pointerup", finishBridgePan, true);
+        window.removeEventListener("pointercancel", finishBridgePan, true);
+        window.removeEventListener("blur", finishBridgePan);
+        document.removeEventListener("mouseenter", onMouseEnter, true);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        finishBridgePan();
+      };
+    }, [constrainPan]);
+
     const execute = useCallback(async (expression: string) => {
       const view = webviewRef.current || Object.values(webviewsMapRef.current)[0];
       if (!view || typeof view.executeJavaScript !== "function") return null;
@@ -4394,6 +4679,19 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         return null;
       }
     }, []);
+
+    const executeActive = useCallback(async (expression: string) => {
+      const view =
+        webviewsMapRef.current[activeViewportId] ||
+        webviewRef.current ||
+        Object.values(webviewsMapRef.current)[0];
+      if (!view || typeof view.executeJavaScript !== "function") return null;
+      try {
+        return await view.executeJavaScript(expression, true);
+      } catch {
+        return null;
+      }
+    }, [activeViewportId]);
 
     const executeAll = useCallback(async (expression: string) => {
       const views = Object.values(webviewsMapRef.current).filter(Boolean);
@@ -4409,7 +4707,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           }
         })
       );
-      return results[0];
+      return (
+        results.find(
+          (result) => result !== null && result !== undefined && result !== false,
+        ) ?? results[0]
+      );
     }, [execute]);
 
     const deselect = useCallback(async () => {
@@ -4645,14 +4947,22 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             const sequence = Number(payload.sequence || 0);
             if (sequence <= session.lastSequence) return;
             session.lastSequence = sequence;
-            if (payload.active && !session.active) {
+            const buttonMask = Number(payload.buttonMask || 0);
+            const payloadActive =
+              Boolean(payload.active) &&
+              isMouseButtonHeld(Number(payload.buttons || 0), buttonMask);
+            if (payloadActive && !session.active) {
               session.active = true;
+              session.buttonMask = buttonMask;
               session.startX = Number(payload.screenX || 0);
               session.startY = Number(payload.screenY || 0);
               session.startPanX = panRef.current.x;
               session.startPanY = panRef.current.y;
+              session.blockedSurface = view as HTMLElement;
+              session.blockedPointerEvents = view.style.pointerEvents;
+              view.style.pointerEvents = "none";
               setPanning(true);
-            } else if (payload.active && session.active) {
+            } else if (payloadActive && session.active) {
               const next = constrainPan(
                 session.startPanX + Number(payload.screenX || 0) - session.startX,
                 session.startPanY + Number(payload.screenY || 0) - session.startY,
@@ -4660,7 +4970,13 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
               panRef.current = next;
               setPan(next);
             } else {
+              if (session.blockedSurface) {
+                session.blockedSurface.style.pointerEvents =
+                  session.blockedPointerEvents;
+                session.blockedSurface = null;
+              }
               session.active = false;
+              session.buttonMask = 0;
               setPanning(false);
             }
           } catch {}
@@ -4711,7 +5027,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       if (!ready) return;
       const timer = window.setInterval(async () => {
-        const state = (await execute(
+        const state = (await executeActive(
           "window.__fullForceEditBeta?.getState() || null",
         )) as BridgeState | null;
         if (!state) return;
@@ -4726,7 +5042,13 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           setHistory(state.history || []);
           setHistoryIndex(state.historyIndex ?? -1);
         }
-        patchesRef.current = state.patches || patchesRef.current;
+        if (state.patches) {
+          patchesRef.current = mergeViewportPatches(
+            patchesRef.current,
+            state.patches,
+            activeViewportId,
+          );
+        }
         setPageScrollY(state.scrollY || 0);
         try {
           sessionStorage.setItem(
@@ -4736,7 +5058,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         } catch {}
       }, 250);
       return () => window.clearInterval(timer);
-    }, [execute, ready]);
+    }, [activeViewportId, executeActive, ready]);
 
     useEffect(() => {
       const view = figmaWebviewRef.current;
@@ -4853,7 +5175,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       if (selected?.path && cssEditingPathRef.current === selected.path) return;
       cssEditingPathRef.current = "";
-      setTextDraft(selected?.text || "");
       setStyleDrafts(selected?.styles || {});
       setClassDraft(selected?.className || "");
       const nextCss = formatCssSource(selected?.cssSource || "");
@@ -4875,10 +5196,85 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       const result = await executeAll(
         `window.__fullForceEditBeta?.[${JSON.stringify(method)}](...${JSON.stringify(args)})`,
       );
-      if (["duplicate", "remove", "move", "undo", "redo", "applyPatches", "reorder", "commitStyle"].includes(method))
+      if (["duplicate", "remove", "move", "undo", "redo", "applyPatches", "reorder", "commitStyle", "setClasses"].includes(method))
         void refreshLayers();
       return result;
     };
+    const applyClassDraft = async (value: string) => {
+      const normalized = normalizeClassNames(value);
+      setClassDraft(normalized);
+      const result = await call("setClasses", normalized);
+      if (
+        result &&
+        typeof result === "object" &&
+        typeof result.path === "string"
+      ) {
+        selectedStateKeyRef.current = JSON.stringify(result);
+        setSelected(result as RemoteElement);
+        setStyleDrafts((result as RemoteElement).styles || {});
+      }
+    };
+    const applyLayoutStyles = async (
+      values: Record<string, string>,
+      isFinal = true,
+    ) => {
+      setStyleDrafts((current) => ({ ...current, ...values }));
+      const method = isFinal ? "setViewportStyles" : "previewViewportStyles";
+      const result = await executeActive(
+        `window.__fullForceEditBeta?.[${JSON.stringify(method)}](${JSON.stringify(values)})`,
+      );
+      if (
+        result &&
+        typeof result === "object" &&
+        typeof result.path === "string"
+      ) {
+        selectedStateKeyRef.current = JSON.stringify(result);
+        setSelected(result as RemoteElement);
+        setStyleDrafts((result as RemoteElement).styles || {});
+      }
+      if (isFinal) {
+        const activePatches = await executeActive(
+          "window.__fullForceEditBeta?.getPatches() || []",
+        );
+        if (Array.isArray(activePatches)) {
+          patchesRef.current = mergeViewportPatches(
+            patchesRef.current,
+            activePatches,
+            activeViewportId,
+          );
+          try {
+            sessionStorage.setItem(
+              patchStorageKeyRef.current,
+              JSON.stringify(patchesRef.current),
+            );
+          } catch {}
+        }
+      }
+    };
+    const toggleLayoutOverlay = (enabled: boolean) => {
+      setLayoutOverlayViewports((current) => ({
+        ...current,
+        [activeViewportId]: enabled,
+      }));
+      void executeActive(
+        `window.__fullForceEditBeta?.setLayoutOverlay(${JSON.stringify(enabled)})`,
+      );
+    };
+
+    useEffect(() => {
+      if (!ready) return;
+      Object.entries(webviewsMapRef.current).forEach(([viewportId, view]) => {
+        if (!view || typeof view.executeJavaScript !== "function") return;
+        const enabled =
+          viewportId === activeViewportId && layoutOverlayEnabled;
+        void view
+          .executeJavaScript(
+            `window.__fullForceEditBeta?.setLayoutOverlay(${JSON.stringify(enabled)})`,
+            true,
+          )
+          .catch(() => undefined);
+      });
+    }, [activeViewportId, layoutOverlayEnabled, ready]);
     const updateCssDraftLive = (value: string) => {
       setCssDraft(value);
       const path = selected?.path;
@@ -4970,7 +5366,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       setHistory([]);
       setHistoryIndex(-1);
       setStyleDrafts({});
-      setTextDraft("");
       void refreshLayers();
     }, [execute, refreshLayers]);
 
@@ -5196,10 +5591,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             return [];
           }
         },
-        getPatches: async () => {
-          const result = await execute("window.__fullForceEditBeta?.getPatches() || []");
-          return Array.isArray(result) ? result : [];
-        },
+        getPatches: async () => patchesRef.current,
       }),
       [deselect, execute, hardReload, height, refreshLayers, width],
     );
@@ -5355,26 +5747,67 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         return;
       event.preventDefault();
       event.stopPropagation();
+      canvasPanCleanupRef.current?.();
       setPanning(true);
-      let lastX = event.clientX;
-      let lastY = event.clientY;
+      const buttonMask = mouseButtonMask(event.button);
+      const blockedSurfaces = Array.from(
+        canvasRef.current?.querySelectorAll<HTMLElement>("iframe, webview") || [],
+      ).map((element) => ({
+        element,
+        pointerEvents: element.style.pointerEvents,
+      }));
+      blockedSurfaces.forEach(({ element }) => {
+        element.style.pointerEvents = "none";
+      });
+      let lastX = event.screenX;
+      let lastY = event.screenY;
+      let active = true;
+      const finish = () => {
+        if (!active) return;
+        active = false;
+        setPanning(false);
+        window.removeEventListener("mousemove", onMove, true);
+        window.removeEventListener("mouseup", finish, true);
+        window.removeEventListener("pointerup", finish, true);
+        window.removeEventListener("pointercancel", finish, true);
+        window.removeEventListener("blur", finish);
+        document.removeEventListener("mouseenter", onMouseEnter, true);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        blockedSurfaces.forEach(({ element, pointerEvents }) => {
+          element.style.pointerEvents = pointerEvents;
+        });
+        if (canvasPanCleanupRef.current === finish) {
+          canvasPanCleanupRef.current = null;
+        }
+      };
       const onMove = (moveEvent: MouseEvent) => {
+        if (!isMouseButtonHeld(moveEvent.buttons, buttonMask)) {
+          finish();
+          return;
+        }
         const next = constrainPan(
-          panRef.current.x + moveEvent.clientX - lastX,
-          panRef.current.y + moveEvent.clientY - lastY,
+          panRef.current.x + moveEvent.screenX - lastX,
+          panRef.current.y + moveEvent.screenY - lastY,
         );
         panRef.current = next;
-        lastX = moveEvent.clientX;
-        lastY = moveEvent.clientY;
+        lastX = moveEvent.screenX;
+        lastY = moveEvent.screenY;
         setPan(next);
       };
-      const onUp = () => {
-        setPanning(false);
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
+      const onVisibilityChange = () => {
+        if (document.hidden) finish();
       };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
+      const onMouseEnter = (enterEvent: MouseEvent) => {
+        if (!isMouseButtonHeld(enterEvent.buttons, buttonMask)) finish();
+      };
+      canvasPanCleanupRef.current = finish;
+      window.addEventListener("mousemove", onMove, true);
+      window.addEventListener("mouseup", finish, true);
+      window.addEventListener("pointerup", finish, true);
+      window.addEventListener("pointercancel", finish, true);
+      window.addEventListener("blur", finish);
+      document.addEventListener("mouseenter", onMouseEnter, true);
+      document.addEventListener("visibilitychange", onVisibilityChange);
     };
 
     const frameDragRef = useRef<{
@@ -6695,33 +7128,46 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                 </div>
               ) : (
                 <>
-                  <div className="edit-beta-section-title">Text</div>
-                  <textarea
-                    value={textDraft}
-                    onChange={(e) => setTextDraft(e.target.value)}
-                  />
-                  <button
-                    className="edit-beta-apply"
-                    onClick={() => void call("setText", textDraft)}
-                  >
-                    Apply text
-                  </button>
-                  <div className="edit-beta-section-title">Selectors</div>
+                  <div className="edit-beta-section-title">Classes</div>
                   <div className="edit-beta-selector-row">
-                    <span>Classes</span>
-                    <input
-                      value={classDraft}
-                      onChange={(e) => setClassDraft(e.target.value)}
-                      onBlur={() =>
-                        void call("setAttribute", "class", classDraft)
-                      }
-                      placeholder="class-one class-two"
-                    />
+                    <span>Class list</span>
+                    <div className="edit-beta-selector-controls">
+                      <input
+                        value={classDraft}
+                        onChange={(e) => setClassDraft(e.target.value)}
+                        onBlur={(event) =>
+                          void applyClassDraft(event.currentTarget.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter") return;
+                          event.preventDefault();
+                          void applyClassDraft(event.currentTarget.value);
+                        }}
+                        placeholder="class-one class-two"
+                        aria-label="Element classes"
+                      />
+                      <button
+                        type="button"
+                        className="edit-beta-selector-apply"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => void applyClassDraft(classDraft)}
+                      >
+                        Apply
+                      </button>
+                    </div>
                   </div>
                   <div className="edit-beta-section-title">Styles</div>
                   <NativeStylePanel
                     selectedElement={null}
                     computedStyles={styleDrafts}
+                    isContainer={selected.childElementCount > 0}
+                    parentDisplay={selected.parentDisplay}
+                    activeViewportLabel={activeViewportLabel}
+                    layoutOverlayEnabled={layoutOverlayEnabled}
+                    onLayoutOverlayChange={toggleLayoutOverlay}
+                    onLayoutStylesChange={(values, isFinal = true) =>
+                      void applyLayoutStyles(values, isFinal)
+                    }
                     onStyleChange={(property, value, isFinal = true) => {
                       setStyleDrafts((current) => ({
                         ...current,

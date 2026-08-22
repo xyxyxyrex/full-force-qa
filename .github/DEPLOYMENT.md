@@ -5,7 +5,7 @@ This repository deploys three connected surfaces:
 | Surface | Workflow | Trigger | Destination |
 | --- | --- | --- | --- |
 | Desktop and viewer CI | `ci.yml` | Pull requests, `main`, or manual | GitHub Actions only |
-| Parity viewer | `deploy-cloudflare.yml` | Relevant changes on `main`, or manual | Cloudflare Pages Direct Upload project `parity` |
+| Parity viewer and installer page | `deploy-cloudflare.yml` | Relevant changes on `main`, a successful desktop release, or manual | Cloudflare Pages Direct Upload project `parity-gfx` |
 | Database and Edge Functions | `deploy-supabase.yml` | Changes under `supabase/` on `main`, or manual | Linked Supabase production project |
 | Windows desktop release | `release-desktop.yml` | A matching `v*.*.*` tag, or manual | GitHub Release with NSIS update files |
 
@@ -28,7 +28,7 @@ Official references: [GitHub deployment environments](https://docs.github.com/en
 
 | GitHub environment secret | Exact value to store | Used by | Sensitivity |
 | --- | --- | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Custom Cloudflare token with `Account → Cloudflare Pages → Edit` for the account containing `parity` | Cloudflare deployment | Secret |
+| `CLOUDFLARE_API_TOKEN` | Custom Cloudflare token with `Account → Cloudflare Pages → Edit` for the account containing `parity-gfx` | Cloudflare deployment | Secret |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID containing the Pages project | Cloudflare deployment | Identifier |
 | `VITE_SUPABASE_URL` | Project URL, normally `https://<project-ref>.supabase.co` | Cloudflare viewer and desktop release | Public configuration |
 | `VITE_SUPABASE_ANON_KEY` | Prefer the current `sb_publishable_…` key; the legacy anon JWT also works | Cloudflare viewer and desktop release | Public client key |
@@ -82,7 +82,7 @@ Official references: [Monday OAuth 2.1 migration](https://developer.monday.com/a
 
 ### Deployment model: Wrangler Direct Upload
 
-The `parity` Pages project is created and deployed with Wrangler. It is a **Direct Upload** project, not a Pages project connected to a GitHub repository.
+The `parity-gfx` Pages project is created and deployed with Wrangler. It is a **Direct Upload** project, not a Pages project connected to a GitHub repository.
 
 The deployment flow is therefore:
 
@@ -91,7 +91,7 @@ GitHub Actions
   → npm run build:viewer
   → prebuilt dist-viewer directory
   → wrangler pages deploy
-  → parity Direct Upload project
+  → parity-gfx Direct Upload project
 ```
 
 Important consequences:
@@ -107,7 +107,7 @@ The repository already contains the required Pages configuration in `wrangler.js
 
 ```jsonc
 {
-  "name": "parity",
+  "name": "parity-gfx",
   "pages_build_output_dir": "./dist-viewer"
 }
 ```
@@ -128,14 +128,14 @@ See Cloudflare's [Direct Upload guide](https://developers.cloudflare.com/pages/g
 4. Under **Custom Token**, select **Get started**.
 5. Give it a recognizable name such as `full-force-qa-pages-production`.
 6. Add permission **Account → Cloudflare Pages → Edit**.
-7. Restrict **Account Resources** to the account containing the `parity` Pages project.
+7. Restrict **Account Resources** to the account containing the `parity-gfx` Pages project.
 8. Review and create the token, then copy it immediately into the GitHub environment secret `CLOUDFLARE_API_TOKEN`.
 
 Do not use the Global API Key. The narrowly scoped custom token is sufficient for Wrangler Pages Direct Upload from GitHub Actions.
 
 ### Account ID and Pages project
 
-The Account ID identifies the Cloudflare account that owns the Wrangler-created `parity` project. It is not created by, and does not require, a Cloudflare/GitHub repository connection.
+The Account ID identifies the Cloudflare account that owns the Wrangler-created `parity-gfx` project. It is not created by, and does not require, a Cloudflare/GitHub repository connection.
 
 To retrieve and verify it from the dashboard:
 
@@ -152,7 +152,7 @@ npx wrangler pages project list
 npx wrangler pages deployment list --project-name parity-gfx --environment production
 ```
 
-`wrangler whoami` displays the authenticated account membership and Account ID. `pages project list` must include `parity`. If multiple Cloudflare accounts are available, use the Account ID belonging to the row that contains that project.
+`wrangler whoami` displays the authenticated account membership and Account ID. `pages project list` must include `parity-gfx`. If multiple Cloudflare accounts are available, use the Account ID belonging to the row that contains that project.
 
 Do not use the Zone ID; Pages deployment requires the Account ID. See [Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
 
@@ -266,7 +266,7 @@ git push origin main
 git push origin v1.0.1
 ```
 
-The release workflow validates the tag, builds the Windows NSIS installer, and publishes the installer, blockmap, `latest.yml`, and version-stamped `install.ps1` to GitHub Releases. The Cloudflare Pages build serves the same bootstrapper at `https://parity-gfx.pages.dev/install.ps1`; it resolves the newest published release at runtime and uses the package version as an API-failure fallback. Keep the release published rather than draft; desktop clients and the bootstrapper cannot discover draft releases. The current public repository allows clients to fetch releases without embedding a GitHub credential. See [electron-builder auto update](https://www.electron.build/docs/features/auto-update/).
+The release workflow validates the tag, builds the Windows NSIS installer, and publishes the installer, blockmap, `latest.yml`, and version-stamped `install.ps1` to GitHub Releases. After that workflow succeeds, `deploy-cloudflare.yml` automatically rebuilds and redeploys the matching installer page. Cloudflare Pages serves the bootstrapper at `https://parity-gfx.pages.dev/install.ps1`; it resolves the newest published release at runtime and uses the package version as an API-failure fallback. Keep the release published rather than draft; desktop clients and the bootstrapper cannot discover draft releases. The current public repository allows clients to fetch releases without embedding a GitHub credential. See [electron-builder auto update](https://www.electron.build/docs/features/auto-update/).
 
 ## 7. Rotation and recovery
 
@@ -282,7 +282,7 @@ If any credential is exposed in logs, chat, source control, or an issue, rotate 
 
 - `HTTP 404` while listing environment secrets: create the `production` environment first and confirm you have repository admin access.
 - Cloudflare authentication failure: confirm the token uses **Account → Cloudflare Pages → Edit**, the resource includes the correct account, and `CLOUDFLARE_ACCOUNT_ID` is not a Zone ID.
-- Cloudflare project-not-found error: run `npx wrangler pages project list` with the original/local Wrangler account, confirm the project name is exactly `parity`, then make sure GitHub uses that account's ID. Do not resolve this by connecting a separate Git-integrated project.
+- Cloudflare project-not-found error: run `npx wrangler pages project list` with the original/local Wrangler account, confirm the project name is exactly `parity-gfx`, then make sure GitHub uses that account's ID. Do not resolve this by connecting a separate Git-integrated project.
 - Supabase link failure: confirm the PAT's user can access the project, `SUPABASE_PROJECT_ID` is only the project reference, and the database password is current.
 - Viewer loads but data does not: confirm `VITE_SUPABASE_URL` and the publishable key belong to the same project, then review Supabase RLS and Storage policies.
 - Desktop integration is unconfigured: confirm both `VITE_` secrets exist in `production` and rebuild the desktop release; changing a secret cannot alter an already published installer.

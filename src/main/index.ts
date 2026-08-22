@@ -42,7 +42,7 @@ import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
 import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadWorkspaceHtml, saveProject, saveWorkspaceHtml, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
-import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState } from '../shared/types'
+import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState, ResourceFileSizeResult } from '../shared/types'
 import {
   checkForAppUpdates,
   downloadAppUpdate,
@@ -787,6 +787,77 @@ async function captureAutomatePage(webContentsId: number, viewportWidth: number,
 
 const activeVisualWorkers = new Map<string, ReturnType<typeof spawn>>()
 
+const resourceFileSizeCache = new Map<string, { expiresAt: number; result: ResourceFileSizeResult }>()
+
+async function fetchResourceFileSize(url: string, refererUrl?: string): Promise<ResourceFileSizeResult> {
+  const cached = resourceFileSizeCache.get(url)
+  if (cached && cached.expiresAt > Date.now()) return cached.result
+
+  const result: ResourceFileSizeResult = { url, sizeBytes: null }
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return result
+
+    const request = async (method: 'HEAD' | 'GET') => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 8_000)
+      try {
+        const headers: Record<string, string> = { Accept: '*/*' }
+        if (method === 'GET') headers.Range = 'bytes=0-0'
+        if (refererUrl?.startsWith('http://') || refererUrl?.startsWith('https://')) {
+          headers.Referer = refererUrl
+        }
+        return await session.defaultSession.fetch(url, {
+          method,
+          credentials: 'include',
+          cache: 'no-store',
+          redirect: 'follow',
+          headers,
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+
+    let response = await request('HEAD')
+    let size = Number(response.headers.get('content-length'))
+    let contentType = response.headers.get('content-type') || undefined
+
+    if (!response.ok || !Number.isFinite(size) || size <= 0) {
+      response = await request('GET')
+      contentType = response.headers.get('content-type') || contentType
+      const contentRange = response.headers.get('content-range') || ''
+      const totalMatch = contentRange.match(/\/\s*(\d+)\s*$/)
+      size = totalMatch ? Number(totalMatch[1]) : response.status === 200
+        ? Number(response.headers.get('content-length'))
+        : Number.NaN
+      try { await response.body?.cancel() } catch {}
+    }
+
+    if (Number.isFinite(size) && size >= 0) result.sizeBytes = size
+    if (contentType) result.contentType = contentType
+  } catch {
+    // Some CDNs intentionally reject HEAD/range requests. The renderer keeps
+    // its Resource Timing/data-URL fallbacks and displays Unknown otherwise.
+  }
+
+  resourceFileSizeCache.set(url, {
+    expiresAt: Date.now() + (result.sizeBytes == null ? 60_000 : 10 * 60_000),
+    result,
+  })
+  return result
+}
+
+async function getResourceFileSizes(urls: string[], refererUrl?: string): Promise<ResourceFileSizeResult[]> {
+  const uniqueUrls = Array.from(new Set((Array.isArray(urls) ? urls : []).filter((url): url is string => typeof url === 'string' && url.length > 0))).slice(0, 200)
+  const results: ResourceFileSizeResult[] = []
+  for (let index = 0; index < uniqueUrls.length; index += 8) {
+    results.push(...await Promise.all(uniqueUrls.slice(index, index + 8).map((url) => fetchResourceFileSize(url, refererUrl))))
+  }
+  return results
+}
+
 function runVisualWorker(jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: Array<{ designY: number; liveY: number; confidence?: number }>, mode: string = 'visual-surface'): Promise<any> {
   return new Promise((resolve) => {
     const workDirectory = mkdtempSync(join(tmpdir(), 'qa-visual-'))
@@ -869,6 +940,10 @@ function registerIpcHandlers(): void {
       console.error('[Cache] Error clearing cache:', e)
       return { success: false }
     }
+  })
+
+  ipcMain.handle('app:get-resource-file-sizes', async (_event, urls: string[], refererUrl?: string) => {
+    return getResourceFileSizes(urls, refererUrl)
   })
 
   // Figma Login Window: Uses standard Chrome User-Agent so Google Accounts OAuth works cleanly inside Electron

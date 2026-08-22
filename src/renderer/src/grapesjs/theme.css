@@ -226,7 +226,7 @@
 .gjs-sm-property__text-transform .gjs-radio-item input:checked + .gjs-radio-item-label {
   background: var(--accent-color) !important;
   background-color: var(--accent-color) !important;
-  color: #ffffff !important;
+  color: var(--accent-foreground) !important;
 }
 
 .gjs-sm-property select option,
@@ -324,7 +324,7 @@
 
 .gjs-badge {
   background: var(--accent-color) !important;
-  color: #ffffff !important;
+  color: var(--accent-foreground) !important;
   font-size: 10px;
   padding: 2px 6px;
   border-radius: 3px;
@@ -348,5 +348,5 @@
 
 .sp-button-container .sp-choose {
   background: var(--accent-color) !important;
-  color: #ffffff !important;
+  color: var(--accent-foreground) !important;
 }

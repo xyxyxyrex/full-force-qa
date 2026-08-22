@@ -23,8 +23,8 @@
 .automate-token-row input, .automate-source-bar input, .automate-source-bar select { min-width: 0; height: 32px; box-sizing: border-box; border: 1px solid var(--border-color); border-radius: 6px; outline: 0; background: var(--bg-input); color: var(--text-primary); padding: 0 10px; font: 11px system-ui, sans-serif; }
 .automate-token-row input { flex: 1; font-family: ui-monospace, monospace; }
 .automate-primary, .automate-secondary, .automate-icon-btn { height: 32px; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; }
-.automate-primary { padding: 0 14px; border-color: var(--accent-color); background: var(--accent-color); color: #fff; font-weight: 650; }
-.automate-primary:hover { background: var(--accent-hover); }
+.automate-primary { padding: 0 14px; border-color: var(--accent-color); background: var(--accent-color); color: var(--accent-foreground); font-weight: 650; }
+.automate-primary:hover { background: var(--accent-hover); color: var(--accent-hover-foreground); }
 .automate-secondary { padding: 0 12px; background: var(--bg-elevated); color: var(--text-primary); }
 .automate-secondary:hover { background: var(--bg-card-hover); }
 .automate-icon-btn { width: 32px; display: grid; place-items: center; background: var(--bg-elevated); color: var(--text-secondary); }

@@ -897,6 +897,40 @@ body.is-viewport-resizing * {
   overflow-y: auto;
 }
 
+.edit-beta-selector-row {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.edit-beta-selector-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+  min-width: 0;
+}
+
+.edit-beta-selector-controls input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.edit-beta-selector-apply {
+  height: 25px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 0 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: 700 9px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.edit-beta-selector-apply:hover,
+.edit-beta-selector-apply:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  outline: none;
+}
+
 .edit-beta-left > .edit-beta-panel-title,
 .edit-beta-legacy-layers,
 .edit-beta-legacy-history {
@@ -932,7 +966,7 @@ body.is-viewport-resizing * {
 }
 
 .edit-beta-selection-toolbar button.edit-beta-toolbar-annotate:hover {
-  color: var(--bg-app);
+  color: var(--accent-foreground);
   background: var(--accent-color);
 }
 

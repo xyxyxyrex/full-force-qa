@@ -14,6 +14,9 @@ on:
       - package.json
       - package-lock.json
       - .github/workflows/deploy-cloudflare.yml
+  workflow_run:
+    workflows: [Release Desktop App]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +29,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     name: Build and deploy viewer
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -38,6 +42,8 @@ jobs:
       VITE_EPHEMERAL_VIEWER_URL: ${{ secrets.VITE_EPHEMERAL_VIEWER_URL }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -68,4 +74,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          command: pages deploy dist-viewer --project-name=parity-gfx --branch=${{ github.ref_name }} --commit-hash=${{ github.sha }}
+          command: pages deploy dist-viewer --project-name=parity-gfx --branch=${{ github.event_name == 'workflow_run' && 'main' || github.ref_name }} --commit-hash=${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}

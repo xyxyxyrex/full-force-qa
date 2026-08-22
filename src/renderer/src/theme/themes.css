@@ -15,6 +15,9 @@
   --accent-color: #8a918e;
   --accent-hover: #a7aeaa;
   --accent-light: rgba(138, 145, 142, 0.2);
+  --accent-foreground: #000000;
+  --accent-hover-foreground: #000000;
+  --button-text: var(--accent-foreground);
   --header-bg: #1c2321;
   --sidebar-bg: #151a18;
   --modal-bg: #1c2321;

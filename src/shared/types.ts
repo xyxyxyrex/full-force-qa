@@ -311,6 +311,12 @@ export interface FigmaConnectionStatus {
   error?: string
 }
 
+export interface ResourceFileSizeResult {
+  url: string
+  sizeBytes: number | null
+  contentType?: string
+}
+
 export interface ElectronAPI {
   login: (adminUrl: string) => Promise<void>
   mondayLogin: (config: MondayPublicConfig) => Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }>
@@ -333,6 +339,7 @@ export interface ElectronAPI {
   saveWorkspaceHtml: (tabId: string, html: string) => Promise<void>
   deleteWorkspaceHtml: (tabId: string) => Promise<void>
   clearCache: () => Promise<{ success: boolean }>
+  getResourceFileSizes: (urls: string[], refererUrl?: string) => Promise<ResourceFileSizeResult[]>
   openExternal: (url: string) => Promise<void>
   openDetachedWindow: (url: string, title?: string) => Promise<void>
   figmaLoginWindow: (url?: string) => Promise<void>

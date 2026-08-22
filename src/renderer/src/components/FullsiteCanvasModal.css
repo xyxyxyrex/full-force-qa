@@ -92,12 +92,13 @@
 .canvas-btn-primary {
   background: var(--accent-color);
   border-color: var(--accent-color);
-  color: var(--bg-app);
+  color: var(--accent-foreground);
 }
 
 .canvas-btn-primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+  color: var(--accent-hover-foreground);
 }
 
 .zoom-level-badge {
@@ -480,7 +481,7 @@
   top: -28px;
   left: 0;
   background: var(--accent-color);
-  color: var(--bg-app);
+  color: var(--accent-foreground);
   font-size: 11px;
   font-weight: 800;
   padding: 3px 8px;

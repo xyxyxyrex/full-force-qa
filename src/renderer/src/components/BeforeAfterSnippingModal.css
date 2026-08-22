@@ -120,7 +120,7 @@
 .snipping-mode-btn.active,
 .snipping-tool-btn.active {
   background: var(--accent-color, #ff0055);
-  color: #ffffff;
+  color: var(--accent-foreground, #ffffff);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
