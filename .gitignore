@@ -14,3 +14,4 @@ resources/visual-worker/visual-compare*
 *.zip
 *.7z
 tsconfig.node.tsbuildinfo
+.worktrees/
