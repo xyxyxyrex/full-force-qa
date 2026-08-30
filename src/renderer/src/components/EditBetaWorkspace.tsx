@@ -45,6 +45,17 @@ function rendererCaptureWithTimeout<T>(
   });
 }
 
+function isCallableWebview(view: any) {
+  if (!view || typeof view.executeJavaScript !== "function") return false;
+  if ("isConnected" in view && !view.isConnected) return false;
+  if (typeof view.getWebContentsId !== "function") return true;
+  try {
+    return Number(view.getWebContentsId()) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export type FontInspectorMode = "off" | "selected" | "all";
 export type InteractionMode = "edit" | "interact" | "eyedropper";
 
@@ -147,6 +158,12 @@ interface PaletteFont {
   loaded?: boolean;
 }
 
+interface AuthoredCssDimension {
+  value: string;
+  source: "inline" | "rule" | "implicit";
+  selector: string;
+}
+
 interface RemoteElement {
   path: string;
   tag: string;
@@ -156,6 +173,10 @@ interface RemoteElement {
   attrs: Record<string, string>;
   styles: Record<string, string>;
   rect: { left: number; top: number; width: number; height: number };
+  authoredSize: {
+    width: AuthoredCssDimension;
+    height: AuthoredCssDimension;
+  };
   box: {
     marginTop: number;
     marginRight: number;
@@ -221,7 +242,7 @@ interface BridgeOptions {
 function installEditBetaBridge() {
   const guestWindow = window as any;
   if (guestWindow.__fullForceEditBeta) {
-    if (guestWindow.__fullForceEditBeta.version === 17) {
+    if (guestWindow.__fullForceEditBeta.version === 21) {
       guestWindow.__fullForceEditBeta.enable();
       return true;
     }
@@ -242,7 +263,16 @@ function installEditBetaBridge() {
     { before: string; beforePriority: string }
   >();
   const cssSourceCache = new Map<string, string>();
-  const cssSourcePreviews = new Map<string, { before: string }>();
+  const cssEditorSourceCache = new Map<string, string>();
+  const cssSourcePreviews = new Map<
+    string,
+    {
+      beforeStyle: string;
+      beforeSource: string;
+      sessionId: number;
+    }
+  >();
+  const authoredDimensionCache = new Map<string, AuthoredCssDimension>();
   let options: BridgeOptions = {
     revealAnimations: false,
     fontInspectorMode: "off",
@@ -851,10 +881,20 @@ function installEditBetaBridge() {
         "style[data-fullforce-beta-css]",
       ),
     ).find((style) => style.dataset.fullforceBetaCss === path) || null;
-  const getCssSource = (el: HTMLElement, styles: Record<string, string>) => {
+  const purgeScopedCssOverrides = () => {
+    document
+      .querySelectorAll<HTMLStyleElement>("style[data-fullforce-beta-css]")
+      .forEach((style) => style.remove());
+    cssEditorSourceCache.clear();
+    cssSourcePreviews.clear();
+    authoredDimensionCache.clear();
+  };
+  // A previous bridge instance may have been replaced while its guest page
+  // stayed mounted. Saved patches are replayed after installation, so stale
+  // style nodes must not become the baseline for the new history chain.
+  purgeScopedCssOverrides();
+  const getBaseCssSource = (el: HTMLElement, styles: Record<string, string>) => {
     const path = getPath(el);
-    const local = localCssFor(path);
-    if (local) return local.textContent || "";
     const cached = cssSourceCache.get(path);
     if (cached != null) return cached;
     const matches: string[] = [];
@@ -905,6 +945,220 @@ function installEditBetaBridge() {
       );
     cssSourceCache.set(path, source);
     return source;
+  };
+  const getCssSource = (el: HTMLElement, styles: Record<string, string>) => {
+    const path = getPath(el);
+    return cssEditorSourceCache.get(path) ?? getBaseCssSource(el, styles);
+  };
+  type CssDeclarationSnapshot = {
+    value: string;
+    priority: string;
+  };
+  const cssRuleSnapshots = (source: string) => {
+    const snapshots = new Map<string, Map<string, CssDeclarationSnapshot>>();
+    const selectorCounts = new Map<string, number>();
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(source || "");
+      const visit = (rules: CSSRuleList) => {
+        for (const rule of Array.from(rules)) {
+          if (rule instanceof CSSStyleRule) {
+            const selector = rule.selectorText;
+            const occurrence = (selectorCounts.get(selector) || 0) + 1;
+            selectorCounts.set(selector, occurrence);
+            const declarations = new Map<string, CssDeclarationSnapshot>();
+            for (const property of Array.from(rule.style))
+              declarations.set(property, {
+                value: rule.style.getPropertyValue(property).trim(),
+                priority: rule.style.getPropertyPriority(property),
+              });
+            snapshots.set(`${selector}\u0000${occurrence}`, declarations);
+          } else if ("cssRules" in rule) {
+            try {
+              visit((rule as CSSGroupingRule).cssRules);
+            } catch {}
+          }
+        }
+      };
+      visit(sheet.cssRules);
+    } catch {}
+    return snapshots;
+  };
+  const compileScopedCssOverride = (
+    path: string,
+    baseline: string,
+    edited: string,
+  ) => {
+    const originalRules = cssRuleSnapshots(baseline);
+    const editedRules = cssRuleSnapshots(edited);
+    const changes = new Map<string, CssDeclarationSnapshot>();
+    for (const [ruleKey, declarations] of editedRules) {
+      const original = originalRules.get(ruleKey);
+      for (const [property, declaration] of declarations) {
+        const before = original?.get(property);
+        if (
+          !before ||
+          before.value !== declaration.value ||
+          before.priority !== declaration.priority
+        )
+          changes.set(property, declaration);
+      }
+    }
+    if (!changes.size) return "";
+    const normalized = document.createElement("div").style;
+    for (const [property, declaration] of changes)
+      normalized.setProperty(property, declaration.value, "important");
+    return normalized.length ? `${path} { ${normalized.cssText} }` : "";
+  };
+  const splitSelectorList = (selectorText: string) => {
+    const selectors: string[] = [];
+    let start = 0;
+    let parentheses = 0;
+    let brackets = 0;
+    let quote = "";
+    for (let index = 0; index < selectorText.length; index++) {
+      const char = selectorText[index];
+      if (quote) {
+        if (char === quote && selectorText[index - 1] !== "\\") quote = "";
+        continue;
+      }
+      if (char === '"' || char === "'") quote = char;
+      else if (char === "(") parentheses++;
+      else if (char === ")") parentheses = Math.max(0, parentheses - 1);
+      else if (char === "[") brackets++;
+      else if (char === "]") brackets = Math.max(0, brackets - 1);
+      else if (char === "," && parentheses === 0 && brackets === 0) {
+        selectors.push(selectorText.slice(start, index).trim());
+        start = index + 1;
+      }
+    }
+    selectors.push(selectorText.slice(start).trim());
+    return selectors.filter(Boolean);
+  };
+  const selectorSpecificity = (selector: string) => {
+    // This is intentionally compact, but preserves the useful author-rule
+    // ordering for normal site selectors. :where() contributes no specificity.
+    const normalized = selector.replace(/:where\((?:[^()]|\([^()]*\))*\)/g, "");
+    const ids = (normalized.match(/#[\w-]+/g) || []).length;
+    const classes = (normalized.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+(?:\([^)]*\))?/g) || []).length;
+    const types = (normalized
+      .replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|::?[\w-]+(?:\([^)]*\))?/g, " ")
+      .match(/(?:^|[\s>+~])(?:[a-zA-Z][\w-]*|\*)/g) || [])
+      .filter((part) => !part.trim().endsWith("*")).length;
+    const pseudoElements = (normalized.match(/::[\w-]+/g) || []).length;
+    return ids * 1_000_000 + classes * 1_000 + types + pseudoElements;
+  };
+  const getAuthoredDimension = (
+    el: HTMLElement,
+    property: "width" | "height",
+  ): AuthoredCssDimension => {
+    const inlineValue = el.style.getPropertyValue(property).trim();
+    const path = getPath(el);
+    const localCss = localCssFor(path)?.textContent || "";
+    const cacheKey = [
+      path,
+      property,
+      window.innerWidth,
+      window.innerHeight,
+      el.className,
+      el.style.cssText,
+      localCss,
+    ].join("::");
+    const cached = authoredDimensionCache.get(cacheKey);
+    if (cached) return cached;
+
+    let order = 0;
+    let best: {
+      value: string;
+      selector: string;
+      important: boolean;
+      specificity: number;
+      order: number;
+    } | null = null;
+    const consider = (candidate: NonNullable<typeof best>) => {
+      if (
+        !best ||
+        Number(candidate.important) > Number(best.important) ||
+        (candidate.important === best.important &&
+          (candidate.specificity > best.specificity ||
+            (candidate.specificity === best.specificity && candidate.order > best.order)))
+      )
+        best = candidate;
+    };
+    const visit = (rules: CSSRuleList, active = true) => {
+      if (!active) return;
+      for (const rule of Array.from(rules)) {
+        if (rule instanceof CSSStyleRule) {
+          order++;
+          const value = rule.style.getPropertyValue(property).trim();
+          if (!value) continue;
+          const matchingSelectors = splitSelectorList(rule.selectorText).filter(
+            (selector) => {
+              try {
+                return el.matches(selector);
+              } catch {
+                return false;
+              }
+            },
+          );
+          if (!matchingSelectors.length) continue;
+          const selector = matchingSelectors.sort(
+            (left, right) => selectorSpecificity(right) - selectorSpecificity(left),
+          )[0];
+          const candidate = {
+            value,
+            selector,
+            important: rule.style.getPropertyPriority(property) === "important",
+            specificity: selectorSpecificity(selector),
+            order,
+          };
+          consider(candidate);
+          continue;
+        }
+        if (!("cssRules" in rule)) continue;
+        let groupActive = true;
+        if (rule instanceof CSSMediaRule) groupActive = matchMedia(rule.conditionText).matches;
+        else if (
+          typeof CSSSupportsRule !== "undefined" &&
+          rule instanceof CSSSupportsRule
+        )
+          groupActive = CSS.supports(rule.conditionText);
+        try {
+          visit((rule as CSSGroupingRule).cssRules, groupActive);
+        } catch {}
+      }
+    };
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        visit(sheet.cssRules);
+      } catch {}
+    }
+    if (inlineValue)
+      consider({
+        value: inlineValue,
+        selector: "element.style",
+        important: el.style.getPropertyPriority(property) === "important",
+        specificity: 1_000_000_000,
+        order: ++order,
+      });
+    if (best) {
+      const result: AuthoredCssDimension = {
+        value: best.value,
+        source: best.selector === "element.style" ? "inline" : "rule",
+        selector: best.selector,
+      };
+      if (authoredDimensionCache.size > 40) authoredDimensionCache.clear();
+      authoredDimensionCache.set(cacheKey, result);
+      return result;
+    }
+    const result: AuthoredCssDimension = {
+      value: "auto",
+      source: "implicit",
+      selector: "browser default",
+    };
+    if (authoredDimensionCache.size > 40) authoredDimensionCache.clear();
+    authoredDimensionCache.set(cacheKey, result);
+    return result;
   };
   const describe = (el: HTMLElement | null): RemoteElement | null => {
     if (!el) return null;
@@ -1041,6 +1295,10 @@ function installEditBetaBridge() {
         top: rect.top,
         width: rect.width,
         height: rect.height,
+      },
+      authoredSize: {
+        width: getAuthoredDimension(el, "width"),
+        height: getAuthoredDimension(el, "height"),
       },
       box: {
         marginTop: number("margin-top"),
@@ -1945,7 +2203,7 @@ function installEditBetaBridge() {
   window.addEventListener("resize", scheduleHighlights, true);
 
   const api = {
-    version: 17,
+    version: 21,
     enable() {
       host.style.display = "";
       positionOverlay();
@@ -2195,6 +2453,8 @@ function installEditBetaBridge() {
       const rAfter = el.getBoundingClientRect();
 
       stylePreviews.delete(previewKey);
+      cssSourceCache.delete(getPath(el));
+      authoredDimensionCache.clear();
       commit(
         {
           label: `${el.tagName.toLowerCase()} · ${property} → ${after || "default"}`,
@@ -2251,33 +2511,57 @@ function installEditBetaBridge() {
       positionOverlay();
       return true;
     },
-    previewCssSource(value: string, targetPath?: string) {
-      const el = targetPath ? resolve(targetPath) : selected;
-      if (!el) return false;
-      const path = getPath(el);
-      let style = localCssFor(path);
-      if (!cssSourcePreviews.has(path))
-        cssSourcePreviews.set(path, { before: style?.textContent || "" });
-      if (!style?.isConnected) {
-        style = document.createElement("style");
-        style.dataset.fullforceBetaCss = path;
-        document.head.appendChild(style);
-      }
-      style.textContent = value || "";
-      cssSourceCache.delete(path);
-      positionOverlay();
-      return true;
-    },
-    setCssSource(value: string, targetPath?: string) {
+    previewCssSource(value: string, targetPath?: string, sessionId = 0) {
       const el = targetPath ? resolve(targetPath) : selected;
       if (!el) return false;
       const path = getPath(el);
       let style = localCssFor(path);
       const pending = cssSourcePreviews.get(path);
-      const before = pending?.before ?? style?.textContent ?? "";
-      const after = value || "";
-      cssSourcePreviews.delete(path);
-      if (before === after) return true;
+      const computedStyles: Record<string, string> = {};
+      const baseline = getBaseCssSource(el, computedStyles);
+      const currentSource = cssEditorSourceCache.get(path) ?? baseline;
+      if (!pending || pending.sessionId !== sessionId) {
+        cssSourcePreviews.set(path, {
+          beforeStyle: pending?.beforeStyle ?? style?.textContent ?? "",
+          beforeSource: pending?.beforeSource ?? currentSource,
+          sessionId,
+        });
+      }
+      const override = compileScopedCssOverride(path, baseline, value || "");
+      if (override) {
+        if (!style?.isConnected) {
+          style = document.createElement("style");
+          style.dataset.fullforceBetaCss = path;
+          document.head.appendChild(style);
+        }
+        style.textContent = override;
+      } else {
+        style?.remove();
+      }
+      cssEditorSourceCache.set(path, value || "");
+      authoredDimensionCache.clear();
+      positionOverlay();
+      return true;
+    },
+    setCssSource(value: string, targetPath?: string, sessionId = 0) {
+      const el = targetPath ? resolve(targetPath) : selected;
+      if (!el) return false;
+      const path = getPath(el);
+      let style = localCssFor(path);
+      const pending = cssSourcePreviews.get(path);
+      const computedStyles: Record<string, string> = {};
+      const baseline = getBaseCssSource(el, computedStyles);
+      const beforeStyle =
+        pending?.sessionId === sessionId
+          ? pending.beforeStyle
+          : style?.textContent ?? "";
+      const beforeSource =
+        pending?.sessionId === sessionId
+          ? pending.beforeSource
+          : cssEditorSourceCache.get(path) ?? baseline;
+      const afterSource = value || "";
+      const afterStyle = compileScopedCssOverride(path, baseline, afterSource);
+      if (pending?.sessionId === sessionId) cssSourcePreviews.delete(path);
       const ensure = () => {
         if (!style?.isConnected) {
           style = document.createElement("style");
@@ -2286,22 +2570,34 @@ function installEditBetaBridge() {
         }
         return style;
       };
+      const apply = (cssText: string, source: string) => {
+        if (cssText) ensure().textContent = cssText;
+        else {
+          style?.remove();
+          style = null;
+        }
+        if (source === baseline) cssEditorSourceCache.delete(path);
+        else cssEditorSourceCache.set(path, source);
+        authoredDimensionCache.clear();
+      };
       const redo = () => {
-        ensure().textContent = after;
+        apply(afterStyle, afterSource);
       };
       const undo = () => {
-        if (before) ensure().textContent = before;
-        else style?.remove();
+        apply(beforeStyle, beforeSource);
       };
       redo();
-      cssSourceCache.delete(path);
+      if (beforeSource === afterSource && beforeStyle === afterStyle) {
+        positionOverlay();
+        return true;
+      }
       commit(
         {
           label: `${el.tagName.toLowerCase()} · stylesheet override`,
           undo,
           redo,
         },
-        { type: "cssSource", path, value: after },
+        { type: "cssSource", path, value: afterSource },
       );
       positionOverlay();
       return true;
@@ -2584,6 +2880,8 @@ function installEditBetaBridge() {
       if (historyIndex < 0) return false;
       history[historyIndex].undo();
       historyIndex--;
+      if (historyIndex < 0 && basePatches.length === 0)
+        purgeScopedCssOverrides();
       positionOverlay();
       return true;
     },
@@ -2637,14 +2935,18 @@ function installEditBetaBridge() {
       }
       for (const [path, preview] of cssSourcePreviews) {
         const style = localCssFor(path);
-        if (preview.before) {
-          if (style) style.textContent = preview.before;
+        if (preview.beforeStyle) {
+          if (style) style.textContent = preview.beforeStyle;
         } else style?.remove();
+        if (preview.beforeSource === cssSourceCache.get(path))
+          cssEditorSourceCache.delete(path);
+        else cssEditorSourceCache.set(path, preview.beforeSource);
       }
       history.splice(0);
       basePatches.splice(0);
       stylePreviews.clear();
       cssSourcePreviews.clear();
+      purgeScopedCssOverrides();
       selected = null;
       selectedElements.clear();
       clearHighlights();
@@ -2871,29 +3173,132 @@ function EditableBoundaryValue({
 function EditableDimensions({
   width,
   height,
+  authoredSize,
   onCommit,
+  onCssCommit,
 }: {
   width: number;
   height: number;
+  authoredSize: RemoteElement["authoredSize"];
   onCommit: (property: string, value: number) => void;
+  onCssCommit: (property: "width" | "height", value: string) => void;
 }) {
   return (
-    <span className="edit-beta-dimension-badge">
-      <EditableBoundaryValue
-        value={width}
-        className="dimension-value"
-        property="width"
-        onCommit={onCommit}
+    <div className="edit-beta-dimension-stack">
+      <span
+        className="edit-beta-dimension-badge"
+        title="Rendered border-box geometry"
+      >
+        <span className="edit-beta-dimension-kind">Rendered</span>
+        <EditableBoundaryValue
+          value={width}
+          className="dimension-value"
+          property="width"
+          onCommit={onCommit}
+        />
+        <b>×</b>
+        <EditableBoundaryValue
+          value={height}
+          className="dimension-value"
+          property="height"
+          onCommit={onCommit}
+        />
+        <em>px</em>
+      </span>
+      <span className="edit-beta-css-dimension-badge">
+        <span className="edit-beta-css-dimension-kind" title="Authored CSS rule">
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5.5 2.5 2.5 8l3 5.5M10.5 2.5l3 5.5-3 5.5" />
+          </svg>
+          CSS
+        </span>
+        <EditableCssDimension
+          property="width"
+          dimension={authoredSize.width}
+          onCommit={onCssCommit}
+        />
+        <EditableCssDimension
+          property="height"
+          dimension={authoredSize.height}
+          onCommit={onCssCommit}
+        />
+      </span>
+    </div>
+  );
+}
+
+function EditableCssDimension({
+  property,
+  dimension,
+  onCommit,
+}: {
+  property: "width" | "height";
+  dimension: AuthoredCssDimension;
+  onCommit: (property: "width" | "height", value: string) => void;
+}) {
+  const [draft, setDraft] = useState(dimension.value);
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => {
+    setDraft(dimension.value);
+    setInvalid(false);
+  }, [dimension.selector, dimension.source, dimension.value, property]);
+  const commit = () => {
+    const next = draft.trim();
+    if (next && !CSS.supports(property, next)) {
+      setInvalid(true);
+      return false;
+    }
+    setInvalid(false);
+    if (next !== dimension.value) onCommit(property, next);
+    return true;
+  };
+  const sourceLabel =
+    dimension.source === "inline"
+      ? "element.style"
+      : dimension.source === "implicit"
+        ? "browser default"
+        : dimension.selector;
+  return (
+    <label
+      className={`edit-beta-css-dimension-field source-${dimension.source}${invalid ? " invalid" : ""}`}
+      title={`${property}: ${dimension.value}; · ${sourceLabel}. Clear the value to restore the underlying rule.`}
+    >
+      <span>{property}</span>
+      <input
+        value={draft}
+        style={{ width: `${Math.max(5, Math.min(16, draft.length + 1))}ch` }}
+        spellCheck={false}
+        aria-label={`Edit authored CSS ${property}`}
+        aria-invalid={invalid}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          event.currentTarget.select();
+        }}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          if (invalid) setInvalid(false);
+        }}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter" && commit()) event.currentTarget.blur();
+          if (event.key === "Escape") {
+            setDraft(dimension.value);
+            setInvalid(false);
+            event.currentTarget.blur();
+          }
+        }}
       />
-      <b>×</b>
-      <EditableBoundaryValue
-        value={height}
-        className="dimension-value"
-        property="height"
-        onCommit={onCommit}
-      />
-      <em>px</em>
-    </span>
+    </label>
   );
 }
 
@@ -2923,6 +3328,7 @@ function SelectionOverlay({
   fontFamilies,
   onResize,
   onBoxChange,
+  onCssDimensionChange,
   onTextStyle,
   onReorder,
   onAction,
@@ -2937,6 +3343,10 @@ function SelectionOverlay({
     isFinal: boolean,
   ) => void;
   onBoxChange: (property: string, value: number) => void;
+  onCssDimensionChange: (
+    property: "width" | "height",
+    value: string,
+  ) => void;
   onTextStyle: (values: Record<string, string>, isFinal?: boolean) => void;
   onReorder: (targetPath: string, placement: "before" | "after") => void;
   onAction: (action: "parent" | "up" | "down" | "duplicate" | "delete") => void;
@@ -3389,7 +3799,20 @@ function SelectionOverlay({
           <EditableDimensions
             width={dragRect.width}
             height={dragRect.height}
+            authoredSize={selected.authoredSize || {
+              width: {
+                value: "auto",
+                source: "implicit",
+                selector: "browser default",
+              },
+              height: {
+                value: "auto",
+                source: "implicit",
+                selector: "browser default",
+              },
+            }}
             onCommit={onBoxChange}
+            onCssCommit={onCssDimensionChange}
           />
         )}
         {boundaries.enabled && boundaries.showMargins && (
@@ -3790,6 +4213,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const thumbnailCaptureStartedRef = useRef(false);
     const cssEditingPathRef = useRef("");
     const cssDraftRef = useRef("");
+    const cssEditSequenceRef = useRef(0);
+    const cssEditSessionRef = useRef<{ id: number; path: string } | null>(null);
+    const cssOperationChainRef = useRef<Promise<void>>(Promise.resolve());
     const spacePressedRef = useRef(false);
     const patchesRef = useRef<any[]>([]);
     const patchStorageKeyRef = useRef("");
@@ -3808,6 +4234,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       zoomScale: Math.max(0.25, zoom / 100),
       accentColor,
     });
+    const bridgeStateEpochRef = useRef(0);
     const selectedStateKeyRef = useRef("");
     const historyStateKeyRef = useRef("");
     const [ready, setReady] = useState(false);
@@ -3981,7 +4408,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
     const viewportGeometry = canvasViewportGeometry(width, height, zoom);
     const scale = viewportGeometry.scale;
-    const comparisonVisible = !!overlayImage && !!overlayVisible;
+    const comparisonImage = overlayImage || figmaImage || snapshotImage || null;
+    const comparisonVisible = !!comparisonImage && !!overlayVisible;
     const sideBySide = !!overlayVisible && overlayMode === "side-by-side";
     const figmaSideVisible =
       sideBySide && figmaPanelVisible && !!(figmaUrl || figmaImage);
@@ -4671,8 +5099,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     }, [constrainPan]);
 
     const execute = useCallback(async (expression: string) => {
-      const view = webviewRef.current || Object.values(webviewsMapRef.current)[0];
-      if (!view || typeof view.executeJavaScript !== "function") return null;
+      const view = [
+        webviewRef.current,
+        ...Object.values(webviewsMapRef.current),
+      ].find(isCallableWebview);
+      if (!view) return null;
       try {
         return await view.executeJavaScript(expression, true);
       } catch {
@@ -4681,11 +5112,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     }, []);
 
     const executeActive = useCallback(async (expression: string) => {
-      const view =
-        webviewsMapRef.current[activeViewportId] ||
-        webviewRef.current ||
-        Object.values(webviewsMapRef.current)[0];
-      if (!view || typeof view.executeJavaScript !== "function") return null;
+      const view = [
+        webviewsMapRef.current[activeViewportId],
+        webviewRef.current,
+        ...Object.values(webviewsMapRef.current),
+      ].find(isCallableWebview);
+      if (!view) return null;
       try {
         return await view.executeJavaScript(expression, true);
       } catch {
@@ -4694,7 +5126,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     }, [activeViewportId]);
 
     const executeAll = useCallback(async (expression: string) => {
-      const views = Object.values(webviewsMapRef.current).filter(Boolean);
+      const views = Object.values(webviewsMapRef.current).filter(isCallableWebview);
       if (views.length === 0) return execute(expression);
       const results = await Promise.all(
         views.map(async (view) => {
@@ -4730,7 +5162,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       if (
         !onThumbnailCaptured ||
         thumbnailCaptureStartedRef.current ||
-        !view ||
+        !isCallableWebview(view) ||
         typeof view.capturePage !== "function"
       )
         return;
@@ -4851,6 +5283,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         let lastZoomSequence = 0;
 
         const onLoad = async () => {
+          if (!isCallableWebview(view)) return;
           setReady(false);
           try {
             // Canvas zoom belongs to the host transform. Keep the guest at 1x
@@ -5027,10 +5460,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       if (!ready) return;
       const timer = window.setInterval(async () => {
+        const epoch = bridgeStateEpochRef.current;
         const state = (await executeActive(
           "window.__fullForceEditBeta?.getState() || null",
         )) as BridgeState | null;
-        if (!state) return;
+        if (!state || epoch !== bridgeStateEpochRef.current) return;
         const selectedKey = JSON.stringify(state.selected);
         if (selectedKey !== selectedStateKeyRef.current) {
           selectedStateKeyRef.current = selectedKey;
@@ -5188,6 +5622,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           window.clearTimeout(cssPreviewTimerRef.current);
         if (cssCommitTimerRef.current != null)
           window.clearTimeout(cssCommitTimerRef.current);
+        cssEditSessionRef.current = null;
       },
       [],
     );
@@ -5264,41 +5699,113 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       if (!ready) return;
       Object.entries(webviewsMapRef.current).forEach(([viewportId, view]) => {
-        if (!view || typeof view.executeJavaScript !== "function") return;
+        if (!isCallableWebview(view)) return;
         const enabled =
           viewportId === activeViewportId && layoutOverlayEnabled;
-        void view
-          .executeJavaScript(
+        try {
+          const pending = view.executeJavaScript(
             `window.__fullForceEditBeta?.setLayoutOverlay(${JSON.stringify(enabled)})`,
             true,
-          )
-          .catch(() => undefined);
+          );
+          if (pending && typeof pending.catch === "function")
+            void pending.catch(() => undefined);
+        } catch {}
       });
     }, [activeViewportId, layoutOverlayEnabled, ready]);
+    const enqueueCssOperation = (operation: () => Promise<void>) => {
+      const queued = cssOperationChainRef.current.then(operation, operation);
+      cssOperationChainRef.current = queued.catch(() => undefined);
+      return queued;
+    };
     const updateCssDraftLive = (value: string) => {
       setCssDraft(value);
       const path = selected?.path;
       if (!path) return;
       cssDraftRef.current = value;
       cssEditingPathRef.current = path;
+      let session = cssEditSessionRef.current;
+      if (!session || session.path !== path) {
+        session = { id: ++cssEditSequenceRef.current, path };
+        cssEditSessionRef.current = session;
+      }
+      const sessionId = session.id;
       if (cssPreviewTimerRef.current != null)
         window.clearTimeout(cssPreviewTimerRef.current);
       if (cssCommitTimerRef.current != null)
         window.clearTimeout(cssCommitTimerRef.current);
       cssPreviewTimerRef.current = window.setTimeout(() => {
         cssPreviewTimerRef.current = null;
-        void call("previewCssSource", value, path);
+        void enqueueCssOperation(async () => {
+          const activeSession = cssEditSessionRef.current;
+          if (
+            activeSession?.id !== sessionId ||
+            activeSession.path !== path ||
+            cssDraftRef.current !== value
+          )
+            return;
+          await call("previewCssSource", value, path, sessionId);
+        });
       }, 35);
       cssCommitTimerRef.current = window.setTimeout(() => {
         cssCommitTimerRef.current = null;
-        void call("setCssSource", value, path).finally(() => {
+        void enqueueCssOperation(async () => {
+          const activeSession = cssEditSessionRef.current;
           if (
+            activeSession?.id !== sessionId ||
+            activeSession.path !== path ||
+            cssDraftRef.current !== value
+          )
+            return;
+          await call("setCssSource", value, path, sessionId);
+          if (
+            cssEditSessionRef.current?.id === sessionId &&
             cssEditingPathRef.current === path &&
             cssDraftRef.current === value
-          )
+          ) {
             cssEditingPathRef.current = "";
+            cssEditSessionRef.current = null;
+          }
         });
       }, 650);
+    };
+    const clearPendingCssTimers = () => {
+      if (cssPreviewTimerRef.current != null) {
+        window.clearTimeout(cssPreviewTimerRef.current);
+        cssPreviewTimerRef.current = null;
+      }
+      if (cssCommitTimerRef.current != null) {
+        window.clearTimeout(cssCommitTimerRef.current);
+        cssCommitTimerRef.current = null;
+      }
+    };
+    const flushPendingCssEdit = async () => {
+      const session = cssEditSessionRef.current;
+      if (!session) {
+        await cssOperationChainRef.current.catch(() => undefined);
+        return;
+      }
+      const value = cssDraftRef.current;
+      clearPendingCssTimers();
+      await enqueueCssOperation(async () => {
+        await call("previewCssSource", value, session.path, session.id);
+        await call("setCssSource", value, session.path, session.id);
+      }).catch(() => undefined);
+      if (cssEditSessionRef.current?.id === session.id) {
+        cssEditSessionRef.current = null;
+        cssEditingPathRef.current = "";
+      }
+    };
+    const undoLocalEdit = async () => {
+      bridgeStateEpochRef.current++;
+      await flushPendingCssEdit();
+      await call("undo");
+      bridgeStateEpochRef.current++;
+    };
+    const redoLocalEdit = async () => {
+      bridgeStateEpochRef.current++;
+      await cssOperationChainRef.current.catch(() => undefined);
+      await call("redo");
+      bridgeStateEpochRef.current++;
     };
     const flushResizePreview = () => {
       resizePreviewTimerRef.current = null;
@@ -5355,7 +5862,22 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       );
     };
     const revertAllLocalEdits = useCallback(async () => {
-      await execute("window.__fullForceEditBeta?.revertAll()");
+      bridgeStateEpochRef.current++;
+      if (cssPreviewTimerRef.current != null) {
+        window.clearTimeout(cssPreviewTimerRef.current);
+        cssPreviewTimerRef.current = null;
+      }
+      if (cssCommitTimerRef.current != null) {
+        window.clearTimeout(cssCommitTimerRef.current);
+        cssCommitTimerRef.current = null;
+      }
+      // Invalidate queued previews before waiting for an operation that may
+      // already be inside a guest. Revert runs after it and therefore wins.
+      cssEditSessionRef.current = null;
+      cssEditingPathRef.current = "";
+      cssEditSequenceRef.current++;
+      await cssOperationChainRef.current.catch(() => undefined);
+      await executeAll("window.__fullForceEditBeta?.revertAll()");
       patchesRef.current = [];
       try {
         sessionStorage.removeItem(patchStorageKeyRef.current);
@@ -5366,8 +5888,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       setHistory([]);
       setHistoryIndex(-1);
       setStyleDrafts({});
+      bridgeStateEpochRef.current++;
       void refreshLayers();
-    }, [execute, refreshLayers]);
+    }, [executeAll, refreshLayers]);
 
     useEffect(() => {
       if (!ready) return;
@@ -5393,11 +5916,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         if (key === "z" && !event.shiftKey) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          void call("undo");
+          void undoLocalEdit();
         } else if (key === "y" || (key === "z" && event.shiftKey)) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          void call("redo");
+          void redoLocalEdit();
         }
       };
       window.addEventListener("keydown", onKeyDown, true);
@@ -5552,18 +6075,14 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           }
         },
         scrollBy: (deltaY: number) => {
-          const view = webviewRef.current as any;
-          if (view && typeof view.executeJavaScript === "function") {
-            view.executeJavaScript(`window.scrollBy({ top: ${deltaY}, behavior: "instant" })`);
-          }
+          void executeActive(
+            `window.scrollBy({ top: ${deltaY}, behavior: "instant" })`,
+          );
         },
         scrollTo: (top: number) => {
-          const view = webviewRef.current as any;
-          if (view && typeof view.executeJavaScript === "function") {
-            view.executeJavaScript(
-              `window.scrollTo({ top: ${Math.max(0, Number(top) || 0)}, behavior: "smooth" })`,
-            );
-          }
+          void executeActive(
+            `window.scrollTo({ top: ${Math.max(0, Number(top) || 0)}, behavior: "smooth" })`,
+          );
         },
         getViewportGeometry: () => {
           const viewport = activeViewportRef.current;
@@ -5593,7 +6112,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         },
         getPatches: async () => patchesRef.current,
       }),
-      [deselect, execute, hardReload, height, refreshLayers, width],
+      [deselect, execute, executeActive, hardReload, height, refreshLayers, width],
     );
     const navigate = () => {
       let next = url.trim();
@@ -6083,8 +6602,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           <div className="edit-beta-nav-actions">
             <button
               className="edit-beta-nav-icon"
-              disabled={historyIndex < 0}
-              onClick={() => void call("undo")}
+              disabled={historyIndex < 0 && !cssEditSessionRef.current}
+              onClick={() => void undoLocalEdit()}
               title="Undo (Ctrl+Z)"
               aria-label="Undo"
             >
@@ -6096,8 +6615,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             </button>
             <button
               className="edit-beta-nav-icon"
-              disabled={historyIndex + 1 >= history.length}
-              onClick={() => void call("redo")}
+              disabled={
+                !!cssEditSessionRef.current ||
+                historyIndex + 1 >= history.length
+              }
+              onClick={() => void redoLocalEdit()}
               title="Redo (Ctrl+Y)"
               aria-label="Redo"
             >
@@ -6110,7 +6632,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             <span className="edit-beta-nav-divider" />
             <button
               className="edit-beta-nav-icon danger"
-              disabled={historyIndex < 0}
+              disabled={historyIndex < 0 && !cssEditSessionRef.current}
               onClick={() => void revertAllLocalEdits()}
               title="Revert all local changes"
               aria-label="Revert all local changes"
@@ -6611,24 +7133,26 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                       </button>
                     </span>
                   </div>
-                  {figmaUrl && (figmaViewMode === "live" || !figmaImage) ? (
-                      <webview
-                        ref={figmaWebviewRef}
-                        src={figmaUrl}
-                        partition="persist:figma"
-                        allowpopups="true"
-                      useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-                    />
-                  ) : figmaImage ? (
-                    <img
-                      src={figmaImage}
-                      alt="Figma PNG reference"
-                      draggable={false}
-                      style={{
-                        transform: `translateY(-${pageScrollY * scale}px)`,
-                      }}
-                    />
-                  ) : null}
+                  <div className="edit-beta-figma-viewport">
+                    {figmaUrl && (figmaViewMode === "live" || !figmaImage) ? (
+                        <webview
+                          ref={figmaWebviewRef}
+                          src={figmaUrl}
+                          partition="persist:figma"
+                          allowpopups="true"
+                          useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                        />
+                    ) : figmaImage ? (
+                      <img
+                        src={figmaImage}
+                        alt="Figma PNG reference"
+                        draggable={false}
+                        style={{
+                          transform: `translateY(-${pageScrollY * scale}px)`,
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 </div>
               )}
 
@@ -6879,6 +7403,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                       webviewRef.current = el;
                                     }
                                   } else {
+                                    const detached = webviewsMapRef.current[frame.id];
+                                    if (webviewRef.current === detached)
+                                      webviewRef.current = null;
                                     delete webviewsMapRef.current[frame.id];
                                   }
                                 }}
@@ -6904,6 +7431,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                 onResize={handleElementDragStyle}
                                 onBoxChange={(property, value) =>
                                   handleElementDragStyle({ [property]: `${value}px` }, true)
+                                }
+                                onCssDimensionChange={(property, value) =>
+                                  void applyLayoutStyles({ [property]: value }, true)
                                 }
                                 onTextStyle={(values, isFinal = true) =>
                                   handleElementDragStyle(values, isFinal)
@@ -6938,14 +7468,17 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                 style={{
                                   width: fScaledWidth,
                                   height: fScaledHeight,
-                                  opacity: overlayOpacity / 100,
+                                  opacity:
+                                    overlayMode === "diff"
+                                      ? 1
+                                      : overlayOpacity / 100,
                                   mixBlendMode:
                                     overlayMode === "diff" ? "difference" : "normal",
                                 }}
                               >
                                 <img
                                   className="edit-beta-overlay"
-                                  src={overlayImage!}
+                                  src={comparisonImage!}
                                   alt={overlayLabel || "Design comparison"}
                                   style={{
                                     width: fScaledWidth,

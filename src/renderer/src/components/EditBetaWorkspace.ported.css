@@ -478,10 +478,48 @@ body.is-viewport-resizing * {
 .edit-beta-anchor.sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .edit-beta-anchor.w { left: -5px; top: calc(50% - 4px); cursor: ew-resize; }
 
-.edit-beta-dimension-badge {
+.edit-beta-dimension-stack {
   position: absolute;
   right: 0;
-  bottom: -25px;
+  top: calc(100% + 4px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  pointer-events: auto;
+}
+
+.edit-beta-figma-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #1e1e1e;
+}
+
+.edit-beta-figma-viewport > webview {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #1e1e1e;
+}
+
+.edit-beta-figma-viewport > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-width: none;
+  object-fit: contain;
+  object-position: top left;
+  transform-origin: top left;
+  user-select: none;
+  pointer-events: none;
+}
+
+.edit-beta-dimension-badge {
   padding: 4px 7px;
   border-radius: 4px;
   border: 1px solid #ec4899;
@@ -493,6 +531,15 @@ body.is-viewport-resizing * {
   align-items: center;
   gap: 3px;
   pointer-events: auto;
+}
+
+.edit-beta-dimension-kind {
+  margin-right: 2px;
+  color: #f9a8d4;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .035em;
+  text-transform: uppercase;
 }
 
 .edit-beta-dimension-badge b,
@@ -895,6 +942,93 @@ body.is-viewport-resizing * {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+}
+
+.edit-beta-css-dimension-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 3px 5px;
+  border: 1px solid rgba(167, 139, 250, .72);
+  border-radius: 4px;
+  background: rgba(30, 20, 55, .96);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, .3);
+  color: #ede9fe;
+  white-space: nowrap;
+  font: 600 9px/1.2 ui-monospace, monospace;
+}
+
+.edit-beta-css-dimension-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 3px 0 1px;
+  color: #c4b5fd;
+  font-size: 8px;
+  letter-spacing: .055em;
+}
+
+.edit-beta-css-dimension-kind svg {
+  width: 11px;
+  height: 11px;
+}
+
+.edit-beta-css-dimension-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding-left: 6px;
+  border-left: 1px solid rgba(196, 181, 253, .2);
+}
+
+.edit-beta-css-dimension-field > span {
+  color: #a78bfa;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.edit-beta-css-dimension-field > input {
+  min-width: 42px;
+  max-width: 112px;
+  height: 19px;
+  padding: 1px 4px;
+  border: 1px solid rgba(196, 181, 253, .28);
+  border-radius: 3px;
+  outline: 0;
+  background: rgba(15, 10, 28, .9);
+  color: #f5f3ff;
+  font: 700 9px/1 ui-monospace, monospace;
+  text-align: center;
+}
+
+.edit-beta-css-dimension-field.source-inline::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 2px;
+  height: 10px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: #a78bfa;
+}
+
+.edit-beta-css-dimension-field > input:hover {
+  border-color: rgba(221, 214, 254, .65);
+}
+
+.edit-beta-css-dimension-field > input:focus {
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, .22);
+}
+
+.edit-beta-css-dimension-field.invalid > input {
+  border-color: #fb7185;
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, .2);
+  color: #fecdd3;
 }
 
 .edit-beta-selector-row {

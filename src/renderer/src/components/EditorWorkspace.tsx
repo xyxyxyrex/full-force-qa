@@ -9061,6 +9061,7 @@ export default function EditorWorkspace({
                 onCanvasZoom={handleWebviewCanvasZoom}
                 onEyedropperColorChange={handleEyedropperColorChange}
                 accentColor={themeAccentColor}
+                overlayImage={overlayImage}
                 overlayVisible={overlayVisible}
                 overlayOpacity={overlayOpacity}
                 overlayMode={overlayMode}
