@@ -33,7 +33,7 @@ import mondayIcon from "../assets/monday-icon-svgrepo-com.svg";
 import { fetchMondayTicketsApi, type MondayTicket } from "../utils/mondayApi";
 import { DEFAULT_HOTKEYS, readThemeAccentColor } from "../theme/themeSystem";
 import { nextCanvasZoomFromWheel } from "../utils/canvasZoom";
-import { isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
+import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { findHotkeyCommand, isEditableHotkeyTarget, matchesHotkey, normalizeHotkey } from "../utils/hotkeys";
 import {
   annotationSequencePosition,
@@ -787,6 +787,7 @@ export default function EditorWorkspace({
   const editBetaRef = useRef<EditBetaWorkspaceHandle>(null);
   const [devtoolsDropdownOpen, setDevtoolsDropdownOpen] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [viewportIslandPinned, setViewportIslandPinned] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [frameRect, setFrameRect] = useState<{
     top: number;
@@ -3341,9 +3342,7 @@ export default function EditorWorkspace({
 
     // Middle-mouse & Space+click pan inside iframe — delegates to shared pan session
     const handleIframePanDown = (e: MouseEvent) => {
-      const isMiddle = e.button === 1;
-      const isSpaceLeft = e.button === 0 && isSpacePressedRef.current;
-      if (!isMiddle && !isSpaceLeft) return;
+      if (!isCanvasPanGesture(e.button, isSpacePressedRef.current)) return;
       e.preventDefault();
       e.stopPropagation();
       startPanSessionRef.current(e);
@@ -4443,8 +4442,7 @@ export default function EditorWorkspace({
     const onMouseDown = (e: MouseEvent) => {
       const isMiddleMouse = e.button === 1;
       const isSpaceLeftClick = e.button === 0 && isSpacePressedRef.current;
-
-      if (!isMiddleMouse && !isSpaceLeftClick) return;
+      if (!isCanvasPanGesture(e.button, isSpacePressedRef.current)) return;
 
       // Edit owns one pan transform for both its host canvas and its
       // out-of-process webview. Let that workspace handle the gesture instead
@@ -6593,7 +6591,7 @@ export default function EditorWorkspace({
   }, [selectedColors]);
 
   return (
-    <div className="editor-workspace">
+    <div className={`editor-workspace workspace-${workspaceTab}`}>
       {/* ── Top toolbar ──────────────────────────── */}
       <div className={`editor-toolbar ${isLiveWorkspace ? "is-live" : ""}`}>
         <div className="toolbar-left">
@@ -6658,8 +6656,10 @@ export default function EditorWorkspace({
             <button
               className={`workspace-tab-btn ${workspaceTab === "live" ? "active" : ""}`}
               onClick={() => {
+                // Live is an isolated browser webview and already behaves as an
+                // interactive page. Do not mutate the shared Edit/Audit tool
+                // mode here; doing so disabled their pan bridge after returning.
                 setWorkspaceTab("live");
-                toggleInteractionMode("interact");
               }}
               title="Live Mode: Pure website preview & native interaction"
             >
@@ -6877,25 +6877,55 @@ export default function EditorWorkspace({
                 </div>
               </div>
 
-              {/* Reveal Animations & Hidden Headings Toggle */}
-              <button
-                className={`device-btn live-excluded ${revealAnimations ? "active" : ""}`}
-                onClick={toggleRevealAnimations}
-                title="Reveal On-Scroll Animations & Hidden Headings"
-                style={{ marginRight: 4 }}
+              <div
+                className={`viewport-zoom-island ${viewportIslandPinned ? "is-pinned" : ""}`}
+                role="group"
+                aria-label="Viewport and zoom controls"
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
+                <button
+                  type="button"
+                  className="viewport-island-indicator"
+                  onClick={(event) => {
+                    setViewportIslandPinned((pinned) => !pinned);
+                    if (viewportIslandPinned && event.detail > 0) event.currentTarget.blur();
+                  }}
+                  aria-label={viewportIslandPinned ? "Enable viewport controls auto-hide" : "Keep viewport controls visible"}
+                  aria-pressed={viewportIslandPinned}
+                  title={viewportIslandPinned ? "Unpin viewport controls" : "Pin viewport controls"}
                 >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
+                  <svg
+                    width="12"
+                    height="8"
+                    viewBox="0 0 12 8"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m2 2 4 4 4-4" />
+                  </svg>
+                </button>
+                <div className="viewport-zoom-island-content">
+                {/* Reveal Animations & Hidden Headings Toggle */}
+                <button
+                  className={`device-btn live-excluded ${revealAnimations ? "active" : ""}`}
+                  onClick={toggleRevealAnimations}
+                  title="Reveal On-Scroll Animations & Hidden Headings"
+                  style={{ marginRight: 4 }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
 
               {/* Free-transform toggle */}
               <button
@@ -7274,8 +7304,8 @@ export default function EditorWorkspace({
                   </svg>
                 </button>
               </div>
-
-              <div className="toolbar-divider live-excluded" />
+              </div>
+              </div>
 
               {/* Ruler & guides dropdown */}
               <div className="ruler-dropdown-wrap live-excluded" ref={rulerDropdownRef}>

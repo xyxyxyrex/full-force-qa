@@ -72,6 +72,7 @@ export interface Project {
 export interface ProjectFolder {
   id: string
   name: string
+  parentId?: string
   createdAt: number
 }
 

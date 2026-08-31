@@ -304,6 +304,141 @@
   overflow: visible;
 }
 
+/* Viewport controls live close to the canvas they affect. Edit has a browser
+   bar below the main toolbar, so its island clears that row. */
+.viewport-zoom-island {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 12;
+  width: max-content;
+  max-width: calc(100vw - 28px);
+  padding-top: 12px;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.viewport-zoom-island-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--header-bg) 94%, transparent);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.28),
+    inset 0 1px rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: translateY(-5px);
+  box-sizing: border-box;
+  will-change: opacity, transform;
+  transition:
+    opacity 180ms ease 3s,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1) 3s;
+}
+
+.editor-workspace.workspace-editBeta .viewport-zoom-island {
+  top: calc(100% + 49px);
+}
+
+.viewport-island-indicator {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 0 0 7px 7px;
+  background: color-mix(in srgb, var(--header-bg) 88%, transparent);
+  color: var(--text-muted);
+  opacity: 0.72;
+  padding: 0;
+  appearance: none;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color 160ms ease 3s,
+    opacity 160ms ease 3s,
+    border-color 160ms ease 3s;
+}
+
+.viewport-island-indicator svg {
+  transition: transform 180ms ease 3s;
+}
+
+.viewport-island-indicator:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.editor-workspace:not(.workspace-live) .viewport-zoom-island:hover .viewport-zoom-island-content,
+.editor-workspace:not(.workspace-live) .viewport-zoom-island:focus-within .viewport-zoom-island-content,
+.editor-workspace:not(.workspace-live) .viewport-zoom-island.is-pinned .viewport-zoom-island-content {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.editor-workspace:not(.workspace-live) .viewport-zoom-island:hover .viewport-island-indicator,
+.editor-workspace:not(.workspace-live) .viewport-zoom-island:focus-within .viewport-island-indicator,
+.editor-workspace:not(.workspace-live) .viewport-zoom-island.is-pinned .viewport-island-indicator {
+  border-color: color-mix(in srgb, var(--accent-color) 52%, var(--border-color));
+  color: var(--accent-color);
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+.editor-workspace:not(.workspace-live) .viewport-zoom-island:hover .viewport-island-indicator svg,
+.editor-workspace:not(.workspace-live) .viewport-zoom-island:focus-within .viewport-island-indicator svg,
+.editor-workspace:not(.workspace-live) .viewport-zoom-island.is-pinned .viewport-island-indicator svg {
+  transform: rotate(180deg);
+  transition-delay: 0s;
+}
+
+/* Live remains browser-first: its viewport controls retain their original
+   compact position in the main toolbar instead of floating over the page. */
+.editor-workspace.workspace-live .viewport-zoom-island {
+  position: static;
+  z-index: auto;
+  width: auto;
+  max-width: none;
+  padding: 0;
+  transform: none;
+}
+
+.editor-workspace.workspace-live .viewport-island-indicator {
+  display: none;
+}
+
+.editor-workspace.workspace-live .viewport-zoom-island-content {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
+.viewport-zoom-island-content > .device-btn:first-child {
+  margin-right: 0 !important;
+}
+
 .toolbar-divider {
   width: 1px;
   height: 18px;
@@ -495,6 +630,24 @@
   .device-btn {
     width: 26px;
     height: 26px;
+  }
+
+  .viewport-zoom-island-content {
+    gap: 2px;
+    padding-inline: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport-zoom-island-content {
+    transform: none;
+    transition: opacity 1ms linear 3s;
+  }
+
+  .editor-workspace:not(.workspace-live) .viewport-zoom-island:hover .viewport-zoom-island-content,
+  .editor-workspace:not(.workspace-live) .viewport-zoom-island:focus-within .viewport-zoom-island-content,
+  .editor-workspace:not(.workspace-live) .viewport-zoom-island.is-pinned .viewport-zoom-island-content {
+    transform: none;
   }
 }
 

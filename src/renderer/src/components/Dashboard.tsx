@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, useMemo } from 'react'
-import type { Project } from '../../../shared/types'
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
+import type { Project, ProjectFolder } from '../../../shared/types'
 import mondayLogo from '../assets/monday-icon-svgrepo-com.svg'
 import figmaIcon from '../assets/figma.png'
 import sheetsIcon from '../assets/sheets.png'
@@ -17,12 +17,19 @@ import {
 } from '../utils/mondayApi'
 import { supabaseAnonKey, supabaseConfigurationError, supabaseUrl } from '../../../shared/supabaseClient'
 import type { FigmaConnectionStatus } from '../../../shared/types'
+import {
+  canMoveFolder,
+  countDirectFolderItems,
+  getChildFolders,
+  getFolderBreadcrumbs,
+  getFolderDisplayPath,
+} from '../utils/projectFolders'
 import './Dashboard.css'
 
 export type { MondayTicket, MondayLink }
 
 interface Props {
-  onNewProject: () => void
+  onNewProject: (folderId?: string) => void
   onOpenProject: (project: Project, forceForm?: boolean) => void
   onOpenSettings?: () => void
 }
@@ -38,9 +45,11 @@ interface ContextMenuState {
   isActive: boolean
 }
 
-interface ProjectFolder { id: string; name: string; createdAt: number }
 interface ProjectContextMenuState { x: number; y: number; project: Project }
-interface FolderEditorState { mode: 'create' | 'rename'; name: string; folderId?: string; projectId?: string }
+interface FolderContextMenuState { x: number; y: number; folder: ProjectFolder }
+interface DashboardContextMenuState { x: number; y: number }
+interface FolderEditorState { mode: 'create' | 'rename'; name: string; folderId?: string; parentId?: string; projectId?: string }
+interface SelectionBox { left: number; top: number; width: number; height: number }
 
 const GRADIENTS = [
   'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
@@ -51,6 +60,9 @@ const GRADIENTS = [
   'linear-gradient(135deg, #11292b 0%, #1e5254 100%)'
 ]
 
+const projectSelectionKey = (projectId: string) => `project:${projectId}`
+const folderSelectionKey = (folderId: string) => `folder:${folderId}`
+
 function GenericProjectThumbnail({ compact = false }: { compact?: boolean }) {
   return <span className={`generic-project-thumbnail ${compact ? 'compact' : ''}`} aria-hidden="true">
     <svg viewBox="0 0 32 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -59,6 +71,14 @@ function GenericProjectThumbnail({ compact = false }: { compact?: boolean }) {
       <rect x="6" y="11" width="8" height="6.5" rx="1" /><path d="M17 11h8M17 14h6M17 17h7" />
     </svg>
   </span>
+}
+
+function FolderArtwork() {
+  return <svg className="dashboard-folder-artwork" viewBox="0 0 112 88" aria-hidden="true">
+    <path d="M7 17a8 8 0 0 1 8-8h27l10 11h45a8 8 0 0 1 8 8v48a8 8 0 0 1-8 8H15a8 8 0 0 1-8-8z" fill="currentColor" opacity=".58" />
+    <path d="M7 29h98v47a8 8 0 0 1-8 8H15a8 8 0 0 1-8-8z" fill="currentColor" />
+    <path d="M15 32h82a5 5 0 0 1 5 5v3H10v-3a5 5 0 0 1 5-5z" fill="var(--bg-card)" opacity=".72" />
+  </svg>
 }
 
 function getGradientForId(id: string) {
@@ -119,11 +139,20 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [folders, setFolders] = useState<ProjectFolder[]>(() => {
     try { return JSON.parse(localStorage.getItem('qa_project_folders') || '[]') } catch { return [] }
   })
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(null)
+  const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null)
+  const [dashboardContextMenu, setDashboardContextMenu] = useState<DashboardContextMenuState | null>(null)
   const [folderEditor, setFolderEditor] = useState<FolderEditorState | null>(null)
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
+  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null)
+  const [draggingSelectionKeys, setDraggingSelectionKeys] = useState<string[]>([])
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null)
+  const [selectedBrowserItems, setSelectedBrowserItems] = useState<Set<string>>(new Set())
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null)
+  const browserSurfaceRef = useRef<HTMLDivElement | null>(null)
+  const selectionOriginRef = useRef<{ pointerId: number; clientX: number; clientY: number; additive: boolean } | null>(null)
+  const selectionBaseRef = useRef<Set<string>>(new Set())
 
   // Monday.com state
   const [mondayConnected, setMondayConnected] = useState(false)
@@ -148,7 +177,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [mondayStatusFilter, setMondayStatusFilter] = useState('all')
   const [mondaySort, setMondaySort] = useState<MondaySortOption>('updated-desc')
   const [expandedTicketLinks, setExpandedTicketLinks] = useState<Set<string>>(new Set())
-  const [mondaySectionExpanded, setMondaySectionExpanded] = useState(true)
+  const [mondaySectionExpanded, setMondaySectionExpanded] = useState(false)
   const [collapsedStatuses, setCollapsedStatuses] = useState<Set<string>>(new Set())
   const [figmaStatus, setFigmaStatus] = useState<FigmaConnectionStatus>({ connected: false, apiConfigured: false, browserSession: false })
 
@@ -167,7 +196,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
 
   // Close context menu on outside click
   useEffect(() => {
-    const handleClose = () => { setContextMenu(null); setProjectContextMenu(null) }
+    const handleClose = () => { setContextMenu(null); setProjectContextMenu(null); setFolderContextMenu(null); setDashboardContextMenu(null) }
     window.addEventListener('click', handleClose)
     return () => window.removeEventListener('click', handleClose)
   }, [])
@@ -177,6 +206,10 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     window.dispatchEvent(new CustomEvent('qa_folders_updated', { detail: folders }))
     window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { folders } }))
   }, [folders])
+
+  useEffect(() => {
+    if (currentFolderId && !folders.some((folder) => folder.id === currentFolderId)) setCurrentFolderId(null)
+  }, [currentFolderId, folders])
 
   const reloadProjects = useCallback(() => { void window.electronAPI.getProjects().then(setProjects) }, [])
   const notifyProjectsChanged = () => window.dispatchEvent(new CustomEvent('qa_projects_updated'))
@@ -551,17 +584,99 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     setProjectContextMenu(null)
   }
 
+  const prepareDashboardDrag = (event: React.DragEvent, primaryKey: string) => {
+    const keys = selectedBrowserItems.has(primaryKey) ? [...selectedBrowserItems] : [primaryKey]
+    if (!selectedBrowserItems.has(primaryKey)) setSelectedBrowserItems(new Set(keys))
+    event.dataTransfer.setData('application/x-fullforce-dashboard-selection', JSON.stringify(keys))
+    setDraggingSelectionKeys(keys)
+    return keys
+  }
+
   const beginProjectDrag = (event: React.DragEvent, project: Project) => {
     event.dataTransfer.effectAllowed = 'move'
+    prepareDashboardDrag(event, projectSelectionKey(project.id))
     event.dataTransfer.setData('application/x-fullforce-project', project.id)
     event.dataTransfer.setData('text/plain', project.id)
+    setDraggingFolderId(null)
     setDraggingProjectId(project.id)
   }
 
-  const dropProjectInFolder = async (event: React.DragEvent, folderId?: string) => {
+  const beginFolderDrag = (event: React.DragEvent, folder: ProjectFolder) => {
+    event.dataTransfer.effectAllowed = 'move'
+    prepareDashboardDrag(event, folderSelectionKey(folder.id))
+    event.dataTransfer.setData('application/x-fullforce-folder', folder.id)
+    event.dataTransfer.setData('text/plain', `folder:${folder.id}`)
+    setDraggingProjectId(null)
+    setDraggingFolderId(folder.id)
+  }
+
+  const moveFolderToFolder = (folderId: string, parentId?: string) => {
+    if (!canMoveFolder(folders, folderId, parentId)) return
+    setFolders((current) => current.map((folder) => folder.id === folderId
+      ? { ...folder, parentId: parentId || undefined }
+      : folder))
+    setFolderContextMenu(null)
+  }
+
+  const canDropDraggedItem = (folderId?: string) => {
+    const draggedFolderIds = draggingSelectionKeys
+      .filter((key) => key.startsWith('folder:'))
+      .map((key) => key.slice(7))
+    if (!draggedFolderIds.length && draggingFolderId) draggedFolderIds.push(draggingFolderId)
+    return draggedFolderIds.every((draggedId) => canMoveFolder(folders, draggedId, folderId))
+  }
+
+  const moveBrowserSelectionToFolder = async (keys: string[], folderId?: string) => {
+    const folderIds = keys.filter((key) => key.startsWith('folder:')).map((key) => key.slice(7))
+    if (!folderIds.every((id) => canMoveFolder(folders, id, folderId))) return
+
+    if (folderIds.length) {
+      const movedFolders = new Set(folderIds)
+      setFolders((current) => current.map((folder) => movedFolders.has(folder.id)
+        ? { ...folder, parentId: folderId || undefined }
+        : folder))
+    }
+
+    const projectIds = new Set(keys.filter((key) => key.startsWith('project:')).map((key) => key.slice(8)))
+    if (projectIds.size) {
+      const selectedProjects = activeProjects.filter((project) => projectIds.has(project.id))
+      const updatedProjects = selectedProjects.map((project) => ({ ...project, folderId: folderId || undefined }))
+      await Promise.all(updatedProjects.map((project) => window.electronAPI.saveProject(project)))
+      const updatedById = new Map(updatedProjects.map((project) => [project.id, project]))
+      setProjects((current) => {
+        const next = current.map((project) => updatedById.get(project.id) || project)
+        for (const project of updatedProjects) if (!current.some((item) => item.id === project.id)) next.push(project)
+        return next
+      })
+      notifyProjectsChanged()
+    }
+
+    setSelectedBrowserItems(new Set())
+  }
+
+  const dropDashboardItem = async (event: React.DragEvent, folderId?: string) => {
     event.preventDefault()
-    const projectId = event.dataTransfer.getData('application/x-fullforce-project') || event.dataTransfer.getData('text/plain') || draggingProjectId
-    setDragOverFolderId(null); setDraggingProjectId(null)
+    let selectionKeys: string[] = []
+    try {
+      const rawSelection = event.dataTransfer.getData('application/x-fullforce-dashboard-selection')
+      const parsed = rawSelection ? JSON.parse(rawSelection) : []
+      if (Array.isArray(parsed)) selectionKeys = parsed.filter((key): key is string => typeof key === 'string' && /^(folder|project):/.test(key))
+    } catch {}
+    const plainData = event.dataTransfer.getData('text/plain')
+    const droppedFolderId = event.dataTransfer.getData('application/x-fullforce-folder') || (plainData.startsWith('folder:') ? plainData.slice(7) : '') || draggingFolderId
+    const projectId = event.dataTransfer.getData('application/x-fullforce-project') || (!droppedFolderId ? plainData : '') || draggingProjectId
+    setDragOverFolderId(null)
+    setDraggingProjectId(null)
+    setDraggingFolderId(null)
+    setDraggingSelectionKeys([])
+    if (selectionKeys.length) {
+      await moveBrowserSelectionToFolder(selectionKeys, folderId)
+      return
+    }
+    if (droppedFolderId) {
+      moveFolderToFolder(droppedFolderId, folderId)
+      return
+    }
     if (!projectId) return
     const project = projects.find((item) => item.id === projectId) || activeProjects.find((item) => item.id === projectId)
     if (project) await moveProjectToFolder(project, folderId)
@@ -593,7 +708,12 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     if (folderEditor.mode === 'rename' && folderEditor.folderId) {
       setFolders((current) => current.map((folder) => folder.id === folderEditor.folderId ? { ...folder, name } : folder))
     } else {
-      const folder: ProjectFolder = { id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, createdAt: Date.now() }
+      const folder: ProjectFolder = {
+        id: `folder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        parentId: folderEditor.parentId || undefined,
+        createdAt: Date.now(),
+      }
       setFolders((current) => current.concat(folder))
       if (folderEditor.projectId) {
         const project = projects.find((item) => item.id === folderEditor.projectId) || activeProjects.find((item) => item.id === folderEditor.projectId) || projectContextMenu?.project
@@ -604,13 +724,20 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   }
 
   const deleteFolder = async (folder: ProjectFolder) => {
-    if (!window.confirm(`Delete “${folder.name}”? Projects will be moved back to Active Projects.`)) return
+    const destinationName = folder.parentId
+      ? folders.find((item) => item.id === folder.parentId)?.name || 'the parent folder'
+      : 'Home'
+    if (!window.confirm(`Delete “${folder.name}”? Its projects and subfolders will be moved to ${destinationName}.`)) return
     const affected = projects.filter((project) => project.folderId === folder.id)
-    const updated = affected.map((project) => ({ ...project, folderId: undefined }))
+    const updated = affected.map((project) => ({ ...project, folderId: folder.parentId || undefined }))
     await Promise.all(updated.map((project) => window.electronAPI.saveProject(project)))
     notifyProjectsChanged()
-    setProjects((current) => current.map((project) => project.folderId === folder.id ? { ...project, folderId: undefined } : project))
-    setFolders((current) => current.filter((item) => item.id !== folder.id))
+    setProjects((current) => current.map((project) => project.folderId === folder.id ? { ...project, folderId: folder.parentId || undefined } : project))
+    setFolders((current) => current
+      .filter((item) => item.id !== folder.id)
+      .map((item) => item.parentId === folder.id ? { ...item, parentId: folder.parentId || undefined } : item))
+    if (currentFolderId === folder.id) setCurrentFolderId(folder.parentId || null)
+    setFolderContextMenu(null)
   }
 
   const formatDate = (ts: number) => {
@@ -739,16 +866,185 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     return activeProjects.filter((p) => pinnedProjectIds.includes(p.id) && !p.folderId)
   }, [activeProjects, pinnedProjectIds])
 
-  const unpinnedActiveProjects = useMemo(() => {
-    return activeProjects.filter((p) => !pinnedProjectIds.includes(p.id) && !p.folderId)
-  }, [activeProjects, pinnedProjectIds])
+  const currentFolders = useMemo(
+    () => getChildFolders(folders, currentFolderId),
+    [currentFolderId, folders],
+  )
 
-  const folderGroups = useMemo(() => folders.map((folder) => ({ folder, projects: activeProjects.filter((project) => project.folderId === folder.id) })), [activeProjects, folders])
+  const currentFolderProjects = useMemo(
+    () => activeProjects.filter((project) => (project.folderId || null) === currentFolderId),
+    [activeProjects, currentFolderId],
+  )
+
+  const visibleActiveProjects = useMemo(
+    () => currentFolderId
+      ? currentFolderProjects
+      : currentFolderProjects.filter((project) => !pinnedProjectIds.includes(project.id)),
+    [currentFolderId, currentFolderProjects, pinnedProjectIds],
+  )
+
+  const folderBreadcrumbs = useMemo(
+    () => getFolderBreadcrumbs(folders, currentFolderId),
+    [currentFolderId, folders],
+  )
+
+  const folderMoveOptions = useMemo(
+    () => folders
+      .map((folder) => ({ folder, label: getFolderDisplayPath(folders, folder.id) }))
+      .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: 'base' })),
+    [folders],
+  )
 
   const getProjectTicketId = (project: DisplayProject) =>
     project.mondayTicket?.id ||
     project.mondayTicketId ||
     (project.id.startsWith('monday-') ? project.id.slice('monday-'.length) : '')
+
+  useEffect(() => {
+    setSelectedBrowserItems(new Set())
+    setSelectionBox(null)
+    selectionOriginRef.current = null
+  }, [currentFolderId, searchQuery])
+
+  useEffect(() => {
+    const visibleKeys = new Set([
+      ...currentFolders.map((folder) => folderSelectionKey(folder.id)),
+      ...visibleActiveProjects.map((project) => projectSelectionKey(project.id)),
+    ])
+    setSelectedBrowserItems((current) => {
+      const next = new Set([...current].filter((key) => visibleKeys.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [currentFolders, visibleActiveProjects])
+
+  const handleBrowserItemClick = (event: React.MouseEvent, key: string, openItem: () => void) => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault()
+      event.stopPropagation()
+      setSelectedBrowserItems((current) => {
+        const next = new Set(current)
+        next.has(key) ? next.delete(key) : next.add(key)
+        return next
+      })
+      return
+    }
+    if (selectedBrowserItems.has(key)) {
+      event.preventDefault()
+      event.stopPropagation()
+      if (selectedBrowserItems.size > 1) return
+    }
+    setSelectedBrowserItems(new Set())
+    openItem()
+  }
+
+  const beginMarqueeSelection = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('[data-selection-key], button, a, input, textarea, select, .dashboard-selection-actions')) return
+    const surface = browserSurfaceRef.current
+    if (!surface) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const additive = event.ctrlKey || event.metaKey
+    selectionOriginRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, additive }
+    selectionBaseRef.current = additive ? new Set(selectedBrowserItems) : new Set()
+    if (!additive) setSelectedBrowserItems(new Set())
+    const bounds = surface.getBoundingClientRect()
+    setSelectionBox({ left: event.clientX - bounds.left, top: event.clientY - bounds.top, width: 0, height: 0 })
+  }
+
+  const updateMarqueeSelection = (event: React.PointerEvent<HTMLDivElement>) => {
+    const origin = selectionOriginRef.current
+    const surface = browserSurfaceRef.current
+    if (!origin || !surface || origin.pointerId !== event.pointerId) return
+    const left = Math.min(origin.clientX, event.clientX)
+    const top = Math.min(origin.clientY, event.clientY)
+    const right = Math.max(origin.clientX, event.clientX)
+    const bottom = Math.max(origin.clientY, event.clientY)
+    const bounds = surface.getBoundingClientRect()
+    setSelectionBox({ left: left - bounds.left, top: top - bounds.top, width: right - left, height: bottom - top })
+
+    const next = new Set(selectionBaseRef.current)
+    surface.querySelectorAll<HTMLElement>('[data-selection-key]').forEach((element) => {
+      const itemBounds = element.getBoundingClientRect()
+      const intersects = itemBounds.left < right && itemBounds.right > left && itemBounds.top < bottom && itemBounds.bottom > top
+      if (intersects) next.add(element.dataset.selectionKey || '')
+    })
+    next.delete('')
+    setSelectedBrowserItems(next)
+  }
+
+  const finishMarqueeSelection = (event: React.PointerEvent<HTMLDivElement>) => {
+    const origin = selectionOriginRef.current
+    if (!origin || origin.pointerId !== event.pointerId) return
+    selectionOriginRef.current = null
+    setSelectionBox(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
+  const deleteSelectedBrowserItems = async () => {
+    const selectedFolderIds = new Set([...selectedBrowserItems].filter((key) => key.startsWith('folder:')).map((key) => key.slice(7)))
+    const selectedProjectIds = new Set([...selectedBrowserItems].filter((key) => key.startsWith('project:')).map((key) => key.slice(8)))
+    const selectedProjects = activeProjects.filter((project) => selectedProjectIds.has(project.id))
+    const activeMondayProjects = selectedProjects.filter((project) => {
+      const ticketId = getProjectTicketId(project)
+      return !!ticketId && activeTicketIds.includes(ticketId)
+    })
+    const activeMondayIds = new Set(activeMondayProjects.map((project) => getProjectTicketId(project)).filter(Boolean))
+    const localProjects = selectedProjects.filter((project) => !activeMondayProjects.some((item) => item.id === project.id))
+    const selectedFolders = folders.filter((folder) => selectedFolderIds.has(folder.id))
+    if (!selectedFolders.length && !selectedProjects.length) return
+
+    const warnings = [
+      `Remove ${selectedFolders.length + selectedProjects.length} selected item${selectedFolders.length + selectedProjects.length === 1 ? '' : 's'}?`,
+      activeMondayProjects.length ? `${activeMondayProjects.length} active Monday project${activeMondayProjects.length === 1 ? '' : 's'} will be marked inactive, not permanently deleted.` : '',
+      localProjects.length ? `${localProjects.length} captured project${localProjects.length === 1 ? '' : 's'} will be moved to Trash and can be restored.` : '',
+      selectedFolders.length ? `${selectedFolders.length} folder${selectedFolders.length === 1 ? '' : 's'} will be removed; their contents will move up one level.` : '',
+    ].filter(Boolean)
+    if (!window.confirm(warnings.join('\n\n'))) return
+
+    const folderParents = new Map(selectedFolders.map((folder) => [folder.id, folder.parentId]))
+    const projectUpdates = new Map<string, Project>()
+    for (const project of localProjects) projectUpdates.set(project.id, { ...project, inTrash: true, deletedAt: Date.now() })
+    for (const project of projects) {
+      if (project.folderId && folderParents.has(project.folderId) && !projectUpdates.has(project.id)) {
+        projectUpdates.set(project.id, { ...project, folderId: folderParents.get(project.folderId) || undefined })
+      }
+    }
+    await Promise.all([...projectUpdates.values()].map((project) => window.electronAPI.saveProject(project)))
+    if (projectUpdates.size) {
+      setProjects((current) => current.map((project) => projectUpdates.get(project.id) || project))
+      notifyProjectsChanged()
+    }
+
+    if (selectedFolders.length) {
+      setFolders((current) => current
+        .filter((folder) => !selectedFolderIds.has(folder.id))
+        .map((folder) => folder.parentId && folderParents.has(folder.parentId)
+          ? { ...folder, parentId: folderParents.get(folder.parentId) || undefined }
+          : folder))
+    }
+
+    if (activeMondayIds.size) {
+      setActiveTicketIds((current) => {
+        const next = current.filter((ticketId) => !activeMondayIds.has(ticketId))
+        localStorage.setItem('active_monday_ticket_ids', JSON.stringify(next))
+        window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { activeTicketIds: next } }))
+        queueMicrotask(() => window.dispatchEvent(new CustomEvent('qa_active_ticket_ids_updated', { detail: next })))
+        return next
+      })
+    }
+
+    if (selectedProjectIds.size) {
+      setPinnedProjectIds((current) => {
+        const next = current.filter((projectId) => !selectedProjectIds.has(projectId))
+        localStorage.setItem('pinned_project_ids', JSON.stringify(next))
+        window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { pinnedProjectIds: next } }))
+        return next
+      })
+    }
+    setSelectedBrowserItems(new Set())
+  }
 
   const renderSetInactiveButton = (
     project: DisplayProject,
@@ -793,7 +1089,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
             className={`list-row ${isPinned ? 'is-pinned-row' : ''}`}
             draggable
             onDragStart={(event) => beginProjectDrag(event, project)}
-            onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }}
+            onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
             onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}
             onClick={() => isMonday && !project.adminUrl ? handleLaunchTicket(project.mondayTicket!) : onOpenProject(project)}
           >
@@ -836,8 +1132,22 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     return projects.filter((p) => p.inTrash)
   }, [projects])
 
+  const openDashboardContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.closest('button, a, input, textarea, select, [contenteditable="true"], .project-card, .list-row, .dashboard-folder-tile, .monday-ticket-card, .project-context-menu, .folder-modal')) return
+    event.preventDefault()
+    setContextMenu(null)
+    setProjectContextMenu(null)
+    setFolderContextMenu(null)
+    setSelectedBrowserItems(new Set())
+    setDashboardContextMenu({
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 224)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 250)),
+    })
+  }
+
   return (
-    <div className="dashboard">
+    <div className="dashboard" onContextMenu={openDashboardContextMenu}>
       <div className="dashboard-inner">
         {/* Header */}
         <div className="dashboard-header">
@@ -893,7 +1203,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
               <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
               <span>{figmaStatus.connected ? `Figma: ${figmaStatus.user?.handle || figmaStatus.user?.email || 'Connected'}` : 'Login to Figma'}</span>
             </button>
-            <button className="new-project-btn" onClick={onNewProject}>
+            <button className="new-project-btn" onClick={() => onNewProject(currentFolderId || undefined)}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M8 3v10M3 8h10" />
               </svg>
@@ -927,7 +1237,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           </div>
 
           <div className="controls-right">
-            <button className="dashboard-new-folder-btn" onClick={() => setFolderEditor({ mode: 'create', name: '' })}>
+            <button className="dashboard-new-folder-btn" onClick={() => setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined })}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14h6" /></svg>
               New Folder
             </button>
@@ -977,40 +1287,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           </div>
         </div>
 
-        {/* Project folders */}
-        {!loading && folderGroups.length > 0 && <div className="dashboard-folders">
-          {folderGroups.map(({ folder, projects: folderProjects }) => {
-            const collapsed = collapsedFolders.has(folder.id)
-            return <section className={`dashboard-folder ${dragOverFolderId === folder.id ? 'drag-over' : ''}`} key={folder.id} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId(folder.id) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverFolderId(null) }} onDrop={(event) => void dropProjectInFolder(event, folder.id)}>
-              <div className="dashboard-folder-header">
-                <button className="dashboard-folder-toggle" onClick={() => setCollapsedFolders((current) => { const next = new Set(current); next.has(folder.id) ? next.delete(folder.id) : next.add(folder.id); return next })}>
-                  <span className="dashboard-folder-chevron">{collapsed ? '›' : '⌄'}</span>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
-                  <strong>{folder.name}</strong><small>{folderProjects.length}</small>
-                </button>
-                <div className="dashboard-folder-actions">
-                  <button onClick={() => setFolderEditor({ mode: 'rename', folderId: folder.id, name: folder.name })} title="Rename folder">Rename</button>
-                  <button onClick={() => void deleteFolder(folder)} title="Delete folder">Delete</button>
-                </div>
-              </div>
-              {!collapsed && <div className={`dashboard-folder-projects ${viewMode === 'list' ? 'is-list-view' : ''}`}>
-                {folderProjects.length ? folderProjects.map((project) => <button key={project.id} draggable onDragStart={(event) => beginProjectDrag(event, project)} onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }} className={`dashboard-folder-project ${draggingProjectId === project.id ? 'dragging' : ''}`} onClick={() => onOpenProject(project)} onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}>
-                  <span className="folder-project-preview" style={{ background: project.thumbnailUrl ? 'var(--bg-elevated)' : getGradientForId(project.id) }}>
-                    {project.thumbnailUrl ? <img src={project.thumbnailUrl} alt="" /> : <GenericProjectThumbnail />}
-                  </span>
-                  <span className="folder-project-content">
-                    <b title={project.name}>{project.name}</b>
-                    <small title={project.stagingUrl}>{getDomain(project.stagingUrl)}</small>
-                    <span className="folder-project-meta"><em>{formatDate(project.lastOpenedAt)}</em>{project.mondayTicket?.status && <i>{project.mondayTicket.status}</i>}</span>
-                  </span>
-                </button>) : <div className="dashboard-folder-empty">No projects in this folder. Right-click a project and choose Move.</div>}
-              </div>}
-            </section>
-          })}
-        </div>}
-
         {/* 1. PINNED PROJECTS SECTION (Top priority if any project is pinned) */}
-        {!loading && pinnedProjects.length > 0 && (
+        {!loading && !currentFolderId && pinnedProjects.length > 0 && (
           <div className="dashboard-section pinned-section" style={{ marginBottom: 28 }}>
             <div className="section-label-row">
               <h2 className="section-label" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#38bdf8' }}>
@@ -1034,7 +1312,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                       className={`project-card ${isMonday ? 'has-monday-badge' : ''} is-pinned-card`}
                       draggable
                       onDragStart={(event) => beginProjectDrag(event, project)}
-                      onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }}
+            onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
                       onClick={() => {
                         if (isMonday && !project.adminUrl) {
                           handleLaunchTicket(project.mondayTicket!)
@@ -1108,15 +1386,107 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           </div>
         )}
 
-        {/* 2. ACTIVE PROJECTS SECTION */}
-        <div className={`dashboard-section active-project-dropzone ${dragOverFolderId === '__active__' ? 'drag-over' : ''}`} style={{ marginBottom: 28 }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId('__active__') }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverFolderId(null) }} onDrop={(event) => void dropProjectInFolder(event)}>
-          <div className="section-label-row">
-            <h2 className="section-label">ACTIVE PROJECTS ({unpinnedActiveProjects.length})</h2>
-          </div>
+        {/* 2. FOLDERS, THEN ACTIVE PROJECTS */}
+        <div
+          ref={browserSurfaceRef}
+          className={`dashboard-section dashboard-selection-surface active-project-dropzone ${dragOverFolderId === '__current__' ? 'drag-over' : ''} ${selectionBox ? 'is-selecting' : ''}`}
+          style={{ marginBottom: 28 }}
+          onPointerDown={beginMarqueeSelection}
+          onPointerMove={updateMarqueeSelection}
+          onPointerUp={finishMarqueeSelection}
+          onPointerCancel={finishMarqueeSelection}
+          onDragOver={(event) => { if (!canDropDraggedItem(currentFolderId || undefined)) { event.dataTransfer.dropEffect = 'none'; return }; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId('__current__') }}
+          onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverFolderId(null) }}
+          onDrop={(event) => void dropDashboardItem(event, currentFolderId || undefined)}
+        >
+          {currentFolderId && <div className="section-label-row dashboard-browser-heading">
+            <nav className="dashboard-folder-breadcrumbs" aria-label="Folder path">
+              <button
+                type="button"
+                className={dragOverFolderId === '__root__' ? 'drop-target' : ''}
+                onClick={() => setCurrentFolderId(null)}
+                onDragOver={(event) => { event.stopPropagation(); if (!canDropDraggedItem()) { event.dataTransfer.dropEffect = 'none'; return }; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId('__root__') }}
+                onDragLeave={() => setDragOverFolderId(null)}
+                onDrop={(event) => { event.stopPropagation(); void dropDashboardItem(event) }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+                Home
+              </button>
+              {folderBreadcrumbs.map((folder, index) => <span key={folder.id}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" /></svg>
+                <button
+                  type="button"
+                  className={dragOverFolderId === `breadcrumb:${folder.id}` ? 'drop-target' : ''}
+                  aria-current={index === folderBreadcrumbs.length - 1 ? 'page' : undefined}
+                  onClick={() => setCurrentFolderId(folder.id)}
+                  onDragOver={(event) => { event.stopPropagation(); if (!canDropDraggedItem(folder.id)) { event.dataTransfer.dropEffect = 'none'; return }; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId(`breadcrumb:${folder.id}`) }}
+                  onDragLeave={() => setDragOverFolderId(null)}
+                  onDrop={(event) => { event.stopPropagation(); void dropDashboardItem(event, folder.id) }}
+                >{folder.name}</button>
+              </span>)}
+            </nav>
+            <span className="dashboard-folder-item-count">{currentFolders.length + visibleActiveProjects.length} items</span>
+          </div>}
+
+          {selectedBrowserItems.size > 0 && <div className="dashboard-selection-actions">
+            <strong>{selectedBrowserItems.size} selected</strong>
+            <span>Drag any selected item to move the group.</span>
+            <button type="button" onClick={() => setSelectedBrowserItems(new Set())}>Clear</button>
+            <button type="button" className="danger" onClick={() => void deleteSelectedBrowserItems()}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 10v6M14 10v6" /></svg>
+              Delete
+            </button>
+          </div>}
 
           {loading && <div className="dashboard-empty">Loading projects...</div>}
 
-          {!loading && activeProjects.length === 0 && (
+          {!loading && <>
+            <div className="dashboard-folder-section-heading"><h3>Folders</h3><span>{currentFolders.length}</span></div>
+            {currentFolders.length > 0 && <div className={`dashboard-folder-grid ${viewMode === 'list' ? 'is-list-view' : ''}`}>
+            {currentFolders.map((folder) => {
+              const selectionKey = folderSelectionKey(folder.id)
+              const itemCount = countDirectFolderItems(folders, activeProjects, folder.id)
+              const openFolderMenu = (x: number, y: number) => {
+                setProjectContextMenu(null)
+                setFolderContextMenu({ x, y, folder })
+              }
+              return <div
+                className={`dashboard-folder-tile ${dragOverFolderId === folder.id ? 'drag-over' : ''} ${draggingFolderId === folder.id ? 'dragging' : ''}`}
+                key={folder.id}
+                data-selection-key={selectionKey}
+                data-selected={selectedBrowserItems.has(selectionKey) || undefined}
+                draggable
+                onDragStart={(event) => beginFolderDrag(event, folder)}
+            onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
+                onDragOver={(event) => { event.stopPropagation(); if (!canDropDraggedItem(folder.id)) { event.dataTransfer.dropEffect = 'none'; return }; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverFolderId(folder.id) }}
+                onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverFolderId(null) }}
+                onDrop={(event) => { event.stopPropagation(); void dropDashboardItem(event, folder.id) }}
+                onContextMenu={(event) => { event.preventDefault(); openFolderMenu(event.clientX, event.clientY) }}
+              >
+                <button type="button" className="dashboard-folder-open" onClick={(event) => handleBrowserItemClick(event, selectionKey, () => setCurrentFolderId(folder.id))} onDoubleClick={() => { setSelectedBrowserItems(new Set()); setCurrentFolderId(folder.id) }} title={`Open ${folder.name}`}>
+                  <FolderArtwork />
+                  <span className="dashboard-folder-copy">
+                    <strong>{folder.name}</strong>
+                    <small>{itemCount} {itemCount === 1 ? 'item' : 'items'}</small>
+                  </span>
+                </button>
+                <button type="button" className="dashboard-folder-more" aria-label={`Folder actions for ${folder.name}`} onClick={(event) => { event.stopPropagation(); openFolderMenu(event.clientX, event.clientY) }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+                </button>
+              </div>
+            })}
+            </div>}
+          </>}
+
+          {!loading && <>
+            <div className="dashboard-browser-section-separator" aria-hidden="true" />
+            <div className="dashboard-folder-section-heading dashboard-active-projects-heading">
+              <h3>Active Projects</h3>
+              <span>{visibleActiveProjects.length}</span>
+            </div>
+          </>}
+
+          {!loading && currentFolders.length === 0 && visibleActiveProjects.length === 0 && (!currentFolderId ? pinnedProjects.length === 0 : true) && (
             <div className="dashboard-empty">
               <div className="empty-icon">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#404040" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1124,16 +1494,17 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                   <path d="M6 18h36M18 18v24" />
                 </svg>
               </div>
-              <p>{searchQuery ? 'No matching projects found' : 'No active projects yet'}</p>
-              <p className="empty-hint">{searchQuery ? 'Try clearing your search query' : 'Right-click a Monday ticket or click "New Capture" to get started'}</p>
+              <p>{searchQuery ? 'No matching projects found' : currentFolderId ? 'This folder is empty' : 'No active projects yet'}</p>
+              <p className="empty-hint">{searchQuery ? 'Try clearing your search query' : currentFolderId ? 'Create a subfolder or move a project here' : 'Right-click a Monday ticket or click "New Capture" to get started'}</p>
             </div>
           )}
 
-          {!loading && unpinnedActiveProjects.length > 0 && (
+          {!loading && visibleActiveProjects.length > 0 && (
             <>
               {viewMode === 'cards' && (
                 <div className="project-grid">
-                  {unpinnedActiveProjects.map((project) => {
+                  {visibleActiveProjects.map((project) => {
+                    const selectionKey = projectSelectionKey(project.id)
                     const isMonday = !!project.mondayTicket
                     const statusColor = getStatusColor(project.mondayTicket?.status)
 
@@ -1141,16 +1512,16 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                       <div
                         key={project.id}
                         className={`project-card ${isMonday ? 'has-monday-badge' : ''}`}
+                        data-selection-key={selectionKey}
+                        data-selected={selectedBrowserItems.has(selectionKey) || undefined}
                         draggable
                         onDragStart={(event) => beginProjectDrag(event, project)}
-                        onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }}
-                        onClick={() => {
-                          if (isMonday && !project.adminUrl) {
-                            handleLaunchTicket(project.mondayTicket!)
-                          } else {
-                            onOpenProject(project)
-                          }
-                        }}
+            onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
+                        onClick={(event) => handleBrowserItemClick(event, selectionKey, () => {
+                          if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!)
+                          else onOpenProject(project)
+                        })}
+                        onDoubleClick={() => { setSelectedBrowserItems(new Set()); if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!); else onOpenProject(project) }}
                         onContextMenu={(e) => {
                           e.preventDefault()
                           setProjectContextMenu({ x: e.clientX, y: e.clientY, project })
@@ -1231,7 +1602,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                     <div className="col-time">Last Opened</div>
                     <div className="col-actions">Actions</div>
                   </div>
-                  {unpinnedActiveProjects.map((project) => {
+                  {visibleActiveProjects.map((project) => {
+                    const selectionKey = projectSelectionKey(project.id)
                     const isMonday = !!project.mondayTicket
                     const isPinned = pinnedProjectIds.includes(project.id)
 
@@ -1239,17 +1611,17 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                       <div
                         key={project.id}
                         className="list-row"
+                        data-selection-key={selectionKey}
+                        data-selected={selectedBrowserItems.has(selectionKey) || undefined}
                         draggable
                         onDragStart={(event) => beginProjectDrag(event, project)}
-                        onDragEnd={() => { setDraggingProjectId(null); setDragOverFolderId(null) }}
+            onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
                         onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}
-                        onClick={() => {
-                          if (isMonday && !project.adminUrl) {
-                            handleLaunchTicket(project.mondayTicket!)
-                          } else {
-                            onOpenProject(project)
-                          }
-                        }}
+                        onClick={(event) => handleBrowserItemClick(event, selectionKey, () => {
+                          if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!)
+                          else onOpenProject(project)
+                        })}
+                        onDoubleClick={() => { setSelectedBrowserItems(new Set()); if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!); else onOpenProject(project) }}
                       >
                         <div className="col-pin" onClick={(e) => togglePinProject(project.id, e)} title={isPinned ? "Unpin" : "Pin"}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill={isPinned ? "#38bdf8" : "none"} stroke={isPinned ? "#38bdf8" : "#888"} strokeWidth="2">
@@ -1306,6 +1678,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
               )}
             </>
           )}
+          {selectionBox && <div className="dashboard-selection-rectangle" style={{ left: selectionBox.left, top: selectionBox.top, width: selectionBox.width, height: selectionBox.height }} />}
         </div>
 
         {/* 3. MY MONDAY TICKETS SECTION */}
@@ -1867,6 +2240,41 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       )}
 
       {/* ── MONDAY TICKET RIGHT-CLICK CONTEXT MENU ─────────────────── */}
+      {dashboardContextMenu && <div className="project-context-menu dashboard-context-menu" style={{ top: dashboardContextMenu.y, left: dashboardContextMenu.x }} onClick={(event) => event.stopPropagation()}>
+        <div className="project-context-title"><b>{currentFolderId ? folderBreadcrumbs.at(-1)?.name || 'Folder' : 'Home'}</b><small>Create or organize dashboard items</small></div>
+        <div className="project-context-divider" />
+        <button onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined }); setDashboardContextMenu(null) }}>
+          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14h6" /></svg>Add Folder</span>
+        </button>
+        <button onClick={() => { setDashboardContextMenu(null); onNewProject(currentFolderId || undefined) }}>
+          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 8v8M8 12h8" /></svg>Add Capture</span>
+        </button>
+        {currentFolderId && <button onClick={() => { setCurrentFolderId(null); setDashboardContextMenu(null) }}>
+          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>Go to Home</span>
+        </button>}
+        <div className="project-context-divider" />
+        <button className={viewMode === 'cards' ? 'active' : ''} onClick={() => { setViewMode('cards'); setDashboardContextMenu(null) }}>
+          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>Grid View</span>
+        </button>
+        <button className={viewMode === 'list' ? 'active' : ''} onClick={() => { setViewMode('list'); setDashboardContextMenu(null) }}>
+          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>List View</span>
+        </button>
+        <div className="project-context-divider" />
+        <button onClick={() => { reloadProjects(); setDashboardContextMenu(null) }}>
+          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 6v5h-5M4 18v-5h5" /><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m16 6-2 2.5A7 7 0 0 1 5.5 15" /></svg>Refresh</span>
+        </button>
+      </div>}
+
+      {folderContextMenu && <div className="project-context-menu folder-context-menu" style={{ top: folderContextMenu.y, left: folderContextMenu.x }} onClick={(event) => event.stopPropagation()}>
+        <div className="project-context-title"><b>{folderContextMenu.folder.name}</b><small>{countDirectFolderItems(folders, activeProjects, folderContextMenu.folder.id)} items</small></div>
+        <div className="project-context-divider" />
+        <button onClick={() => { setCurrentFolderId(folderContextMenu.folder.id); setFolderContextMenu(null) }}>Open</button>
+        <button onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: folderContextMenu.folder.id }); setFolderContextMenu(null) }}>New subfolder</button>
+        <button onClick={() => { setFolderEditor({ mode: 'rename', folderId: folderContextMenu.folder.id, name: folderContextMenu.folder.name }); setFolderContextMenu(null) }}>Rename</button>
+        <div className="project-context-divider" />
+        <button className="danger" onClick={() => void deleteFolder(folderContextMenu.folder)}>Delete folder</button>
+      </div>}
+
       {projectContextMenu && <div className="project-context-menu" style={{ top: projectContextMenu.y, left: projectContextMenu.x }} onClick={(event) => event.stopPropagation()}>
         <div className="project-context-title"><b>{projectContextMenu.project.name}</b><small>{getDomain(projectContextMenu.project.stagingUrl)}</small></div>
         <div className="project-context-divider" />
@@ -1874,9 +2282,9 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           <button><span>Move</span><span>›</span></button>
           <div className="project-context-submenu">
             {projectContextMenu.project.folderId && <button onClick={() => void moveProjectToFolder(projectContextMenu.project)}><span>Active Projects</span></button>}
-            {folders.map((folder) => <button key={folder.id} className={projectContextMenu.project.folderId === folder.id ? 'active' : ''} onClick={() => void moveProjectToFolder(projectContextMenu.project, folder.id)}><span>{folder.name}</span>{projectContextMenu.project.folderId === folder.id && <em>✓</em>}</button>)}
+            {folderMoveOptions.map(({ folder, label }) => <button key={folder.id} className={projectContextMenu.project.folderId === folder.id ? 'active' : ''} onClick={() => void moveProjectToFolder(projectContextMenu.project, folder.id)}><span>{label}</span>{projectContextMenu.project.folderId === folder.id && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m5 12 4 4L19 6" /></svg>}</button>)}
             <div className="project-context-divider" />
-            <button onClick={() => { setFolderEditor({ mode: 'create', name: '', projectId: projectContextMenu.project.id }); setProjectContextMenu(null) }}><span>New folder…</span></button>
+            <button onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined, projectId: projectContextMenu.project.id }); setProjectContextMenu(null) }}><span>New folder…</span></button>
           </div>
         </div>
         {(projectContextMenu.project.mondayTicketId || projectContextMenu.project.id.startsWith('monday-')) && <button onClick={() => void createSiblingProject(projectContextMenu.project)}>Create another page</button>}
@@ -1890,7 +2298,11 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         <div className="folder-modal">
           <div className="folder-modal-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></div>
           <h3>{folderEditor.mode === 'rename' ? 'Rename folder' : 'Create folder'}</h3>
-          <p>{folderEditor.projectId ? 'The selected project will be moved into this folder.' : 'Group related staging pages and projects.'}</p>
+          <p>{folderEditor.projectId
+            ? 'The selected project will be moved into this folder.'
+            : folderEditor.parentId
+              ? `Create this folder inside ${folders.find((folder) => folder.id === folderEditor.parentId)?.name || 'the current folder'}.`
+              : 'Create a folder in Home to organize related projects.'}</p>
           <input autoFocus value={folderEditor.name} placeholder="Folder name" onChange={(event) => setFolderEditor({ ...folderEditor, name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') void submitFolderEditor(); if (event.key === 'Escape') setFolderEditor(null) }} />
           <div className="folder-modal-actions"><button onClick={() => setFolderEditor(null)}>Cancel</button><button className="primary" disabled={!folderEditor.name.trim()} onClick={() => void submitFolderEditor()}>{folderEditor.mode === 'rename' ? 'Save' : 'Create'}</button></div>
         </div>

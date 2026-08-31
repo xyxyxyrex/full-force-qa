@@ -6,14 +6,26 @@ import parityLightIcon from '../assets/parity-light-512.png'
 import './CaptureScreen.css'
 
 interface Props {
-  onCapture: (html: string, url: string, adminUrl: string) => void
+  onCapture: (html: string, url: string, adminUrl: string, details: CaptureProjectDetails) => void
+  onAdd: (details: CaptureProjectDetails) => Promise<void> | void
   onBack: () => void
+  initialName?: string
   initialAdminUrl?: string
   initialStagingUrl?: string
   initialFigmaUrl?: string
   initialSheetUrl?: string
+  isNewProject?: boolean
   /** When true, attempt capture immediately (reopening a saved project) */
   autoCapture?: boolean
+}
+
+export interface CaptureProjectDetails {
+  name: string
+  adminUrl: string
+  stagingUrl: string
+  figmaUrl: string
+  googleSheetUrl: string
+  mondayTicketId?: string
 }
 
 function ParityCaptureIcon({ size }: { size: number }) {
@@ -249,13 +261,17 @@ function MondaySearchDropdown({
 
 export default function CaptureScreen({
   onCapture,
+  onAdd,
   onBack,
+  initialName = '',
   initialAdminUrl = '',
   initialStagingUrl = '',
   initialFigmaUrl = '',
   initialSheetUrl = '',
+  isNewProject = false,
   autoCapture = false
 }: Props) {
+  const [name, setName] = useState(initialName)
   const [adminUrl, setAdminUrl] = useState(() => normalizeUrl(initialAdminUrl))
   const [stagingUrl, setStagingUrl] = useState(() => normalizeUrl(initialStagingUrl))
   const [sheetsUrl, setSheetsUrl] = useState(() => normalizeUrl(initialSheetUrl))
@@ -344,6 +360,7 @@ export default function CaptureScreen({
   }
 
   const handleAutofillTicket = (selected: MondayTicket) => {
+    if (!name.trim()) setName(selected.name)
     const sUrl = getStagingUrlFromTicket(selected)
     if (sUrl) setStagingUrl(normalizeUrl(sUrl))
 
@@ -408,7 +425,14 @@ export default function CaptureScreen({
           setStatus('')
           return
         }
-        onCapture(res.html, normStaging, normAdmin)
+        onCapture(res.html, normStaging, normAdmin, {
+          name: name.trim(),
+          adminUrl: normAdmin,
+          stagingUrl: normStaging,
+          figmaUrl: normalizeUrl(figmaUrl),
+          googleSheetUrl: normalizeUrl(sheetsUrl),
+          mondayTicketId: selectedTicketId || undefined
+        })
       } else {
         setError(res.error || 'Failed to extract HTML from page')
       }
@@ -422,6 +446,33 @@ export default function CaptureScreen({
 
   const handleCapture = () => doCapture(false)
   const handleForceOpenCaptured = () => doCapture(true)
+
+  const handleAdd = async () => {
+    if (!stagingUrl.trim()) return
+    setError('')
+    const details: CaptureProjectDetails = {
+      name: name.trim(),
+      adminUrl: normalizeUrl(adminUrl),
+      stagingUrl: normalizeUrl(stagingUrl),
+      figmaUrl: normalizeUrl(figmaUrl),
+      googleSheetUrl: normalizeUrl(sheetsUrl),
+      mondayTicketId: selectedTicketId || undefined
+    }
+    setName(details.name)
+    setAdminUrl(details.adminUrl)
+    setStagingUrl(details.stagingUrl)
+    setFigmaUrl(details.figmaUrl)
+    setSheetsUrl(details.googleSheetUrl)
+    setLoading(true)
+    setStatus('Saving project...')
+    try {
+      await onAdd(details)
+    } catch (err: any) {
+      setError(err.message || 'Unable to add project')
+      setLoading(false)
+      setStatus('')
+    }
+  }
 
   useEffect(() => {
     if (autoCapture && initialStagingUrl && !autoCaptureRan.current) {
@@ -467,7 +518,12 @@ export default function CaptureScreen({
 
   // ── MODAL CAPTURE INPUT FORM ──────────────────────────────────────────────
   return (
-    <div className="capture-screen-backdrop" onClick={onBack}>
+    <div
+      className="capture-screen-backdrop"
+      onPointerDown={(event) => {
+        if (event.button === 0 && event.target === event.currentTarget) onBack()
+      }}
+    >
       <div className="capture-card" onClick={(e) => e.stopPropagation()}>
         <div className="capture-card-header">
           <button className="back-btn" onClick={onBack} title="Back to dashboard">
@@ -478,9 +534,28 @@ export default function CaptureScreen({
           <div className="capture-logo">
             <ParityCaptureIcon size={30} />
             <h1>
-              {initialStagingUrl ? 'Recapture Page' : 'New Capture'}
+              {isNewProject ? 'New Capture' : 'Recapture Page'}
             </h1>
           </div>
+        </div>
+
+        <div className="capture-section capture-name-section">
+          <label className="capture-label" htmlFor="capture-project-name">
+            Project name
+            <span className="capture-optional-tag">Optional</span>
+          </label>
+          <p className="capture-hint capture-hint-no-step">
+            Give this capture a recognizable name for the dashboard.
+          </p>
+          <input
+            id="capture-project-name"
+            type="text"
+            className="capture-input"
+            placeholder="e.g. Product landing page"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            disabled={loading}
+          />
         </div>
 
         {/* Top-Level Ticket Selector (Autofills ALL fields at once) */}
@@ -573,51 +648,39 @@ export default function CaptureScreen({
             The page you want to capture and inspect
           </p>
           <div className="capture-input-row">
-            <input
-              type="text"
-              className="capture-input"
-              placeholder="https://example.com/?page_id=7145&preview=true"
-              value={stagingUrl}
-              onChange={(e) => {
-                const val = e.target.value
-                setStagingUrl(val.includes('&amp;') ? normalizeUrl(val) : val)
-              }}
-              onBlur={() => setStagingUrl(normalizeUrl(stagingUrl))}
-              disabled={loading}
-              onKeyDown={(e) => e.key === 'Enter' && handleCapture()}
-            />
-            <button
-              className="capture-btn btn-primary"
-              onClick={handleCapture}
-              disabled={loading || !stagingUrl.trim()}
-            >
-              Capture
-            </button>
+            <div className="capture-input-combo" ref={dropdownRef}>
+              <input
+                type="text"
+                className={`capture-input ${stagingGroups.length > 0 ? 'has-inline-actions' : ''}`}
+                placeholder="https://example.com/?page_id=7145&preview=true"
+                value={stagingUrl}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setStagingUrl(val.includes('&amp;') ? normalizeUrl(val) : val)
+                }}
+                onBlur={() => setStagingUrl(normalizeUrl(stagingUrl))}
+                disabled={loading}
+                onKeyDown={(e) => e.key === 'Enter' && (isNewProject ? void handleAdd() : handleCapture())}
+              />
+              {stagingGroups.length > 0 && <div className="capture-input-actions">
+                <button type="button" className="capture-input-monday-btn" onClick={() => setMondayDropdownOpen(!mondayDropdownOpen)} aria-label="Fill staging URL from Monday ticket" title="Fill from Monday ticket" aria-expanded={mondayDropdownOpen}>
+                  <img src={mondayLogo} alt="" width="14" height="14" />
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><polyline points={mondayDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
+                </button>
+              </div>}
+              {mondayDropdownOpen && <MondaySearchDropdown groups={stagingGroups} placeholder="Search staging URLs..." onSelectLink={(url) => handleSelectTicketLink(url, 'staging')} />}
+            </div>
+            {!isNewProject && (
+              <button
+                className="capture-btn btn-primary"
+                onClick={handleCapture}
+                disabled={loading || !stagingUrl.trim()}
+              >
+                Capture
+              </button>
+            )}
           </div>
 
-          {/* Monday tickets quick-fill for staging */}
-          {stagingGroups.length > 0 && (
-            <div className="monday-quickfill" ref={dropdownRef}>
-              <button
-                className="monday-quickfill-btn"
-                onClick={() => setMondayDropdownOpen(!mondayDropdownOpen)}
-              >
-                <img src={mondayLogo} alt="" width="14" height="14" />
-                <span>Fill from Monday ticket</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points={mondayDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-                </svg>
-              </button>
-
-              {mondayDropdownOpen && (
-                <MondaySearchDropdown
-                  groups={stagingGroups}
-                  placeholder="Search staging URLs..."
-                  onSelectLink={(url) => handleSelectTicketLink(url, 'staging')}
-                />
-              )}
-            </div>
-          )}
         </div>
 
         {/* Step 3: QA Tracker (optional) */}
@@ -631,49 +694,27 @@ export default function CaptureScreen({
             Attach a Google Sheets link to edit your QA tracker in the bottom panel
           </p>
           <div className="capture-input-row">
-            <input
-              type="url"
-              className="capture-input"
-              placeholder="https://docs.google.com/spreadsheets/d/.../edit"
-              value={sheetsUrl}
-              onChange={(e) => setSheetsUrl(e.target.value)}
-              disabled={loading}
-            />
-            {sheetsUrl.trim() && (
-              <button
-                className="capture-btn btn-clear"
-                onClick={() => setSheetsUrl('')}
-                title="Clear"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* Monday tickets quick-fill for sheets */}
-          {sheetsGroups.length > 0 && (
-            <div className="monday-quickfill" ref={sheetsDropdownRef}>
-              <button
-                className="monday-quickfill-btn"
-                onClick={() => setSheetsDropdownOpen(!sheetsDropdownOpen)}
-              >
-                <img src={mondayLogo} alt="" width="14" height="14" />
-                <span>Fill from Monday ticket</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points={sheetsDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-                </svg>
-              </button>
-
-              {sheetsDropdownOpen && (
-                <MondaySearchDropdown
-                  groups={sheetsGroups}
-                  direction="up"
-                  placeholder="Search QA Sheets..."
-                  onSelectLink={(url) => handleSelectTicketLink(url, 'sheets')}
-                />
-              )}
+            <div className="capture-input-combo" ref={sheetsDropdownRef}>
+              <input
+                type="url"
+                className={`capture-input ${(sheetsUrl.trim() || sheetsGroups.length > 0) ? 'has-inline-actions' : ''} ${sheetsUrl.trim() && sheetsGroups.length > 0 ? 'has-two-inline-actions' : ''}`}
+                placeholder="https://docs.google.com/spreadsheets/d/.../edit"
+                value={sheetsUrl}
+                onChange={(e) => setSheetsUrl(e.target.value)}
+                disabled={loading}
+              />
+              <div className="capture-input-actions">
+                {sheetsUrl.trim() && <button type="button" className="capture-input-clear-btn" onClick={() => setSheetsUrl('')} title="Clear QA Tracker URL" aria-label="Clear QA Tracker URL">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                </button>}
+                {sheetsGroups.length > 0 && <button type="button" className="capture-input-monday-btn" onClick={() => setSheetsDropdownOpen(!sheetsDropdownOpen)} aria-label="Fill QA Tracker URL from Monday ticket" title="Fill from Monday ticket" aria-expanded={sheetsDropdownOpen}>
+                  <img src={mondayLogo} alt="" width="14" height="14" />
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><polyline points={sheetsDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
+                </button>}
+              </div>
+              {sheetsDropdownOpen && <MondaySearchDropdown groups={sheetsGroups} direction="up" placeholder="Search QA Sheets..." onSelectLink={(url) => handleSelectTicketLink(url, 'sheets')} />}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Step 4: Figma Design Link (optional) */}
@@ -687,49 +728,27 @@ export default function CaptureScreen({
             Attach a Figma link to open design references in your browser from the top panel
           </p>
           <div className="capture-input-row">
-            <input
-              type="url"
-              className="capture-input"
-              placeholder="https://www.figma.com/design/..."
-              value={figmaUrl}
-              onChange={(e) => setFigmaUrl(e.target.value)}
-              disabled={loading}
-            />
-            {figmaUrl.trim() && (
-              <button
-                className="capture-btn btn-clear"
-                onClick={() => setFigmaUrl('')}
-                title="Clear"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* Monday tickets quick-fill for figma */}
-          {figmaGroups.length > 0 && (
-            <div className="monday-quickfill" ref={figmaDropdownRef}>
-              <button
-                className="monday-quickfill-btn"
-                onClick={() => setFigmaDropdownOpen(!figmaDropdownOpen)}
-              >
-                <img src={mondayLogo} alt="" width="14" height="14" />
-                <span>Fill from Monday ticket</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points={figmaDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-                </svg>
-              </button>
-
-              {figmaDropdownOpen && (
-                <MondaySearchDropdown
-                  groups={figmaGroups}
-                  direction="up"
-                  placeholder="Search Figma links..."
-                  onSelectLink={(url) => handleSelectTicketLink(url, 'figma')}
-                />
-              )}
+            <div className="capture-input-combo" ref={figmaDropdownRef}>
+              <input
+                type="url"
+                className={`capture-input ${(figmaUrl.trim() || figmaGroups.length > 0) ? 'has-inline-actions' : ''} ${figmaUrl.trim() && figmaGroups.length > 0 ? 'has-two-inline-actions' : ''}`}
+                placeholder="https://www.figma.com/design/..."
+                value={figmaUrl}
+                onChange={(e) => setFigmaUrl(e.target.value)}
+                disabled={loading}
+              />
+              <div className="capture-input-actions">
+                {figmaUrl.trim() && <button type="button" className="capture-input-clear-btn" onClick={() => setFigmaUrl('')} title="Clear Figma URL" aria-label="Clear Figma URL">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                </button>}
+                {figmaGroups.length > 0 && <button type="button" className="capture-input-monday-btn" onClick={() => setFigmaDropdownOpen(!figmaDropdownOpen)} aria-label="Fill Figma URL from Monday ticket" title="Fill from Monday ticket" aria-expanded={figmaDropdownOpen}>
+                  <img src={mondayLogo} alt="" width="14" height="14" />
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><polyline points={figmaDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
+                </button>}
+              </div>
+              {figmaDropdownOpen && <MondaySearchDropdown groups={figmaGroups} direction="up" placeholder="Search Figma links..." onSelectLink={(url) => handleSelectTicketLink(url, 'figma')} />}
             </div>
-          )}
+          </div>
         </div>
 
         {error && (
@@ -743,6 +762,20 @@ export default function CaptureScreen({
                 Proceed & Open Captured Page Anyway →
               </button>
             )}
+          </div>
+        )}
+
+        {isNewProject && (
+          <div className="capture-form-actions">
+            <button type="button" className="capture-btn btn-secondary" onClick={onBack}>Cancel</button>
+            <button
+              type="button"
+              className="capture-btn btn-primary capture-add-btn"
+              onClick={() => void handleAdd()}
+              disabled={loading || !stagingUrl.trim()}
+            >
+              Add
+            </button>
           </div>
         )}
 

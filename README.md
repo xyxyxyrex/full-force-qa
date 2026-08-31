@@ -16,7 +16,8 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 
 ### Dashboard, projects, and account sync
 
-- **Project management**: Create or edit projects with staging, admin, Figma, Google Sheets, and Monday ticket references. Organize projects into folders, pin important work, search and sort, switch between card and list views, and move projects through a recoverable trash workflow.
+- **Project management**: Create or edit projects with staging, admin, Figma, Google Sheets, and Monday ticket references. Browse nested folders as a familiar grid, drag projects or folders between locations, rubber-band multi-select items for bulk moves or guarded deletion, pin important work, search and sort, switch between card and list views, and move projects through a recoverable trash workflow. Folder hierarchy and placement are included in account sync.
+- **Capture intake**: Add a project and all of its references immediately without waiting for Chromium capture, assign an optional display name, create it directly inside the current folder, or populate individual staging, Figma, and QA fields from Monday using compact inline pickers. Capture remains available when page content is needed.
 - **Monday.com integration**: OAuth 2.1 with PKCE identifies the current user, stores desktop credentials with Electron `safeStorage`, refreshes credentials automatically, and supports editable board and assignee sources. An encrypted personal API token remains available as an advanced fallback.
 - **Monday work queue**: Fetches and groups tickets, filters by board, status, or search text, detects attached staging/admin/Figma/Sheets resources, and can create or update a Parity project from a ticket.
 - **Account state sync**: A Supabase Edge Function verifies Monday identity and isolates each user's settings, folders, pinned projects, project metadata, and notes.
@@ -110,7 +111,7 @@ Annotate is a cross-workspace action rather than a separate primary tab.
 Ephemeral review URLs are link-accessible while valid. Anyone who receives a generated URL can open its review until it expires, so links should be shared only with intended reviewers. `VITE_EPHEMERAL_VIEWER_URL` selects the browser viewer host used when generating links.
 
 ### 5. Utilities, Overlays, and System Features
-- **Viewport Simulator**: DevTools-style resolution presets (Desktop 1920x1200, Laptop, Tablet 1180x820 landscape, Mobile 430x932) with dynamic zoom controls (25% to 200%).
+- **Viewport Simulator**: DevTools-style resolution presets (Desktop 1920x1200, Laptop, Tablet 1180x820 landscape, Mobile 430x932) with dynamic zoom controls (25% to 200%). Edit-facing viewport controls live in a hover-revealed island below the URL bar; its caret can pin the controls open, while Live retains the compact inline toolbar.
 - **Canvas Navigation**: Middle-mouse or Space-drag panning, zoom controls, canvas centering, and fit/reset behavior.
 - **Ruler System**:
   - Top and left canvas ruler bars.

@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import type { AppUpdateStatus, Project } from '../../shared/types'
 import Dashboard from './components/Dashboard'
-import CaptureScreen from './components/CaptureScreen'
+import CaptureScreen, { type CaptureProjectDetails } from './components/CaptureScreen'
 import EditorWorkspace from './components/EditorWorkspace'
 import NotesWorkspace from './components/NotesWorkspace'
 import { fetchMondayTicketsApi } from './utils/mondayApi'
@@ -27,6 +27,7 @@ export interface TabState {
   prefillAdmin: string
   prefillStaging: string
   skipAutoCapture: boolean
+  newProjectFolderId?: string
 }
 
 function isRenderableSnapshot(html: string | null): html is string {
@@ -407,12 +408,13 @@ export default function App() {
     })
   }
 
-  const handleNewProject = () => {
+  const handleNewProject = (folderId?: string) => {
     updateActiveTab(t => ({
       ...t,
       prefillAdmin: '',
       prefillStaging: '',
       activeProject: null,
+      newProjectFolderId: folderId,
       skipAutoCapture: true,
       view: 'capture',
       title: 'New Capture'
@@ -432,22 +434,36 @@ export default function App() {
       prefillAdmin: project.adminUrl || '',
       prefillStaging: project.stagingUrl || '',
       activeProject: project,
+      newProjectFolderId: undefined,
       skipAutoCapture: forceForm,
       view: 'capture',
       title: project.name || 'Capture'
     }))
   }
 
-  const handleCapture = async (html: string, url: string, adminUrl: string) => {
+  const handleCapture = async (html: string, url: string, adminUrl: string, details: CaptureProjectDetails) => {
     const activeTab = tabs.find(t => t.id === activeTabId)
     const now = Date.now()
     const project: Project = activeTab?.activeProject
-      ? { ...activeTab.activeProject, stagingUrl: url, adminUrl, lastOpenedAt: now }
+      ? {
+          ...activeTab.activeProject,
+          name: details.name || activeTab.activeProject.name,
+          stagingUrl: url,
+          adminUrl,
+          figmaUrl: details.figmaUrl || undefined,
+          googleSheetUrl: details.googleSheetUrl || undefined,
+          mondayTicketId: details.mondayTicketId || activeTab.activeProject.mondayTicketId,
+          lastOpenedAt: now
+        }
       : {
           id: crypto.randomUUID(),
-          name: deriveProjectName(url),
+          name: details.name || deriveProjectName(url),
           adminUrl,
           stagingUrl: url,
+          figmaUrl: details.figmaUrl || undefined,
+          googleSheetUrl: details.googleSheetUrl || undefined,
+          mondayTicketId: details.mondayTicketId,
+          folderId: activeTab?.newProjectFolderId,
           createdAt: now,
           lastOpenedAt: now
         }
@@ -471,6 +487,26 @@ export default function App() {
       view: 'editor',
       title: project.name || deriveProjectName(url)
     }))
+  }
+
+  const handleAddProject = async (details: CaptureProjectDetails) => {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId)
+    const now = Date.now()
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name: details.name || deriveProjectName(details.stagingUrl),
+      adminUrl: details.adminUrl,
+      stagingUrl: details.stagingUrl,
+      figmaUrl: details.figmaUrl || undefined,
+      googleSheetUrl: details.googleSheetUrl || undefined,
+      mondayTicketId: details.mondayTicketId,
+      folderId: activeTab?.newProjectFolderId,
+      createdAt: now,
+      lastOpenedAt: now
+    }
+    await window.electronAPI.saveProject(project)
+    window.dispatchEvent(new CustomEvent('qa_projects_updated'))
+    goToDashboard()
   }
 
   const handleProjectThumbnailCaptured = async (dataUrl: string) => {
@@ -663,9 +699,14 @@ export default function App() {
                 {activeTab.view === 'capture' && (
                   <CaptureScreen
                     onCapture={handleCapture}
+                    onAdd={handleAddProject}
                     onBack={goToDashboard}
+                    initialName={activeTab.activeProject?.name || ''}
                     initialAdminUrl={activeTab.prefillAdmin}
                     initialStagingUrl={activeTab.prefillStaging}
+                    initialFigmaUrl={activeTab.activeProject?.figmaUrl || ''}
+                    initialSheetUrl={activeTab.activeProject?.googleSheetUrl || ''}
+                    isNewProject={!activeTab.activeProject}
                     autoCapture={activeTab.skipAutoCapture ? false : !!(activeTab.activeProject && activeTab.activeProject.stagingUrl && activeTab.activeProject.adminUrl)}
                   />
                 )}

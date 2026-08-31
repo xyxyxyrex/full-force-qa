@@ -174,9 +174,84 @@
   padding-left: 28px;
 }
 
+.capture-hint-no-step {
+  padding-left: 0;
+}
+
+.capture-name-section {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-color);
+}
+
 .capture-input-row {
   display: flex;
   gap: 8px;
+}
+
+.capture-input-combo {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.capture-input-combo > .capture-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.capture-input.has-inline-actions { padding-right: 50px; }
+.capture-input.has-two-inline-actions { padding-right: 82px; }
+
+.capture-input-actions {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border-left: 1px solid var(--border-color);
+  border-radius: 0 4px 4px 0;
+}
+
+.capture-input-actions:empty { display: none; }
+
+.capture-input-monday-btn,
+.capture-input-clear-btn {
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 7px;
+  border: 0;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+
+.capture-input-clear-btn {
+  padding: 0 6px;
+  border-right: 1px solid var(--border-color);
+}
+
+.capture-input-monday-btn:hover,
+.capture-input-monday-btn[aria-expanded="true"],
+.capture-input-clear-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent-color);
+}
+
+.capture-input-monday-btn:focus-visible,
+.capture-input-clear-btn:focus-visible {
+  outline: 1px solid var(--accent-color);
+  outline-offset: -2px;
+}
+
+.capture-input-monday-btn img {
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .capture-input {
@@ -227,6 +302,19 @@
 .capture-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.capture-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-color);
+}
+
+.capture-add-btn {
+  min-width: 96px;
 }
 
 /* Primary Action Button (Capture) */
@@ -412,32 +500,6 @@
 }
 
 /* ── Monday Quick-fill Dropdown ─────────────────────────────────────────── */
-
-.monday-quickfill {
-  position: relative;
-  margin-top: 8px;
-}
-
-.monday-quickfill-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 4px 10px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
-.monday-quickfill-btn:hover {
-  background: var(--accent-light);
-  color: var(--accent-color);
-  border-color: var(--accent-color);
-}
 
 .monday-quickfill-dropdown {
   position: absolute;

@@ -21,7 +21,7 @@ import type {
 } from "./FullsiteCanvasModal";
 import { plainTextFromRichText } from "./RichTextEditor";
 import { canvasViewportGeometry } from "../utils/canvasZoom";
-import { isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
+import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { normalizeClassNames } from "../utils/editBetaClasses";
 import { mergeViewportPatches } from "../utils/viewportLayoutPatches";
 
@@ -2039,11 +2039,9 @@ function installEditBetaBridge() {
     }
   };
   const onPanDown = (event: MouseEvent) => {
-    if (
-      mode !== "edit" ||
-      (event.button !== 1 && !(spacePressed && event.button === 0))
-    )
-      return;
+    const isMiddlePan = event.button === 1;
+    const isSpacePan = mode === "edit" && spacePressed && event.button === 0;
+    if (!isMiddlePan && !isSpacePan) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
@@ -6259,11 +6257,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       window.addEventListener("blur", onBlur);
     };
     const beginCanvasPan = (event: React.MouseEvent) => {
-      if (
-        interactionMode !== "edit" ||
-        (event.button !== 1 && !(spacePressedRef.current && event.button === 0))
-      )
-        return;
+      if (!isCanvasPanGesture(event.button, spacePressedRef.current, interactionMode === "edit")) return;
       event.preventDefault();
       event.stopPropagation();
       canvasPanCleanupRef.current?.();
