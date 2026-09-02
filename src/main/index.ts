@@ -42,6 +42,7 @@ import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
 import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadWorkspaceHtml, saveProject, saveWorkspaceHtml, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
+import { measureResponseBody, resourceSizeFromHeaders } from './resourceFileSize'
 import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState, ResourceFileSizeResult } from '../shared/types'
 import {
   checkForAppUpdates,
@@ -798,12 +799,12 @@ async function fetchResourceFileSize(url: string, refererUrl?: string): Promise<
     const parsed = new URL(url)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return result
 
-    const request = async (method: 'HEAD' | 'GET') => {
+    const request = async (method: 'HEAD' | 'GET', useRange = method === 'GET') => {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 8_000)
       try {
         const headers: Record<string, string> = { Accept: '*/*' }
-        if (method === 'GET') headers.Range = 'bytes=0-0'
+        if (method === 'GET' && useRange) headers.Range = 'bytes=0-0'
         if (refererUrl?.startsWith('http://') || refererUrl?.startsWith('https://')) {
           headers.Referer = refererUrl
         }
@@ -820,22 +821,47 @@ async function fetchResourceFileSize(url: string, refererUrl?: string): Promise<
       }
     }
 
-    let response = await request('HEAD')
-    let size = Number(response.headers.get('content-length'))
-    let contentType = response.headers.get('content-type') || undefined
-
-    if (!response.ok || !Number.isFinite(size) || size <= 0) {
-      response = await request('GET')
-      contentType = response.headers.get('content-type') || contentType
-      const contentRange = response.headers.get('content-range') || ''
-      const totalMatch = contentRange.match(/\/\s*(\d+)\s*$/)
-      size = totalMatch ? Number(totalMatch[1]) : response.status === 200
-        ? Number(response.headers.get('content-length'))
-        : Number.NaN
-      try { await response.body?.cancel() } catch {}
+    let size: number | null = null
+    let contentType: string | undefined
+    try {
+      const headResponse = await request('HEAD')
+      contentType = headResponse.headers.get('content-type') || undefined
+      if (headResponse.ok) size = resourceSizeFromHeaders(headResponse)
+      try { await headResponse.body?.cancel() } catch {}
+    } catch {
+      // A rejected HEAD request must not prevent the GET fallback. Some CDNs
+      // support images normally but intentionally block metadata probes.
     }
 
-    if (Number.isFinite(size) && size >= 0) result.sizeBytes = size
+    if (size == null) {
+      try {
+        const getResponse = await request('GET')
+        contentType = getResponse.headers.get('content-type') || contentType
+        if (getResponse.ok) {
+          size = resourceSizeFromHeaders(getResponse)
+          if (size == null) size = await measureResponseBody(getResponse)
+        }
+        try { await getResponse.body?.cancel() } catch {}
+      } catch {
+        // Leave this resource unresolved so the renderer can retry it shortly.
+      }
+    }
+
+    if (size == null) {
+      try {
+        const fullResponse = await request('GET', false)
+        contentType = fullResponse.headers.get('content-type') || contentType
+        if (fullResponse.ok) {
+          size = resourceSizeFromHeaders(fullResponse)
+          if (size == null) size = await measureResponseBody(fullResponse)
+        }
+        try { await fullResponse.body?.cancel() } catch {}
+      } catch {
+        // A genuinely inaccessible resource remains Unknown after the retry.
+      }
+    }
+
+    if (size != null) result.sizeBytes = size
     if (contentType) result.contentType = contentType
   } catch {
     // Some CDNs intentionally reject HEAD/range requests. The renderer keeps
@@ -843,7 +869,7 @@ async function fetchResourceFileSize(url: string, refererUrl?: string): Promise<
   }
 
   resourceFileSizeCache.set(url, {
-    expiresAt: Date.now() + (result.sizeBytes == null ? 60_000 : 10 * 60_000),
+    expiresAt: Date.now() + (result.sizeBytes == null ? 1_000 : 10 * 60_000),
     result,
   })
   return result

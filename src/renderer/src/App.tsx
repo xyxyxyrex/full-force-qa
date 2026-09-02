@@ -2,7 +2,7 @@ import { useCallback, useState, useEffect, useRef } from 'react'
 import type { AppUpdateStatus, Project } from '../../shared/types'
 import Dashboard from './components/Dashboard'
 import CaptureScreen, { type CaptureProjectDetails } from './components/CaptureScreen'
-import EditorWorkspace from './components/EditorWorkspace'
+import EditorWorkspace, { type WorkspaceTab } from './components/EditorWorkspace'
 import NotesWorkspace from './components/NotesWorkspace'
 import { fetchMondayTicketsApi } from './utils/mondayApi'
 import SettingsModal from './components/SettingsModal'
@@ -28,6 +28,7 @@ export interface TabState {
   prefillStaging: string
   skipAutoCapture: boolean
   newProjectFolderId?: string
+  workspaceTab?: WorkspaceTab
 }
 
 function isRenderableSnapshot(html: string | null): html is string {
@@ -529,6 +530,46 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('qa_projects_updated'))
   }, [])
 
+  const handleWorkspaceNavigate = useCallback(async (rawUrl: string) => {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId)
+    if (!activeTab) return { success: false, error: 'No active project tab.' }
+
+    let targetUrl = rawUrl.trim()
+    if (!targetUrl) return { success: false, error: 'Enter a website URL.' }
+    if (!/^https?:\/\//i.test(targetUrl)) targetUrl = `https://${targetUrl}`
+
+    const result = await window.electronAPI.capture(targetUrl)
+    if (!result.success || !result.html) {
+      return { success: false, error: result.error || 'Unable to capture this URL.' }
+    }
+
+    const lower = result.html.toLowerCase()
+    if (result.is404 || result.isSessionExpired || lower.includes('<title>page not found') || lower.includes('class="error404"') || lower.includes('wp-login.php')) {
+      return { success: false, error: result.isSessionExpired ? 'The website session has expired.' : 'The page could not be captured.' }
+    }
+
+    const updatedProject = activeTab.activeProject
+      ? { ...activeTab.activeProject, stagingUrl: targetUrl, lastOpenedAt: Date.now() }
+      : null
+    if (updatedProject) await window.electronAPI.saveProject(updatedProject)
+    await window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html)
+    setTabs((current) => current.map((tab) => tab.id === activeTab.id ? {
+      ...tab,
+      activeProject: updatedProject || tab.activeProject,
+      snapshotHtml: result.html!,
+      captureUrl: targetUrl,
+      snapshotKey: tab.snapshotKey + 1,
+    } : tab))
+    if (updatedProject) window.dispatchEvent(new CustomEvent('qa_projects_updated'))
+    return { success: true }
+  }, [activeTabId, tabs])
+
+  const handleWorkspaceTabChange = useCallback((workspaceTab: WorkspaceTab) => {
+    setTabs((current) => current.map((tab) =>
+      tab.id === activeTabId ? { ...tab, workspaceTab } : tab
+    ))
+  }, [activeTabId])
+
   const handleReset = async () => {
     const activeTab = tabs.find(t => t.id === activeTabId)
     if (!activeTab || !activeTab.captureUrl) return
@@ -686,6 +727,9 @@ export default function App() {
                 onPersistHtml={(updatedHtml) => persistTabHtml(activeTab.id, activeTab.snapshotKey, updatedHtml)}
                 onThumbnailCaptured={handleProjectThumbnailCaptured}
                 onProjectUpdated={handleProjectUpdated}
+                initialWorkspaceTab={activeTab.workspaceTab}
+                onWorkspaceTabChange={handleWorkspaceTabChange}
+                onNavigateCapture={handleWorkspaceNavigate}
               />
             ) : activeTab.view === 'notes' ? (
               <NotesWorkspace onOpenDashboard={() => openUtilityView('dashboard')} />

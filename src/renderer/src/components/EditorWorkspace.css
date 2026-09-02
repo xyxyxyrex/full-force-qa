@@ -304,6 +304,119 @@
   overflow: visible;
 }
 
+.audit-browser-navbar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--header-bg);
+}
+
+.audit-browser-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.audit-browser-action:hover:not(:disabled) {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.audit-browser-action:disabled,
+.audit-address-field input:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.audit-browser-action svg,
+.audit-address-lock {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.audit-address-field {
+  display: flex;
+  align-items: center;
+  min-width: 120px;
+  height: 28px;
+  flex: 1 1 auto;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.audit-address-field:focus-within {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent);
+}
+
+.audit-address-field.has-error {
+  border-color: var(--accent-color);
+}
+
+.audit-address-lock {
+  width: 12px;
+  height: 12px;
+  margin-right: 7px;
+  flex: 0 0 auto;
+}
+
+.audit-address-field input {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: 11px/1.2 var(--font-mono, monospace);
+}
+
+.audit-address-status,
+.audit-navigation-error {
+  overflow: hidden;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font: 9px/1.2 var(--font-mono, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-address-status {
+  margin-left: 8px;
+  color: var(--accent-color);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.audit-navigation-error {
+  max-width: min(260px, 24vw);
+  color: var(--accent-color);
+}
+
 /* Viewport controls live close to the canvas they affect. Edit has a browser
    bar below the main toolbar, so its island clears that row. */
 .viewport-zoom-island {
@@ -342,7 +455,8 @@
     transform 220ms cubic-bezier(0.22, 1, 0.36, 1) 3s;
 }
 
-.editor-workspace.workspace-editBeta .viewport-zoom-island {
+.editor-workspace.workspace-editBeta .viewport-zoom-island,
+.editor-workspace.workspace-audit .viewport-zoom-island {
   top: calc(100% + 49px);
 }
 

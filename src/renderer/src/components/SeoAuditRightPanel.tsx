@@ -166,13 +166,34 @@ export default function SeoAuditRightPanel({
       if (remoteUrls.length === 0 || typeof window.electronAPI?.getResourceFileSizes !== 'function') return
 
       try {
-        const results = await window.electronAPI.getResourceFileSizes(remoteUrls, sourceUrl)
-        if (requestId !== resourceSizeRequestRef.current) return
-        setResourceFileSizes((current) => {
-          const next = { ...current }
-          results.forEach((result) => { next[result.url] = result.sizeBytes })
-          return next
-        })
+        let pendingUrls = remoteUrls
+        for (let attempt = 0; attempt < 2 && pendingUrls.length > 0; attempt += 1) {
+          if (attempt > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, 1_500))
+            if (requestId !== resourceSizeRequestRef.current) return
+          }
+          const results = await window.electronAPI.getResourceFileSizes(pendingUrls, sourceUrl)
+          if (requestId !== resourceSizeRequestRef.current) return
+          const finalAttempt = attempt === 1
+          setResourceFileSizes((current) => {
+            const next = { ...current }
+            results.forEach((result) => {
+              if (result.sizeBytes != null || finalAttempt) next[result.url] = result.sizeBytes
+            })
+            return next
+          })
+          const resolved = new Set(
+            results.filter((result) => result.sizeBytes != null).map((result) => result.url),
+          )
+          pendingUrls = pendingUrls.filter((url) => !resolved.has(url))
+        }
+        if (pendingUrls.length > 0 && requestId === resourceSizeRequestRef.current) {
+          setResourceFileSizes((current) => {
+            const next = { ...current }
+            pendingUrls.forEach((url) => { next[url] = null })
+            return next
+          })
+        }
       } catch {
         if (requestId !== resourceSizeRequestRef.current) return
         setResourceFileSizes((current) => {

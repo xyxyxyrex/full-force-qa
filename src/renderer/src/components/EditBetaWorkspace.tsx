@@ -20,7 +20,10 @@ import type {
   CaptureViewportInfo,
 } from "./FullsiteCanvasModal";
 import { plainTextFromRichText } from "./RichTextEditor";
-import { canvasViewportGeometry } from "../utils/canvasZoom";
+import {
+  canvasFrameStripGeometry,
+  canvasViewportGeometry,
+} from "../utils/canvasZoom";
 import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { normalizeClassNames } from "../utils/editBetaClasses";
 import { mergeViewportPatches } from "../utils/viewportLayoutPatches";
@@ -4414,17 +4417,32 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const snapshotSideVisible = sideBySide && !!snapshotImage;
     const scaledWidth = viewportGeometry.displayedWidth;
     const scaledHeight = viewportGeometry.displayedHeight;
+    const enabledCanvasFrames = activeFrames.filter((frame) => frame.enabled);
+    const multiCanvasActive = canvasViewMode === "multi";
+    const multiFrameGeometry = canvasFrameStripGeometry(
+      enabledCanvasFrames,
+      zoom,
+    );
+    const liveCanvasWidth =
+      multiCanvasActive && enabledCanvasFrames.length > 0
+        ? multiFrameGeometry.displayedWidth
+        : scaledWidth;
+    const liveCanvasHeight =
+      multiCanvasActive && enabledCanvasFrames.length > 0
+        ? multiFrameGeometry.displayedHeight
+        : scaledHeight;
     const siteOffsetX = figmaSideVisible ? scaledWidth + 24 : 0;
     const stageWidth =
-      scaledWidth *
-        (1 + Number(figmaSideVisible) + Number(snapshotSideVisible)) +
-      24 * (Number(figmaSideVisible) + Number(snapshotSideVisible));
+      siteOffsetX +
+      liveCanvasWidth +
+      (snapshotSideVisible ? scaledWidth + 24 : 0);
+    const stageHeight = Math.max(scaledHeight, liveCanvasHeight);
     const figmaFrameLeft = 0 + figmaFrameOffset.x * scale;
     const figmaFrameTop = 0 + figmaFrameOffset.y * scale;
     const liveFrameLeft = siteOffsetX + liveFrameOffset.x * scale;
     const liveFrameTop = 0 + liveFrameOffset.y * scale;
     const snapshotFrameLeft =
-      siteOffsetX + scaledWidth + 24 + snapshotFrameOffset.x * scale;
+      siteOffsetX + liveCanvasWidth + 24 + snapshotFrameOffset.x * scale;
     const snapshotFrameTop = 0 + snapshotFrameOffset.y * scale;
 
     const topRulerRef = useRef<HTMLCanvasElement | null>(null);
@@ -5007,10 +5025,24 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           !!(figmaUrl || figmaImage);
         const hasSnapshotSide =
           !!overlayVisible && overlayMode === "side-by-side" && !!snapshotImage;
-        const sideCount = Number(hasFigmaSide) + Number(hasSnapshotSide);
+        const enabledFrames = activeFrames.filter((frame) => frame.enabled);
+        const multiFrameGeometry = canvasFrameStripGeometry(
+          enabledFrames,
+          zoom,
+        );
+        const liveWidth =
+          canvasViewMode === "multi" && enabledFrames.length > 0
+            ? multiFrameGeometry.displayedWidth
+            : width * currentScale;
+        const liveHeight =
+          canvasViewMode === "multi" && enabledFrames.length > 0
+            ? multiFrameGeometry.displayedHeight
+            : height * currentScale;
         const stageWidth =
-          width * currentScale * (1 + sideCount) + 24 * sideCount;
-        const stageHeight = height * currentScale;
+          liveWidth +
+          (hasFigmaSide ? width * currentScale + 24 : 0) +
+          (hasSnapshotSide ? width * currentScale + 24 : 0);
+        const stageHeight = Math.max(height * currentScale, liveHeight);
         const visibleEdge = Math.min(
           120,
           canvas.clientWidth / 3,
@@ -5032,6 +5064,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         figmaPanelVisible,
         figmaUrl,
         height,
+        activeFrames,
+        canvasViewMode,
         overlayMode,
         overlayVisible,
         snapshotImage,
@@ -5552,7 +5586,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       const canvas = canvasRef.current;
       if (!canvas || typeof ResizeObserver === "undefined") return;
       let frame = 0;
-      const observer = new ResizeObserver(() => {
+      const clampCurrentPan = () => {
         if (frame) cancelAnimationFrame(frame);
         frame = requestAnimationFrame(() => {
           frame = 0;
@@ -5560,7 +5594,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           panRef.current = next;
           setPan(next);
         });
-      });
+      };
+      // Frame toggles and zoom changes alter the stage without necessarily
+      // resizing the surrounding canvas, so clamp immediately as well as when
+      // the visible canvas itself changes size.
+      clampCurrentPan();
+      const observer = new ResizeObserver(clampCurrentPan);
       observer.observe(canvas);
       return () => {
         observer.disconnect();
@@ -7074,7 +7113,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
               className="edit-beta-stage"
               style={{
                 width: stageWidth,
-                height: scaledHeight,
+                height: stageHeight,
                 transform: `translate(${pan.x}px, ${pan.y}px)`,
               }}
             >
@@ -7152,8 +7191,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
               {/* Multi-Device Canvas & Stage Rendering */}
               {(() => {
-                const enabledFrames = activeFrames.filter((f) => f.enabled);
-                const isMulti = canvasViewMode === "multi" && enabledFrames.length > 0;
+                const enabledFrames = enabledCanvasFrames;
+                const isMulti = multiCanvasActive;
                 
                 // Active frame for editing (default to matching activeFrameId or first enabled frame)
                 const activeFrame = isMulti

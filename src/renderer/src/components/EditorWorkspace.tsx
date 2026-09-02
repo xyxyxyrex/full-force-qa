@@ -191,11 +191,14 @@ interface Props {
   onPersistHtml?: (html: string) => void;
   onThumbnailCaptured?: (dataUrl: string) => void;
   onProjectUpdated?: (project: Project) => void | Promise<void>;
+  initialWorkspaceTab?: WorkspaceTab;
+  onWorkspaceTabChange?: (workspaceTab: WorkspaceTab) => void;
+  onNavigateCapture?: (url: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 type DevicePreset = "Desktop" | "Tablet" | "Mobile";
 type ViewportMode = "preset" | "free";
-type WorkspaceTab = "editBeta" | "layout" | "live" | "audit" | "automate";
+export type WorkspaceTab = "editBeta" | "layout" | "live" | "audit" | "automate";
 
 interface Guide {
   axis: "x" | "y";
@@ -713,6 +716,9 @@ export default function EditorWorkspace({
   onPersistHtml,
   onThumbnailCaptured,
   onProjectUpdated,
+  initialWorkspaceTab,
+  onWorkspaceTabChange,
+  onNavigateCapture,
   hotkeys = DEFAULT_HOTKEYS,
 }: Props & { onOpenSettings?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -732,8 +738,14 @@ export default function EditorWorkspace({
     hotkeysRef.current = hotkeys;
   }, [hotkeys]);
 
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("editBeta");
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>(
+    initialWorkspaceTab || "editBeta",
+  );
   const isLiveWorkspace = workspaceTab === "live";
+
+  useEffect(() => {
+    onWorkspaceTabChange?.(workspaceTab);
+  }, [onWorkspaceTabChange, workspaceTab]);
   const [selectedComponent, setSelectedComponent] = useState<any>(null);
   const [activePreset, setActivePreset] = useState<DevicePreset>("Desktop");
   const [selectedDevicePresetName, setSelectedDevicePresetName] = useState<string | null>(
@@ -2945,10 +2957,34 @@ export default function EditorWorkspace({
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
 
   const [liveUrl, setLiveUrl] = useState<string>(sourceUrl || "");
+  const [auditUrl, setAuditUrl] = useState<string>(sourceUrl || "");
+  const [auditNavigationPending, setAuditNavigationPending] = useState(false);
+  const [auditNavigationError, setAuditNavigationError] = useState("");
 
   useEffect(() => {
-    if (sourceUrl) setLiveUrl(sourceUrl);
+    if (sourceUrl) {
+      setLiveUrl(sourceUrl);
+      setAuditUrl(sourceUrl);
+    }
   }, [sourceUrl]);
+
+  const handleNavigateAuditUrl = useCallback(async (rawUrl = auditUrl) => {
+    if (!onNavigateCapture || auditNavigationPending) return;
+    let targetUrl = rawUrl.trim();
+    if (!targetUrl) return;
+    if (!/^https?:\/\//i.test(targetUrl)) targetUrl = `https://${targetUrl}`;
+    setAuditUrl(targetUrl);
+    setAuditNavigationPending(true);
+    setAuditNavigationError("");
+    try {
+      const result = await onNavigateCapture(targetUrl);
+      if (!result.success) setAuditNavigationError(result.error || "Unable to load this page.");
+    } catch (error) {
+      setAuditNavigationError(error instanceof Error ? error.message : "Unable to load this page.");
+    } finally {
+      setAuditNavigationPending(false);
+    }
+  }, [auditNavigationPending, auditUrl, onNavigateCapture]);
 
   const liveWebviewRef = useRef<any>(null);
 
@@ -9483,6 +9519,51 @@ export default function EditorWorkspace({
                   .map((annotation) => annotation.sourceFindingId)
                   .filter((id): id is string => !!id)}
               />
+            )}
+            {workspaceTab === "audit" && (
+              <div className="audit-browser-navbar">
+                <button
+                  type="button"
+                  className="audit-browser-action"
+                  onClick={() => void handleNavigateAuditUrl(sourceUrl)}
+                  disabled={auditNavigationPending}
+                  title="Recapture and refresh audited page"
+                  aria-label="Recapture and refresh audited page"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M20 6v5h-5" />
+                    <path d="M18.2 15a7 7 0 1 1-.4-6.5L20 11" />
+                  </svg>
+                </button>
+                <div className={`audit-address-field ${auditNavigationError ? "has-error" : ""}`}>
+                  <svg className="audit-address-lock" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4" y="10" width="16" height="11" rx="2" />
+                    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={auditUrl}
+                    onChange={(event) => {
+                      setAuditUrl(event.target.value);
+                      if (auditNavigationError) setAuditNavigationError("");
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void handleNavigateAuditUrl(event.currentTarget.value);
+                    }}
+                    disabled={auditNavigationPending}
+                    aria-label="Audited page URL"
+                    aria-invalid={!!auditNavigationError}
+                    title={auditNavigationError || "Enter a URL and press Enter to capture it for Audit"}
+                    spellCheck={false}
+                  />
+                  {auditNavigationPending && <span className="audit-address-status">Capturing</span>}
+                </div>
+                {auditNavigationError && (
+                  <span className="audit-navigation-error" role="status" title={auditNavigationError}>
+                    {auditNavigationError}
+                  </span>
+                )}
+              </div>
             )}
             {/* Live Mode Browser Navigation Bar (Back, Forward, Refresh, URL Bar, Create Snapshot) */}
             {workspaceTab === "live" && (

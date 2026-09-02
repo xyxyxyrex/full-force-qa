@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { canvasViewportGeometry, nextCanvasZoomFromWheel } from "./canvasZoom";
+import {
+  canvasFrameStripGeometry,
+  canvasViewportGeometry,
+  nextCanvasZoomFromWheel,
+} from "./canvasZoom";
 
 describe("nextCanvasZoomFromWheel", () => {
   it("zooms in for an upward Ctrl+wheel gesture", () => {
@@ -29,6 +33,44 @@ describe("canvasViewportGeometry", () => {
       surfaceHeight: 1200,
       displayedWidth: 1152,
       displayedHeight: 720,
+    });
+  });
+
+  it("expands a multi-device strip to contain every enabled frame", () => {
+    expect(
+      canvasFrameStripGeometry(
+        [
+          { width: 1920, height: 1200 },
+          { width: 1180, height: 820 },
+          { width: 430, height: 932 },
+        ],
+        50,
+      ),
+    ).toEqual({
+      scale: 0.5,
+      displayedWidth: 1861,
+      displayedHeight: 600,
+    });
+  });
+
+  it("auto-adjusts when frames are removed or zoom changes", () => {
+    expect(
+      canvasFrameStripGeometry(
+        [
+          { width: 1180, height: 820 },
+          { width: 430, height: 932 },
+        ],
+        75,
+      ),
+    ).toEqual({
+      scale: 0.75,
+      displayedWidth: 1255.5,
+      displayedHeight: 699,
+    });
+    expect(canvasFrameStripGeometry([], 75)).toEqual({
+      scale: 0.75,
+      displayedWidth: 0,
+      displayedHeight: 0,
     });
   });
 });
