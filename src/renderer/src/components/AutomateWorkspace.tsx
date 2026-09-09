@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AutomateRunSummary, FindingTriageState, PageSection, ProjectAutomateState } from '../../../shared/types'
-import { extractSemanticAnchors, findingToAnnotationSpec, semanticFindings, stableId, type AnnotationFromFindingSpec, type ComparedRegion, type DomNode, type Finding, type TokenAssertion } from '../utils/visualCompare'
+import type { AutomateRunSummary, FindingTriageState, ProjectAutomateState } from '../../../shared/types'
+import { findingToAnnotationSpec, semanticComparison, stableId, type AnnotationFromFindingSpec, type DomNode, type Finding } from '../utils/visualCompare'
+import type { PixelComparison, ResultState } from '../../../shared/automation'
+import { visualFindings } from '../../../shared/automationFindings'
+import { ComparisonView } from '../automation/ComparisonView'
 import './AutomateWorkspace.css'
 
 interface FrameSummary { id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }
@@ -20,40 +23,6 @@ interface Props {
   pinnedFindingIds?: string[]
 }
 
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = src
-  })
-}
-
-async function isRepeatedViewportCapture(dataUrl: string, documentHeight: number, viewportHeight: number) {
-  if (!dataUrl || documentHeight < viewportHeight * 2.4) return false
-  const image = await loadImage(dataUrl)
-  const sourceTileHeight = viewportHeight * image.naturalHeight / documentHeight
-  if (sourceTileHeight < 20 || sourceTileHeight >= image.naturalHeight * .48) return false
-  const canvas = document.createElement('canvas'); canvas.width = 48; canvas.height = 48
-  const context = canvas.getContext('2d', { willReadFrequently: true })!
-  const signature = (tileIndex: number) => {
-    const y = Math.min(image.naturalHeight - sourceTileHeight, sourceTileHeight * tileIndex)
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(image, 0, y, image.naturalWidth, sourceTileHeight, 0, 0, canvas.width, canvas.height)
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-    return pixels
-  }
-  const difference = (left: any, right: any) => {
-    let total = 0
-    for (let index = 0; index < left.length; index++) total += Math.abs(left[index] - right[index])
-    return total / left.length
-  }
-  const first = signature(0); const second = signature(1); const third = signature(2)
-  const fourth = documentHeight >= viewportHeight * 3.6 ? signature(3) : null
-  const firstRepeated = difference(first, second) < 2.2 && difference(first, third) < 2.2
-  const laterRepeated = difference(second, third) < 2.2 && (!fourth || difference(third, fourth) < 2.2)
-  return firstRepeated || laterRepeated
-}
-
-const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
-
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => reject(new Error(message)), milliseconds)
@@ -61,385 +30,8 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
   })
 }
 
-async function captureFullPage(view: any, viewportWidth: number, viewportHeight: number, onProgress: (percent: number, detail: string) => void, isCancelled: () => boolean) {
-  const metrics = await withTimeout(view.executeJavaScript(`(async () => {
-    const freeze = document.createElement('style');
-    freeze.id = '__qaAutomateFreeze';
-    freeze.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; caret-color: transparent !important; } html, body { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }';
-    document.head?.appendChild(freeze);
-    const animations = document.getAnimations().map((animation) => ({ animation, playState: animation.playState }));
-    for (const item of animations) { try { item.animation.pause(); } catch {} }
-    // Wait for the page to actually be ready to photograph — fonts and
-    // in-flight images — rather than trusting a flat delay was long enough.
-    try { await Promise.race([(document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve(), new Promise((resolve) => setTimeout(resolve, 3000))]); } catch {}
-    const pendingImages = Array.from(document.images || []).slice(0, 400).filter((img) => !img.complete);
-    await Promise.all(pendingImages.map((img) => new Promise((resolve) => {
-      img.addEventListener('load', resolve, { once: true });
-      img.addEventListener('error', resolve, { once: true });
-      setTimeout(resolve, 4000);
-    })));
-    const root = document.documentElement; const body = document.body;
-    const documentScroller = document.scrollingElement || root;
-    const candidates = [documentScroller, ...Array.from(document.body?.querySelectorAll('*') || []).filter((element) => {
-      const style = getComputedStyle(element); const range = element.scrollHeight - element.clientHeight;
-      return range > 100 && /(auto|scroll|overlay)/.test(style.overflowY);
-    })];
-    let scroller = documentScroller; let bestRange = -1;
-    for (const candidate of candidates) {
-      const range = candidate.scrollHeight - candidate.clientHeight;
-      const previous = candidate.scrollTop; const behavior = candidate.style.scrollBehavior; const snap = candidate.style.scrollSnapType;
-      candidate.style.setProperty('scroll-behavior', 'auto', 'important'); candidate.style.setProperty('scroll-snap-type', 'none', 'important');
-      candidate.scrollTop = Math.min(137, Math.max(0, range)); const moved = candidate.scrollTop;
-      candidate.scrollTop = previous; candidate.style.scrollBehavior = behavior; candidate.style.scrollSnapType = snap;
-      if (moved > 50 && range > bestRange) { scroller = candidate; bestRange = range; }
-    }
-    const height = Math.max(scroller.scrollHeight, scroller.clientHeight);
-    window.__qaAutomateCapture = { x: scrollX, y: scrollY, scroller, scrollTop: scroller.scrollTop, scrollBehavior: scroller.style.scrollBehavior, scrollSnapType: scroller.style.scrollSnapType, overflowAnchor: scroller.style.overflowAnchor, positioned: [], animations };
-    scroller.style.setProperty('scroll-behavior', 'auto', 'important');
-    scroller.style.setProperty('scroll-snap-type', 'none', 'important');
-    scroller.style.setProperty('overflow-anchor', 'none', 'important');
-    for (const element of Array.from(document.body?.querySelectorAll('*') || [])) {
-      const position = getComputedStyle(element).position;
-      if (position === 'fixed' || position === 'sticky') {
-        window.__qaAutomateCapture.positioned.push({ element, visibility: element.style.visibility });
-      }
-    }
-    scroller.scrollTop = 0; if (scroller === documentScroller) scrollTo(0, 0);
-    return { height: Math.ceil(height), width: Math.ceil(Math.max(root.scrollWidth, body?.scrollWidth || 0)), clientHeight: Math.ceil(scroller.clientHeight), scrollRange: Math.ceil(scroller.scrollHeight - scroller.clientHeight), innerHeight: Math.ceil(innerHeight), scrollerTag: scroller.tagName.toLowerCase(), scrollerId: scroller.id || '' };
-  })()`, true), 20000, 'Timed out while measuring the live page.') as { height: number; width: number; clientHeight: number; scrollRange: number; innerHeight: number; scrollerTag: string; scrollerId: string }
-  const fullHeight = Math.max(viewportHeight, metrics.height)
-  const positions: number[] = []
-  for (let y = 0; y < fullHeight; y += viewportHeight) positions.push(Math.min(y, Math.max(0, fullHeight - viewportHeight)))
-  const uniquePositions = Array.from(new Set(positions))
-  let canvas: HTMLCanvasElement | null = null; let context: CanvasRenderingContext2D | null = null; let ratio = 1
-  const captureExpandedSurface = async () => {
-    onProgress(34, `Expanding Chromium's ${metrics.clientHeight}px guest surface for full-page capture…`)
-    const originalHeight = view.style.height
-    try {
-      view.style.height = `${fullHeight}px`
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-      await view.executeJavaScript(`(async () => { const capture = window.__qaAutomateCapture; const scroller = capture?.scroller || document.scrollingElement || document.documentElement; scroller.scrollTop = 0; if (scroller === document.scrollingElement) scrollTo(0, 0); await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))); return scroller.scrollTop; })()`, true)
-      await wait(320)
-      const nativeImage: any = await withTimeout(view.capturePage(), 20_000, 'Timed out capturing the expanded Chromium surface.')
-      const expanded = await withTimeout(loadImage(nativeImage.toDataURL()), 10_000, 'Unable to decode the expanded Chromium surface.')
-      ratio = expanded.naturalWidth / viewportWidth
-      const expectedHeight = Math.max(1, Math.round(fullHeight * ratio))
-      if (expanded.naturalHeight < expectedHeight * .9) throw new Error(`Chromium exposed only ${expanded.naturalHeight}px of an expected ${expectedHeight}px expanded surface.`)
-      canvas = document.createElement('canvas'); canvas.width = expanded.naturalWidth; canvas.height = expectedHeight; context = canvas.getContext('2d')!
-      context.fillStyle = '#ffffff'; context.fillRect(0, 0, canvas.width, canvas.height)
-      context.drawImage(expanded, 0, 0, expanded.naturalWidth, Math.min(expanded.naturalHeight, expectedHeight), 0, 0, expanded.naturalWidth, Math.min(expanded.naturalHeight, expectedHeight))
-      const dataUrl = canvas.toDataURL('image/png')
-      if (await isRepeatedViewportCapture(dataUrl, fullHeight, viewportHeight)) throw new Error('Chromium repeated the first compositor frame inside the expanded surface.')
-      return { dataUrl, documentHeight: fullHeight, documentWidth: metrics.width, tiles: 1, mode: 'expanded-surface' }
-    } finally {
-      view.style.height = originalHeight || `${viewportHeight}px`
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-    }
-  }
-  try {
-    if (metrics.scrollRange <= 5 && fullHeight > viewportHeight * 1.5) {
-      return await captureExpandedSurface()
-    }
-    for (let index = 0; index < uniquePositions.length; index++) {
-      if (isCancelled()) throw new Error('Comparison cancelled.')
-      const y = uniquePositions[index]
-      onProgress(28 + index / Math.max(1, uniquePositions.length) * 42, `Capturing live page tile ${index + 1} of ${uniquePositions.length}…`)
-      const actualPosition: any = await withTimeout(view.executeJavaScript(`(async () => {
-        const capture = window.__qaAutomateCapture;
-        for (const item of capture?.positioned || []) item.element.style.visibility = ${y === 0 ? 'item.visibility' : "'hidden'"};
-        const scroller = capture?.scroller || document.scrollingElement || document.documentElement;
-        scroller.style.setProperty('scroll-behavior', 'auto', 'important');
-        scroller.style.setProperty('scroll-snap-type', 'none', 'important');
-        scroller.style.setProperty('overflow-anchor', 'none', 'important');
-        scroller.scrollTop = ${y}; if (scroller === document.scrollingElement) scrollTo(0, ${y});
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return { x: scrollX, y: scroller.scrollTop, tag: scroller.tagName, id: scroller.id || '' };
-      })()`, true), 5000, `Timed out while scrolling to tile ${index + 1}.`)
-      if (Math.abs(Number(actualPosition?.y || 0) - y) > 3) {
-        if (fullHeight > viewportHeight * 1.5) return await captureExpandedSurface()
-        throw new Error(`Chromium stopped at ${Math.round(Number(actualPosition?.y || 0))}px instead of tile ${index + 1} at ${y}px (${metrics.scrollerTag}${metrics.scrollerId ? `#${metrics.scrollerId}` : ''}, client ${metrics.clientHeight}px, range ${metrics.scrollRange}px).`)
-      }
-      await wait(120)
-      const nativeImage: any = await withTimeout(view.capturePage(), 12000, `Timed out capturing live page tile ${index + 1}.`)
-      const tile = await withTimeout(loadImage(nativeImage.toDataURL()), 8000, `Unable to decode live page tile ${index + 1}.`)
-      if (!canvas) {
-        ratio = tile.naturalWidth / viewportWidth
-        canvas = document.createElement('canvas'); canvas.width = tile.naturalWidth; canvas.height = Math.max(1, Math.ceil(fullHeight * ratio)); context = canvas.getContext('2d')!
-        context.fillStyle = '#ffffff'; context.fillRect(0, 0, canvas.width, canvas.height)
-      }
-      const destinationY = Math.round(y * ratio); const drawHeight = Math.min(tile.naturalHeight, canvas.height - destinationY)
-      context!.drawImage(tile, 0, 0, tile.naturalWidth, drawHeight, 0, destinationY, tile.naturalWidth, drawHeight)
-    }
-    if (!canvas) throw new Error('The live page capture returned no image data.')
-    const dataUrl = canvas.toDataURL('image/png')
-    if (await isRepeatedViewportCapture(dataUrl, fullHeight, viewportHeight)) throw new Error('Chromium did not repaint while scrolling. The repeated capture was rejected; keep Automate visible and retry.')
-    return { dataUrl, documentHeight: fullHeight, documentWidth: metrics.width, tiles: uniquePositions.length, mode: 'verified-tiles' }
-  } finally {
-    try {
-      await view.executeJavaScript(`(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const capture = window.__qaAutomateCapture; for (const item of capture?.positioned || []) item.element.style.visibility = item.visibility; for (const item of capture?.animations || []) { if (item.playState === 'running') { try { item.animation.play(); } catch {} } } if (capture) { const scroller = capture.scroller || document.scrollingElement || document.documentElement; window.__qaAutomateSemanticScroller = scroller; scroller.style.scrollBehavior = capture.scrollBehavior; scroller.style.scrollSnapType = capture.scrollSnapType; scroller.style.overflowAnchor = capture.overflowAnchor; scroller.scrollTop = capture.scrollTop; if (scroller === document.scrollingElement) scrollTo(capture.x, capture.y); } delete window.__qaAutomateCapture; })()`, true)
-    } catch { }
-  }
-}
-
-async function createVisualDiff(designUrl: string, liveUrl: string) {
-  const [design, live] = await Promise.all([loadImage(designUrl), loadImage(liveUrl)])
-  const scale = Math.min(1, 900 / design.naturalWidth, 1800 / design.naturalHeight)
-  const width = Math.max(1, Math.round(design.naturalWidth * scale)); const height = Math.max(1, Math.round(design.naturalHeight * scale))
-  const a = document.createElement('canvas'); const b = document.createElement('canvas'); const out = document.createElement('canvas')
-  a.width = b.width = out.width = width; a.height = b.height = out.height = height
-  const ac = a.getContext('2d', { willReadFrequently: true })!; const bc = b.getContext('2d', { willReadFrequently: true })!; const oc = out.getContext('2d')!
-  ac.fillStyle = '#fff'; bc.fillStyle = '#fff'; ac.fillRect(0, 0, width, height); bc.fillRect(0, 0, width, height)
-  ac.drawImage(design, 0, 0, width, height)
-  const liveHeight = Math.round(live.naturalHeight * width / Math.max(1, live.naturalWidth))
-  bc.drawImage(live, 0, 0, width, liveHeight)
-  const ad = ac.getImageData(0, 0, width, height); const bd = bc.getImageData(0, 0, width, height); const diff = oc.createImageData(width, height)
-  let changed = 0; let totalDelta = 0
-  for (let index = 0; index < ad.data.length; index += 4) {
-    const delta = Math.abs(ad.data[index] - bd.data[index]) + Math.abs(ad.data[index + 1] - bd.data[index + 1]) + Math.abs(ad.data[index + 2] - bd.data[index + 2])
-    totalDelta += delta
-    if (delta > 72) { changed++; diff.data[index] = 255; diff.data[index + 1] = Math.min(150, delta / 3); diff.data[index + 2] = 80; diff.data[index + 3] = 215 }
-    else { diff.data[index] = ad.data[index] * .22; diff.data[index + 1] = ad.data[index + 1] * .22; diff.data[index + 2] = ad.data[index + 2] * .22; diff.data[index + 3] = 105 }
-  }
-  oc.putImageData(diff, 0, 0)
-  const pixels = width * height
-  return { dataUrl: out.toDataURL('image/png'), changedPercent: changed / pixels * 100, similarity: Math.max(0, 100 - totalDelta / (pixels * 765) * 100) }
-}
-
-function FindingComparisonView({ finding, designImage, liveImage, onClose }: { finding: Finding; designImage: string; liveImage: string; onClose: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  useEffect(() => {
-    let disposed = false
-    Promise.all([loadImage(designImage), loadImage(liveImage)]).then(([design, live]) => {
-      if (disposed || !canvasRef.current) return
-      const canvas = canvasRef.current; canvas.width = 1200; canvas.height = 560
-      const context = canvas.getContext('2d')!; context.fillStyle = '#09090b'; context.fillRect(0, 0, canvas.width, canvas.height)
-      const roundedRect = (x: number, y: number, width: number, height: number, radius: number) => {
-        context.beginPath(); context.roundRect(x, y, width, height, radius)
-      }
-      const badge = (text: string, x: number, y: number, color: string) => {
-        context.font = '600 13px system-ui'; const width = context.measureText(text).width + 16
-        roundedRect(x, y - 20, width, 22, 4); context.fillStyle = color; context.fill(); context.fillStyle = '#fff'; context.fillText(text, x + 8, y - 5)
-      }
-      const drawPanel = (image: HTMLImageElement, region: ComparedRegion | undefined, panelX: number, title: string, color: string) => {
-        const panelY = 58; const panelWidth = 550; const panelHeight = 410
-        context.fillStyle = '#18181b'; roundedRect(panelX, panelY, panelWidth, panelHeight, 8); context.fill()
-        context.fillStyle = color; context.font = '700 13px system-ui'; context.fillText(title, panelX, 32)
-        if (!region) {
-          context.fillStyle = '#27272a'; roundedRect(panelX + 14, panelY + 14, panelWidth - 28, panelHeight - 28, 6); context.fill()
-          context.fillStyle = '#f87171'; context.font = '650 18px system-ui'; context.textAlign = 'center'; context.fillText('No corresponding element found', panelX + panelWidth / 2, panelY + panelHeight / 2)
-          context.fillStyle = '#71717a'; context.font = '12px system-ui'; context.fillText('The matcher could not establish a reliable live pairing.', panelX + panelWidth / 2, panelY + panelHeight / 2 + 25); context.textAlign = 'left'
-          return null
-        }
-        const rect = region.rect;
-        const cropWidth = region.pageWidth
-        const cropHeight = Math.min(region.pageHeight, Math.max(380, cropWidth * (panelHeight - 28) / (panelWidth - 28)))
-        const targetCenterY = rect.y + rect.height / 2
-        const cropX = 0
-        const cropY = Math.max(0, Math.min(region.pageHeight - cropHeight, targetCenterY - cropHeight / 2))
-        const imageScaleX = image.naturalWidth / region.pageWidth; const imageScaleY = image.naturalHeight / region.pageHeight
-        const fit = Math.min((panelWidth - 28) / cropWidth, (panelHeight - 28) / cropHeight)
-        const drawWidth = cropWidth * fit; const drawHeight = cropHeight * fit; const drawX = panelX + (panelWidth - drawWidth) / 2; const drawY = panelY + (panelHeight - drawHeight) / 2
-        context.save(); roundedRect(panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2, 7); context.clip()
-        context.drawImage(image, cropX * imageScaleX, cropY * imageScaleY, cropWidth * imageScaleX, cropHeight * imageScaleY, drawX, drawY, drawWidth, drawHeight); context.restore()
-        const boxX = drawX + (rect.x - cropX) * fit; const boxY = drawY + (rect.y - cropY) * fit; const boxWidth = Math.max(2, rect.width * fit); const boxHeight = Math.max(2, rect.height * fit)
-        context.strokeStyle = color; context.lineWidth = 3; context.strokeRect(boxX, boxY, boxWidth, boxHeight)
-        context.fillStyle = `${color}22`; context.fillRect(boxX, boxY, boxWidth, boxHeight)
-        badge(`${Math.round(rect.width)} × ${Math.round(rect.height)} px`, boxX, Math.max(panelY + 25, boxY), color)
-        context.fillStyle = '#d4d4d8'; context.font = '11px ui-monospace, monospace'; context.fillText(`X ${Math.round(rect.x)}   Y ${Math.round(rect.y)}`, panelX + 10, panelY + panelHeight + 20)
-        context.fillStyle = '#a1a1aa'; context.font = '11px system-ui'; context.fillText(region.label.slice(0, 66), panelX + 10, panelY + panelHeight + 38)
-        return { x: boxX + boxWidth, y: boxY + boxHeight / 2, oppositeX: boxX, color }
-      }
-      const left = drawPanel(design, finding.comparison?.design, 25, 'FIGMA EXPECTED', '#a78bfa')
-      const right = drawPanel(live, finding.comparison?.live, 625, 'LIVE CHROMIUM', '#22d3ee')
-      if (left && right) {
-        context.strokeStyle = '#f8fafc'; context.lineWidth = 2; context.setLineDash([6, 5]); context.beginPath(); context.moveTo(left.x, left.y); context.lineTo(right.oppositeX, right.y); context.stroke(); context.setLineDash([])
-        const angle = Math.atan2(right.y - left.y, right.oppositeX - left.x); context.fillStyle = '#f8fafc'; context.beginPath(); context.moveTo(right.oppositeX, right.y); context.lineTo(right.oppositeX - 11 * Math.cos(angle - .45), right.y - 11 * Math.sin(angle - .45)); context.lineTo(right.oppositeX - 11 * Math.cos(angle + .45), right.y - 11 * Math.sin(angle + .45)); context.closePath(); context.fill()
-      }
-      const delta = finding.comparison?.delta
-      if (delta) {
-        const values = [delta.x !== undefined ? `ΔX ${Math.round(delta.x)}px` : '', delta.y !== undefined ? `ΔY ${Math.round(delta.y)}px` : '', delta.width !== undefined ? `ΔW ${Math.round(delta.width)}px` : '', delta.height !== undefined ? `ΔH ${Math.round(delta.height)}px` : '', delta.fontSize !== undefined ? `Δ font ${Math.round(delta.fontSize * 10) / 10}px` : ''].filter(Boolean).join('    ')
-        context.fillStyle = '#fbbf24'; context.font = '650 12px ui-monospace, monospace'; context.textAlign = 'center'; context.fillText(values, 600, 548); context.textAlign = 'left'
-      }
-    }).catch(() => { })
-    return () => { disposed = true }
-  }, [designImage, finding, liveImage])
-  return (
-    <div className="automate-finding-comparison">
-      <div className="automate-finding-comparison-head">
-        <div>
-          <strong>{finding.title}</strong>
-          <span>{finding.detail}</span>
-        </div>
-        <button onClick={onClose} title="Return to visual overview">×</button>
-      </div>
-      <canvas ref={canvasRef} />
-    </div>
-  )
-}
-
-function ConformanceSparkline({ runs }: { runs: AutomateRunSummary[] }) {
-  if (runs.length < 2) return null
-  const ordered = [...runs].sort((a, b) => a.at - b.at)
-  const width = 160; const height = 28; const pad = 3
-  const scores = ordered.map((r) => r.conformanceScore)
-  const min = Math.min(...scores); const max = Math.max(...scores)
-  const range = Math.max(1, max - min)
-  const toPoint = (index: number, score: number) => {
-    const x = pad + (index / (ordered.length - 1)) * (width - pad * 2)
-    const y = height - pad - ((score - min) / range) * (height - pad * 2)
-    return { x, y }
-  }
-  const points = ordered.map((run, index) => { const p = toPoint(index, run.conformanceScore); return `${p.x.toFixed(1)},${p.y.toFixed(1)}` }).join(' ')
-  const last = toPoint(ordered.length - 1, ordered[ordered.length - 1].conformanceScore)
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Conformance trend across recent runs: ${scores.join(', ')}`}>
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.8" />
-      <circle cx={last.x} cy={last.y} r="2.5" fill="currentColor" />
-    </svg>
-  )
-}
-
-function TokenIconBadge({ token }: { token: TokenAssertion }) {
-  const renderIcon = () => {
-    switch (token.name) {
-      case 'font-size':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 19L10 5L16 19" />
-            <path d="M6 14H14" />
-            <path d="M18 19V11" />
-            <path d="M16 13C16 11.9 16.9 11 18 11C19.1 11 20 11.9 20 13V19" />
-          </svg>
-        )
-      case 'font-weight':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
-            <path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
-          </svg>
-        )
-      case 'line-height':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 6H3" />
-            <path d="M21 18H3" />
-            <path d="M12 9l-2 3h4l-2-3z" />
-            <path d="M12 15l-2-3h4l-2 3z" />
-            <path d="M12 9v6" />
-          </svg>
-        )
-      case 'letter-spacing':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M7 8L3 12L7 16" />
-            <path d="M17 8L21 12L17 16" />
-            <path d="M3 12H21" />
-          </svg>
-        )
-      case 'font-family':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="4 7 4 4 20 4 20 7" />
-            <line x1="9" y1="20" x2="15" y2="20" />
-            <line x1="12" y1="4" x2="12" y2="20" />
-          </svg>
-        )
-      case 'color':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a10 10 0 0 1 10 10c0 2.5-2 4.5-4.5 4.5H16a2 2 0 0 0-2 2v.5c0 1.4-1.1 2.5-2.5 2.5A10 10 0 0 1 12 2z" />
-            <circle cx="7.5" cy="10.5" r="1" fill="currentColor" />
-            <circle cx="12" cy="7.5" r="1" fill="currentColor" />
-            <circle cx="16.5" cy="10.5" r="1" fill="currentColor" />
-          </svg>
-        )
-      case 'text-align':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="12" x2="15" y2="12" />
-            <line x1="3" y1="18" x2="18" y2="18" />
-          </svg>
-        )
-      case 'bg-color':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 11l-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0L19 11z" />
-            <path d="M5 2c0 2 2 4 4 4" />
-          </svg>
-        )
-      case 'border-radius':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="5" />
-          </svg>
-        )
-      case 'text-case':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 17L7 7L11 17" />
-            <path d="M4.5 13H9.5" />
-            <path d="M13 8h5" />
-            <path d="M15.5 8v9" />
-          </svg>
-        )
-      case 'font-loaded':
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 19L10 5L16 19" />
-            <path d="M6 14H14" />
-            <line x1="18" y1="6" x2="22" y2="10" />
-            <line x1="22" y1="6" x2="18" y2="10" />
-          </svg>
-        )
-      default:
-        return (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="4" />
-          </svg>
-        )
-    }
-  }
-
-  const shortName = token.name.replace('font-', '').replace('letter-', '').replace('line-', '')
-
-  if (token.unresolved) {
-    return (
-      <div className="automate-token-chip unresolved" title={`${token.name}: could not be compared (Figma ${token.figma} vs live "${token.css}")`}>
-        <span className="tok-icon">{renderIcon()}</span>
-        <span className="tok-label">{shortName}</span>
-        <span className="tok-val">unresolved</span>
-      </div>
-    )
-  }
-
-  return token.passed ? (
-    <div className="automate-token-chip pass" title={`${token.name}: Figma ${token.figma} = CSS ${token.css}`}>
-      <span className="tok-icon">{renderIcon()}</span>
-      <span className="tok-label">{shortName}</span>
-      <span className="tok-val">{token.css}</span>
-    </div>
-  ) : (
-    <div className="automate-token-chip fail" title={`Mismatch on ${token.name}: Figma ${token.figma} vs Live CSS ${token.css}`}>
-      <span className="tok-icon">{renderIcon()}</span>
-      <span className="tok-label">{shortName}</span>
-      <span className="tok-figma" title="Figma expected">{token.figma}</span>
-      <span className="tok-divider">→</span>
-      <span className="tok-val" title="Live computed CSS">{token.css}</span>
-      <span className="tok-alert" title="Spec mismatch">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
-      </span>
-    </div>
-  )
-}
-
 export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId, onOpenSettings, onCreateAnnotation, automateState, onAutomateStateChange, pinnedFindingIds: persistedPinnedFindingIds = [] }: Props) {
   const webviewRef = useRef<any>(null)
-  const [expandedTokensMap, setExpandedTokensMap] = useState<Record<number, boolean>>({})
   const comparisonRunRef = useRef(0)
   const activeVisualJobRef = useRef('')
   // This tab unmounts and remounts on every click into it, and whether a Figma
@@ -458,16 +50,13 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const [designUrl, setDesignUrl] = useState(() => localStorage.getItem(`qa_${projectId}_automate_figma_url`) || figmaUrl)
   const [frames, setFrames] = useState<FrameSummary[]>([]); const [frameId, setFrameId] = useState(''); const [fileName, setFileName] = useState('')
   const [ready, setReady] = useState(false); const [busy, setBusy] = useState(false); const [status, setStatus] = useState('Connect a Figma frame to begin.'); const [error, setError] = useState('')
-  const [designImage, setDesignImage] = useState(''); const [liveImage, setLiveImage] = useState(''); const [diffImage, setDiffImage] = useState('')
-  const [similarity, setSimilarity] = useState<number | null>(null); const [changed, setChanged] = useState<number | null>(null); const [view, setView] = useState<'diff' | 'design' | 'live'>('diff')
-  const [sections, setSections] = useState<PageSection[]>([])
+  const [designImage, setDesignImage] = useState(''); const [liveImage, setLiveImage] = useState('')
   const [progress, setProgress] = useState({ percent: 0, detail: '' })
   const [liveDocumentHeight, setLiveDocumentHeight] = useState<number | null>(null)
   const [selectedFindingIndex, setSelectedFindingIndex] = useState<number | null>(null)
-  const [visualEngine, setVisualEngine] = useState('')
   const [rawDesignNode, setRawDesignNode] = useState<any>(null)
   const [rawDomNodes, setRawDomNodes] = useState<DomNode[] | null>(null)
-  const [rawVisualData, setRawVisualData] = useState<any>(null)
+  const [rawVisualData, setRawVisualData] = useState<PixelComparison | null>(null)
   const triage = automateState.triage
   const [showTriaged, setShowTriaged] = useState(false)
   const [styleNames, setStyleNames] = useState<Record<string, string>>({})
@@ -511,7 +100,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   useEffect(() => {
     const view = webviewRef.current
     if (!view) return
-    const loaded = () => { setReady(true); setError('') }
+    const loaded = () => setReady(true)
     const loading = () => setReady(false)
     const failed = (event: any) => {
       if (event?.errorCode === -3) return
@@ -545,24 +134,28 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const loadFrames = async () => {
     if (!designUrl.trim()) return setError('Enter a Figma design URL.')
     setBusy(true); setError(''); setStatus('Reading Figma frame structure…')
-    const result = await window.electronAPI.listFigmaFrames(designUrl.trim())
-    setBusy(false)
-    if (!result.success) return setError(result.error || 'Unable to read the Figma file.')
-    const nextFrames = result.frames || []; setFrames(nextFrames); setFileName(result.fileName || 'Figma design')
-    setStyleNames(result.styleNames || {})
-    const requested = nextFrames.find((frame) => frame.id === result.requestedNodeId)?.id
-    setFrameId(requested || nextFrames[0]?.id || ''); localStorage.setItem(`qa_${projectId}_automate_figma_url`, designUrl.trim())
-    setStatus(`${nextFrames.length} comparable frames found.`)
+    try {
+      const result = await window.electronAPI.listFigmaFrames(designUrl.trim())
+      if (!result.success) throw new Error(result.error || 'Unable to read the Figma file.')
+      const nextFrames = result.frames || []; setFrames(nextFrames); setFileName(result.fileName || 'Figma design')
+      setStyleNames(result.styleNames || {})
+      setRawVisualData(null); setRawDesignNode(null); setRawDomNodes(null)
+      const requested = nextFrames.find((frame) => frame.id === result.requestedNodeId)?.id
+      setFrameId(requested || nextFrames[0]?.id || ''); localStorage.setItem(`qa_${projectId}_automate_figma_url`, designUrl.trim())
+      setStatus(`${nextFrames.length} comparable frames found.`)
+    } catch (cause: any) {
+      setError(cause?.message || 'Figma retrieval unavailable.'); setStatus('Design source unavailable.')
+    } finally { setBusy(false) }
   }
   const runComparison = async () => {
     if (!selectedFrame) return setError('Select a Figma frame first.')
     if (!webviewRef.current) return setError('The staging capture browser is not attached yet.')
     const runId = ++comparisonRunRef.current
-    const visualJobId = `${projectId}:${runId}`
+    const visualJobId = `${projectId}:${crypto.randomUUID()}`
     activeVisualJobRef.current = visualJobId
     const cancelled = () => comparisonRunRef.current !== runId
     const updateProgress = (percent: number, detail: string) => { if (!cancelled()) { setProgress({ percent: Math.round(percent), detail }); setStatus(detail) } }
-    setBusy(true); setError(''); setStatus('Preparing comparison…'); setProgress({ percent: 4, detail: 'Preparing comparison…' }); setSelectedFindingIndex(null); setVisualEngine(''); setSections([])
+    setBusy(true); setError(''); setStatus('Preparing comparison…'); setProgress({ percent: 4, detail: 'Preparing comparison…' }); setSelectedFindingIndex(null); setRawVisualData(null); setRawDesignNode(null); setRawDomNodes(null); setSelectedForAnnotation(new Set())
     try {
       const view = webviewRef.current
       updateProgress(8, 'Checking the authenticated staging page…')
@@ -582,87 +175,26 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
       if (!liveCapture?.success || !liveCapture.dataUrl) throw new Error(liveCapture?.error || 'The DevTools Chromium capture failed.')
       if (cancelled()) throw new Error('Comparison cancelled.')
       updateProgress(73, 'Reading live semantic layout…')
-      const domNodes = liveCapture.domNodes?.length ? liveCapture.domNodes as DomNode[] : await view.executeJavaScript(`(() => {
-        const selectors = 'h1,h2,h3,h4,h5,h6,p,a,button,label,li,span,div,dt,dd,summary,figcaption,th,td,img,input,section,article,header,footer,nav,main';
-        const semanticTextSelector = 'h1,h2,h3,h4,h5,h6,p,a,button,label,li,span,dt,dd,summary,figcaption,th,td';
-        const directSemanticSelector = semanticTextSelector.split(',').map((selector) => ':scope > ' + selector).join(',');
-        const documentScroller = document.scrollingElement || document.documentElement;
-        const scrollCandidates = [documentScroller, ...Array.from(document.body?.querySelectorAll('*') || []).filter((element) => {
-          const style = getComputedStyle(element); return element.scrollHeight - element.clientHeight > 100 && /(auto|scroll|overlay)/.test(style.overflowY);
-        })];
-        const scroller = window.__qaAutomateSemanticScroller || scrollCandidates.reduce((best, candidate) => candidate.scrollHeight - candidate.clientHeight > best.scrollHeight - best.clientHeight ? candidate : best, documentScroller);
-        const scrollerRect = scroller.getBoundingClientRect();
-        const pageHeight = Math.max(scroller.scrollHeight, scroller.clientHeight);
-        const compact = (value) => String(value || '').trim().replace(/\\s+/g, ' ');
-        const directText = (element) => compact(Array.from(element.childNodes).filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent || '').join(' '));
-        const elementText = (element) => {
-          const accessible = compact(element.getAttribute('alt') || element.getAttribute('aria-label') || element.getAttribute('title') || '');
-          if (element.matches('img,input')) return accessible;
-          const isLeaf = element.matches('h1,h2,h3,h4,h5,h6,p,a,button,label,li,span,dt,dd,summary,figcaption,th,td');
-          if (isLeaf) return compact(element.innerText || element.textContent || accessible);
-          const own = directText(element);
-          if (own) return own;
-          if (!element.querySelector(semanticTextSelector)) return compact(element.innerText || element.textContent || accessible);
-          return accessible;
-        };
-        const contextFor = (element) => {
-          const container = element.closest('section,article,nav,header,footer,main') || element.parentElement;
-          const heading = container?.querySelector('h1,h2,h3,h4,h5,h6');
-          let previous = element.previousElementSibling;
-          while (previous && !previous.matches('h1,h2,h3,h4,h5,h6')) previous = previous.previousElementSibling;
-          return compact([container?.id, container?.getAttribute('aria-label'), heading?.textContent, previous?.textContent].filter(Boolean).join(' ')).slice(0, 320);
-        };
-        const pathFor = (element) => {
-          const parts = []; let current = element;
-          while (current && current !== document.body && parts.length < 6) {
-            const marker = current.id ? '#' + current.id : Array.from(current.classList || []).slice(0, 2).map((name) => '.' + name).join('');
-            parts.unshift(current.tagName.toLowerCase() + marker); current = current.parentElement;
-          }
-          return parts.join(' > ');
-        };
-        const fontActuallyLoaded = (style) => {
-          try {
-            const family = (style.fontFamily.split(',')[0] || '').trim().replace(/^["']|["']$/g, '');
-            if (!family || !document.fonts || !document.fonts.check) return true;
-            return document.fonts.check(style.fontWeight + ' ' + style.fontSize + ' "' + family + '"');
-          } catch { return true; }
-        };
-        return Array.from(document.querySelectorAll(selectors)).map((element) => {
-          const rect = element.getBoundingClientRect(); const style = getComputedStyle(element);
-          const positioned = style.position === 'fixed' || style.position === 'sticky';
-          const insideNestedScroller = scroller !== documentScroller && scroller.contains(element);
-          const pageX = positioned ? rect.left : insideNestedScroller ? rect.left - scrollerRect.left + scroller.scrollLeft : rect.left + scrollX;
-          const pageY = positioned ? rect.top : insideNestedScroller ? rect.top - scrollerRect.top + scroller.scrollTop : rect.top + scrollY;
-          return { tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || '', text: elementText(element).slice(0, 500), src: element.tagName === 'IMG' ? element.currentSrc || element.src : '', context: contextFor(element), path: pathFor(element), rect: { x: pageX, y: pageY, width: rect.width, height: rect.height }, styles: { fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, color: style.color, backgroundColor: style.backgroundColor, textAlign: style.textAlign, textTransform: style.textTransform, position: style.position, fontLoaded: String(fontActuallyLoaded(style)) } };
-        }).filter((item) => item.rect.width > 1 && item.rect.height > 1 && item.rect.x > -item.rect.width && item.rect.x < document.documentElement.scrollWidth + item.rect.width && item.rect.y > -item.rect.height && item.rect.y < pageHeight + item.rect.height);
-      })()`, true) as DomNode[]
+      if (!Array.isArray(liveCapture.domNodes)) throw new Error('Capture did not return a semantic snapshot.')
+      const domNodes = liveCapture.domNodes as DomNode[]
       const liveHeight = liveCapture.documentHeight || captureViewportHeight
-      const semanticAnchors = extractSemanticAnchors(design.node, domNodes, selectedFrame.width, liveHeight)
-      updateProgress(80, 'Registering page sections with hybrid semantic OpenCV…')
-      let enhancedVisual: any = null
-      let workerProgress = 81
-      const workerProgressTimer = window.setInterval(() => { workerProgress = Math.min(90, workerProgress + 1); updateProgress(workerProgress, workerProgress < 86 ? 'Registering long-page sections with OpenCV…' : 'Calculating SSIM heatmap and change contours…') }, 900)
-      try {
-        enhancedVisual = await withTimeout(window.electronAPI.compareVisuals(visualJobId, design.imageDataUrl, liveCapture.dataUrl, semanticAnchors, 'visual-surface'), 95_000, 'The OpenCV visual comparison exceeded 95 seconds.')
-      } catch (workerError: any) {
-        enhancedVisual = { success: false, error: workerError?.message || 'The OpenCV worker was unavailable.', fallback: true }
-      } finally { clearInterval(workerProgressTimer) }
-      const visual = enhancedVisual?.success
-        ? { dataUrl: enhancedVisual.heatmapDataUrl, similarity: enhancedVisual.similarity, changedPercent: enhancedVisual.changedPercent, regions: enhancedVisual.regions || [], anchors: enhancedVisual.anchors || [], engine: enhancedVisual.engine || 'opencv-ssim' }
-        : { ...(await withTimeout(createVisualDiff(design.imageDataUrl, liveCapture.dataUrl), 30_000, 'Visual difference processing exceeded 30 seconds and was stopped.')), regions: [], anchors: [], engine: 'javascript-fallback' }
+      updateProgress(80, 'Comparing native-resolution pixels…')
+      const response = await withTimeout(window.electronAPI.compareVisuals(visualJobId, design.imageDataUrl, liveCapture.dataUrl), 95_000, 'Pixel comparison timed out.')
+      if (!response.success) throw new Error(response.error)
+      const visual = response.result
       if (cancelled()) throw new Error('Comparison cancelled.')
       updateProgress(92, 'Matching Figma layers to live elements…')
       if (!cancelled()) {
         setRawDesignNode(design.node)
         setRawDomNodes(domNodes)
         setRawVisualData(visual)
-        setDesignImage(design.imageDataUrl); setLiveImage(liveCapture.dataUrl); setDiffImage(visual.dataUrl); setSimilarity(visual.similarity); setChanged(visual.changedPercent); setLiveDocumentHeight(liveHeight); setVisualEngine(visual.engine); setSections(enhancedVisual?.sections || [])
-        setView('diff'); setProgress({ percent: 100, detail: `Comparison complete · ${liveCapture.mode === 'atomic-cdp' ? 'atomic Chromium capture' : `${liveCapture.tiles} capture tiles`} · ${visual.engine}` }); setStatus('Comparison complete.')
+        setDesignImage(design.imageDataUrl); setLiveImage(liveCapture.dataUrl); setLiveDocumentHeight(liveHeight)
+        setProgress({ percent: 100, detail: 'Comparison complete' }); setStatus('Comparison complete — review coverage and evidence.')
         setLastCompletedRunId(runId)
       }
     } catch (cause: any) {
       if (!cancelled()) { const message = cause?.message || 'Comparison failed.'; setError(message); setStatus(message === 'Comparison cancelled.' ? 'Comparison cancelled.' : 'Comparison stopped.'); setProgress({ percent: 0, detail: '' }) }
-    } finally { if (activeVisualJobRef.current === visualJobId) activeVisualJobRef.current = ''; if (!cancelled()) setBusy(false) }
+    } finally { void window.electronAPI.cancelVisualComparison(visualJobId); if (activeVisualJobRef.current === visualJobId) activeVisualJobRef.current = ''; if (!cancelled()) setBusy(false) }
   }
 
   const cancelComparison = () => {
@@ -675,42 +207,25 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const captureWidth = selectedFrame?.width || 1440
   const captureViewportHeight = 1200
 
+  const semantic = useMemo(() => rawDesignNode && rawDomNodes && rawVisualData
+    ? semanticComparison(rawDesignNode, rawDomNodes, rawVisualData.live.width, rawVisualData.live.height, styleNames)
+    : null, [rawDesignNode, rawDomNodes, rawVisualData, styleNames])
   const findings = useMemo(() => {
-    if (!rawDesignNode || !rawDomNodes || !selectedFrame) return []
-    const liveHeight = liveDocumentHeight || captureViewportHeight
-    const nextFindings = semanticFindings(rawDesignNode, rawDomNodes, selectedFrame.width, liveHeight, styleNames)
-    if (rawVisualData?.regions?.length && rawVisualData?.anchors?.length) {
-      const mapLiveY = (designY: number) => {
-        const anchors = rawVisualData.anchors as Array<{ designY: number; liveY: number }>
-        const upperIndex = anchors.findIndex((anchor) => anchor.designY >= designY)
-        if (upperIndex <= 0) return anchors[0]?.liveY || designY
-        const upper = anchors[upperIndex]; const lower = anchors[upperIndex - 1]
-        const ratio = (designY - lower.designY) / Math.max(1, upper.designY - lower.designY)
-        return lower.liveY + (upper.liveY - lower.liveY) * ratio
-      }
-      const meaningfulRegions = rawVisualData.regions.filter((region: any) => region.width * region.height > selectedFrame.width * selectedFrame.height * .0002).slice(0, 8)
-      for (const [index, region] of meaningfulRegions.entries()) {
-        const liveY = mapLiveY(region.y); const liveBottom = mapLiveY(region.y + region.height)
-        const designRegion: ComparedRegion = { rect: { x: region.x, y: region.y, width: region.width, height: region.height }, pageWidth: selectedFrame.width, pageHeight: selectedFrame.height, label: `OpenCV difference region ${index + 1}` }
-        const liveRegion: ComparedRegion = { rect: { x: region.x / selectedFrame.width * captureWidth, y: liveY, width: region.width / selectedFrame.width * captureWidth, height: Math.max(1, liveBottom - liveY) }, pageWidth: captureWidth, pageHeight: liveHeight, label: `Registered live region · ${region.difference}% structural difference` }
-        nextFindings.push({ id: stableId('opencv-region', String(index), String(Math.round(region.y))), severity: region.difference > 55 ? 'high' : region.difference > 32 ? 'medium' : 'low', title: `Visual difference region ${index + 1}`, detail: `${region.width}×${region.height}px region · ${region.difference}% structural difference after section alignment.`, confidence: Math.min(100, Math.round(region.difference)), comparison: { design: designRegion, live: liveRegion, delta: { x: liveRegion.rect.x - designRegion.rect.x, y: liveRegion.rect.y - designRegion.rect.y, width: liveRegion.rect.width - designRegion.rect.width, height: liveRegion.rect.height - designRegion.rect.height } } })
-      }
-    }
-    nextFindings.unshift({ id: stableId('page-height'), severity: Math.abs(selectedFrame.height - liveHeight) > 20 ? 'medium' : 'pass', title: Math.abs(selectedFrame.height - liveHeight) > 20 ? 'Full-page height differs' : 'Full-page height matches', detail: `Figma ${selectedFrame.height}px · Live ${liveHeight}px · Chromium viewport ${captureWidth}×${captureViewportHeight}`, confidence: 100, comparison: { design: { rect: { x: 0, y: 0, width: selectedFrame.width, height: selectedFrame.height }, pageWidth: selectedFrame.width, pageHeight: selectedFrame.height, label: `Figma full page · ${selectedFrame.width}×${selectedFrame.height}` }, live: { rect: { x: 0, y: 0, width: captureWidth, height: liveHeight }, pageWidth: captureWidth, pageHeight: liveHeight, label: `Live full page · ${captureWidth}×${liveHeight}` }, delta: { height: liveHeight - selectedFrame.height } } })
-    const getY = (item: Finding) => {
-      if (item.comparison?.live?.rect?.y !== undefined) return item.comparison.live.rect.y
-      if (item.comparison?.design?.rect?.y !== undefined) return item.comparison.design.rect.y
-      return 0
-    }
-    return nextFindings.sort((a, b) => getY(a) - getY(b))
-  }, [rawDesignNode, rawDomNodes, selectedFrame, liveDocumentHeight, rawVisualData, captureWidth, captureViewportHeight, styleNames])
-
-  // Findings the analyst already accepted or dismissed drop out of the default
-  // view — otherwise every run re-surfaces the same known deltas forever.
-  const triagedCount = useMemo(() => findings.filter((f) => triage[f.id]).length, [findings, triage])
-  const visibleFindings = useMemo(() => showTriaged ? findings : findings.filter((f) => !triage[f.id]), [findings, triage, showTriaged])
-
-  const isPinnable = (finding: Finding) => finding.severity !== 'pass' && !!finding.comparison?.live
+    if (!rawVisualData) return []
+    const order: Record<ResultState,number> = {fail:0,visual:1,ambiguous:2,unavailable:3,ignored:4,pass:5}
+    return [...visualFindings(rawVisualData), ...(semantic?.findings || [])].sort((a,b)=>order[a.state]-order[b.state])
+  }, [rawVisualData, semantic])
+  const visibleFindings = useMemo(() => findings.map(f => triage[f.id] ? { ...f, state: 'ignored' as const } : f)
+    .filter(f => showTriaged || f.state !== 'ignored'), [findings, triage, showTriaged])
+  const resultCounts = useMemo(() => Object.fromEntries(
+    (['pass','fail','visual','ambiguous','ignored','unavailable'] as ResultState[]).map(state =>
+      [state, findings.filter(f => (triage[f.id] ? 'ignored' : f.state) === state).length])
+  ) as Record<ResultState,number>, [findings,triage])
+  useEffect(() => () => {
+    comparisonRunRef.current++
+    if (activeVisualJobRef.current) void window.electronAPI.cancelVisualComparison(activeVisualJobRef.current)
+  }, [])
+  const isPinnable = (finding: Finding) => (finding.state === 'fail' || finding.state === 'visual') && !!finding.comparison?.live && !triage[finding.id]
   const pinFinding = (finding: Finding) => {
     if (!onCreateAnnotation || pinnedFindingIds.has(finding.id)) return
     const spec = findingToAnnotationSpec(finding, breakpoint, captureWidth, liveDocumentHeight ?? captureViewportHeight)
@@ -759,14 +274,6 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     pass: visibleFindings.filter((f) => f.severity === 'pass').length
   }), [visibleFindings])
 
-  const dfs = useMemo(() => {
-    const pixelPenalty = similarity === null || changed === null ? 0 : Math.min(50, (changed / 100) * 50 * 2.2)
-    const highPenalty = Math.min(30, severityCounts.high * 8)
-    const medPenalty = Math.min(15, severityCounts.medium * 4)
-    const score = Math.max(0, Math.min(100, Math.round(100 - pixelPenalty - highPenalty - medPenalty)))
-    return { score, pixelPenalty: Math.round(pixelPenalty), highPenalty, medPenalty }
-  }, [similarity, changed, severityCounts])
-
   // Records a lightweight trend point once per completed run — never on triage
   // changes or re-renders, only when a comparison actually finished. Reads the
   // freshest findings/severity/score via closure since this fires in the same
@@ -781,7 +288,7 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
       captureWidth,
       at: Date.now(),
       severityCounts,
-      conformanceScore: dfs.score,
+      resultCounts,
       findingsCount: findings.length
     }
     const frameRuns = [summary, ...(automateState.runsByFrame[selectedFrame.id] || [])]
@@ -796,27 +303,19 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastCompletedRunId])
 
-  const [findingsFilter, setFindingsFilter] = useState<'all' | 'tokens' | 'layout' | 'content' | 'pass'>('all')
-
-  const isLayoutFinding = (f: Finding) => f.title.includes('Position') || f.title.includes('height') || f.title.includes('Visual difference') || f.title.includes('Section growth') || f.title.includes('Container is shifted') || f.title.includes('Spacing mismatch')
-  const countTokens = useMemo(() => visibleFindings.filter((f) => f.title.startsWith('CSS Token') || f.title.includes('Font-')).length, [visibleFindings])
-  const countLayout = useMemo(() => visibleFindings.filter(isLayoutFinding).length, [visibleFindings])
-  const countContent = useMemo(() => visibleFindings.filter((f) => f.title.includes('Missing design text') || f.title.includes('Image count')).length, [visibleFindings])
-  const countPass = useMemo(() => visibleFindings.filter((f) => f.severity === 'pass').length, [visibleFindings])
-
-  const filteredFindings = useMemo(() => {
-    if (findingsFilter === 'tokens') return visibleFindings.filter((f) => f.title.startsWith('CSS Token') || f.title.includes('Font-'))
-    if (findingsFilter === 'layout') return visibleFindings.filter(isLayoutFinding)
-    if (findingsFilter === 'content') return visibleFindings.filter((f) => f.title.includes('Missing design text') || f.title.includes('Image count'))
-    if (findingsFilter === 'pass') return visibleFindings.filter((f) => f.severity === 'pass')
-    return visibleFindings
-  }, [visibleFindings, findingsFilter])
-
+  const [findingsFilter, setFindingsFilter] = useState<ResultState | 'all'>('all')
+  const [findingPage, setFindingPage] = useState(0)
+  useEffect(() => setFindingPage(0), [findingsFilter, lastCompletedRunId, showTriaged])
+  const filteredFindings = visibleFindings.filter(f => findingsFilter === 'all' || f.state === findingsFilter)
+  const pageCount = Math.max(1, Math.ceil(filteredFindings.length / 50))
+  const currentPage = Math.min(findingPage, pageCount - 1)
+  const pageFindings = filteredFindings.slice(currentPage * 50, (currentPage + 1) * 50)
+  const displayValue = (value: unknown) => value === undefined ? 'Not available' : typeof value === 'string' ? value : JSON.stringify(value)
   return <div className="automate-workspace">
     <webview ref={webviewRef} className="automate-capture-webview" src={sourceUrl} webpreferences="backgroundThrottling=no" style={{ width: captureWidth, height: captureViewportHeight }} />
     <div className="automate-capture-shield" aria-hidden="true" />
     <header className="automate-header">
-      <div><span className="automate-kicker">Visual regression + semantic layout</span><h2>Automate</h2><p>{status}</p></div>
+      <div><span className="automate-kicker">Design QA</span><h2>Automate</h2><p>{status}</p></div>
       <div className="automate-header-controls">
         <div className={`automate-api-state ${tokenConfigured ? 'connected' : ''}`}><i />{tokenConfigured ? 'Figma API connected' : 'Figma API required'}</div>
         {onOpenSettings && (
@@ -846,220 +345,89 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
     ) : (
       <>
         <section className="automate-source-bar">
-          <label><span>Figma design</span><input value={designUrl} onChange={(event) => setDesignUrl(event.target.value)} placeholder="https://www.figma.com/design/…?node-id=…" /></label>
+          <label><span>Figma design</span><input disabled={busy} value={designUrl} onChange={(event) => setDesignUrl(event.target.value)} placeholder="https://www.figma.com/design/…?node-id=…" /></label>
           <button className="automate-secondary" disabled={busy || !designUrl.trim()} onClick={loadFrames}>Load frames</button>
-          <label className="automate-frame-select"><span>Frame</span><select value={frameId} onChange={(event) => setFrameId(event.target.value)} disabled={!frames.length}><option value="">Select a frame</option>{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.pageName}{frame.path ? ` / ${frame.path}` : ''} / {frame.name} · {frame.width}×{frame.height}</option>)}</select></label>
-          <label className="automate-breakpoint-select" title="Tags this run in history — guessed from the frame's width, override if it's wrong"><span>Breakpoint</span><select value={breakpoint} onChange={(event) => setBreakpoint(event.target.value as typeof breakpoint)}><option value="Desktop">Desktop</option><option value="Tablet">Tablet</option><option value="Mobile">Mobile</option></select></label>
+          <label className="automate-frame-select"><span>Frame</span><select value={frameId} onChange={(event) => setFrameId(event.target.value)} disabled={busy || !frames.length}><option value="">Select a frame</option>{frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.pageName}{frame.path ? ` / ${frame.path}` : ''} / {frame.name} · {frame.width}×{frame.height}</option>)}</select></label>
+          <label className="automate-breakpoint-select" title="Tags this run in history — guessed from the frame's width, override if it's wrong"><span>Breakpoint</span><select disabled={busy} value={breakpoint} onChange={(event) => setBreakpoint(event.target.value as typeof breakpoint)}><option value="Desktop">Desktop</option><option value="Tablet">Tablet</option><option value="Mobile">Mobile</option></select></label>
           {busy ? <button className="automate-secondary automate-cancel" onClick={cancelComparison}>Cancel</button> : <button className="automate-primary" disabled={!selectedFrame} onClick={runComparison} title={ready ? 'Run visual and semantic comparison' : 'The staging page will be checked before comparison starts'}>Run comparison</button>}
-          <button className="automate-icon-btn" title="Replace Figma API token" onClick={async () => { await window.electronAPI.setFigmaToken(''); applyTokenConfigured(false) }}><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1Z" /></svg></button>
+          <button disabled={busy} className="automate-icon-btn" title="Replace Figma API token" onClick={async () => { await window.electronAPI.setFigmaToken(''); applyTokenConfigured(false) }}><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2h-4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1-2.8-2.8.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3v-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1 2.8-2.8.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3h4v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1h.2v4h-.2a1.7 1.7 0 0 0-1.4 1Z" /></svg></button>
         </section>
 
         {busy && <section className="automate-progress" aria-live="polite"><div><span>{progress.detail || 'Comparing…'}</span><strong>{progress.percent}%</strong></div><i><b style={{ width: `${progress.percent}%` }} /></i></section>}
         {error && <div className="automate-error">{error}</div>}
-        {similarity === null ? <section className="automate-empty"><div className="automate-empty-grid"><span /><span /><span /><span /></div><h3>{frames.length ? 'Ready to compare' : 'Choose a Figma file and frame'}</h3><p>{selectedFrame ? `Design frame: ${selectedFrame.width}×${selectedFrame.height} full page · Chromium viewport: ${captureWidth}×${captureViewportHeight} · Live page height will be detected and stitched automatically.` : 'The matcher does not require Figma layer names to match WordPress or Elementor classes.'}</p>{fileName && <small>{fileName}</small>}</section> : <div className="automate-results">
-          <div className="automate-score-row">
-            <div><strong>{severityCounts.high}</strong><span>Blocking</span></div>
-            <div><strong>{severityCounts.medium}</strong><span>Warning</span></div>
-            <div><strong>{severityCounts.low}</strong><span>Minor</span></div>
-            <div><strong>{severityCounts.pass}</strong><span>Verified</span></div>
-            <div><strong>{dfs?.score ?? '—'}</strong><span>Conformance</span></div>
-          </div>
+        {!rawVisualData ? <section className="automate-empty">
+          <h3>{busy ? 'Comparison in progress' : 'Choose a Figma frame and run a comparison'}</h3>
+          <p>Design source: {fileName || 'Live Figma API'} · Viewport: {captureWidth} × {captureViewportHeight}, device scale 1.</p>
+          <p>Screenshot dimensions and positional differences are preserved. A failed capture or comparison is unavailable, never a pass.</p>
+        </section> : <div className="automate-results">
+          <section className="automate-coverage">
+            <strong>Design source: {fileName || 'Live Figma API'} / {rawDesignNode?.name || 'Selected frame'}</strong>
+            <span>Viewport {rawVisualData.live.width} × {captureViewportHeight} · Design {rawVisualData.design.width} × {rawVisualData.design.height} · Live {rawVisualData.live.width} × {rawVisualData.live.height}</span>
+            <span>Pixel coverage: {rawVisualData.overlap.width} × {rawVisualData.overlap.height} native overlap. Outside overlap: {rawVisualData.excludedPixels.design.toLocaleString()} design / {rawVisualData.excludedPixels.live.toLocaleString()} live pixels.</span>
+            <span>Text coverage: {semantic?.coverage.processedTextNodes}/{semantic?.coverage.designTextNodes} nodes processed; {semantic?.coverage.matchedTextNodes} strong mappings; {semantic?.coverage.ambiguousTextNodes} unresolved. Image identity validation unavailable.</span>
+            <span>Ignored: {resultCounts.ignored} triaged findings. Region masking is not implemented.</span>
+          </section>
           <div className="automate-result-grid">
-            <section className="automate-visual-card">
-              <div className="automate-card-head">
-                <div>
-                  <h3>{selectedFindingIndex === null ? 'Visual comparison' : 'Finding evidence'}</h3>
-                  <span>Figma {selectedFrame?.width}×{selectedFrame?.height} · Live {captureWidth}×{liveDocumentHeight || '—'} · viewport {captureWidth}×{captureViewportHeight}</span>
-                </div>
-                <div className="automate-view-switch">
-                  <button className={selectedFindingIndex === null && view === 'diff' ? 'active' : ''} onClick={() => { setSelectedFindingIndex(null); setView('diff') }}>Diff</button>
-                  <button className={selectedFindingIndex === null && view === 'design' ? 'active' : ''} onClick={() => { setSelectedFindingIndex(null); setView('design') }}>Figma</button>
-                  <button className={selectedFindingIndex === null && view === 'live' ? 'active' : ''} onClick={() => { setSelectedFindingIndex(null); setView('live') }}>Live</button>
-                </div>
-              </div>
-              {selectedFindingIndex !== null && findings[selectedFindingIndex]?.comparison ? (
-                <FindingComparisonView
-                  finding={findings[selectedFindingIndex]}
-                  designImage={designImage}
-                  liveImage={liveImage}
-                  onClose={() => setSelectedFindingIndex(null)}
-                />
-              ) : (
-                <div className="automate-image-stage"><img src={view === 'diff' ? diffImage : view === 'design' ? designImage : liveImage} alt={`${view} comparison`} /></div>
-              )}
-            </section>
+            <ComparisonView designImage={designImage} liveImage={liveImage} result={rawVisualData}
+              finding={selectedFindingIndex === null ? undefined : findings[selectedFindingIndex]} />
             <section className="automate-findings">
-              <div className="automate-card-head">
-                <div><h3>Findings ({filteredFindings.length})</h3><span>Click a finding to inspect its visual evidence</span></div>
-                <div className="automate-card-head-actions">
-                  {onCreateAnnotation && selectedPinnableCount > 0 && (
-                    <button type="button" className="automate-pin-all-btn" onClick={pinSelectedFindings} title="Pin the checked findings as page annotations">
-                      Send {selectedPinnableCount} selected to annotations
-                    </button>
-                  )}
-                  {triagedCount > 0 && (
-                    <label className="automate-triage-toggle">
-                      <input type="checkbox" checked={showTriaged} onChange={(e) => setShowTriaged(e.target.checked)} />
-                      Show triaged ({triagedCount})
-                    </label>
-                  )}
-                </div>
+              <div className="automate-card-head"><h3>Findings</h3>
+                <label className="automate-triage-toggle"><input type="checkbox" checked={showTriaged} onChange={e=>setShowTriaged(e.target.checked)} />Show ignored</label>
+                {onCreateAnnotation && <button className="automate-secondary" disabled={!selectedPinnableCount} onClick={pinSelectedFindings}>Pin selected ({selectedPinnableCount})</button>}
               </div>
-              <div className="automate-findings-tabs">
-                <button className={findingsFilter === 'all' ? 'active' : ''} onClick={() => setFindingsFilter('all')}>All ({visibleFindings.length})</button>
-                <button className={findingsFilter === 'tokens' ? 'active' : ''} onClick={() => setFindingsFilter('tokens')}>Tokens ({countTokens})</button>
-                <button className={findingsFilter === 'layout' ? 'active' : ''} onClick={() => setFindingsFilter('layout')}>Layout ({countLayout})</button>
-                <button className={findingsFilter === 'content' ? 'active' : ''} onClick={() => setFindingsFilter('content')}>Missing ({countContent})</button>
-                <button className={findingsFilter === 'pass' ? 'active' : ''} onClick={() => setFindingsFilter('pass')}>Verified ({countPass})</button>
+              <div className="automate-findings-tabs" aria-label="Filter findings">
+                {(['all','fail','visual','ambiguous','pass','unavailable','ignored'] as const).map(state=>
+                  <button key={state} aria-pressed={findingsFilter===state} className={findingsFilter===state?'active':''}
+                    onClick={()=>{setFindingsFilter(state);if(state==='ignored')setShowTriaged(true)}}>
+                    {{all:'All',fail:'Verified differences',visual:'Visual only',ambiguous:'Ambiguous',pass:'Passed checks',unavailable:'Unavailable',ignored:'Ignored'}[state]}
+                    {' '}({state==='all'?findings.length:resultCounts[state]})
+                  </button>)}
               </div>
               <div className="automate-findings-list">
-                {filteredFindings.map((finding) => {
-                  const realIndex = findings.indexOf(finding)
-                  return (
-                    <button
-                      type="button"
-                      key={finding.id}
-                      className={`severity-${finding.severity}${selectedFindingIndex === realIndex ? ' selected' : ''}`}
-                      onClick={() => finding.comparison && setSelectedFindingIndex(realIndex)}
-                      aria-pressed={selectedFindingIndex === realIndex}
-                      disabled={!finding.comparison}
-                    >
-                      <span className="automate-finding-select-slot">
-                        {onCreateAnnotation && isPinnable(finding) && !pinnedFindingIds.has(finding.id) && (
-                          <input
-                            type="checkbox"
-                            className="automate-finding-select"
-                            checked={selectedForAnnotation.has(finding.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={() => toggleAnnotationSelection(finding.id)}
-                            title="Select for the annotations batch"
-                          />
-                        )}
-                      </span>
-                      <i />
-                      <div>
-                        <h4>{finding.title}</h4>
-                        <p>{finding.detail}</p>
-                        {finding.tokens && finding.tokens.length > 0 && (() => {
-                          const coreTokens = finding.tokens.filter((t) => !t.isExtended)
-                          const extTokens = finding.tokens.filter((t) => t.isExtended)
-                          const isExpanded = !!expandedTokensMap[realIndex]
-                          return (
-                            <div className="automate-token-pill-group">
-                              {coreTokens.map((t) => (
-                                <TokenIconBadge key={t.name} token={t} />
-                              ))}
-                              {extTokens.length > 0 && isExpanded && extTokens.map((t) => (
-                                <TokenIconBadge key={t.name} token={t} />
-                              ))}
-                              {extTokens.length > 0 && (
-                                <button
-                                  type="button"
-                                  className="automate-more-tokens-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setExpandedTokensMap((prev) => ({ ...prev, [realIndex]: !prev[realIndex] }))
-                                  }}
-                                >
-                                  {isExpanded ? '...less' : `...more (${extTokens.length})`}
-                                </button>
-                              )}
-                            </div>
-                          )
-                        })()}
-                        {finding.severity !== 'pass' && (
-                          <div className="automate-triage-row">
-                            {triage[finding.id] ? (
-                              <>
-                                <span className={`automate-triage-badge ${triage[finding.id].state}`}>
-                                  {triage[finding.id].state === 'accepted' ? 'Accepted' : triage[finding.id].state === 'false-positive' ? 'False positive' : 'Ignored'}
-                                </span>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, null) }}>Reset</button>
-                              </>
-                            ) : (
-                              <>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, 'accepted') }} title="Mark as an expected, known-acceptable difference">Accept as baseline</button>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); applyTriage(finding.id, 'false-positive') }} title="The matcher got this one wrong">False positive</button>
-                              </>
-                            )}
-                            {onCreateAnnotation && isPinnable(finding) && (
-                              pinnedFindingIds.has(finding.id) ? (
-                                <span className="automate-pinned-badge" title="Already pinned as a page annotation">Pinned ✓</span>
-                              ) : (
-                                <button type="button" className="automate-pin-finding-btn" onClick={(e) => { e.stopPropagation(); pinFinding(finding) }} title="Pin at this position as a page annotation">Pin</button>
-                              )
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <small>{finding.confidence}%</small>
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
-          </div>
-          {sections.length > 0 && (
-            <section className="automate-sections-panel">
-              <div className="automate-card-head">
-                <div>
-                  <h3>Page sections ({sections.length})</h3>
-                  <span>Per-section SSIM — boundaries auto-detected from edge density and color transitions</span>
-                </div>
-              </div>
-              <div className="automate-sections-list">
-                {sections.map((section) => (
-                  <div key={section.name} className="automate-section-row">
-                    <span className="automate-section-name">{section.name}</span>
-                    <div className="automate-section-bar-track">
-                      <div
-                        className="automate-section-bar-fill"
-                        style={{
-                          width: `${section.similarity}%`,
-                          background: section.similarity >= 95 ? '#34d399' : section.similarity >= 80 ? '#f59e0b' : '#ef4444',
-                        }}
-                      />
-                    </div>
-                    <span className="automate-section-score">{section.similarity.toFixed(1)}%</span>
-                    <span className="automate-section-meta">design {section.designY}–{section.designY + section.designHeight}px</span>
+                {pageFindings.map(finding=><article key={finding.id} className={findings[selectedFindingIndex ?? -1]?.id === finding.id ? 'selected' : ''}>
+                  <div className="automate-finding-heading">
+                    {onCreateAnnotation && isPinnable(finding) && !pinnedFindingIds.has(finding.id) &&
+                      <input aria-label={'Select '+finding.title} type="checkbox" checked={selectedForAnnotation.has(finding.id)} onChange={()=>toggleAnnotationSelection(finding.id)} />}
+                    <button onClick={()=>setSelectedFindingIndex(findings.findIndex(f=>f.id===finding.id))}>{finding.title}</button>
                   </div>
-                ))}
+                  <div className="automate-chips"><span>{finding.state}</span><span>{finding.evidenceStrength} evidence</span>{finding.state==='fail'&&<span>{finding.severity} severity</span>}</div>
+                  <details><summary>Evidence and actions</summary>
+                    <p>{finding.detail}</p>
+                    <dl className="automate-evidence">
+                      <dt>Expected</dt><dd>{displayValue(finding.expected)}</dd>
+                      <dt>Actual</dt><dd>{displayValue(finding.actual)}</dd>
+                      <dt>Measured Difference</dt><dd>{displayValue(finding.difference || finding.comparison?.delta)}</dd>
+                      <dt>Evidence Type</dt><dd>{finding.evidenceStrength}</dd>
+                    </dl>
+                    {finding.tokens && <table className="automate-token-table"><thead><tr><th>Property</th><th>Expected</th><th>Actual</th><th>State</th></tr></thead><tbody>
+                      {finding.tokens.map(token=><tr key={token.name}><td>{token.name}</td><td>{token.figma}</td><td>{token.css}</td><td>{token.unresolved?'unavailable':token.passed?'pass':'fail'}</td></tr>)}
+                    </tbody></table>}
+                    {finding.matchQuality && <p>Mapping: {finding.matchQuality.reason}</p>}
+                    <div className="automate-triage-row">
+                      {triage[finding.id] ? <button onClick={()=>applyTriage(finding.id,null)}>Restore finding</button> :
+                        <><button onClick={()=>applyTriage(finding.id,'accepted')}>Accept baseline</button><button onClick={()=>applyTriage(finding.id,'false-positive')}>False positive</button><button onClick={()=>applyTriage(finding.id,'ignored')}>Ignore</button></>}
+                      {onCreateAnnotation && isPinnable(finding) && <button disabled={pinnedFindingIds.has(finding.id)} onClick={()=>pinFinding(finding)}>{pinnedFindingIds.has(finding.id)?'Pinned':'Pin annotation'}</button>}
+                    </div>
+                  </details>
+                </article>)}
+                {!pageFindings.length && <p className="automate-no-findings">No findings in this filter.</p>}
               </div>
+              <div className="automate-pagination"><button disabled={!currentPage} onClick={()=>setFindingPage(currentPage-1)}>Previous</button>
+                <span>Page {currentPage+1} / {pageCount} · {filteredFindings.length} findings</span>
+                <button disabled={currentPage+1>=pageCount} onClick={()=>setFindingPage(currentPage+1)}>Next</button></div>
             </section>
-          )}
+          </div>
+          <details className="automate-developer"><summary>Developer details</summary>
+            <p>Pixel engine: {rawVisualData.engine}. Changed pixels: {rawVisualData.changedPixels.toLocaleString()} / {rawVisualData.comparedPixels.toLocaleString()} ({rawVisualData.changedPercent.toFixed(3)}% of overlap, not confidence).</p>
+            <p>Pixel threshold: {rawVisualData.options.pixelThreshold}. Include anti-aliased pixels: {String(rawVisualData.options.includeAA)}. No resizing, warping, registration, or local offset search.</p>
+            <p>Geometry tolerance: 3 CSS px. Declared/computed typography does not prove rendered font identity. Capture freezes animations. Fixed/sticky content is included in the first viewport only; later occurrences are suppressed. Dynamic widgets and nested scrolling need later coverage work.</p>
+          </details>
         </div>}
-      </>)}
-    {runHistory.length > 0 && (() => {
-      const sameBreakpoint = runHistory.filter((r) => r.breakpoint === breakpoint).sort((a, b) => b.at - a.at)
-      const delta = sameBreakpoint.length >= 2 ? sameBreakpoint[0].conformanceScore - sameBreakpoint[1].conformanceScore : null
-      return (
-        <section className="automate-history-panel">
-          <div className="automate-card-head">
-            <div>
-              <h3>Run history · {breakpoint}</h3>
-              <span>{runHistory.length} run{runHistory.length === 1 ? '' : 's'} recorded for this frame across breakpoints</span>
-            </div>
-            {delta !== null && (
-              <span className={`automate-trend ${delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'}`}>
-                {delta > 0 ? '▲' : delta < 0 ? '▼' : '—'} {delta > 0 ? '+' : ''}{delta} vs last {breakpoint} run
-              </span>
-            )}
-          </div>
-          <div className="automate-history-body">
-            <ConformanceSparkline runs={sameBreakpoint} />
-            <div className="automate-history-list">
-              {runHistory.slice(0, 6).map((run) => (
-                <div key={run.id} className="automate-history-row">
-                  <span className="automate-history-bp">{run.breakpoint}</span>
-                  <span className="automate-history-date">{new Date(run.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                  <span className="automate-history-score">{run.conformanceScore}</span>
-                  <span className="automate-history-counts">{run.severityCounts.high}H · {run.severityCounts.medium}M · {run.severityCounts.low}L</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )
-    })()}
+        {!!runHistory.length && <details className="automate-history-panel"><summary>Run history ({runHistory.length})</summary>
+          {runHistory.map(run=><div key={run.id} className="automate-history-entry"><span>{new Date(run.at).toLocaleString()} · {run.breakpoint} · {run.findingsCount} findings</span>
+            <span>{run.resultCounts ? `${run.resultCounts.fail} verified differences · ${run.resultCounts.visual} visual · ${run.resultCounts.ambiguous} ambiguous` : 'Legacy run — evidence classification unavailable'}</span></div>)}
+        </details>}
+      </>
+    )}
   </div>
 }

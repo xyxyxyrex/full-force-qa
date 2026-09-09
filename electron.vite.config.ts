@@ -4,7 +4,13 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin({ exclude: ['pixelmatch'] })],
+    build: {
+      rollupOptions: {
+        input: { index: resolve('src/main/index.ts'), 'automation-worker': resolve('src/main/automation/worker.ts') },
+        output: { entryFileNames: '[name].js' }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()]

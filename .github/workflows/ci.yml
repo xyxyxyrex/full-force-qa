@@ -27,6 +27,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run test:automation:electron
 
   visual-worker-build:
     name: OpenCV worker build (Windows)

@@ -3,39 +3,15 @@ import {
   deltaE,
   figmaColorToRgb,
   findingToAnnotationSpec,
-  fitVerticalDrift,
   hungarianAssignment,
   parseCssColorToRgb,
   semanticFindings,
+  semanticComparison,
   stableId,
   tokenScore,
   type DomNode,
   type Finding
 } from './visualCompare'
-
-describe('fitVerticalDrift', () => {
-  it('reports zero offset for a page with no drift', () => {
-    const anchors = [0, 100, 200, 300, 400].map((designY) => ({ designY, liveY: designY }))
-    const drift = fitVerticalDrift(anchors)
-    expect(drift.steps).toHaveLength(1)
-    expect(drift.sample(250)).toBe(0)
-  })
-
-  it('isolates a section-growth step instead of smearing it across every anchor', () => {
-    // First three anchors unshifted, last two shifted +62 — one section grew.
-    const anchors = [
-      { designY: 60, liveY: 60 },
-      { designY: 120, liveY: 120 },
-      { designY: 180, liveY: 180 },
-      { designY: 420, liveY: 482 },
-      { designY: 480, liveY: 542 }
-    ]
-    const drift = fitVerticalDrift(anchors)
-    expect(drift.steps).toHaveLength(2)
-    expect(drift.sample(180)).toBe(0)
-    expect(drift.sample(480)).toBe(62)
-  })
-})
 
 describe('deltaE (Lab colour distance)', () => {
   it('is ~0 for identical colours', () => {
@@ -159,37 +135,33 @@ describe('semanticFindings', () => {
 
   const findings = semanticFindings(root, domNodes, 800, 1000)
 
-  it('flags the element that never rendered', () => {
-    const missing = findings.filter((f) => f.title.includes('Missing design text'))
+  it('reports unmatched text as ambiguous, not proven missing', () => {
+    const missing = findings.filter((f) => f.state === 'ambiguous')
     expect(missing).toHaveLength(1)
     expect(missing[0].title).toContain('Missing Footer Text')
   })
 
-  it('attributes the 62px shift to one section-growth finding, not per-element mismatches', () => {
-    const growth = findings.filter((f) => f.title.includes('Section growth'))
-    expect(growth).toHaveLength(1)
-    expect(growth[0].title).toContain('+62')
-
-    const positionMismatches = findings.filter((f) => f.title.startsWith('Position mismatch'))
-    expect(positionMismatches).toHaveLength(0)
+  it('preserves both 62px downstream shifts without diagnosing a cause', () => {
+    expect(findings.some(f=>f.title.includes('Section growth'))).toBe(false)
+    const shifted = findings.filter(f=>f.category==='position' && f.state==='fail')
+    expect(shifted).toHaveLength(2)
+    expect(shifted.map(f=>f.difference?.y)).toEqual([62,62])
   })
-
-  it('verifies position for every matched element once drift is removed', () => {
-    const verified = findings.filter((f) => f.title.startsWith('Spec Verified: Position'))
-    expect(verified).toHaveLength(5)
+  it('passes only the three positions that actually match', () => {
+    expect(findings.filter(f=>f.category==='position' && f.state==='pass')).toHaveLength(3)
   })
 
   it('catches the colour defect the geometry pass cannot see', () => {
-    const colorMismatch = findings.find((f) => f.title.includes('CSS Token Mismatch') && f.title.includes('Color Test Label'))
+    const colorMismatch = findings.find((f) => f.category === 'typography' && f.state === 'fail' && f.title.includes('Color Test Label'))
     expect(colorMismatch).toBeDefined()
     expect(colorMismatch!.tokens?.some((t) => t.name === 'color' && !t.passed)).toBe(true)
   })
 
   it('reports an unresolved token instead of silently dropping it', () => {
-    const trusted = findings.find((f) => f.title.startsWith('CSS Tokens') && f.title.includes('Trusted by thousands'))
+    const trusted = findings.find((f) => f.category === 'typography' && f.title.includes('Trusted by thousands'))
     expect(trusted).toBeDefined()
     expect(trusted!.tokens?.some((t) => t.name === 'line-height' && t.unresolved)).toBe(true)
-    expect(trusted!.detail).toContain('could not be resolved')
+    expect(trusted!.state).toBe('unavailable')
   })
 
   it('does not invent a horizontal offset finding when there is none', () => {
@@ -239,28 +211,29 @@ describe('semanticFindings — deepened model assertions', () => {
   const findings = semanticFindings(root, domNodes, 600, 400)
 
   it('flags a design case-transform the live CSS never declares', () => {
-    const finding = findings.find((f) => f.title.includes('call to action'))
+    const finding = findings.find((f) => f.title.includes('call to action') && f.category === 'typography')
     expect(finding?.tokens?.some((t) => t.name === 'text-case' && !t.passed)).toBe(true)
   })
 
-  it('catches a webfont that silently failed to load', () => {
-    const finding = findings.find((f) => f.title.includes('Custom Heading'))
+  it('reports a failed font check as unavailable, not proof of fallback', () => {
+    const finding = findings.find((f) => f.title.includes('Custom Heading') && f.category === 'typography')
     const fontToken = finding?.tokens?.find((t) => t.name === 'font-loaded')
     expect(fontToken?.passed).toBe(false)
-    expect(finding?.severity).toBe('high')
+    expect(fontToken?.unresolved).toBe(true)
+    expect(finding?.state).toBe('unavailable')
   })
 
   it('attributes a compressed sibling gap to the auto-layout group, not each element', () => {
-    const spacing = findings.filter((f) => f.title.includes('Spacing mismatch'))
+    const spacing = findings.filter((f) => f.category === 'spacing' && f.state === 'fail')
     expect(spacing).toHaveLength(1)
     expect(spacing[0].title).toContain('Stat List')
-    expect(spacing[0].detail).toContain('24px')
-    expect(spacing[0].detail).toContain('8px')
+    expect(spacing[0].expected).toBe(24)
+    expect(spacing[0].actual).toEqual([8,8])
   })
 
   it('resolves a referenced Figma style into a named detail, and stays silent for unknown ids', () => {
     const withNames = semanticFindings(root, domNodes, 600, 400, { 'style:heading': 'text/heading-2' })
-    const heading = withNames.find((f) => f.title.includes('Custom Heading') && f.title.startsWith('CSS Token'))
+    const heading = withNames.find((f) => f.title.includes('Custom Heading') && f.category === 'typography')
     expect(heading?.detail).toContain('Figma style: text/heading-2')
 
     // An id that isn't in the map shouldn't fabricate a name for the same node.
@@ -349,7 +322,7 @@ describe('semanticFindings — correspondence engine', () => {
     expect(reversedFindings.some((f) => f.title.includes('Missing design text'))).toBe(false)
   })
 
-  it('repairs a live paragraph that renders two adjacent design text layers as one', () => {
+  it('retains merge/split candidates as ambiguous instead of verifying inherited styles', () => {
     // A common rich-text pattern: Figma splits a sentence into two runs for
     // formatting; the browser renders it as a single text node.
     const root = {
@@ -377,7 +350,7 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
     severity: 'high',
     title: 'Position mismatch: “CTA Button”',
     detail: 'Matched <button> is displaced from its drift-corrected expected position.',
-    confidence: 92,
+    state: 'fail', evidenceStrength: 'strong', category: 'position',
     comparison: {
       live: { rect: { x: 40, y: 120, width: 160, height: 44 }, pageWidth: 1440, pageHeight: 900, label: '<button>' }
     },
@@ -387,7 +360,7 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 
 describe('findingToAnnotationSpec', () => {
   it('is not pinnable when the finding passed', () => {
-    expect(findingToAnnotationSpec(makeFinding({ severity: 'pass' }), 'Desktop', 1440, 900)).toBeNull()
+    expect(findingToAnnotationSpec(makeFinding({ severity: 'pass', state: 'pass' }), 'Desktop', 1440, 900)).toBeNull()
   })
 
   it('is not pinnable when there is no live region to point at', () => {
@@ -434,5 +407,41 @@ describe('findingToAnnotationSpec', () => {
     const spec = findingToAnnotationSpec(makeFinding({ detail: 'Figma <b>bold</b> & "quoted" text' }), 'Desktop', 1440, 900)
     expect(spec?.notes).toContain('&lt;b&gt;bold&lt;/b&gt;')
     expect(spec?.notes).not.toContain('<b>bold</b>')
+  })
+})
+
+describe('foundation correspondence guardrails',()=>{
+  it('processes every node beyond the old 240-node cap',()=>{
+    const children=Array.from({length:260},(_,i)=>textNode('Unique label '+i,{x:10,y:i*30,width:160,height:20},{fontSize:14}))
+    const doms=children.map(d=>domNode('p',d.characters,{...d.absoluteBoundingBox},{fontSize:'14px',lineHeight:'19.6px'}))
+    const result=semanticComparison({type:'FRAME',absoluteBoundingBox:{x:0,y:0,width:800,height:8000},children},doms,800,8000)
+    expect(result.coverage.processedTextNodes).toBe(260)
+    expect(result.coverage.matchedTextNodes).toBe(260)
+    expect(result.findings.some(f=>f.title.includes('Unique label 259')&&f.state==='pass')).toBe(true)
+  })
+  it('does not verify repeated labels even when geometry breaks a ranking tie',()=>{
+    const children=[20,100].map(y=>textNode('Learn more',{x:10,y,width:100,height:20},{fontSize:14}))
+    const doms=children.map(d=>domNode('a',d.characters,{...d.absoluteBoundingBox},{fontSize:'14px'}))
+    const result=semanticComparison({type:'FRAME',absoluteBoundingBox:{x:0,y:0,width:400,height:400},children},doms,400,400)
+    expect(result.coverage.matchedTextNodes).toBe(0)
+    expect(result.coverage.ambiguousTextNodes).toBe(2)
+    expect(result.findings.filter(f=>f.state==='fail'||f.state==='pass')).toEqual([])
+  })
+  it('does not traverse hidden Figma subtrees',()=>{
+    const result=semanticComparison({type:'FRAME',visible:false,children:[textNode('Hidden',{x:0,y:0,width:100,height:20},{fontSize:14})]},[],400,400)
+    expect(result.coverage.processedTextNodes).toBe(0)
+    expect(result.findings.every(f=>f.state==='unavailable')).toBe(true)
+  })
+  it.each([4,8,16])('does not subtract a uniform %ipx shift from semantic geometry',shift=>{
+    const d=textNode('Unique heading',{x:40,y:40,width:200,height:40},{fontSize:24})
+    const live=domNode('h2',d.characters,{x:40+shift,y:40+shift,width:200,height:40},{fontSize:'24px'})
+    const result=semanticFindings({type:'FRAME',absoluteBoundingBox:{x:0,y:0,width:800,height:1000},children:[d]},[live],816,1100)
+    const position=result.find(f=>f.category==='position')
+    expect(position?.state).toBe('fail')
+    expect(position?.difference).toEqual({x:shift,y:shift})
+    expect(result.every(f=>!('confidence' in f))).toBe(true)
+  })
+  it.each(['ambiguous','unavailable','ignored'] as const)('does not pin %s findings as verified annotations',state=>{
+    expect(findingToAnnotationSpec(makeFinding({state}),'Desktop',800,600)).toBeNull()
   })
 })

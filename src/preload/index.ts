@@ -1,3 +1,4 @@
+import type { PixelComparisonResponse } from '../shared/automation'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
 
@@ -97,8 +98,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number): Promise<any> {
     return ipcRenderer.invoke('automate:capture-page', webContentsId, viewportWidth, viewportHeight)
   },
-  compareVisuals(jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: any, mode?: string): Promise<any> {
-    return ipcRenderer.invoke('automate:visual-compare', jobId, designDataUrl, liveDataUrl, anchors, mode)
+  compareVisuals(jobId: string, designDataUrl: string, liveDataUrl: string): Promise<PixelComparisonResponse> {
+    return ipcRenderer.invoke('automate:visual-compare', jobId, designDataUrl, liveDataUrl)
   },
   cancelVisualComparison(jobId: string): Promise<{ success: boolean }> {
     return ipcRenderer.invoke('automate:visual-cancel', jobId)

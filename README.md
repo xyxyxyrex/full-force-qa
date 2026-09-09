@@ -78,19 +78,22 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 The current link audit inventories destinations but does not make HTTP requests to validate broken-link status. Canonical and social metadata are displayed rather than comprehensively validated, and heading analysis does not yet detect skipped heading levels.
 
 ### 4. Automate Workspace (`automate`)
-- **Figma vs. Staging Page Comparison (`AutomateWorkspace.tsx`)**:
-  - Executes full-page scrolling screen capture of staging webviews to generate high-resolution comparison images.
-  - Interacts with the Figma REST API to load comparable frames, download design images, and extract colors, font families, font sizes, line heights, and letter spacing.
-  - Produces Figma, live, and diff views with cropped evidence for layout, position, size, typography, design-token, missing-content, image-count, and page-height findings.
-- **OpenCV Python Visual Worker (`python/visual_compare.py`)**:
-  - Runs a standalone Python executable (`visual-compare`) compiled via PyInstaller.
-  - Computes section-aware edge correlation (`cv2.Canny`, `cv2.matchTemplate`), structural similarity index (`skimage.metrics.structural_similarity`), and anchor-based vertical alignment to align scrolling web content against static design frames.
-  - **Known Status**: Work-in-progress. The visual diff engine can exhibit alignment inconsistencies on complex sticky headers, animations, dynamic content, multi-axis responsive layouts, or long pages.
+
+- **Native-resolution comparison**:
+  - Captures the live webview at a fixed viewport and device scale 1, preserving document coordinates.
+  - Retrieves Figma structure and a 1× render pinned to the same file version, with full node bounds and native-size validation.
+  - Runs Pixelmatch in a cancellable Node worker. Compares only the common overlap, reports width/height differences separately, and produces an exact diff mask and connected regions.
+  - Never resizes, warps, bottom-aligns, or searches local offsets to make differences disappear. Pixel-only findings do not guess a CSS cause.
+- **Evidence and review**:
+  - Design / Live / Diff / Slider share the same origin and display scale, with fit-width and 1:1 viewing.
+  - Separates passed checks, verified differences, visual-only differences, ambiguous mappings, ignored findings, and unavailable checks.
+  - Shows Expected, Actual, Measured Difference, Evidence Type, viewport, and coverage. No confidence, SSIM, or conformance score.
+  - Retains contextual/Hungarian correspondence without the old 240-text-node cap. Repeated text and merge/split candidates remain ambiguous; only unique reciprocal exact-text mappings produce geometry/style assertions.
 - **Finding Workflow**:
-  - Filters findings by design token, layout, missing content, or verified results.
   - Accepts expected differences as baselines, marks false positives, and preserves triage per project.
-  - Pins one or many findings into the annotation workflow.
-  - Stores per-frame run history by desktop, tablet, and mobile breakpoint.
+  - Pins selected actionable findings into the existing annotation workflow.
+  - Stores per-frame run counts by breakpoint; legacy history remains readable without its old score.
+- **Legacy compatibility**: Python/OpenCV source and packaging remain temporarily, but Automation has no runtime caller or fallback to them. See [foundation implementation report](AUTOMATION_FOUNDATION_REPORT.md) for checks and deferred work.
 
 ### Annotate and Ephemeral Review Sharing
 
@@ -175,9 +178,10 @@ full-force-seo/
 | **sharp (`^0.35.3`)** | Server-side/main process image processing for snapshot cropping and scaling. |
 | **harper.js (`^2.7.0`)** | In-browser grammar checking engine used in `grammarSpellAudit.ts`. |
 | **nspell (`^2.1.5`) & dictionary-en** | Hunspell-compatible spell checking engine for text content auditing. |
-| **opencv-python-headless (`>=4.11`)** | Image processing, Canny edge detection, and template matching in Python visual worker. |
-| **scikit-image (`>=0.25`)** | Structural Similarity Index (SSIM) calculation in `python/visual_compare.py`. |
-| **PyInstaller (`>=6.11`)** | Compiles `python/visual_compare.py` into a standalone binary (`visual-compare.exe` / `visual-compare`). |
+| **pixelmatch / pngjs** | Automation's native-resolution pixel comparison and PNG mask encoding in a Node worker. |
+| **opencv-python-headless (`>=4.11`)** | Retained legacy Python worker dependency; not called by Automation. |
+| **scikit-image (`>=0.25`)** | Retained legacy SSIM implementation; not a current pass/fail mechanism. |
+| **PyInstaller (`>=6.11`)** | Legacy worker packaging, pending a separate packaging cleanup. |
 
 ---
 
@@ -281,8 +285,8 @@ Commands configured in `package.json`:
 
 ## Known Limitations
 
-1. **Automate OpenCV Visual Comparison**:
-   The automated section-aware comparison engine (`python/visual_compare.py`) is work-in-progress. Edge-matching and SSIM algorithms may produce false positives or misaligned regions on pages containing fixed/sticky headers, CSS animations, or dynamic JavaScript layout changes.
+1. **Automate coverage**:
+   Native pixel comparisons are limited to the overlap, 45 million pixels per image, and a 24,000px live-page capture height. Horizontal overflow, unstable capture dimensions, readiness failures, or resource limits produce an unavailable comparison rather than a normalized result. Fixed/sticky content is included only in the first viewport; nested scrollers, changing widgets, image identity, advanced typography, and ignored-region masks require further work. Figma retrieval is not yet cached; API rate limits remain visible.
 2. **Chromium Webview Security Constraints**:
    Target website staging servers with strict Content Security Policies (CSP) or X-Frame-Options headers may require disabling web security flags in Electron main process settings (`webPreferences.webSecurity: false`).
 3. **Audit Scope**:

@@ -48,7 +48,23 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Check installer publication
+        id: installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if gh release view "v$VERSION" --json isDraft,assets --jq '.isDraft == false and ([.assets[].name] | index("Parity-Setup-'"$VERSION"'.exe") != null)' | grep -qx true; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Installer v$VERSION is not published yet; the successful desktop release will trigger deployment."
+          else
+            echo "Installer v$VERSION must be published before deploying the landing page."
+            exit 1
+          fi
       - name: Validate deployment secrets
+        if: steps.installer.outputs.ready == 'true'
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -59,8 +75,11 @@ jobs:
           test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY"; exit 1; }
           test "$VITE_EPHEMERAL_VIEWER_URL" = "https://parity-gfx.pages.dev" || { echo "VITE_EPHEMERAL_VIEWER_URL must be https://parity-gfx.pages.dev"; exit 1; }
       - run: npm ci
+        if: steps.installer.outputs.ready == 'true'
       - run: npm run build:viewer
+        if: steps.installer.outputs.ready == 'true'
       - name: Validate landing page installer
+        if: steps.installer.outputs.ready == 'true'
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           test -f dist-viewer/install.ps1
@@ -68,6 +87,7 @@ jobs:
           grep -F "\$FallbackVersion = '$VERSION'" dist-viewer/install.ps1
           ! grep -R "__PARITY_VERSION__" dist-viewer
       - name: Deploy to Cloudflare Pages
+        if: steps.installer.outputs.ready == 'true'
         id: deploy
         uses: cloudflare/wrangler-action@v4
         with:

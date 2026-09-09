@@ -1,3 +1,4 @@
+import type { PixelComparisonResponse, ResultState } from './automation'
 export interface CaptureResult {
   success: boolean
   html?: string
@@ -174,7 +175,9 @@ export interface AutomateRunSummary {
   captureWidth: number
   at: number
   severityCounts: { high: number; medium: number; low: number; pass: number }
-  conformanceScore: number
+  /** Legacy history only; new runs never calculate or display a score. */
+  conformanceScore?: number
+  resultCounts?: Record<ResultState, number>
   findingsCount: number
 }
 
@@ -350,7 +353,7 @@ export interface ElectronAPI {
   listFigmaFrames: (url: string) => Promise<{ success: boolean; fileName?: string; lastModified?: string; requestedNodeId?: string; frames?: Array<{ id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }>; styleNames?: Record<string, string>; error?: string }>
   getFigmaFrame: (url: string, nodeId?: string) => Promise<{ success: boolean; node?: any; imageDataUrl?: string; error?: string }>
   captureAutomatePage: (webContentsId: number, viewportWidth: number, viewportHeight: number) => Promise<{ success: boolean; dataUrl?: string; documentWidth?: number; documentHeight?: number; domNodes?: any[]; tiles?: number; mode?: string; error?: string; fallback?: boolean }>
-  compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string, anchors?: Array<{ designY: number; liveY: number; confidence?: number }>, mode?: string) => Promise<{ success: boolean; engine?: string; detectionMode?: string; similarity?: number; changedPercent?: number; heatmapDataUrl?: string; regions?: Array<{ x: number; y: number; width: number; height: number; difference: number }>; anchors?: Array<{ designY: number; liveY: number; confidence: number }>; sections?: PageSection[]; error?: string; fallback?: boolean }>
+  compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string) => Promise<PixelComparisonResponse>
   cancelVisualComparison: (jobId: string) => Promise<{ success: boolean }>
   toggleMaximizeWindow: () => Promise<void>
   setTitleBarOverlay: (symbolColor: string) => Promise<void>
