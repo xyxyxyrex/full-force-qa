@@ -9,11 +9,21 @@ import {
 } from "react";
 import "./EditBetaWorkspace.css";
 import "./EditBetaWorkspace.ported.css";
+import "./Inspector.css";
 import NativeStylePanel from "./NativeStylePanel";
+import InspectorLayers from "./InspectorLayers";
+import InspectorStyles from "./InspectorStyles";
 import SmoothColorPicker from "./SmoothColorPicker";
 import figmaIcon from "../assets/figma.png";
 import type { DeviceFrame } from "./EditorWorkspace";
 import type { AppHotkeys } from "../../../shared/types";
+import type {
+  InspectorDomNode,
+  InspectorEvent,
+  InspectorHistorySnapshot,
+  InspectorSessionSnapshot,
+  InspectorStylesSnapshot,
+} from "../../../shared/inspector";
 import type {
   CaptureInspectionOverlay,
   CanvasSelectionBox,
@@ -27,6 +37,7 @@ import {
 import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { normalizeClassNames } from "../utils/editBetaClasses";
 import { mergeViewportPatches } from "../utils/viewportLayoutPatches";
+import { pageSearchExpression, type PageSearchRequest, type PageSearchResponse } from "../palette/pageSearch";
 
 function rendererCaptureWithTimeout<T>(
   promise: Promise<T>,
@@ -128,6 +139,7 @@ interface Props {
 }
 
 export interface EditBetaWorkspaceHandle {
+  searchPage: (request: PageSearchRequest) => Promise<PageSearchResponse | boolean>;
   reload: () => void;
   deselect: () => void;
   undo: () => void;
@@ -159,6 +171,13 @@ interface PaletteFont {
   count: number;
   preview?: string;
   loaded?: boolean;
+}
+
+interface UnifiedEditHistory {
+  entries: Array<{ id: string; label: string; source: "bridge" | "inspector" }>;
+  index: number;
+  bridgeEntries: string[];
+  inspectorIds: Set<string>;
 }
 
 interface AuthoredCssDimension {
@@ -1010,7 +1029,7 @@ function installEditBetaBridge() {
     if (!changes.size) return "";
     const normalized = document.createElement("div").style;
     for (const [property, declaration] of changes)
-      normalized.setProperty(property, declaration.value, "important");
+      normalized.setProperty(property, declaration.value, declaration.priority);
     return normalized.length ? `${path} { ${normalized.cssText} }` : "";
   };
   const splitSelectorList = (selectorText: string) => {
@@ -2444,7 +2463,7 @@ function installEditBetaBridge() {
 
       const redo = () =>
         after
-          ? el.style.setProperty(property, after, "important")
+          ? el.style.setProperty(property, after)
           : el.style.removeProperty(property);
       const undo = () =>
         before
@@ -2468,7 +2487,7 @@ function installEditBetaBridge() {
           property,
           value: after,
           beforeValue: beforeVal,
-          priority: after ? "important" : "",
+          priority: "",
           rectBefore: {
             left: Math.round(rBefore.left),
             top: Math.round(rBefore.top),
@@ -2612,7 +2631,7 @@ function installEditBetaBridge() {
           beforePriority: selected.style.getPropertyPriority(property),
         });
       value
-        ? selected.style.setProperty(property, value, "important")
+        ? selected.style.setProperty(property, value)
         : selected.style.removeProperty(property);
       positionOverlay();
       return true;
@@ -4208,7 +4227,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       layersHeight: number;
       stylesHeight: number;
     } | null>(null);
-    const layerRowsRef = useRef(new Map<string, HTMLDivElement>());
     const cssPreviewTimerRef = useRef<number | null>(null);
     const cssCommitTimerRef = useRef<number | null>(null);
     const thumbnailCaptureStartedRef = useRef(false);
@@ -4219,7 +4237,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const cssOperationChainRef = useRef<Promise<void>>(Promise.resolve());
     const spacePressedRef = useRef(false);
     const patchesRef = useRef<any[]>([]);
-    const patchStorageKeyRef = useRef("");
+    const editHistoryByPreviewRef = useRef<Record<string, UnifiedEditHistory>>({});
+    const bridgeEditIdRef = useRef(0);
+    const inspectorSessionsRef = useRef<Record<string, InspectorSessionSnapshot>>({});
+    const inspectorNodeRef = useRef<InspectorDomNode | null>(null);
+    const activeViewportIdRef = useRef("single-default");
     const modeRef = useRef<InteractionMode>(interactionMode);
     const optionsRef = useRef<BridgeOptions>({
       revealAnimations,
@@ -4238,14 +4260,21 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const bridgeStateEpochRef = useRef(0);
     const selectedStateKeyRef = useRef("");
     const historyStateKeyRef = useRef("");
+    const bridgeHistoryIndexRef = useRef(-1);
     const [ready, setReady] = useState(false);
     const [mode, setMode] = useState<InteractionMode>(interactionMode);
     const [selected, setSelected] = useState<RemoteElement | null>(null);
-    const [layers, setLayers] = useState<LayerRow[]>([]);
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [url, setUrl] = useState(sourceUrl);
     const [styleDrafts, setStyleDrafts] = useState<Record<string, string>>({});
+    const [inspectorSessions, setInspectorSessions] = useState<Record<string, InspectorSessionSnapshot>>({});
+    const [inspectorNode, setInspectorNode] = useState<InspectorDomNode | null>(null);
+    const [inspectorStyles, setInspectorStyles] = useState<InspectorStylesSnapshot | null>(null);
+    const [inspectorHistory, setInspectorHistory] = useState<InspectorHistorySnapshot>({ entries: [], index: -1 });
+    const [inspectorLoading, setInspectorLoading] = useState(false);
+    const [inspectorError, setInspectorError] = useState("");
+    const [editTimeline, setEditTimeline] = useState<UnifiedEditHistory>({ entries: [], index: -1, bridgeEntries: [], inspectorIds: new Set() });
     const activeViewportId = useMemo(() => {
       if (canvasViewMode !== "multi") return "single-default";
       const enabledFrames = activeFrames.filter((frame) => frame.enabled);
@@ -4261,6 +4290,32 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       const frame = activeFrames.find((candidate) => candidate.id === activeViewportId);
       return frame ? `${frame.name} · ${frame.width}×${frame.height}` : "Active viewport";
     }, [activeFrames, activeViewportId, canvasViewMode, height, width]);
+    activeViewportIdRef.current = activeViewportId;
+    inspectorNodeRef.current = inspectorNode;
+    const activeInspectorSession = inspectorSessions[activeViewportId] || null;
+
+    const activeEditHistory = useCallback(() => {
+      const previewId = activeViewportIdRef.current;
+      if (!editHistoryByPreviewRef.current[previewId]) {
+        editHistoryByPreviewRef.current[previewId] = { entries: [], index: -1, bridgeEntries: [], inspectorIds: new Set() };
+      }
+      return editHistoryByPreviewRef.current[previewId];
+    }, []);
+
+    const recordEditHistory = useCallback((previewId: string, source: "bridge" | "inspector", id: string, label: string) => {
+      const current = editHistoryByPreviewRef.current[previewId] || { entries: [], index: -1, bridgeEntries: [], inspectorIds: new Set<string>() };
+      if (current.entries.some(entry => entry.id === id)) return;
+      current.entries = current.entries.slice(0, current.index + 1);
+      current.entries.push({ id, label, source });
+      current.index = current.entries.length - 1;
+      editHistoryByPreviewRef.current[previewId] = current;
+      if (previewId === activeViewportIdRef.current) setEditTimeline({ ...current, inspectorIds: new Set(current.inspectorIds) });
+    }, []);
+
+    useEffect(() => {
+      const current = activeEditHistory();
+      setEditTimeline({ ...current, inspectorIds: new Set(current.inspectorIds) });
+    }, [activeEditHistory, activeViewportId]);
     const [layoutOverlayViewports, setLayoutOverlayViewports] = useState<
       Record<string, boolean>
     >({});
@@ -4269,9 +4324,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const [attrValue, setAttrValue] = useState("");
     const [classDraft, setClassDraft] = useState("");
     const [cssDraft, setCssDraft] = useState("");
-    const [collapsedLayers, setCollapsedLayers] = useState<Set<string>>(
-      new Set(),
-    );
     const [leftSections, setLeftSections] = useState({
       annotations: true,
       layers: true,
@@ -4310,7 +4362,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         210,
         Math.min(
           480,
-          Number(localStorage.getItem("qa_edit_beta_left_width")) || 260,
+          Number(localStorage.getItem("qa_edit_beta_left_width")) || 360,
         ),
       ),
     );
@@ -5130,19 +5182,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       };
     }, [constrainPan]);
 
-    const execute = useCallback(async (expression: string) => {
-      const view = [
-        webviewRef.current,
-        ...Object.values(webviewsMapRef.current),
-      ].find(isCallableWebview);
-      if (!view) return null;
-      try {
-        return await view.executeJavaScript(expression, true);
-      } catch {
-        return null;
-      }
-    }, []);
-
     const executeActive = useCallback(async (expression: string) => {
       const view = [
         webviewsMapRef.current[activeViewportId],
@@ -5157,37 +5196,21 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       }
     }, [activeViewportId]);
 
-    const executeAll = useCallback(async (expression: string) => {
-      const views = Object.values(webviewsMapRef.current).filter(isCallableWebview);
-      if (views.length === 0) return execute(expression);
-      const results = await Promise.all(
-        views.map(async (view) => {
-          try {
-            if (view && typeof view.executeJavaScript === "function") {
-              return await view.executeJavaScript(expression, true);
-            }
-          } catch {
-            return null;
-          }
-        })
-      );
-      return (
-        results.find(
-          (result) => result !== null && result !== undefined && result !== false,
-        ) ?? results[0]
-      );
-    }, [execute]);
-
     const deselect = useCallback(async () => {
-      await executeAll(
+      await executeActive(
         "window.__fullForceEditBeta?.deselect?.() || false",
       );
+      const session = inspectorSessionsRef.current[activeViewportIdRef.current];
+      if (session) void window.electronAPI.inspectorHighlight(null).catch(() => undefined);
+      inspectorNodeRef.current = null;
+      setInspectorNode(null);
+      setInspectorStyles(null);
       selectedStateKeyRef.current = JSON.stringify(null);
       setSelected(null);
       try {
         window.getSelection()?.removeAllRanges();
       } catch {}
-    }, [executeAll]);
+    }, [executeActive]);
 
     const captureProjectThumbnail = useCallback(async () => {
       const view = webviewRef.current;
@@ -5275,37 +5298,56 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       }
     }, []);
 
-    const refreshLayers = useCallback(async () => {
-      const result = await execute(
-        "window.__fullForceEditBeta?.getLayers() || []",
-      );
-      if (Array.isArray(result)) setLayers(result);
-    }, [execute]);
+    const updateInspectorSession = useCallback((previewId: string, snapshot: InspectorSessionSnapshot | null) => {
+      const next = { ...inspectorSessionsRef.current };
+      if (snapshot) next[previewId] = snapshot;
+      else delete next[previewId];
+      inspectorSessionsRef.current = next;
+      setInspectorSessions(next);
+    }, []);
 
-    const install = useCallback(async () => {
-      const pageUrl = webviewRef.current?.getURL?.() || sourceUrl;
-      patchStorageKeyRef.current = `fullforce_edit_beta_patches:${pageUrl}`;
-      try {
-        const saved = sessionStorage.getItem(patchStorageKeyRef.current);
-        patchesRef.current = saved ? JSON.parse(saved) : [];
-      } catch {
-        patchesRef.current = [];
+    const startInspectorForPreview = useCallback(async (previewId: string, view: any) => {
+      if (!isCallableWebview(view) || typeof view.getWebContentsId !== "function") return;
+      if (typeof window.electronAPI?.inspectorStart !== "function") {
+        if (previewId === activeViewportIdRef.current) {
+          setInspectorError("The inspector bridge was updated. Restart Parity once to load the new preload process.");
+        }
+        return;
       }
-      const ok = await execute(`(${installEditBetaBridge.toString()})()`);
-      if (!ok) return;
-      if (patchesRef.current.length)
-        await execute(
-          `window.__fullForceEditBeta.applyPatches(${JSON.stringify(patchesRef.current)})`,
-        );
-      await execute(
-        `window.__fullForceEditBeta.setMode(${JSON.stringify(modeRef.current)})`,
-      );
-      await execute(
-        `window.__fullForceEditBeta.setOptions(${JSON.stringify(optionsRef.current)})`,
-      );
-      setReady(true);
-      void refreshLayers();
-    }, [execute, refreshLayers, sourceUrl]);
+      const previous = inspectorSessionsRef.current[previewId];
+      if (previous) {
+        try { await window.electronAPI.inspectorStop(previous.sessionId); } catch {}
+        updateInspectorSession(previewId, null);
+      }
+      try {
+        const snapshot = await window.electronAPI.inspectorStart({
+          webContentsId: Number(view.getWebContentsId()),
+          previewId,
+        });
+        updateInspectorSession(previewId, snapshot);
+        if (previewId === activeViewportIdRef.current) {
+          setInspectorError("");
+          setInspectorNode(null);
+          setInspectorStyles(null);
+          setInspectorHistory({ entries: [], index: -1 });
+        }
+      } catch (cause) {
+        if (previewId === activeViewportIdRef.current) {
+          setInspectorError(cause instanceof Error ? cause.message : "Unable to start the Chromium inspector.");
+        }
+      }
+    }, [updateInspectorSession]);
+
+    useEffect(() => {
+      // Edit mutations are intentionally document-lifetime only. Remove old
+      // replay data without touching projects, annotations, or recordings.
+      try {
+        for (let index = sessionStorage.length - 1; index >= 0; index--) {
+          const key = sessionStorage.key(index);
+          if (key?.startsWith("fullforce_edit_beta_patches:")) sessionStorage.removeItem(key);
+        }
+      } catch {}
+    }, []);
 
     useEffect(() => {
       const cleanups: Array<() => void> = [];
@@ -5314,7 +5356,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         if (!view) return;
         let lastZoomSequence = 0;
 
-        const onLoad = async () => {
+        const onLoad = async (documentLoaded: boolean) => {
           if (!isCallableWebview(view)) return;
           setReady(false);
           try {
@@ -5327,29 +5369,21 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             if (currentUrl && (frameId === activeFrameId || !activeFrameId)) setUrl(currentUrl);
           } catch {}
 
-          const pageUrl = (typeof view.getURL === "function" ? view.getURL() : "") || sourceUrl;
-          patchStorageKeyRef.current = `fullforce_edit_beta_patches:${pageUrl}`;
-          try {
-            const saved = sessionStorage.getItem(patchStorageKeyRef.current);
-            patchesRef.current = saved ? JSON.parse(saved) : [];
-          } catch {
-            patchesRef.current = [];
-          }
+          if (documentLoaded) patchesRef.current = patchesRef.current.filter(patch => patch?.viewportId && patch.viewportId !== frameId);
 
           try {
             const ok = await view.executeJavaScript(`(${installEditBetaBridge.toString()})()`, true);
             if (ok) {
               await view.executeJavaScript(`window.__fullForceFrameId = ${JSON.stringify(frameId)}`, true);
-              if (patchesRef.current.length) {
-                await view.executeJavaScript(`window.__fullForceEditBeta.applyPatches(${JSON.stringify(patchesRef.current)})`, true);
-              }
               await view.executeJavaScript(`window.__fullForceEditBeta.setMode(${JSON.stringify(modeRef.current)})`, true);
               await view.executeJavaScript(`window.__fullForceEditBeta.setOptions(${JSON.stringify(optionsRef.current)})`, true);
             }
           } catch {}
+          if (documentLoaded || !inspectorSessionsRef.current[frameId]) await startInspectorForPreview(frameId, view);
           setReady(true);
-          void refreshLayers();
         };
+
+        const onDomReady = () => { void onLoad(true); };
 
         const onNavigate = (event: any) => {
           if (event.url && (frameId === activeFrameId || !activeFrameId)) setUrl(event.url);
@@ -5447,7 +5481,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           } catch {}
         };
 
-        view.addEventListener("dom-ready", onLoad);
+        view.addEventListener("dom-ready", onDomReady);
         view.addEventListener("did-finish-load", onFinishedLoad);
         view.addEventListener("did-navigate", onNavigate);
         view.addEventListener("did-navigate-in-page", onNavigate);
@@ -5455,13 +5489,13 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
         try {
           if (typeof view.getURL === "function" && view.getURL()) {
-            void onLoad();
+            void onLoad(false);
           }
         } catch {}
 
         cleanups.push(() => {
           try {
-            view.removeEventListener("dom-ready", onLoad);
+            view.removeEventListener("dom-ready", onDomReady);
             view.removeEventListener("did-finish-load", onFinishedLoad);
             view.removeEventListener("did-navigate", onNavigate);
             view.removeEventListener("did-navigate-in-page", onNavigate);
@@ -5477,7 +5511,162 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       return () => {
         cleanups.forEach((c) => c());
       };
-    }, [activeFrameId, activeFrames, captureProjectThumbnail, canvasViewMode, constrainPan, onCanvasZoom, onEyedropperColorChange, onHotkeyCommand, onSelectActiveFrame, refreshLayers, sourceUrl]);
+    }, [activeFrameId, activeFrames, captureProjectThumbnail, canvasViewMode, constrainPan, onCanvasZoom, onEyedropperColorChange, onHotkeyCommand, onSelectActiveFrame, sourceUrl, startInspectorForPreview]);
+
+    useEffect(() => () => {
+      const sessions = Object.values(inspectorSessionsRef.current);
+      inspectorSessionsRef.current = {};
+      sessions.forEach((session) => {
+        void window.electronAPI.inspectorStop(session.sessionId).catch(() => undefined);
+      });
+    }, []);
+
+    useEffect(() => {
+      const valid = new Set(canvasViewMode === "multi" ? activeFrames.filter(frame => frame.enabled).map(frame => frame.id) : ["single-default"]);
+      for (const [previewId, session] of Object.entries(inspectorSessionsRef.current)) {
+        if (valid.has(previewId)) continue;
+        updateInspectorSession(previewId, null);
+        delete editHistoryByPreviewRef.current[previewId];
+        void window.electronAPI.inspectorStop(session.sessionId).catch(() => undefined);
+      }
+    }, [activeFrames, canvasViewMode, updateInspectorSession]);
+
+    const readInspectorStyles = useCallback(async (node: InspectorDomNode) => {
+      inspectorNodeRef.current = node;
+      setInspectorNode(node);
+      if (node.nodeType !== 1 && !node.pseudoType) {
+        setInspectorStyles(null);
+        return;
+      }
+      setInspectorLoading(true);
+      try {
+        const snapshot = await window.electronAPI.inspectorStyles(node.ref);
+        if (
+          inspectorNodeRef.current?.ref.sessionId === node.ref.sessionId &&
+          inspectorNodeRef.current?.ref.nodeId === node.ref.nodeId &&
+          inspectorNodeRef.current?.ref.generation === node.ref.generation
+        ) {
+          setInspectorStyles(snapshot);
+          setInspectorError("");
+        }
+      } catch (cause) {
+        setInspectorStyles(null);
+        setInspectorError(cause instanceof Error ? cause.message : "Unable to read styles for this node.");
+      } finally {
+        setInspectorLoading(false);
+      }
+    }, []);
+
+    const reconnectInspector = useCallback(async () => {
+      const session = inspectorSessionsRef.current[activeViewportIdRef.current];
+      if (!session) return;
+      try {
+        const snapshot = await window.electronAPI.inspectorReconnect(session.sessionId);
+        updateInspectorSession(session.previewId, snapshot);
+        if (snapshot.generation !== session.generation) {
+          inspectorNodeRef.current = null;
+          setInspectorNode(null);
+          setInspectorStyles(null);
+        }
+        setInspectorError("");
+      } catch (cause) {
+        setInspectorError(cause instanceof Error ? cause.message : "Unable to reconnect the Chromium inspector.");
+      }
+    }, [updateInspectorSession]);
+
+    const selectInspectorNode = useCallback(async (node: InspectorDomNode) => {
+      await readInspectorStyles(node);
+      void window.electronAPI.inspectorHighlight(node.ref).catch(() => undefined);
+      if (node.nodeType !== 1) return;
+      try {
+        const path = await window.electronAPI.inspectorSelectorPath(node.ref);
+        if (path) await executeActive(`window.__fullForceEditBeta?.selectPath(${JSON.stringify(path)})`);
+      } catch {}
+    }, [executeActive, readInspectorStyles]);
+
+    useEffect(() => {
+      const session = inspectorSessionsRef.current[activeViewportId];
+      selectedStateKeyRef.current = "";
+      setSelected(null);
+      inspectorNodeRef.current = null;
+      setInspectorNode(null);
+      setInspectorStyles(null);
+      setInspectorError("");
+      if (!session) {
+        setInspectorHistory({ entries: [], index: -1 });
+        return;
+      }
+      void window.electronAPI.inspectorHistory(session.sessionId)
+        .then(setInspectorHistory)
+        .catch(() => setInspectorHistory({ entries: [], index: -1 }));
+    }, [activeViewportId, activeInspectorSession?.sessionId]);
+
+    useEffect(() => {
+      const session = inspectorSessionsRef.current[activeViewportId];
+      const selector = selected?.path;
+      if (!session || !selector || session.status !== "ready") return;
+      let cancelled = false;
+      void window.electronAPI.inspectorResolveSelector(session.sessionId, session.generation, selector)
+        .then((node) => {
+          if (!cancelled && node) return readInspectorStyles(node);
+        })
+        .catch((cause) => {
+          if (!cancelled) setInspectorError(cause instanceof Error ? cause.message : "The selected element is no longer in the page.");
+        });
+      return () => { cancelled = true; };
+    }, [activeViewportId, activeInspectorSession?.generation, activeInspectorSession?.sessionId, readInspectorStyles, selected?.path]);
+
+    useEffect(() => {
+      if (typeof window.electronAPI?.onInspectorEvent !== "function") {
+        setInspectorError("The inspector bridge was updated. Restart Parity once to load the new preload process.");
+        return;
+      }
+      return window.electronAPI.onInspectorEvent((event: InspectorEvent) => {
+      const session = Object.values(inspectorSessionsRef.current).find(item => item.sessionId === event.sessionId);
+      if (!session) return;
+      if (event.type === "status" && event.status) {
+        updateInspectorSession(session.previewId, { ...session, status: event.status, generation: event.generation });
+        if (session.previewId === activeViewportIdRef.current) setInspectorError(event.status === "detached" ? "Chromium inspector disconnected. Reconnect to continue editing." : "");
+        return;
+      }
+      if (event.type === "history" && event.history && session.previewId === activeViewportIdRef.current) {
+        const timeline = editHistoryByPreviewRef.current[session.previewId] || { entries: [], index: -1, bridgeEntries: [], inspectorIds: new Set<string>() };
+        for (const entry of event.history.entries) {
+          if (!timeline.inspectorIds.has(entry.id) && entry.applied) recordEditHistory(session.previewId, "inspector", `inspector:${entry.id}`, entry.label);
+          timeline.inspectorIds.add(entry.id);
+        }
+        editHistoryByPreviewRef.current[session.previewId] = timeline;
+        setInspectorHistory(event.history);
+        return;
+      }
+      if (event.type === "selection-invalidated" && inspectorNodeRef.current?.ref.nodeId === event.nodeId) {
+        inspectorNodeRef.current = null;
+        setInspectorNode(null);
+        setInspectorStyles(null);
+      }
+      if (event.type === "document-updated") {
+        const reset: UnifiedEditHistory = { entries: [], index: -1, bridgeEntries: [], inspectorIds: new Set() };
+        editHistoryByPreviewRef.current[session.previewId] = reset;
+        if (session.previewId === activeViewportIdRef.current) setEditTimeline(reset);
+        inspectorNodeRef.current = null;
+        setInspectorNode(null);
+        setInspectorStyles(null);
+        void window.electronAPI.inspectorReconnect(session.sessionId)
+          .then(snapshot => updateInspectorSession(session.previewId, snapshot))
+          .catch(() => undefined);
+        return;
+      }
+      if (event.type === "dom-updated") {
+        void window.electronAPI.inspectorReconnect(session.sessionId)
+          .then(snapshot => updateInspectorSession(session.previewId, snapshot))
+          .catch(() => undefined);
+      }
+      const selectedNode = inspectorNodeRef.current;
+      if (event.type === "styles-updated" && selectedNode?.ref.sessionId === event.sessionId && selectedNode.ref.generation === event.generation) {
+        void readInspectorStyles(selectedNode);
+      }
+      });
+    }, [readInspectorStyles, recordEditHistory, updateInspectorSession]);
 
     useEffect(() => {
       // Also normalize already-mounted guests after hot reloads or canvas zoom
@@ -5505,8 +5694,19 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         const historyKey = JSON.stringify([state.history, state.historyIndex]);
         if (historyKey !== historyStateKeyRef.current) {
           historyStateKeyRef.current = historyKey;
+          const timeline = activeEditHistory();
+          const nextBridgeEntries = state.history || [];
+          let common = 0;
+          while (common < timeline.bridgeEntries.length && common < nextBridgeEntries.length && timeline.bridgeEntries[common] === nextBridgeEntries[common]) common++;
+          if (common < nextBridgeEntries.length && state.historyIndex >= common) {
+            for (let index = common; index <= state.historyIndex; index++) {
+              recordEditHistory(activeViewportId, "bridge", `bridge:${++bridgeEditIdRef.current}`, nextBridgeEntries[index]);
+            }
+          }
+          activeEditHistory().bridgeEntries = [...nextBridgeEntries];
           setHistory(state.history || []);
           setHistoryIndex(state.historyIndex ?? -1);
+          bridgeHistoryIndexRef.current = state.historyIndex ?? -1;
         }
         if (state.patches) {
           patchesRef.current = mergeViewportPatches(
@@ -5516,15 +5716,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           );
         }
         setPageScrollY(state.scrollY || 0);
-        try {
-          sessionStorage.setItem(
-            patchStorageKeyRef.current,
-            JSON.stringify(patchesRef.current),
-          );
-        } catch {}
       }, 250);
       return () => window.clearInterval(timer);
-    }, [activeViewportId, executeActive, ready]);
+    }, [activeEditHistory, activeViewportId, executeActive, ready, recordEditHistory]);
 
     useEffect(() => {
       const view = figmaWebviewRef.current;
@@ -5563,10 +5757,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       setMode(interactionMode);
       if (interactionMode !== "eyedropper") onEyedropperColorChange?.(null);
       if (ready)
-        void execute(
+        void executeActive(
           `window.__fullForceEditBeta?.setMode(${JSON.stringify(interactionMode)})`,
         );
-    }, [execute, interactionMode, onEyedropperColorChange, ready]);
+    }, [executeActive, interactionMode, onEyedropperColorChange, ready]);
 
     useEffect(() => {
       resetPan();
@@ -5623,14 +5817,14 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         accentColor,
       };
       if (ready)
-        void execute(
+        void executeActive(
           `window.__fullForceEditBeta?.setOptions(${JSON.stringify(optionsRef.current)})`,
         );
     }, [
       annotateMode,
       accentColor,
       boundaries,
-      execute,
+      executeActive,
       fontInspectorMode,
       hotkeys,
       guides,
@@ -5665,11 +5859,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     );
 
     const call = async (method: string, ...args: any[]) => {
-      const result = await executeAll(
+      const result = await executeActive(
         `window.__fullForceEditBeta?.[${JSON.stringify(method)}](...${JSON.stringify(args)})`,
       );
-      if (["duplicate", "remove", "move", "undo", "redo", "applyPatches", "reorder", "commitStyle", "setClasses"].includes(method))
-        void refreshLayers();
       return result;
     };
     const applyClassDraft = async (value: string) => {
@@ -5714,12 +5906,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             activePatches,
             activeViewportId,
           );
-          try {
-            sessionStorage.setItem(
-              patchStorageKeyRef.current,
-              JSON.stringify(patchesRef.current),
-            );
-          } catch {}
         }
       }
     };
@@ -5834,14 +6020,34 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     };
     const undoLocalEdit = async () => {
       bridgeStateEpochRef.current++;
+      const hadPendingCss = Boolean(cssEditSessionRef.current);
       await flushPendingCssEdit();
-      await call("undo");
+      const timeline = activeEditHistory();
+      const entry = timeline.entries[timeline.index];
+      if (!entry && (hadPendingCss || bridgeHistoryIndexRef.current >= 0)) await call("undo");
+      else if (entry?.source === "inspector") {
+        const session = inspectorSessionsRef.current[activeViewportIdRef.current];
+        if (session) setInspectorHistory(await window.electronAPI.inspectorUndo(session.sessionId));
+      } else if (entry) await call("undo");
+      if (entry) {
+        timeline.index--;
+        setEditTimeline({ ...timeline, inspectorIds: new Set(timeline.inspectorIds) });
+      }
       bridgeStateEpochRef.current++;
     };
     const redoLocalEdit = async () => {
       bridgeStateEpochRef.current++;
       await cssOperationChainRef.current.catch(() => undefined);
-      await call("redo");
+      const timeline = activeEditHistory();
+      const entry = timeline.entries[timeline.index + 1];
+      if (entry?.source === "inspector") {
+        const session = inspectorSessionsRef.current[activeViewportIdRef.current];
+        if (session) setInspectorHistory(await window.electronAPI.inspectorRedo(session.sessionId));
+      } else if (entry) await call("redo");
+      if (entry) {
+        timeline.index++;
+        setEditTimeline({ ...timeline, inspectorIds: new Set(timeline.inspectorIds) });
+      }
       bridgeStateEpochRef.current++;
     };
     const flushResizePreview = () => {
@@ -5914,20 +6120,25 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       cssEditingPathRef.current = "";
       cssEditSequenceRef.current++;
       await cssOperationChainRef.current.catch(() => undefined);
-      await executeAll("window.__fullForceEditBeta?.revertAll()");
-      patchesRef.current = [];
-      try {
-        sessionStorage.removeItem(patchStorageKeyRef.current);
-      } catch {}
+      await executeActive("window.__fullForceEditBeta?.revertAll()");
+      patchesRef.current = patchesRef.current.filter(patch => patch?.viewportId && patch.viewportId !== activeViewportIdRef.current);
+      const activeView = webviewsMapRef.current[activeViewportIdRef.current] || webviewRef.current;
+      try { activeView?.reload?.(); } catch {}
       selectedStateKeyRef.current = "";
       historyStateKeyRef.current = "";
       setSelected(null);
       setHistory([]);
       setHistoryIndex(-1);
+      bridgeHistoryIndexRef.current = -1;
       setStyleDrafts({});
+      setInspectorNode(null);
+      setInspectorStyles(null);
+      setInspectorHistory({ entries: [], index: -1 });
+      const reset: UnifiedEditHistory = { entries: [], index: -1, bridgeEntries: [], inspectorIds: new Set() };
+      editHistoryByPreviewRef.current[activeViewportIdRef.current] = reset;
+      setEditTimeline(reset);
       bridgeStateEpochRef.current++;
-      void refreshLayers();
-    }, [executeAll, refreshLayers]);
+    }, [executeActive]);
 
     useEffect(() => {
       if (!ready) return;
@@ -5964,17 +6175,17 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       return () => window.removeEventListener("keydown", onKeyDown, true);
     }, [deselect, mode, ready, selected?.path]);
     const scanColors = useCallback(async () => {
-      const result = await execute(
+      const result = await executeActive(
         "window.__fullForceEditBeta?.scanColors() || []",
       );
       if (Array.isArray(result)) setPageColors(result);
-    }, [execute]);
+    }, [executeActive]);
     const scanFonts = useCallback(async () => {
-      const result = await execute(
+      const result = await executeActive(
         "window.__fullForceEditBeta?.scanFonts() || []",
       );
       if (Array.isArray(result)) setPageFonts(result);
-    }, [execute]);
+    }, [executeActive]);
 
     useEffect(() => {
       if (!ready || !rightPanelOpen) return;
@@ -5984,22 +6195,27 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
     useEffect(() => {
       if (!ready) return;
-      void execute(
+      void executeActive(
         `window.__fullForceEditBeta?.highlightUsage('color', ${JSON.stringify(Array.from(selectedColors))})`,
       );
-    }, [execute, ready, selectedColors]);
+    }, [executeActive, ready, selectedColors]);
 
     useEffect(() => {
       if (!ready) return;
       if (selectedColors.size) return;
-      void execute(
+      void executeActive(
         `window.__fullForceEditBeta?.highlightUsage('font', ${JSON.stringify(Array.from(selectedFonts))})`,
       );
-    }, [execute, ready, selectedColors.size, selectedFonts]);
+    }, [executeActive, ready, selectedColors.size, selectedFonts]);
 
     useImperativeHandle(
       ref,
       () => ({
+        searchPage: async (request) => {
+          const view = webviewsMapRef.current[activeViewportIdRef.current] || webviewRef.current;
+          if (!isCallableWebview(view)) throw new Error("The active page is not ready to search.");
+          return view.executeJavaScript(pageSearchExpression(request), true);
+        },
         reload: () => {
           void hardReload();
         },
@@ -6007,19 +6223,19 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           void deselect();
         },
         undo: () => {
-          void call("undo");
+          void undoLocalEdit();
         },
         redo: () => {
-          void call("redo");
+          void redoLocalEdit();
         },
         refreshLayers: () => {
-          void refreshLayers();
+          void reconnectInspector();
         },
         captureViewport: async () => {
           const view = webviewRef.current;
           if (!view || typeof view.capturePage !== "function") return null;
           try {
-            await execute("window.__fullForceEditBeta?.prepareCapture?.() || true");
+            await executeActive("window.__fullForceEditBeta?.prepareCapture?.() || true");
             const image = await view.capturePage();
             if (!image) return null;
             const dataUrl = typeof image.toDataURL === "function" ? image.toDataURL() : null;
@@ -6028,7 +6244,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             console.error("Error capturing viewport:", err);
             return null;
           } finally {
-            await execute("window.__fullForceEditBeta?.finishCapture?.() || true");
+            await executeActive("window.__fullForceEditBeta?.finishCapture?.() || true");
           }
         },
         captureFullPage: async () => {
@@ -6036,7 +6252,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           if (!view) return null;
           try {
             await rendererCaptureWithTimeout(
-              execute("window.__fullForceEditBeta?.prepareCapture?.('metadata') || true"),
+              executeActive("window.__fullForceEditBeta?.prepareCapture?.('metadata') || true"),
               5_000,
               "Timed out preparing the guest page for capture.",
             );
@@ -6092,7 +6308,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           } finally {
             try {
               await rendererCaptureWithTimeout(
-                execute("window.__fullForceEditBeta?.finishCapture?.() || true"),
+                executeActive("window.__fullForceEditBeta?.finishCapture?.() || true"),
                 5_000,
                 "Timed out restoring the guest page after capture.",
               );
@@ -6105,7 +6321,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         },
         getScrollY: async () => {
           try {
-            const res = await execute("window.scrollY || document.documentElement.scrollTop || 0");
+            const res = await executeActive("window.scrollY || document.documentElement.scrollTop || 0");
             return typeof res === "number" ? res : 0;
           } catch (err) {
             return 0;
@@ -6137,7 +6353,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         getCaptureInspection: async () => {
           try {
             const result = await rendererCaptureWithTimeout(
-              execute("window.__fullForceEditBeta?.getCaptureInspection?.() || []"),
+              executeActive("window.__fullForceEditBeta?.getCaptureInspection?.() || []"),
               5_000,
               "Timed out reading capture inspection metadata.",
             );
@@ -6147,46 +6363,33 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             return [];
           }
         },
-        getPatches: async () => patchesRef.current,
+        getPatches: async () => {
+          const inspectorPatches = await Promise.all(
+            Object.values(inspectorSessionsRef.current).map(async (session) => {
+              try {
+                const patches = await window.electronAPI.inspectorPatches(session.sessionId);
+                return patches.map((patch) => ({ ...((patch && typeof patch === "object") ? patch : { value: patch }), viewportId: session.previewId }));
+              } catch {
+                return [];
+              }
+            }),
+          );
+          return [...patchesRef.current, ...inspectorPatches.flat()];
+        },
       }),
-      [deselect, execute, executeActive, hardReload, height, refreshLayers, width],
+      [deselect, executeActive, hardReload, height, reconnectInspector, width],
     );
     const navigate = () => {
       let next = url.trim();
       if (!/^https?:\/\//i.test(next)) next = `https://${next}`;
       webviewRef.current?.loadURL?.(next);
     };
-    const visibleLayers = layers.filter(
-      (layer) =>
-        !layer.ancestors.some((ancestor) => collapsedLayers.has(ancestor)),
-    );
     const toggleLeftSection = (section: keyof typeof leftSections) =>
       setLeftSections((current) => ({
         ...current,
         [section]: !current[section],
       }));
 
-    useEffect(() => {
-      const path = selected?.path;
-      if (!path || !leftSections.layers) return;
-      const layer = layers.find((item) => item.path === path);
-      if (!layer) return;
-      if (layer.ancestors.some((ancestor) => collapsedLayers.has(ancestor))) {
-        setCollapsedLayers((current) => {
-          const next = new Set(current);
-          layer.ancestors.forEach((ancestor) => next.delete(ancestor));
-          return next;
-        });
-      }
-      const frame = requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          layerRowsRef.current
-            .get(path)
-            ?.scrollIntoView({ block: "center", behavior: "smooth" });
-        }),
-      );
-      return () => cancelAnimationFrame(frame);
-    }, [collapsedLayers, layers, leftSections.layers, selected?.path]);
     useEffect(
       () => () => {
         viewportResizeCleanupRef.current?.();
@@ -6635,7 +6838,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           <div className="edit-beta-nav-actions">
             <button
               className="edit-beta-nav-icon"
-              disabled={historyIndex < 0 && !cssEditSessionRef.current}
+              disabled={editTimeline.index < 0 && !cssEditSessionRef.current}
               onClick={() => void undoLocalEdit()}
               title="Undo (Ctrl+Z)"
               aria-label="Undo"
@@ -6650,7 +6853,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
               className="edit-beta-nav-icon"
               disabled={
                 !!cssEditSessionRef.current ||
-                historyIndex + 1 >= history.length
+                editTimeline.index + 1 >= editTimeline.entries.length
               }
               onClick={() => void redoLocalEdit()}
               title="Redo (Ctrl+Y)"
@@ -6665,7 +6868,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             <span className="edit-beta-nav-divider" />
             <button
               className="edit-beta-nav-icon danger"
-              disabled={historyIndex < 0 && !cssEditSessionRef.current}
+              disabled={editTimeline.index < 0 && !cssEditSessionRef.current}
               onClick={() => void revertAllLocalEdits()}
               title="Revert all local changes"
               aria-label="Revert all local changes"
@@ -6800,65 +7003,18 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                 <span>
                   <i>{leftSections.layers ? "⌄" : "›"}</i> Layers
                 </span>
-                <small>{layers.length}</small>
+                <small>{activeInspectorSession?.status === "ready" ? "DOM" : "—"}</small>
               </button>
               {leftSections.layers && (
-                <>
-                  <div className="edit-beta-panel-tools">
-                    <span>Live DOM</span>
-                    <button
-                      onClick={() => void refreshLayers()}
-                      title="Refresh DOM tree"
-                    >
-                      ↻
-                    </button>
-                  </div>
-                  <div className="edit-beta-tree">
-                    {visibleLayers.map((layer, index) => (
-                      <div
-                        ref={(node) => {
-                          if (node) layerRowsRef.current.set(layer.path, node);
-                          else layerRowsRef.current.delete(layer.path);
-                        }}
-                        key={`${layer.path}-${index}`}
-                        className={`edit-beta-layer-row ${selected?.path === layer.path ? "selected" : ""}`}
-                        style={
-                          {
-                            paddingLeft: 6 + Math.min(layer.depth, 9) * 12,
-                            "--layer-depth": Math.min(layer.depth, 9),
-                          } as React.CSSProperties
-                        }
-                      >
-                        {layer.hasChildren ? (
-                          <button
-                            className="edit-beta-layer-chevron"
-                            onClick={() =>
-                              setCollapsedLayers((current) => {
-                                const next = new Set(current);
-                                next.has(layer.path)
-                                  ? next.delete(layer.path)
-                                  : next.add(layer.path);
-                                return next;
-                              })
-                            }
-                          >
-                            {collapsedLayers.has(layer.path) ? "›" : "⌄"}
-                          </button>
-                        ) : (
-                          <span className="edit-beta-layer-spacer" />
-                        )}
-                        <button
-                          className="edit-beta-layer-name"
-                          onClick={() => void call("selectPath", layer.path)}
-                          title={layer.path}
-                        >
-                          <b>{layer.tag}</b>
-                          <span>{layer.label.slice(layer.tag.length)}</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </>
+                <InspectorLayers
+                  session={activeInspectorSession}
+                  selected={inspectorNode}
+                  error={inspectorError}
+                  onSelect={(node) => void selectInspectorNode(node)}
+                  onRefresh={() => void reconnectInspector()}
+                  onReconnect={() => void reconnectInspector()}
+                  onError={setInspectorError}
+                />
               )}
             </section>
             <div
@@ -6888,74 +7044,25 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                   <i>{leftSections.styles ? "⌄" : "›"}</i> Styles
                 </span>
               </button>
-              {leftSections.styles &&
-                (selected ? (
-                  <div className="edit-beta-css-editor">
-                    <div className="edit-beta-css-selector">
-                      {selected.tag}
-                      {selected.id
-                        ? `#${selected.id}`
-                        : selected.className
-                          ? `.${selected.className.trim().split(/\s+/).slice(0, 2).join(".")}`
-                          : ""}
-                    </div>
-                    <div className="edit-beta-css-toolbar">
-                      <span>CSS</span>
-                      <i>Live</i>
-                      <button
-                        onClick={() =>
-                          updateCssDraftLive(formatCssSource(cssDraft))
-                        }
-                        title="Format stylesheet"
-                      >
-                        Format
-                      </button>
-                      <em>Spaces: 2</em>
-                    </div>
-                    <div className="edit-beta-css-code">
-                      <pre
-                        aria-hidden="true"
-                        dangerouslySetInnerHTML={{
-                          __html: highlightCssSource(cssDraft),
-                        }}
-                      />
-                      <textarea
-                        value={cssDraft}
-                        wrap="off"
-                        spellCheck={false}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Tab") return;
-                          event.preventDefault();
-                          const target = event.currentTarget;
-                          const start = target.selectionStart;
-                          const end = target.selectionEnd;
-                          const next = `${cssDraft.slice(0, start)}  ${cssDraft.slice(end)}`;
-                          updateCssDraftLive(next);
-                          requestAnimationFrame(() => {
-                            target.selectionStart = target.selectionEnd =
-                              start + 2;
-                          });
-                        }}
-                        onScroll={(event) => {
-                          const pre = event.currentTarget
-                            .previousElementSibling as HTMLElement | null;
-                          if (pre) {
-                            pre.scrollTop = event.currentTarget.scrollTop;
-                            pre.scrollLeft = event.currentTarget.scrollLeft;
-                          }
-                        }}
-                        onChange={(event) =>
-                          updateCssDraftLive(event.target.value)
-                        }
-                        placeholder={"selector {\n  margin: 0;\n}"}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="edit-beta-section-empty">
-                    Select an element to edit its inline CSS.
-                  </div>
-                ))}
+              {leftSections.styles && (
+                <InspectorStyles
+                  session={activeInspectorSession}
+                  selected={inspectorNode}
+                  snapshot={inspectorStyles}
+                  loading={inspectorLoading}
+                  error={inspectorError}
+                  onSnapshot={(snapshot) => {
+                    snapshot.node.ancestors = inspectorNodeRef.current?.ancestors;
+                    setInspectorStyles(snapshot);
+                    setInspectorNode(snapshot.node);
+                    inspectorNodeRef.current = snapshot.node;
+                    setInspectorError("");
+                    if (selected?.path) void executeActive(`window.__fullForceEditBeta?.selectPath(${JSON.stringify(selected.path)})`);
+                  }}
+                  onNode={(node) => void selectInspectorNode(node)}
+                  onError={setInspectorError}
+                />
+              )}
             </section>
             <div
               className="edit-beta-section-resizer"
@@ -6975,78 +7082,40 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                 <span>
                   <i>{leftSections.history ? "⌄" : "›"}</i> History
                 </span>
-                <small>{history.length}</small>
+                <small>{editTimeline.entries.length}</small>
               </button>
               {leftSections.history && (
                 <div className="edit-beta-history-list">
                   <div
-                    className={`edit-beta-history-entry initial ${historyIndex < 0 ? "current" : ""}`}
+                    className={`edit-beta-history-entry initial ${editTimeline.index < 0 ? "current" : ""}`}
                   >
                     <i>○</i>
                     <span>
                       <b>Initial page</b>
                       <small>Unmodified local state</small>
                     </span>
-                    {historyIndex < 0 && <em>Current</em>}
+                    {editTimeline.index < 0 && <em>Current</em>}
                   </div>
-                  {history.map((item, index) => (
+                  {editTimeline.entries.map((item, index) => (
                     <div
-                      key={`${item}-${index}`}
-                      className={`edit-beta-history-entry ${index === historyIndex ? "current" : ""} ${index > historyIndex ? "future" : ""}`}
+                      key={item.id}
+                      className={`edit-beta-history-entry ${index === editTimeline.index ? "current" : ""} ${index > editTimeline.index ? "future" : ""}`}
                     >
-                      <i>{index > historyIndex ? "○" : "✓"}</i>
+                      <i>{index > editTimeline.index ? "○" : "✓"}</i>
                       <span>
-                        <b>{item}</b>
+                        <b>{item.label}</b>
                         <small>
-                          {index > historyIndex
+                          {index > editTimeline.index
                             ? "Undone change"
-                            : "Local edit"}
+                            : item.source === "inspector" ? "Inspector edit" : "Canvas edit"}
                         </small>
                       </span>
-                      {index === historyIndex && <em>Current</em>}
+                      {index === editTimeline.index && <em>Current</em>}
                     </div>
                   ))}
                 </div>
               )}
             </section>
-            <div className="edit-beta-panel-title">
-              <span>Live DOM Layers</span>
-              <button onClick={() => void refreshLayers()}>↻</button>
-            </div>
-            <div className="edit-beta-legacy-layers">
-              {layers.map((layer, index) => (
-                <button
-                  key={`${layer.path}-${index}`}
-                  className={selected?.path === layer.path ? "selected" : ""}
-                  style={{ paddingLeft: 8 + Math.min(layer.depth, 7) * 12 }}
-                  onClick={() => void call("selectPath", layer.path)}
-                  title={layer.path}
-                >
-                  {layer.label}
-                </button>
-              ))}
-            </div>
-            <div className="edit-beta-panel-title">History</div>
-            <div className="edit-beta-legacy-history">
-              {history.length === 0 ? (
-                <span>No edits yet</span>
-              ) : (
-                history.map((item, index) => (
-                  <div
-                    key={`${item}-${index}`}
-                    className={
-                      index === historyIndex
-                        ? "current"
-                        : index > historyIndex
-                          ? "future"
-                          : ""
-                    }
-                  >
-                    {item}
-                  </div>
-                ))
-              )}
-            </div>
           </aside>
 
           <main
@@ -7473,7 +7542,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                 }
                                 onReorder={(targetPath, placement) => {
                                   void call("reorder", targetPath, placement);
-                                  void refreshLayers();
                                 }}
                                 onAnnotate={() => onAnnotateElement?.(selected)}
                                 onAction={(action) => {

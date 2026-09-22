@@ -62,6 +62,15 @@ jobs:
       - run: npm ci
       - name: Run regression tests
         run: npm test
+      - name: Verify accounts, inspector and command palette in Electron
+        shell: pwsh
+        run: |
+          npm run test:accounts:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:inspector:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:palette:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build landing page installer
         run: npm run build:viewer
       - name: Install visual comparison builder
@@ -90,7 +99,12 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $env:RELEASE_TAG @assets --clobber --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $env:RELEASE_TAG @assets --verify-tag --title "Parity v$version" --generate-notes --repo $env:GITHUB_REPOSITORY
+            $notes = "RELEASE_NOTES_$version.md"
+            if (Test-Path -LiteralPath $notes) {
+              gh release create $env:RELEASE_TAG @assets --verify-tag --title "Parity v$version" --notes-file $notes --repo $env:GITHUB_REPOSITORY
+            } else {
+              gh release create $env:RELEASE_TAG @assets --verify-tag --title "Parity v$version" --generate-notes --repo $env:GITHUB_REPOSITORY
+            }
           }
           if ($LASTEXITCODE -ne 0) {
             throw "GitHub Release publication failed."

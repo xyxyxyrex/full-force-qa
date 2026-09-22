@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
-import type { MondayTicket, MondayLink } from './Dashboard'
+import type { IntakeTicket as MondayTicket } from '../../../shared/tickets'
+import type { TicketSourceRef } from '../../../shared/types'
+import { listIntakeTickets } from '../services/ticketService'
 import mondayLogo from '../assets/monday-icon-svgrepo-com.svg'
 import parityIcon from '../assets/parity-512.png'
 import parityLightIcon from '../assets/parity-light-512.png'
 import './CaptureScreen.css'
+import type { AuditCaptureContext } from '../../../shared/auditExport'
 
 interface Props {
-  onCapture: (html: string, url: string, adminUrl: string, details: CaptureProjectDetails) => void
+  onCapture: (html: string, url: string, adminUrl: string, details: CaptureProjectDetails, auditContext?: AuditCaptureContext) => void
   onAdd: (details: CaptureProjectDetails) => Promise<void> | void
   onBack: () => void
   initialName?: string
@@ -26,6 +29,7 @@ export interface CaptureProjectDetails {
   figmaUrl: string
   googleSheetUrl: string
   mondayTicketId?: string
+  ticketRef?: TicketSourceRef
 }
 
 function ParityCaptureIcon({ size }: { size: number }) {
@@ -224,12 +228,12 @@ function MondaySearchDropdown({
 
       <div className="monday-search-results">
         {filtered.length === 0 ? (
-          <div className="monday-search-empty">No matching Monday tickets found</div>
+          <div className="monday-search-empty">No matching tickets found</div>
         ) : (
           filtered.map(({ ticket, links }, idx) => (
             <div key={`${ticket.id}-${idx}`} className="monday-search-ticket-card">
               <div className="monday-search-item-header">
-                <span className="monday-search-status-tag">{ticket.status}</span>
+                <span className="monday-search-status-tag">{ticket.providerLabel} · {ticket.status}</span>
                 <span className="monday-search-ticket-title">{ticket.name}</span>
                 {links.length > 1 && (
                   <span className="monday-multi-link-badge">{links.length} links</span>
@@ -283,7 +287,7 @@ export default function CaptureScreen({
   const [sessionExpired, setSessionExpired] = useState(false)
   const autoCaptureRan = useRef(false)
 
-  // Monday tickets for URL quick-fill
+  // tickets for URL quick-fill
   const [mondayTickets, setMondayTickets] = useState<MondayTicket[]>([])
   const [mondayDropdownOpen, setMondayDropdownOpen] = useState(false)
   const [sheetsDropdownOpen, setSheetsDropdownOpen] = useState(false)
@@ -293,10 +297,11 @@ export default function CaptureScreen({
   const figmaDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('monday_tickets')
-      if (stored) setMondayTickets(JSON.parse(stored))
-    } catch { /* ignore */ }
+    let active = true
+    const load = () => void listIntakeTickets().then(tickets => { if (active) setMondayTickets(tickets) }).catch(() => { if (active) setMondayTickets([]) })
+    load()
+    window.addEventListener('parity:tickets-changed', load)
+    return () => { active = false; window.removeEventListener('parity:tickets-changed', load) }
   }, [])
 
   // Close dropdowns on outside click
@@ -431,8 +436,9 @@ export default function CaptureScreen({
           stagingUrl: normStaging,
           figmaUrl: normalizeUrl(figmaUrl),
           googleSheetUrl: normalizeUrl(sheetsUrl),
-          mondayTicketId: selectedTicketId || undefined
-        })
+          ticketRef: mondayTickets.find(ticket => ticket.id === selectedTicketId)?.source,
+          mondayTicketId: mondayTickets.find(ticket => ticket.id === selectedTicketId)?.source.provider === 'monday' ? mondayTickets.find(ticket => ticket.id === selectedTicketId)!.source.externalId : undefined
+        }, res.auditContext)
       } else {
         setError(res.error || 'Failed to extract HTML from page')
       }
@@ -456,7 +462,8 @@ export default function CaptureScreen({
       stagingUrl: normalizeUrl(stagingUrl),
       figmaUrl: normalizeUrl(figmaUrl),
       googleSheetUrl: normalizeUrl(sheetsUrl),
-      mondayTicketId: selectedTicketId || undefined
+      ticketRef: mondayTickets.find(ticket => ticket.id === selectedTicketId)?.source,
+          mondayTicketId: mondayTickets.find(ticket => ticket.id === selectedTicketId)?.source.provider === 'monday' ? mondayTickets.find(ticket => ticket.id === selectedTicketId)!.source.externalId : undefined
     }
     setName(details.name)
     setAdminUrl(details.adminUrl)
@@ -563,7 +570,7 @@ export default function CaptureScreen({
           <div className="top-ticket-autofill-banner">
             <div className="autofill-banner-header">
               <img src={mondayLogo} alt="" width="16" height="16" />
-              <span>Autofill all fields from Monday Ticket:</span>
+              <span>Autofill all fields from ticket:</span>
             </div>
             <select
               className="autofill-ticket-select"
@@ -577,7 +584,7 @@ export default function CaptureScreen({
                 }
               }}
             >
-              <option value="" disabled>-- Select a Monday Ticket --</option>
+              <option value="" disabled>-- Select a ticket --</option>
               {mondayTickets.map((ticket) => (
                 <option key={ticket.id} value={ticket.id}>
                   [{ticket.status}] {ticket.name}
@@ -663,7 +670,7 @@ export default function CaptureScreen({
                 onKeyDown={(e) => e.key === 'Enter' && (isNewProject ? void handleAdd() : handleCapture())}
               />
               {stagingGroups.length > 0 && <div className="capture-input-actions">
-                <button type="button" className="capture-input-monday-btn" onClick={() => setMondayDropdownOpen(!mondayDropdownOpen)} aria-label="Fill staging URL from Monday ticket" title="Fill from Monday ticket" aria-expanded={mondayDropdownOpen}>
+                <button type="button" className="capture-input-monday-btn" onClick={() => setMondayDropdownOpen(!mondayDropdownOpen)} aria-label="Fill staging URL from ticket" title="Fill from ticket" aria-expanded={mondayDropdownOpen}>
                   <img src={mondayLogo} alt="" width="14" height="14" />
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><polyline points={mondayDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
                 </button>
@@ -707,7 +714,7 @@ export default function CaptureScreen({
                 {sheetsUrl.trim() && <button type="button" className="capture-input-clear-btn" onClick={() => setSheetsUrl('')} title="Clear QA Tracker URL" aria-label="Clear QA Tracker URL">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
                 </button>}
-                {sheetsGroups.length > 0 && <button type="button" className="capture-input-monday-btn" onClick={() => setSheetsDropdownOpen(!sheetsDropdownOpen)} aria-label="Fill QA Tracker URL from Monday ticket" title="Fill from Monday ticket" aria-expanded={sheetsDropdownOpen}>
+                {sheetsGroups.length > 0 && <button type="button" className="capture-input-monday-btn" onClick={() => setSheetsDropdownOpen(!sheetsDropdownOpen)} aria-label="Fill QA Tracker URL from ticket" title="Fill from ticket" aria-expanded={sheetsDropdownOpen}>
                   <img src={mondayLogo} alt="" width="14" height="14" />
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><polyline points={sheetsDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
                 </button>}
@@ -741,7 +748,7 @@ export default function CaptureScreen({
                 {figmaUrl.trim() && <button type="button" className="capture-input-clear-btn" onClick={() => setFigmaUrl('')} title="Clear Figma URL" aria-label="Clear Figma URL">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
                 </button>}
-                {figmaGroups.length > 0 && <button type="button" className="capture-input-monday-btn" onClick={() => setFigmaDropdownOpen(!figmaDropdownOpen)} aria-label="Fill Figma URL from Monday ticket" title="Fill from Monday ticket" aria-expanded={figmaDropdownOpen}>
+                {figmaGroups.length > 0 && <button type="button" className="capture-input-monday-btn" onClick={() => setFigmaDropdownOpen(!figmaDropdownOpen)} aria-label="Fill Figma URL from ticket" title="Fill from ticket" aria-expanded={figmaDropdownOpen}>
                   <img src={mondayLogo} alt="" width="14" height="14" />
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><polyline points={figmaDropdownOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
                 </button>}

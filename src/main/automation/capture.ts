@@ -1,6 +1,6 @@
-import { webContents as electronWebContents } from 'electron'
 import { createHash } from 'node:crypto'
 import sharp from 'sharp'
+import { acquireDebugger } from '../debuggerConnection'
 import { createCaptureScrollPositions, isCaptureStickyPosition, resolveCaptureScrollPosition } from '../automateCaptureGeometry'
 import { captureViewport, assertNativeSize, assertStablePage, PREPARE_IMAGES, RESTORE_CAPTURE_TOP } from './captureNormalization'
 
@@ -73,18 +73,16 @@ export async function captureAutomatePage(webContentsId: number, viewportWidth: 
   finally { activeCaptures.delete(webContentsId) }
 }
 async function performCapture(webContentsId: number, viewportWidth: number, viewportHeight: number) {
-  const target = electronWebContents.fromId(webContentsId)
-  if (!target || target.isDestroyed()) throw new Error('The staging capture browser is no longer available.')
+  const debuggerLease = acquireDebugger(webContentsId, `capture:${webContentsId}:${Date.now()}`)
+  const resumeInspector = await debuggerLease.beginExclusive()
+  const target = debuggerLease.target
   const originalZoom = target.getZoomFactor()
-  const debug = target.debugger
-  const attachedHere = !debug.isAttached()
-  if (attachedHere) debug.attach('1.3')
   const captureDeadline = Date.now() + 60_000
   const sendCaptureCommand = <T = any>(method: string, params?: Record<string, unknown>, maximumWait = 12_000): Promise<T> => {
     const remaining = captureDeadline - Date.now()
     if (remaining <= 0) return Promise.reject(new Error('Full-page capture exceeded 60 seconds.'))
     return capturePromiseWithTimeout(
-      debug.sendCommand(method, params).then((response: any) => {
+      debuggerLease.send(method, params).then((response: any) => {
         if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text || 'Capture evaluation failed.')
         return response as T
       }),
@@ -141,11 +139,12 @@ async function performCapture(webContentsId: number, viewportWidth: number, view
     return { success: true, dataUrl: `data:image/png;base64,${stitched.toString('base64')}`, documentWidth, documentHeight, domNodes: semantic?.result?.value?.nodes || [], tiles: composites.length, mode: 'verified-cdp-tiles' }
   } finally {
     try {
-      await capturePromiseWithTimeout(debug.sendCommand('Runtime.evaluate', { expression: `(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) { if (item.visibility) item.element.style.setProperty('visibility', item.visibility, item.visibilityPriority || ''); else item.element.style.removeProperty('visibility'); } document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` }), 2_000, 'Capture page cleanup timed out.')
+      await capturePromiseWithTimeout(debuggerLease.send('Runtime.evaluate', { expression: `(() => { document.getElementById('__qaAutomateFreeze')?.remove(); const state = window.__qaAutomateAtomicState; if (state) { for (const item of state.positioned || []) { if (item.visibility) item.element.style.setProperty('visibility', item.visibility, item.visibilityPriority || ''); else item.element.style.removeProperty('visibility'); } document.documentElement.style.scrollBehavior = state.scrollBehavior; scrollTo(state.x, state.y); for (const item of state.animations || []) { if (item.playState === 'running') item.animation.play(); } } delete window.__qaAutomateAtomicState; })()` }), 2_000, 'Capture page cleanup timed out.')
     } catch {}
-    try { await capturePromiseWithTimeout(debug.sendCommand('Emulation.setScrollbarsHidden', { hidden: false }), 2_000, 'Scrollbar cleanup timed out.') } catch {}
-    try { await capturePromiseWithTimeout(debug.sendCommand('Emulation.clearDeviceMetricsOverride'), 2_000, 'Viewport cleanup timed out.') } catch {}
+    try { await capturePromiseWithTimeout(debuggerLease.send('Emulation.setScrollbarsHidden', { hidden: false }), 2_000, 'Scrollbar cleanup timed out.') } catch {}
+    try { await capturePromiseWithTimeout(debuggerLease.send('Emulation.clearDeviceMetricsOverride'), 2_000, 'Viewport cleanup timed out.') } catch {}
     if (!target.isDestroyed()) target.setZoomFactor(originalZoom)
-    if (attachedHere && debug.isAttached()) debug.detach()
+    resumeInspector()
+    debuggerLease.release()
   }
 }

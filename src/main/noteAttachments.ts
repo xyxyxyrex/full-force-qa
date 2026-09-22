@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { extname, isAbsolute, join, relative, resolve } from 'path'
 import sharp from 'sharp'
 import type { NoteAttachment } from '../shared/types'
+import { getProjectOwner } from './store'
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const SAFE_FILE_MIME_TYPES = new Set([
@@ -60,7 +61,7 @@ export async function saveLocalNoteAttachment(
   ownerKey: string,
   input: { dataUrl: string; name: string },
 ): Promise<NoteAttachment> {
-  if (!/^monday:[0-9]+$/.test(ownerKey)) throw new Error('Connect Monday.com before attaching files.')
+  if (!/^(monday:[0-9]+|parity:[0-9a-f-]{36})$/.test(ownerKey)) throw new Error('Sign in to Parity before attaching files.')
   const { mimeType, bytes } = decodeDataUrl(input.dataUrl)
   const id = randomUUID()
   const directory = ownerDirectory(ownerKey)
@@ -105,6 +106,8 @@ function resolveAttachmentUri(uri: string): string | null {
     if (parsed.protocol !== 'parity-note:' || parsed.hostname !== 'attachment') return null
     const parts = parsed.pathname.split('/').filter(Boolean)
     if (parts.length !== 2 || !/^[a-f0-9]{24}$/.test(parts[0]) || !/^[a-f0-9-]{36}\.[a-z0-9]{1,8}$/.test(parts[1])) return null
+    const owner = getProjectOwner()
+    if (!owner || parts[0] !== ownerDirectoryName(owner)) return null
     const root = resolve(attachmentsRoot())
     const target = resolve(root, parts[0], parts[1])
     const relativePath = relative(root, target)

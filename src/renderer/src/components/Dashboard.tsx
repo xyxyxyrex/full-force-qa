@@ -5,17 +5,7 @@ import figmaIcon from '../assets/figma.png'
 import sheetsIcon from '../assets/sheets.png'
 import parityIcon from '../assets/parity-favicon.svg'
 import parityLightIcon from '../assets/parity-light-512.png'
-import {
-  fetchMondayMetadataApi,
-  fetchMondayTicketsApi,
-  loadMondayPreferences,
-  saveMondayPreferences,
-  type MondayLink,
-  type MondayMetadata,
-  type MondaySyncPreferences,
-  type MondayTicket,
-} from '../utils/mondayApi'
-import { supabaseAnonKey, supabaseConfigurationError, supabaseUrl } from '../../../shared/supabaseClient'
+import type { MondayLink, MondayTicket } from '../utils/mondayApi'
 import type { FigmaConnectionStatus } from '../../../shared/types'
 import {
   canMoveFolder,
@@ -24,6 +14,9 @@ import {
   getFolderBreadcrumbs,
   getFolderDisplayPath,
 } from '../utils/projectFolders'
+import TicketQueue, { useTicketStore } from './TicketQueue'
+import { toIntakeTicket, sameTicket, projectTicketRef } from '../../../shared/tickets'
+import { saveTicket } from '../services/ticketService'
 import './Dashboard.css'
 
 export type { MondayTicket, MondayLink }
@@ -32,6 +25,9 @@ interface Props {
   onNewProject: (folderId?: string) => void
   onOpenProject: (project: Project, forceForm?: boolean) => void
   onOpenSettings?: () => void
+  initialFolderId?: string | null
+  initialTicketId?: string
+  onFolderChange?: (location: { folderId: string | null; folderName: string; folderPath: string }) => void
 }
 
 type SortOption = 'recent' | 'oldest' | 'name-asc' | 'name-desc'
@@ -129,7 +125,9 @@ function getTicketStagingLinks(ticket: MondayTicket): MondayLink[] {
   return links
 }
 
-export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings }: Props) {
+export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings, initialFolderId = null, initialTicketId, onFolderChange }: Props) {
+  const viewOwner = localStorage.getItem('parity_account_owner_key')
+  const saveScopedProject = (project: Project) => { project.localOwnerKey = viewOwner; return window.electronAPI.saveProject(project, viewOwner) }
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -139,7 +137,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [folders, setFolders] = useState<ProjectFolder[]>(() => {
     try { return JSON.parse(localStorage.getItem('qa_project_folders') || '[]') } catch { return [] }
   })
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(initialFolderId)
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(null)
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null)
   const [dashboardContextMenu, setDashboardContextMenu] = useState<DashboardContextMenuState | null>(null)
@@ -154,42 +152,11 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const selectionOriginRef = useRef<{ pointerId: number; clientX: number; clientY: number; additive: boolean } | null>(null)
   const selectionBaseRef = useRef<Set<string>>(new Set())
 
-  // Monday.com state
-  const [mondayConnected, setMondayConnected] = useState(false)
-  const [mondayAccountName, setMondayAccountName] = useState('')
-  const [mondayTickets, setMondayTickets] = useState<MondayTicket[]>(() => {
-    try {
-      const stored = localStorage.getItem('monday_tickets')
-      return stored ? JSON.parse(stored) : []
-    } catch {
-      return []
-    }
-  })
-  const [mondaySyncing, setMondaySyncing] = useState(false)
-  const [mondayError, setMondayError] = useState('')
-  const [mondaySourceModalOpen, setMondaySourceModalOpen] = useState(false)
-  const [mondayMetadata, setMondayMetadata] = useState<MondayMetadata | null>(null)
-  const [mondayPreferences, setMondayPreferences] = useState<MondaySyncPreferences>(() => loadMondayPreferences() || { boardIds: [], assignmentMode: 'me', userIds: [] })
-  const [mondaySourceSearch, setMondaySourceSearch] = useState('')
-  const [mondayUserSearch, setMondayUserSearch] = useState('')
-  const [mondayTicketSearch, setMondayTicketSearch] = useState('')
-  const [mondayBoardFilter, setMondayBoardFilter] = useState('all')
-  const [mondayStatusFilter, setMondayStatusFilter] = useState('all')
-  const [mondaySort, setMondaySort] = useState<MondaySortOption>('updated-desc')
-  const [expandedTicketLinks, setExpandedTicketLinks] = useState<Set<string>>(new Set())
-  const [mondaySectionExpanded, setMondaySectionExpanded] = useState(false)
-  const [collapsedStatuses, setCollapsedStatuses] = useState<Set<string>>(new Set())
+  const ticketStore = useTicketStore()
+  const mondayTickets = useMemo(() => (ticketStore?.records || []).map(record => toIntakeTicket(record.ticket)), [ticketStore])
   const [figmaStatus, setFigmaStatus] = useState<FigmaConnectionStatus>({ connected: false, apiConfigured: false, browserSession: false })
 
-  // Active Monday Ticket IDs
-  const [activeTicketIds, setActiveTicketIds] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('active_monday_ticket_ids')
-      return stored ? JSON.parse(stored) : []
-    } catch {
-      return []
-    }
-  })
+  const activeTicketIds = (ticketStore?.records || []).filter(record => record.ticket.progress.active).map(record => record.ticket.id)
 
   // Right-click context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
@@ -222,25 +189,17 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       setFolders((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next)
     }
     const onFocus = () => reloadProjects()
-    const onActiveTicketsUpdated = (event: Event) => {
-      const next = (event as CustomEvent<string[]>).detail
-      if (Array.isArray(next)) setActiveTicketIds(next)
-    }
     const onStorage = (event: StorageEvent) => {
       if (event.key === 'qa_project_folders') {
         try { const next = JSON.parse(event.newValue || '[]'); if (Array.isArray(next)) setFolders(next) } catch {}
-      }
-      if (event.key === 'active_monday_ticket_ids') {
-        try { const next = JSON.parse(event.newValue || '[]'); if (Array.isArray(next)) setActiveTicketIds(next) } catch {}
       }
       reloadProjects()
     }
     window.addEventListener('qa_projects_updated', onProjectsUpdated)
     window.addEventListener('qa_folders_updated', onFoldersUpdated)
     window.addEventListener('focus', onFocus)
-    window.addEventListener('qa_active_ticket_ids_updated', onActiveTicketsUpdated)
     window.addEventListener('storage', onStorage)
-    return () => { window.removeEventListener('qa_projects_updated', onProjectsUpdated); window.removeEventListener('qa_folders_updated', onFoldersUpdated); window.removeEventListener('focus', onFocus); window.removeEventListener('qa_active_ticket_ids_updated', onActiveTicketsUpdated); window.removeEventListener('storage', onStorage) }
+    return () => { window.removeEventListener('qa_projects_updated', onProjectsUpdated); window.removeEventListener('qa_folders_updated', onFoldersUpdated); window.removeEventListener('focus', onFocus); window.removeEventListener('storage', onStorage) }
   }, [reloadProjects])
 
   useEffect(() => {
@@ -248,126 +207,16 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       setProjects(list)
       setLoading(false)
     })
-    void (async () => {
-      let status = await window.electronAPI.mondayStatus()
-      if (!status.connected) {
-        const legacyToken = localStorage.getItem('monday_api_token') || localStorage.getItem('monday_token') || localStorage.getItem('monday_api_key')
-        if (legacyToken) {
-          const migrated = await window.electronAPI.mondaySetPersonalToken(
-            legacyToken,
-            supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey },
-          )
-          for (const key of ['monday_api_token', 'monday_token', 'monday_api_key']) localStorage.removeItem(key)
-          if (migrated.success && migrated.status) status = migrated.status
-        }
-      }
-      setMondayConnected(status.connected)
-      setMondayAccountName(status.user?.name || '')
-      if (status.connected && loadMondayPreferences()?.boardIds.length) void fetchMondayTickets()
-    })().catch((error) => setMondayError(error instanceof Error ? error.message : 'Unable to restore Monday connection.'))
     void window.electronAPI.figmaTokenStatus().then(setFigmaStatus).catch(() => {})
     const unsubscribeFigma = window.electronAPI.onFigmaAuthChanged?.(setFigmaStatus)
 
-    const handleUpdate = () => {
-      try {
-        const stored = localStorage.getItem('monday_tickets')
-        if (stored) setMondayTickets(JSON.parse(stored))
-      } catch { /* ignore */ }
-    }
-    window.addEventListener('monday_tickets_updated', handleUpdate)
-    return () => { window.removeEventListener('monday_tickets_updated', handleUpdate); unsubscribeFigma?.() }
+    return () => unsubscribeFigma?.()
   }, [])
 
   const toggleActiveTicket = async (ticketId: string) => {
-    const isActivating = !activeTicketIds.includes(ticketId)
-    setActiveTicketIds((prev) => {
-      const next = prev.includes(ticketId)
-        ? prev.filter((id) => id !== ticketId)
-        : [...prev, ticketId]
-      localStorage.setItem('active_monday_ticket_ids', JSON.stringify(next))
-      window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { activeTicketIds: next } }))
-      queueMicrotask(() => window.dispatchEvent(new CustomEvent('qa_active_ticket_ids_updated', { detail: next })))
-      return next
-    })
-
-    if (isActivating) {
-      const targetTicket = mondayTickets.find((t) => t.id === ticketId)
-      if (targetTicket) {
-        const monId = 'monday-' + targetTicket.id
-        const newProject: Project = {
-          id: monId,
-          mondayTicketId: targetTicket.id,
-          name: targetTicket.name,
-          stagingUrl: targetTicket.stagingUrl || '',
-          adminUrl: targetTicket.adminUrl || '',
-          createdAt: Date.now(),
-          lastOpenedAt: Date.now()
-        }
-        await window.electronAPI.saveProject(newProject)
-        notifyProjectsChanged()
-        setProjects((prev) => {
-          const exists = prev.some((p) => p.id === monId)
-          return exists ? prev.map((p) => (p.id === monId ? newProject : p)) : [...prev, newProject]
-        })
-      }
-    }
+    const record = ticketStore?.records.find(item => item.ticket.id === ticketId || item.ticket.source.provider === 'monday' && item.ticket.source.externalId === ticketId)
+    if (record) await saveTicket({ ...record.ticket, progress: { ...record.ticket.progress, active: !record.ticket.progress.active }, updatedAt: Date.now() }, ticketStore!.ownerKey)
     setContextMenu(null)
-  }
-
-  // Active Monday tickets list
-  const activeMondayTickets = useMemo(() => {
-    return mondayTickets.filter((t) => activeTicketIds.includes(t.id))
-  }, [mondayTickets, activeTicketIds])
-
-  // Group Monday tickets by status
-  const STATUS_ORDER = [
-    'In Progress', 'Requested', 'On Hold/Blocked', 'Pending From Client',
-    'Dev Complete', 'Des Complete', 'For Client Approval',
-    'QA Passed', 'RSO Passed', 'Approved', 'Archive'
-  ]
-  const visibleMondayTickets = useMemo(() => {
-    const query = mondayTicketSearch.trim().toLowerCase()
-    return mondayTickets.filter((ticket) => {
-      if (mondayBoardFilter !== 'all' && !ticket.boardName.split(' + ').includes(mondayBoardFilter)) return false
-      if (mondayStatusFilter !== 'all' && ticket.status !== mondayStatusFilter) return false
-      if (!query) return true
-      return [ticket.name, ticket.boardName, ticket.status, ...(ticket.assigneeNames || []), ticket.stagingUrl, ticket.adminUrl, ticket.figmaUrl, ticket.googleSheetUrl, ...ticket.otherLinks.map((link) => `${link.label} ${link.url}`)]
-        .filter(Boolean).some((value) => String(value).toLowerCase().includes(query))
-    }).sort((a, b) => {
-      if (mondaySort === 'updated-asc') return a.updatedAt.localeCompare(b.updatedAt)
-      if (mondaySort === 'name-asc') return a.name.localeCompare(b.name)
-      if (mondaySort === 'board-asc') return a.boardName.localeCompare(b.boardName)
-      if (mondaySort === 'status-asc') return a.status.localeCompare(b.status)
-      return b.updatedAt.localeCompare(a.updatedAt)
-    })
-  }, [mondayTickets, mondayTicketSearch, mondayBoardFilter, mondayStatusFilter, mondaySort])
-  const mondayBoardOptions = useMemo(() => [...new Set(mondayTickets.flatMap((ticket) => ticket.boardName.split(' + ')))].sort(), [mondayTickets])
-  const mondayStatusOptions = useMemo(() => [...new Set(mondayTickets.map((ticket) => ticket.status))].sort(), [mondayTickets])
-
-  const ticketsByStatus = useMemo(() => {
-    const groups: Record<string, MondayTicket[]> = {}
-    for (const ticket of visibleMondayTickets) {
-      const status = ticket.status || 'Other'
-      if (!groups[status]) groups[status] = []
-      groups[status].push(ticket)
-    }
-    const sorted: [string, MondayTicket[]][] = []
-    for (const s of STATUS_ORDER) {
-      if (groups[s]) { sorted.push([s, groups[s]]); delete groups[s] }
-    }
-    for (const [s, tickets] of Object.entries(groups)) {
-      sorted.push([s, tickets])
-    }
-    return sorted
-  }, [visibleMondayTickets])
-
-  const toggleStatusCollapse = (status: string) => {
-    setCollapsedStatuses(prev => {
-      const next = new Set(prev)
-      if (next.has(status)) next.delete(status)
-      else next.add(status)
-      return next
-    })
   }
 
   // Modals state
@@ -381,128 +230,6 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   const [editStagingUrl, setEditStagingUrl] = useState('')
   const [editMondayTicketId, setEditMondayTicketId] = useState('')
 
-  // Manual Monday API token fallback state
-  const [showTokenFallbackModal, setShowTokenFallbackModal] = useState(false)
-  const [manualTokenInput, setManualTokenInput] = useState('')
-  const [manualTokenError, setManualTokenError] = useState('')
-
-  const fetchMondayTickets = async (preferences?: MondaySyncPreferences) => {
-    setMondaySyncing(true)
-    setMondayError('')
-    try {
-      const fetched = await fetchMondayTicketsApi(preferences)
-      setMondayTickets(fetched || [])
-      localStorage.setItem('monday_tickets', JSON.stringify(fetched || []))
-      localStorage.setItem('qa_cached_monday_tickets', JSON.stringify(fetched || []))
-      window.dispatchEvent(new Event('monday_tickets_updated'))
-    } catch (err) {
-      console.error('[Monday] Fetch error:', err)
-      setMondayError(err instanceof Error ? err.message : 'Unable to sync Monday tickets.')
-    } finally {
-      setMondaySyncing(false)
-    }
-  }
-
-  const openMondaySources = async (firstConnection = false) => {
-    setMondaySyncing(true)
-    setMondayError('')
-    try {
-      const metadata = await fetchMondayMetadataApi()
-      setMondayMetadata(metadata)
-      setMondayAccountName(metadata.me.name)
-      if (firstConnection || !mondayPreferences.boardIds.length) {
-        const preferred = metadata.boards.filter((board) => /qa|web development/i.test(board.name)).map((board) => board.id)
-        setMondayPreferences({ boardIds: preferred.length ? preferred : metadata.boards.slice(0, 2).map((board) => board.id), assignmentMode: 'me', userIds: [] })
-      }
-      setMondaySourceModalOpen(true)
-    } catch (error) {
-      setMondayError(error instanceof Error ? error.message : 'Unable to load Monday boards and users.')
-    } finally {
-      setMondaySyncing(false)
-    }
-  }
-
-  const saveMondaySourcesAndSync = async () => {
-    if (!mondayPreferences.boardIds.length) { setMondayError('Select at least one board.'); return }
-    if (mondayPreferences.assignmentMode === 'users' && !mondayPreferences.userIds.length) { setMondayError('Select at least one person.'); return }
-    saveMondayPreferences(mondayPreferences)
-    setMondaySourceModalOpen(false)
-    await fetchMondayTickets(mondayPreferences)
-  }
-
-  const handleMondayLogin = async () => {
-    setMondaySyncing(true)
-    setMondayError('')
-    try {
-      if (supabaseConfigurationError) throw new Error(supabaseConfigurationError)
-      const res = await window.electronAPI.mondayLogin({ supabaseUrl, supabaseAnonKey })
-      if (res.success && res.status?.connected) {
-        setMondayConnected(true)
-        setMondayAccountName(res.status.user?.name || '')
-        window.dispatchEvent(new Event('parity:monday-connected'))
-        await openMondaySources(true)
-      } else if (res.error) setMondayError(res.error)
-    } catch (e) {
-      console.error('[Monday] Login error:', e)
-      setMondayError(e instanceof Error ? e.message : 'Unable to connect Monday.com.')
-    } finally {
-      setMondaySyncing(false)
-    }
-  }
-
-  const handleSaveManualToken = async () => {
-    const trimmed = manualTokenInput.trim()
-    if (!trimmed) {
-      setManualTokenError('Please enter a valid Monday API token.')
-      return
-    }
-    setMondaySyncing(true)
-    setManualTokenError('')
-    try {
-      const result = await window.electronAPI.mondaySetPersonalToken(
-        trimmed,
-        supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey },
-      )
-      if (!result.success || !result.status?.connected) throw new Error(result.error || 'Monday rejected this token.')
-      setMondayConnected(true)
-      setMondayAccountName(result.status.user?.name || '')
-      window.dispatchEvent(new Event('parity:monday-connected'))
-      setShowTokenFallbackModal(false)
-      setManualTokenInput('')
-      await openMondaySources(true)
-    } catch (error) {
-      setManualTokenError(error instanceof Error ? error.message : 'Failed to connect with token.')
-    } finally {
-      setMondaySyncing(false)
-    }
-  }
-
-  const handleDisconnectMonday = async () => {
-    await window.electronAPI.mondayDisconnect(supabaseConfigurationError ? undefined : { supabaseUrl, supabaseAnonKey })
-    localStorage.removeItem('monday_tickets')
-    localStorage.removeItem('qa_cached_monday_tickets')
-    setMondayConnected(false)
-    setMondayAccountName('')
-    setMondayTickets([])
-    window.dispatchEvent(new Event('parity:monday-disconnected'))
-  }
-
-  const handleLaunchTicket = (ticket: MondayTicket) => {
-    if (ticket.googleSheetUrl) {
-      localStorage.setItem('qa_google_sheet_url', ticket.googleSheetUrl)
-    }
-    const project: Project = {
-      id: crypto.randomUUID(),
-      mondayTicketId: ticket.id,
-      name: ticket.name,
-      stagingUrl: ticket.stagingUrl || '',
-      adminUrl: ticket.adminUrl || '',
-      createdAt: Date.now(),
-      lastOpenedAt: Date.now()
-    }
-    onOpenProject(project)
-  }
-
   // Open Edit Modal
   const startEditing = (e: React.MouseEvent, project: Project) => {
     e.stopPropagation()
@@ -510,6 +237,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     setEditName(project.name)
     setEditAdminUrl(project.adminUrl)
     setEditStagingUrl(project.stagingUrl)
+    setEditMondayTicketId('')
   }
 
   // Save Edit
@@ -520,9 +248,10 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       name: editName.trim() || editingProject.name,
       adminUrl: editAdminUrl.trim(),
       stagingUrl: editStagingUrl.trim(),
-      mondayTicketId: editMondayTicketId || editingProject.mondayTicketId
+      ticketRef: mondayTickets.find(ticket => ticket.id === editMondayTicketId)?.source || editingProject.ticketRef,
+      mondayTicketId: editMondayTicketId ? (mondayTickets.find(ticket => ticket.id === editMondayTicketId)?.source.provider === 'monday' ? mondayTickets.find(ticket => ticket.id === editMondayTicketId)!.source.externalId : undefined) : editingProject.mondayTicketId
     }
-    await window.electronAPI.saveProject(updated)
+    await saveScopedProject(updated)
     notifyProjectsChanged()
     setProjects((prev) => {
       const exists = prev.some((p) => p.id === updated.id)
@@ -534,7 +263,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   // Move to Trash (Soft Delete)
   const handleMoveToTrash = async (project: Project) => {
     const updated: Project = { ...project, inTrash: true, deletedAt: Date.now() }
-    await window.electronAPI.saveProject(updated)
+    await saveScopedProject(updated)
     notifyProjectsChanged()
     setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)))
     setDeleteConfirmProject(null)
@@ -545,14 +274,14 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     e.stopPropagation()
     const updated: Project = { ...project, inTrash: false }
     delete updated.deletedAt
-    await window.electronAPI.saveProject(updated)
+    await saveScopedProject(updated)
     notifyProjectsChanged()
     setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)))
   }
 
   // Permanent Delete from Disk
   const handlePermanentDelete = async (projectId: string) => {
-    await window.electronAPI.deleteProject(projectId)
+    await window.electronAPI.deleteProject(projectId, viewOwner)
     notifyProjectsChanged()
     setProjects((prev) => prev.filter((p) => p.id !== projectId))
     setPermanentDeleteProject(null)
@@ -562,7 +291,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     setEditName(project.name)
     setEditAdminUrl(project.adminUrl || '')
     setEditStagingUrl(project.stagingUrl || '')
-    setEditMondayTicketId(project.mondayTicketId || (project.id.startsWith('monday-') ? project.id.slice(7) : ''))
+    setEditMondayTicketId(mondayTickets.find(ticket => sameTicket(projectTicketRef(project, ticket.source.connectionId), ticket.source))?.id || '')
   }
 
   const autofillEditFromMonday = (ticketId: string) => {
@@ -578,7 +307,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
 
   const moveProjectToFolder = async (project: Project, folderId?: string) => {
     const updated = { ...project, folderId: folderId || undefined }
-    await window.electronAPI.saveProject(updated)
+    await saveScopedProject(updated)
     notifyProjectsChanged()
     setProjects((current) => current.some((item) => item.id === updated.id) ? current.map((item) => item.id === updated.id ? updated : item) : current.concat(updated))
     setProjectContextMenu(null)
@@ -641,7 +370,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     if (projectIds.size) {
       const selectedProjects = activeProjects.filter((project) => projectIds.has(project.id))
       const updatedProjects = selectedProjects.map((project) => ({ ...project, folderId: folderId || undefined }))
-      await Promise.all(updatedProjects.map((project) => window.electronAPI.saveProject(project)))
+      await Promise.all(updatedProjects.map((project) => saveScopedProject(project)))
       const updatedById = new Map(updatedProjects.map((project) => [project.id, project]))
       setProjects((current) => {
         const next = current.map((project) => updatedById.get(project.id) || project)
@@ -694,7 +423,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       createdAt: Date.now(),
       lastOpenedAt: Date.now()
     }
-    await window.electronAPI.saveProject(sibling)
+    await saveScopedProject(sibling)
     notifyProjectsChanged()
     setProjects((current) => current.concat(sibling))
     setProjectContextMenu(null)
@@ -730,7 +459,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     if (!window.confirm(`Delete “${folder.name}”? Its projects and subfolders will be moved to ${destinationName}.`)) return
     const affected = projects.filter((project) => project.folderId === folder.id)
     const updated = affected.map((project) => ({ ...project, folderId: folder.parentId || undefined }))
-    await Promise.all(updated.map((project) => window.electronAPI.saveProject(project)))
+    await Promise.all(updated.map((project) => saveScopedProject(project)))
     notifyProjectsChanged()
     setProjects((current) => current.map((project) => project.folderId === folder.id ? { ...project, folderId: folder.parentId || undefined } : project))
     setFolders((current) => current
@@ -772,74 +501,15 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   // Filtered & Sorted Active Projects (Unifies local projects and active Monday tickets without duplication)
   type DisplayProject = Project & { mondayTicket?: MondayTicket }
 
-  const activeProjects = useMemo(() => {
-    const localActive = projects.filter((p) => !p.inTrash)
-    const result: DisplayProject[] = []
-    const seenIds = new Set<string>()
-
-    // 1. Process active Monday tickets first
-    for (const ticket of mondayTickets) {
-      if (!activeTicketIds.includes(ticket.id)) continue
-      const monId = 'monday-' + ticket.id
-
-      const ticketProjects = localActive.filter((project) => project.mondayTicketId === ticket.id || project.id === monId)
-      const legacyProject = !ticketProjects.length ? localActive.find((project) => project.stagingUrl && ticket.stagingUrl && project.stagingUrl.replace(/\/$/, '') === ticket.stagingUrl.replace(/\/$/, '')) : null
-      if (legacyProject) ticketProjects.push(legacyProject)
-
-      if (ticketProjects.length) {
-        for (const project of ticketProjects) {
-          if (seenIds.has(project.id)) continue
-          seenIds.add(project.id)
-          result.push({ ...project, mondayTicket: ticket })
-        }
-      } else {
-        if (!seenIds.has(monId)) {
-          seenIds.add(monId)
-          result.push({
-            id: monId,
-            mondayTicketId: ticket.id,
-            name: ticket.name,
-            stagingUrl: ticket.stagingUrl || '',
-            adminUrl: ticket.adminUrl || '',
-            createdAt: Date.now(),
-            lastOpenedAt: Date.now(),
-            mondayTicket: ticket
-          })
-        }
-      }
-    }
-
-    // 2. Add remaining local projects EXCEPT inactive monday- projects
-    for (const p of localActive) {
-      if (seenIds.has(p.id)) continue
-
-      const linkedTicketId = p.mondayTicketId || (p.id.startsWith('monday-') ? p.id.slice('monday-'.length) : '')
-      if (linkedTicketId && !activeTicketIds.includes(linkedTicketId)) {
-        continue // Exclude every local page linked to an inactive Monday ticket
-      }
-
-      seenIds.add(p.id)
-      result.push(p)
-    }
-
-    return result
-      .filter((p) => {
-        if (!searchQuery.trim()) return true
-        const q = searchQuery.toLowerCase()
-        return (
-          p.name.toLowerCase().includes(q) ||
-          p.stagingUrl.toLowerCase().includes(q) ||
-          p.adminUrl.toLowerCase().includes(q)
-        )
-      })
-      .sort((a, b) => {
-        if (sortBy === 'recent') return b.lastOpenedAt - a.lastOpenedAt
-        if (sortBy === 'oldest') return a.lastOpenedAt - b.lastOpenedAt
-        if (sortBy === 'name-asc') return a.name.localeCompare(b.name)
-        if (sortBy === 'name-desc') return b.name.localeCompare(a.name)
-        return 0
-      })
-  }, [projects, mondayTickets, activeTicketIds, searchQuery, sortBy])
+  const activeProjects = useMemo((): (Project & { mondayTicket?: MondayTicket })[] => {
+    return projects.filter(project => {
+      if (project.inTrash) return false
+      const linked = ticketStore?.records.find(({ ticket }) => sameTicket(projectTicketRef(project, ticket.source.connectionId), ticket.source))
+      if (linked && (!linked.ticket.progress.active || linked.ticket.archived)) return false
+      const query = searchQuery.toLowerCase().trim()
+      return !query || [project.name, project.stagingUrl, project.adminUrl].some(value => value?.toLowerCase().includes(query))
+    }).sort((a, b) => sortBy === 'recent' ? b.lastOpenedAt - a.lastOpenedAt : sortBy === 'oldest' ? a.lastOpenedAt - b.lastOpenedAt : sortBy === 'name-desc' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name))
+  }, [projects, ticketStore, searchQuery, sortBy])
 
   // Pinned Projects State
   const [pinnedProjectIds, setPinnedProjectIds] = useState<string[]>(() => {
@@ -888,6 +558,15 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
     [currentFolderId, folders],
   )
 
+  useEffect(() => {
+    const currentFolder = folderBreadcrumbs[folderBreadcrumbs.length - 1]
+    onFolderChange?.({
+      folderId: currentFolder?.id || null,
+      folderName: currentFolder?.name || '',
+      folderPath: folderBreadcrumbs.map((folder) => folder.name).join(' / '),
+    })
+  }, [folderBreadcrumbs, onFolderChange])
+
   const folderMoveOptions = useMemo(
     () => folders
       .map((folder) => ({ folder, label: getFolderDisplayPath(folders, folder.id) }))
@@ -896,9 +575,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
   )
 
   const getProjectTicketId = (project: DisplayProject) =>
-    project.mondayTicket?.id ||
-    project.mondayTicketId ||
-    (project.id.startsWith('monday-') ? project.id.slice('monday-'.length) : '')
+    ticketStore?.records.find(({ ticket }) => sameTicket(projectTicketRef(project, ticket.source.connectionId), ticket.source))?.ticket.id || ''
 
   useEffect(() => {
     setSelectedBrowserItems(new Set())
@@ -1011,7 +688,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         projectUpdates.set(project.id, { ...project, folderId: folderParents.get(project.folderId) || undefined })
       }
     }
-    await Promise.all([...projectUpdates.values()].map((project) => window.electronAPI.saveProject(project)))
+    await Promise.all([...projectUpdates.values()].map((project) => saveScopedProject(project)))
     if (projectUpdates.size) {
       setProjects((current) => current.map((project) => projectUpdates.get(project.id) || project))
       notifyProjectsChanged()
@@ -1025,15 +702,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
           : folder))
     }
 
-    if (activeMondayIds.size) {
-      setActiveTicketIds((current) => {
-        const next = current.filter((ticketId) => !activeMondayIds.has(ticketId))
-        localStorage.setItem('active_monday_ticket_ids', JSON.stringify(next))
-        window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { activeTicketIds: next } }))
-        queueMicrotask(() => window.dispatchEvent(new CustomEvent('qa_active_ticket_ids_updated', { detail: next })))
-        return next
-      })
-    }
+    for (const id of activeMondayIds) await toggleActiveTicket(id)
 
     if (selectedProjectIds.size) {
       setPinnedProjectIds((current) => {
@@ -1091,7 +760,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
             onDragStart={(event) => beginProjectDrag(event, project)}
             onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
             onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}
-            onClick={() => isMonday && !project.adminUrl ? handleLaunchTicket(project.mondayTicket!) : onOpenProject(project)}
+            onClick={() => isMonday && !project.adminUrl ? onOpenProject(project) : onOpenProject(project)}
           >
             <button className="col-pin list-pin-btn" onClick={(event) => togglePinProject(project.id, event)} title={isPinned ? 'Unpin' : 'Pin'}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill={isPinned ? '#38bdf8' : 'none'} stroke={isPinned ? '#38bdf8' : 'currentColor'} strokeWidth="2">
@@ -1315,7 +984,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
             onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
                       onClick={() => {
                         if (isMonday && !project.adminUrl) {
-                          handleLaunchTicket(project.mondayTicket!)
+                          onOpenProject(project)
                         } else {
                           onOpenProject(project)
                         }
@@ -1518,10 +1187,10 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                         onDragStart={(event) => beginProjectDrag(event, project)}
             onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
                         onClick={(event) => handleBrowserItemClick(event, selectionKey, () => {
-                          if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!)
+                          if (isMonday && !project.adminUrl) onOpenProject(project)
                           else onOpenProject(project)
                         })}
-                        onDoubleClick={() => { setSelectedBrowserItems(new Set()); if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!); else onOpenProject(project) }}
+                        onDoubleClick={() => { setSelectedBrowserItems(new Set()); if (isMonday && !project.adminUrl) onOpenProject(project); else onOpenProject(project) }}
                         onContextMenu={(e) => {
                           e.preventDefault()
                           setProjectContextMenu({ x: e.clientX, y: e.clientY, project })
@@ -1618,10 +1287,10 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
             onDragEnd={() => { setDraggingProjectId(null); setDraggingFolderId(null); setDraggingSelectionKeys([]); setDragOverFolderId(null) }}
                         onContextMenu={(event) => { event.preventDefault(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}
                         onClick={(event) => handleBrowserItemClick(event, selectionKey, () => {
-                          if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!)
+                          if (isMonday && !project.adminUrl) onOpenProject(project)
                           else onOpenProject(project)
                         })}
-                        onDoubleClick={() => { setSelectedBrowserItems(new Set()); if (isMonday && !project.adminUrl) handleLaunchTicket(project.mondayTicket!); else onOpenProject(project) }}
+                        onDoubleClick={() => { setSelectedBrowserItems(new Set()); if (isMonday && !project.adminUrl) onOpenProject(project); else onOpenProject(project) }}
                       >
                         <div className="col-pin" onClick={(e) => togglePinProject(project.id, e)} title={isPinned ? "Unpin" : "Pin"}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill={isPinned ? "#38bdf8" : "none"} stroke={isPinned ? "#38bdf8" : "#888"} strokeWidth="2">
@@ -1682,252 +1351,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         </div>
 
         {/* 3. MY MONDAY TICKETS SECTION */}
-        <div className="dashboard-section monday-section">
-          <div className="section-label-row">
-            <div className="section-title-with-badge" onClick={() => mondayConnected && setMondaySectionExpanded(!mondaySectionExpanded)} style={{ cursor: mondayConnected ? 'pointer' : 'default' }}>
-              {mondayConnected && (
-                <svg
-                  className={`section-chevron ${mondaySectionExpanded ? 'expanded' : ''}`}
-                  width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                >
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              )}
-              <img src={mondayLogo} alt="Monday.com" style={{ width: 18, height: 18, objectFit: 'contain' }} />
-              <h2 className="section-label">Monday Work</h2>
-              {mondayConnected ? (
-                <span className="monday-badge connected">{mondayTickets.length} ticket{mondayTickets.length !== 1 ? 's' : ''}</span>
-              ) : (
-                <span className="monday-badge optional">Optional</span>
-              )}
-            </div>
-
-            <div className="monday-header-actions">
-              {mondayConnected ? (
-                <>
-                  <button className="monday-account-btn" onClick={() => void openMondaySources()} title="Choose boards and people">
-                    Sources
-                  </button>
-                  <button
-                    className="monday-sync-btn"
-                    onClick={() => fetchMondayTickets()}
-                    disabled={mondaySyncing}
-                    title="Sync latest Monday tickets"
-                  >
-                    <svg className={mondaySyncing ? 'spin' : ''} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M1 4v6h6" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    </svg>
-                    <span>{mondaySyncing ? 'Syncing...' : 'Sync Now'}</span>
-                  </button>
-                  <button className="monday-account-btn" onClick={() => void handleDisconnectMonday()} title="Disconnect Monday.com">
-                    Disconnect
-                  </button>
-                </>
-              ) : (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <button
-                    className="monday-connect-btn"
-                    onClick={handleMondayLogin}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                      <polyline points="10 17 15 12 10 7" />
-                      <line x1="15" y1="12" x2="3" y2="12" />
-                    </svg>
-                    <span>Connect Monday Account</span>
-                  </button>
-                  <button
-                    className="monday-account-btn"
-                    onClick={() => setShowTokenFallbackModal(true)}
-                    title="Enter Personal API Token manually"
-                  >
-                    Enter Token
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {!mondayConnected && (
-            <div className="monday-notice-card">
-              <div className="monday-notice-content">
-                <strong>Monday.com Integration (Optional)</strong>
-                <span>Log in to Monday.com using the "Connect Monday Account" button above to automatically fetch your assigned tickets and attached QA resources.</span>
-              </div>
-            </div>
-          )}
-
-          {mondayConnected && mondayAccountName && <div className="monday-connection-line">Connected as <strong>{mondayAccountName}</strong></div>}
-          {mondayError && <div className="monday-inline-error" role="alert">{mondayError}</div>}
-
-          {mondayConnected && mondaySectionExpanded && (
-            <div className="monday-organizer-bar">
-              <div className="monday-organizer-search">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-                <input value={mondayTicketSearch} onChange={(event) => setMondayTicketSearch(event.target.value)} placeholder="Search tickets, people, boards, or links" />
-              </div>
-              <select value={mondayBoardFilter} onChange={(event) => setMondayBoardFilter(event.target.value)} aria-label="Filter Monday board">
-                <option value="all">All boards</option>
-                {mondayBoardOptions.map((board) => <option key={board} value={board}>{board}</option>)}
-              </select>
-              <select value={mondayStatusFilter} onChange={(event) => setMondayStatusFilter(event.target.value)} aria-label="Filter Monday status">
-                <option value="all">All statuses</option>
-                {mondayStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-              <select value={mondaySort} onChange={(event) => setMondaySort(event.target.value as MondaySortOption)} aria-label="Sort Monday tickets">
-                <option value="updated-desc">Recently updated</option>
-                <option value="updated-asc">Oldest updated</option>
-                <option value="name-asc">Name A-Z</option>
-                <option value="board-asc">Board A-Z</option>
-                <option value="status-asc">Status A-Z</option>
-              </select>
-              <span className="monday-results-count">{visibleMondayTickets.length} shown</span>
-            </div>
-          )}
-
-          {/* Monday Ticket Cards grouped by status (collapsible sub-sections) */}
-          {mondaySectionExpanded && ticketsByStatus.map(([status, tickets]) => (
-            <div key={status} className="monday-status-group">
-              <div
-                className="monday-status-group-header"
-                onClick={() => toggleStatusCollapse(status)}
-              >
-                <svg
-                  className={`section-chevron ${collapsedStatuses.has(status) ? '' : 'expanded'}`}
-                  width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                >
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-                <span className={`monday-status-dot status-${status.toLowerCase().replace(/\s+/g, '-')}`} />
-                <span className="monday-status-group-label">{status}</span>
-                <span className="monday-status-group-count">{tickets.length}</span>
-              </div>
-
-              {!collapsedStatuses.has(status) && (
-                <div className="monday-tickets-grid">
-                  {tickets.map((ticket) => {
-                    const isActive = activeTicketIds.includes(ticket.id)
-                    const linkCount = Number(!!ticket.stagingUrl) + Number(!!ticket.adminUrl) + Number(!!ticket.googleSheetUrl) + Number(!!ticket.figmaUrl) + (ticket.otherLinks?.length || 0)
-                    const linksOpen = expandedTicketLinks.has(ticket.id)
-                    return (
-                      <div
-                        key={ticket.id}
-                        className={`monday-ticket-card ${isActive ? 'is-active-ticket' : ''}`}
-                        onContextMenu={(e) => {
-                          e.preventDefault()
-                          setContextMenu({ x: e.clientX, y: e.clientY, ticket, isActive })
-                        }}
-                      >
-                        <div className="monday-card-header">
-                          <span className={`monday-status-pill status-${ticket.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                            {ticket.status}
-                          </span>
-                          {isActive && (
-                            <span className="active-ticket-badge" title="Active Project Ticket">
-                              Active
-                            </span>
-                          )}
-                          <span className="monday-board-tag">{ticket.boardName}</span>
-                        </div>
-
-                        <h3 className="monday-ticket-title" title={ticket.name}>{ticket.name}</h3>
-
-                        {/* Detected Smart Resources — link list with copy */}
-                        <div className={`monday-links-list ${!linksOpen && linkCount > 2 ? 'collapsed' : ''}`}>
-                          {ticket.stagingUrl && (
-                            <div className="monday-link-row">
-                              <a className="monday-link-main" href={ticket.stagingUrl} target="_blank" rel="noreferrer" title={ticket.stagingUrl}>
-                                <svg className="monday-link-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-                                <span className="monday-link-label">Staging</span>
-                                <span className="monday-link-url">{ticket.stagingUrl}</span>
-                              </a>
-                              <button className="monday-link-copy" title="Copy URL" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(ticket.stagingUrl) }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                              </button>
-                            </div>
-                          )}
-                          {ticket.adminUrl && (
-                            <div className="monday-link-row">
-                              <a className="monday-link-main" href={ticket.adminUrl} target="_blank" rel="noreferrer" title={ticket.adminUrl}>
-                                <svg className="monday-link-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-                                <span className="monday-link-label">WP Admin</span>
-                                <span className="monday-link-url">{ticket.adminUrl}</span>
-                              </a>
-                              <button className="monday-link-copy" title="Copy URL" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(ticket.adminUrl) }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                              </button>
-                            </div>
-                          )}
-                          {ticket.googleSheetUrl && (
-                            <div className="monday-link-row">
-                              <a className="monday-link-main" href={ticket.googleSheetUrl} target="_blank" rel="noreferrer" title={ticket.googleSheetUrl}>
-                                <img className="monday-link-icon-img" src={sheetsIcon} alt="Sheets" />
-                                <span className="monday-link-label">QA Sheet</span>
-                                <span className="monday-link-url">{ticket.googleSheetUrl}</span>
-                              </a>
-                              <button className="monday-link-copy" title="Copy URL" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(ticket.googleSheetUrl!) }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                              </button>
-                            </div>
-                          )}
-                          {ticket.figmaUrl && (
-                            <div className="monday-link-row">
-                              <a className="monday-link-main" href={ticket.figmaUrl} target="_blank" rel="noreferrer" title={ticket.figmaUrl}>
-                                <img className="monday-link-icon-img" src={figmaIcon} alt="Figma" />
-                                <span className="monday-link-label">Figma</span>
-                                <span className="monday-link-url">{ticket.figmaUrl}</span>
-                              </a>
-                              <button className="monday-link-copy" title="Copy URL" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(ticket.figmaUrl!) }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                              </button>
-                            </div>
-                          )}
-                          {ticket.otherLinks?.map((link, i) => (
-                            <div key={i} className="monday-link-row">
-                              <a className="monday-link-main" href={link.url} target="_blank" rel="noreferrer" title={link.url}>
-                                <svg className="monday-link-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-                                <span className="monday-link-label">{link.label}</span>
-                                <span className="monday-link-url">{link.url}</span>
-                              </a>
-                              <button className="monday-link-copy" title="Copy URL" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(link.url) }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                              </button>
-                            </div>
-                          ))}
-                          {!ticket.stagingUrl && !ticket.adminUrl && !ticket.googleSheetUrl && !ticket.figmaUrl && !ticket.otherLinks?.length && (
-                            <div className="monday-link-row empty">
-                              <span className="monday-link-label" style={{ color: '#555' }}>No links attached</span>
-                            </div>
-                          )}
-                        </div>
-                        {linkCount > 2 && (
-                          <button className="monday-links-toggle" onClick={() => setExpandedTicketLinks((current) => {
-                            const next = new Set(current)
-                            if (next.has(ticket.id)) next.delete(ticket.id); else next.add(ticket.id)
-                            return next
-                          })}>{linksOpen ? 'Hide links' : `Show all ${linkCount} links`}</button>
-                        )}
-
-                        <div className="monday-card-footer">
-                          <span className="monday-updated">{ticket.updatedAt}</span>
-                          <button
-                            className="toggle-active-btn"
-                            onClick={(e) => { e.stopPropagation(); toggleActiveTicket(ticket.id) }}
-                            title={isActive ? 'Remove from Active Projects' : 'Set as Active Project'}
-                          >
-                            {isActive ? 'Set Inactive' : 'Set Active'}
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
+        <TicketQueue projects={projects} folderId={currentFolderId || undefined} initialTicketId={initialTicketId} onOpenProject={onOpenProject} />
 
         {/* Trash Section at Bottom */}
         <div className="dashboard-section trash-section">
@@ -2013,7 +1437,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                 </div>
                 <div>
                   <h3>Rename / Edit Project</h3>
-                  <p>Update this page without changing its folder or Monday ticket.</p>
+                  <p>Update this page and its linked ticket.</p>
                 </div>
               </div>
               <button className="modal-close-btn project-edit-close" onClick={() => setEditingProject(null)} aria-label="Close">
@@ -2025,14 +1449,14 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
                 <div className="project-edit-monday">
                   <div className="project-edit-monday-label">
                     <img src={mondayLogo} alt="" width="16" height="16" />
-                    <span>Autofill all fields from Monday Ticket:</span>
+                    <span>Autofill from ticket:</span>
                   </div>
                   <select
                     className="project-edit-select"
                     value={editMondayTicketId}
                     onChange={(event) => autofillEditFromMonday(event.target.value)}
                   >
-                    <option value="">-- Select a Monday Ticket --</option>
+                    <option value="">-- Select a ticket --</option>
                     {mondayTickets.map((ticket) => (
                       <option key={ticket.id} value={ticket.id}>[{ticket.status}] {ticket.name}</option>
                     ))}
@@ -2145,155 +1569,6 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
       )}
 
       {/* ── MONDAY MANUAL API TOKEN FALLBACK MODAL ────────────────── */}
-      {mondaySourceModalOpen && mondayMetadata && (
-        <div className="modal-overlay" onClick={() => setMondaySourceModalOpen(false)}>
-          <div className="modal-dialog monday-source-dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <div className="monday-source-title"><img src={mondayLogo} alt="" width="20" height="20" /><div><h3 className="modal-title">Choose Monday sources</h3><span>{mondayMetadata.me.name} · only accessible boards and users are shown</span></div></div>
-              <button className="modal-close-btn" onClick={() => setMondaySourceModalOpen(false)} aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg></button>
-            </div>
-            <div className="modal-body monday-source-body">
-              <section className="monday-source-panel">
-                <div className="monday-source-panel-head"><div><strong>Boards</strong><span>{mondayPreferences.boardIds.length} selected</span></div><div><button onClick={() => setMondayPreferences((current) => ({ ...current, boardIds: mondayMetadata.boards.map((board) => board.id) }))}>All</button><button onClick={() => setMondayPreferences((current) => ({ ...current, boardIds: [] }))}>None</button></div></div>
-                <input className="monday-source-search" value={mondaySourceSearch} onChange={(event) => setMondaySourceSearch(event.target.value)} placeholder="Search accessible boards" />
-                <div className="monday-source-list">
-                  {mondayMetadata.boards.filter((board) => board.name.toLowerCase().includes(mondaySourceSearch.toLowerCase())).map((board) => (
-                    <label key={board.id} className="monday-source-option"><input type="checkbox" checked={mondayPreferences.boardIds.includes(board.id)} onChange={() => setMondayPreferences((current) => ({ ...current, boardIds: current.boardIds.includes(board.id) ? current.boardIds.filter((id) => id !== board.id) : [...current.boardIds, board.id] }))} /><span><strong>{board.name}</strong><small>{board.kind || 'board'} · {board.state || 'active'}</small></span></label>
-                  ))}
-                </div>
-              </section>
-              <section className="monday-source-panel">
-                <div className="monday-source-panel-head"><div><strong>Items to include</strong><span>Editable at any time</span></div></div>
-                <div className="monday-assignment-modes">
-                  <label className={mondayPreferences.assignmentMode === 'me' ? 'active' : ''}><input type="radio" name="monday-assignment" checked={mondayPreferences.assignmentMode === 'me'} onChange={() => setMondayPreferences((current) => ({ ...current, assignmentMode: 'me' }))} /><span><strong>Assigned to me</strong><small>Items where {mondayMetadata.me.name} appears in a People column</small></span></label>
-                  <label className={mondayPreferences.assignmentMode === 'all' ? 'active' : ''}><input type="radio" name="monday-assignment" checked={mondayPreferences.assignmentMode === 'all'} onChange={() => setMondayPreferences((current) => ({ ...current, assignmentMode: 'all' }))} /><span><strong>Everything</strong><small>Every accessible item in the selected boards</small></span></label>
-                  <label className={mondayPreferences.assignmentMode === 'users' ? 'active' : ''}><input type="radio" name="monday-assignment" checked={mondayPreferences.assignmentMode === 'users'} onChange={() => setMondayPreferences((current) => ({ ...current, assignmentMode: 'users' }))} /><span><strong>Selected people</strong><small>Choose one or more assignees</small></span></label>
-                </div>
-                {mondayPreferences.assignmentMode === 'users' && <>
-                  <input className="monday-source-search" value={mondayUserSearch} onChange={(event) => setMondayUserSearch(event.target.value)} placeholder="Search people by name or email" />
-                  <div className="monday-source-list people">
-                    {mondayMetadata.users.filter((user) => user.enabled !== false && `${user.name} ${user.email || ''}`.toLowerCase().includes(mondayUserSearch.toLowerCase())).map((user) => (
-                      <label key={user.id} className="monday-source-option"><input type="checkbox" checked={mondayPreferences.userIds.includes(user.id)} onChange={() => setMondayPreferences((current) => ({ ...current, userIds: current.userIds.includes(user.id) ? current.userIds.filter((id) => id !== user.id) : [...current.userIds, user.id] }))} /><span><strong>{user.name}{user.id === mondayMetadata.me.id ? ' (you)' : ''}</strong><small>{user.email || (user.isGuest ? 'Guest' : 'Monday user')}</small></span></label>
-                    ))}
-                  </div>
-                </>}
-              </section>
-            </div>
-            {mondayError && <div className="monday-source-error" role="alert">{mondayError}</div>}
-            <div className="modal-footer"><button className="modal-btn secondary-btn" onClick={() => setMondaySourceModalOpen(false)}>Cancel</button><button className="modal-btn primary-btn" disabled={mondaySyncing || !mondayPreferences.boardIds.length} onClick={() => void saveMondaySourcesAndSync()}>{mondaySyncing ? 'Syncing…' : 'Save & Sync'}</button></div>
-          </div>
-        </div>
-      )}
-
-      {showTokenFallbackModal && (
-        <div className="modal-overlay" onClick={() => setShowTokenFallbackModal(false)}>
-          <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
-            <div className="modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <img src={mondayLogo} alt="" width="18" height="18" />
-                <h3 className="modal-title">Monday.com API Token Fallback</h3>
-              </div>
-              <button className="modal-close-btn" onClick={() => setShowTokenFallbackModal(false)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="modal-text">
-                If Monday shows <em>"You are not permitted to use this app"</em> or browser auth fails, connect instantly using your <strong>Monday.com Personal API Token</strong>.
-              </p>
-              <p className="modal-subtext" style={{ marginBottom: '16px', fontSize: '12px', color: '#a1a1aa' }}>
-                How to get your token: Open <strong>Monday.com</strong> → Avatar (bottom left) → <strong>Developers</strong> → <strong>My Tokens</strong> → Copy API v2 Token.
-              </p>
-              {manualTokenError && (
-                <div style={{ color: '#ff7b72', fontSize: '13px', marginBottom: '12px', background: 'rgba(255,123,114,0.1)', padding: '8px 12px', borderRadius: '6px' }}>
-                  {manualTokenError}
-                </div>
-              )}
-              <div className="form-group">
-                <label className="form-label">Personal API Token</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  placeholder="Paste your Monday API token here..."
-                  value={manualTokenInput}
-                  onChange={(e) => setManualTokenInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveManualToken()
-                  }}
-                  autoFocus
-                />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="modal-btn secondary-btn" onClick={() => setShowTokenFallbackModal(false)}>
-                Cancel
-              </button>
-              <button className="modal-btn primary-btn" onClick={handleSaveManualToken} disabled={mondaySyncing}>
-                {mondaySyncing ? 'Connecting...' : 'Connect Token'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MONDAY TICKET RIGHT-CLICK CONTEXT MENU ─────────────────── */}
-      {dashboardContextMenu && <div className="project-context-menu dashboard-context-menu" style={{ top: dashboardContextMenu.y, left: dashboardContextMenu.x }} onClick={(event) => event.stopPropagation()}>
-        <div className="project-context-title"><b>{currentFolderId ? folderBreadcrumbs.at(-1)?.name || 'Folder' : 'Home'}</b><small>Create or organize dashboard items</small></div>
-        <div className="project-context-divider" />
-        <button onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined }); setDashboardContextMenu(null) }}>
-          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M12 11v6M9 14h6" /></svg>Add Folder</span>
-        </button>
-        <button onClick={() => { setDashboardContextMenu(null); onNewProject(currentFolderId || undefined) }}>
-          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M12 8v8M8 12h8" /></svg>Add Capture</span>
-        </button>
-        {currentFolderId && <button onClick={() => { setCurrentFolderId(null); setDashboardContextMenu(null) }}>
-          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>Go to Home</span>
-        </button>}
-        <div className="project-context-divider" />
-        <button className={viewMode === 'cards' ? 'active' : ''} onClick={() => { setViewMode('cards'); setDashboardContextMenu(null) }}>
-          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>Grid View</span>
-        </button>
-        <button className={viewMode === 'list' ? 'active' : ''} onClick={() => { setViewMode('list'); setDashboardContextMenu(null) }}>
-          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>List View</span>
-        </button>
-        <div className="project-context-divider" />
-        <button onClick={() => { reloadProjects(); setDashboardContextMenu(null) }}>
-          <span className="dashboard-context-action"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 6v5h-5M4 18v-5h5" /><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m16 6-2 2.5A7 7 0 0 1 5.5 15" /></svg>Refresh</span>
-        </button>
-      </div>}
-
-      {folderContextMenu && <div className="project-context-menu folder-context-menu" style={{ top: folderContextMenu.y, left: folderContextMenu.x }} onClick={(event) => event.stopPropagation()}>
-        <div className="project-context-title"><b>{folderContextMenu.folder.name}</b><small>{countDirectFolderItems(folders, activeProjects, folderContextMenu.folder.id)} items</small></div>
-        <div className="project-context-divider" />
-        <button onClick={() => { setCurrentFolderId(folderContextMenu.folder.id); setFolderContextMenu(null) }}>Open</button>
-        <button onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: folderContextMenu.folder.id }); setFolderContextMenu(null) }}>New subfolder</button>
-        <button onClick={() => { setFolderEditor({ mode: 'rename', folderId: folderContextMenu.folder.id, name: folderContextMenu.folder.name }); setFolderContextMenu(null) }}>Rename</button>
-        <div className="project-context-divider" />
-        <button className="danger" onClick={() => void deleteFolder(folderContextMenu.folder)}>Delete folder</button>
-      </div>}
-
-      {projectContextMenu && <div className="project-context-menu" style={{ top: projectContextMenu.y, left: projectContextMenu.x }} onClick={(event) => event.stopPropagation()}>
-        <div className="project-context-title"><b>{projectContextMenu.project.name}</b><small>{getDomain(projectContextMenu.project.stagingUrl)}</small></div>
-        <div className="project-context-divider" />
-        <div className="project-context-move">
-          <button><span>Move</span><span>›</span></button>
-          <div className="project-context-submenu">
-            {projectContextMenu.project.folderId && <button onClick={() => void moveProjectToFolder(projectContextMenu.project)}><span>Active Projects</span></button>}
-            {folderMoveOptions.map(({ folder, label }) => <button key={folder.id} className={projectContextMenu.project.folderId === folder.id ? 'active' : ''} onClick={() => void moveProjectToFolder(projectContextMenu.project, folder.id)}><span>{label}</span>{projectContextMenu.project.folderId === folder.id && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m5 12 4 4L19 6" /></svg>}</button>)}
-            <div className="project-context-divider" />
-            <button onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined, projectId: projectContextMenu.project.id }); setProjectContextMenu(null) }}><span>New folder…</span></button>
-          </div>
-        </div>
-        {(projectContextMenu.project.mondayTicketId || projectContextMenu.project.id.startsWith('monday-')) && <button onClick={() => void createSiblingProject(projectContextMenu.project)}>Create another page</button>}
-        <button onClick={() => { const project = projectContextMenu.project; setProjectContextMenu(null); openProjectEditor(project) }}>Rename / Edit</button>
-        <button onClick={() => { togglePinProject(projectContextMenu.project.id); setProjectContextMenu(null) }}>{pinnedProjectIds.includes(projectContextMenu.project.id) ? 'Unpin' : 'Pin'}</button>
-        <div className="project-context-divider" />
-        <button className="danger" onClick={() => { setDeleteConfirmProject(projectContextMenu.project); setProjectContextMenu(null) }}>Move to Trash</button>
-      </div>}
-
       {folderEditor && <div className="folder-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFolderEditor(null) }}>
         <div className="folder-modal">
           <div className="folder-modal-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></div>
@@ -2308,45 +1583,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings 
         </div>
       </div>}
 
-      {contextMenu && (
-        <div
-          className="monday-context-menu"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="monday-context-header">
-            <img src={mondayLogo} alt="" width="14" height="14" />
-            <span>{contextMenu.ticket.name}</span>
-          </div>
-          <div className="monday-context-divider" />
-          <button
-            className="monday-context-item"
-            onClick={() => toggleActiveTicket(contextMenu.ticket.id)}
-          >
-            {contextMenu.isActive ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                <span>Set as Inactive</span>
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-                <span>Set as Active Project</span>
-              </>
-            )}
-          </button>
-          <button
-            className="monday-context-item"
-            onClick={() => {
-              handleLaunchTicket(contextMenu.ticket)
-              setContextMenu(null)
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-            <span>Launch Capture & Pre-fill</span>
-          </button>
-        </div>
-      )}
+
     </div>
   )
 }

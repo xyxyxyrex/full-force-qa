@@ -1,4 +1,10 @@
+import { assertAccountOwner } from './account'
+import { forwardPaletteShortcut } from './paletteShortcut'
 import 'dotenv/config'
+import { accountRequest, accountOwner, accountAuthId, accountContext, restoreAccount, getAccountStatus, loginWithGoogle, initializeAccount, signOutAccount } from './account'
+import { registerTicketHandlers } from './ticketStore'
+import { registerInspectorHandlers } from './inspector'
+import { buildAuditCaptureContext, registerAuditExportHandlers } from './auditExport'
 import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog, safeStorage, protocol } from 'electron'
 import { join } from 'path'
 import { cpSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
@@ -40,7 +46,7 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('lang', 'en-US')
 import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
-import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadWorkspaceHtml, saveProject, saveWorkspaceHtml, setProjectOwner } from './store'
+import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadWorkspaceAuditContext, loadWorkspaceHtml, saveProject, saveWorkspaceAuditContext, saveWorkspaceHtml, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
 import { measureResponseBody, resourceSizeFromHeaders } from './resourceFileSize'
 import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState, ResourceFileSizeResult } from '../shared/types'
@@ -146,16 +152,11 @@ interface StoredMondayCredentials {
   oauthConfig?: MondayPublicConfig
 }
 
-interface ParityAccountSession {
-  token: string
-  expiresAt: number
-  user: { ownerKey: string; mondayUserId: string; name: string; email?: string }
-}
-
-let parityAccountSession: ParityAccountSession | null = null
-
+let mondayCredentialGeneration = 0
 function mondayCredentialsPath() {
-  return join(app.getPath('userData'), 'monday-credentials.bin')
+  const scope = accountOwner() || accountAuthId() || 'guest'
+  const suffix = scope ? '-' + createHash('sha256').update(scope).digest('hex').slice(0, 24) : ''
+  return join(app.getPath('userData'), `monday-credentials${suffix}.bin`)
 }
 
 function readMondayCredentials(): StoredMondayCredentials | null {
@@ -167,9 +168,9 @@ function readMondayCredentials(): StoredMondayCredentials | null {
 }
 
 function writeMondayCredentials(credentials: StoredMondayCredentials | null): void {
+  ++mondayCredentialGeneration
   const file = mondayCredentialsPath()
   if (!credentials) {
-    parityAccountSession = null
     if (existsSync(file)) unlinkSync(file)
     return
   }
@@ -210,7 +211,11 @@ async function mondayOauthProxy(config: MondayPublicConfig, payload: Record<stri
 
 async function refreshMondayCredentials(credentials: StoredMondayCredentials): Promise<StoredMondayCredentials> {
   if (credentials.authType !== 'oauth' || !credentials.refreshToken || !credentials.oauthConfig) return credentials
+  const context = accountContext()
+  const generation = mondayCredentialGeneration
   const refreshed = await mondayOauthProxy(credentials.oauthConfig, { action: 'refresh', refresh_token: credentials.refreshToken })
+  context.assert()
+  if (generation !== mondayCredentialGeneration) throw new Error('The Monday connection changed.')
   const next: StoredMondayCredentials = {
     ...credentials,
     accessToken: refreshed.access_token,
@@ -221,69 +226,14 @@ async function refreshMondayCredentials(credentials: StoredMondayCredentials): P
   return next
 }
 
-function mondayCloudConfig(credentials: StoredMondayCredentials): MondayPublicConfig {
-  if (!credentials.oauthConfig) throw new Error('Reconnect Monday.com to enable private Supabase workspace sync.')
-  assertMondayProxyConfig(credentials.oauthConfig)
-  return credentials.oauthConfig
-}
-
-async function currentMondayCredentials(): Promise<StoredMondayCredentials> {
-  let credentials = readMondayCredentials()
-  if (!credentials?.accessToken) throw new Error('Connect Monday.com to use private cloud data.')
-  if (credentials.authType === 'oauth' && credentials.expiresAt && credentials.expiresAt - Date.now() < 5 * 60 * 1000) {
-    credentials = await refreshMondayCredentials(credentials)
-  }
-  return credentials
-}
-
-async function parityAccountRequest(action: string, payload: Record<string, unknown> = {}, retry = true): Promise<any> {
-  const credentials = await currentMondayCredentials()
-  const config = mondayCloudConfig(credentials)
-  const endpoint = `${config.supabaseUrl.replace(/\/$/, '')}/functions/v1/parity-account`
-
-  if (!parityAccountSession || parityAccountSession.expiresAt - Date.now() < 60_000) {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: config.supabaseAnonKey,
-        Authorization: `Bearer ${credentials.accessToken}`
-      },
-      body: JSON.stringify({ action: 'session' })
-    })
-    const result = await response.json().catch(() => ({})) as any
-    if (!response.ok || !result.session_token) throw new Error(result.error || `Parity account login returned ${response.status}.`)
-    parityAccountSession = {
-      token: result.session_token,
-      expiresAt: Number(result.expires_at || 0),
-      user: result.user
-    }
-    setProjectOwner(parityAccountSession.user.ownerKey)
-  }
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: config.supabaseAnonKey,
-      Authorization: `Bearer ${parityAccountSession.token}`
-    },
-    body: JSON.stringify({ action, ...payload })
-  })
-  const result = await response.json().catch(() => ({})) as any
-  if (response.status === 401 && retry) {
-    parityAccountSession = null
-    return parityAccountRequest(action, payload, false)
-  }
-  if (!response.ok) throw new Error(result.error || `Parity account service returned ${response.status}.`)
-  return result
-}
+const parityAccountRequest = accountRequest
 
 function cloudProject(project: Project): Project {
   const next: Project = {
     ...project,
     updatedAt: project.updatedAt || project.lastOpenedAt || project.createdAt || Date.now()
   }
+  delete next.localOwnerKey
   if (next.thumbnailUrl?.startsWith('data:')) delete next.thumbnailUrl
   return next
 }
@@ -305,10 +255,12 @@ function writePendingProjectDeletes(ownerKey: string, ids: string[]): void {
 }
 
 async function flushPendingProjectDeletes(ownerKey: string): Promise<void> {
+  const context = accountContext()
   const pending = readPendingProjectDeletes(ownerKey)
   if (!pending.length) return
   const remaining: string[] = []
   for (const projectId of pending) {
+    context.assert()
     try {
       await parityAccountRequest('delete_project', { projectId })
     } catch {
@@ -320,13 +272,18 @@ async function flushPendingProjectDeletes(ownerKey: string): Promise<void> {
 
 async function bootstrapParityAccount(): Promise<ParityAccountBootstrap> {
   try {
+    const context = accountContext()
     const result = await parityAccountRequest('bootstrap')
+    context.assert()
+    const deletedIds = new Set(readPendingProjectDeletes(result.user.ownerKey))
     await flushPendingProjectDeletes(result.user.ownerKey)
+    context.assert()
     const localProjects = getProjects()
     const localById = new Map(localProjects.map((project) => [project.id, project]))
     const remoteProjects = (Array.isArray(result.projects) ? result.projects : []) as Array<Project & { cloudUpdatedAt?: string }>
 
     for (const remote of remoteProjects) {
+      if (deletedIds.has(remote.id)) continue
       const local = localById.get(remote.id)
       const remoteVersion = remote.updatedAt || Date.parse(remote.cloudUpdatedAt || '') || 0
       const localVersion = local?.updatedAt || local?.lastOpenedAt || local?.createdAt || 0
@@ -352,6 +309,7 @@ async function bootstrapParityAccount(): Promise<ParityAccountBootstrap> {
       uploads.map((project) => parityAccountRequest('save_project', { project: cloudProject(project) }))
     )
 
+    context.assert()
     return {
       connected: true,
       user: result.user,
@@ -368,6 +326,7 @@ async function bootstrapParityAccount(): Promise<ParityAccountBootstrap> {
 }
 
 async function mondayGraphQL(query: string, variables?: Record<string, unknown>, authRetry = true, rateRetry = 1): Promise<any> {
+  const context = accountContext()
   let credentials = readMondayCredentials()
   if (!credentials?.accessToken) throw new Error('Connect Monday.com before syncing tickets.')
   if (credentials.authType === 'oauth' && credentials.expiresAt && credentials.expiresAt - Date.now() < 5 * 60 * 1000) {
@@ -382,14 +341,18 @@ async function mondayGraphQL(query: string, variables?: Record<string, unknown>,
     },
     body: JSON.stringify({ query, variables })
   })
+  context.assert()
+  if (readMondayCredentials()?.accessToken !== credentials.accessToken) throw new Error('The Monday connection changed.')
   if (response.status === 401 && authRetry && credentials.authType === 'oauth') {
     await refreshMondayCredentials(credentials)
+    context.assert()
     return mondayGraphQL(query, variables, false, rateRetry)
   }
   const body = await response.json().catch(() => null) as any
   const retrySeconds = Number(response.headers.get('retry-after') || body?.errors?.[0]?.extensions?.retry_in_seconds || 0)
   if ((response.status === 429 || retrySeconds > 0) && rateRetry > 0 && retrySeconds > 0 && retrySeconds <= 30) {
     await new Promise((resolve) => setTimeout(resolve, retrySeconds * 1000))
+    context.assert()
     return mondayGraphQL(query, variables, authRetry, rateRetry - 1)
   }
   if (!response.ok) {
@@ -535,9 +498,9 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      // Disable CORS so GrapesJS iframe can load cross-origin fonts
-      // (eicons, Font Awesome, etc. from captured sites)
-      webSecurity: false,
+      // Cross-origin editor resources are granted narrowly by the response
+      // header handler below; keep Chromium's renderer protections enabled.
+      webSecurity: true,
       webviewTag: true
     }
   })
@@ -587,6 +550,7 @@ app.on('web-contents-created', (_event, contents) => {
     if (input.type !== 'keyDown') return
 
     const key = input.key.toLowerCase()
+    if (forwardPaletteShortcut(contents, event, input, mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined)) return
     const isToggleDevTools =
       (input.control && input.shift && key === 'i') ||
       (input.meta && input.alt && key === 'i') ||
@@ -807,7 +771,7 @@ function registerIpcHandlers(): void {
           partition: 'persist:figma',
           nodeIntegration: false,
           contextIsolation: true,
-          webSecurity: false
+          webSecurity: true
         }
       })
 
@@ -978,7 +942,7 @@ function registerIpcHandlers(): void {
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-          webSecurity: false
+          webSecurity: true
         }
       })
       detachedWindow.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
@@ -1207,11 +1171,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle('monday:status', () => getMondayConnectionStatus())
 
   ipcMain.handle('monday:set-personal-token', async (_event, token: string, config?: MondayPublicConfig) => {
+    const context = accountContext()
     try {
       const trimmed = token.trim()
       if (!trimmed) throw new Error('Enter a Monday personal API token.')
       writeMondayCredentials({ accessToken: trimmed, authType: 'personal', oauthConfig: config })
+      const generation = mondayCredentialGeneration
       const status = await getMondayConnectionStatus()
+      context.assert()
+      if (generation !== mondayCredentialGeneration) throw new Error('The Monday connection changed.')
       if (!status.connected) {
         writeMondayCredentials(null)
         throw new Error(status.error || 'Monday rejected this token.')
@@ -1227,6 +1195,7 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('monday:disconnect', async (_event, config?: MondayPublicConfig) => {
+    const context = accountContext()
     const credentials = readMondayCredentials()
     try {
       if (credentials?.authType === 'oauth' && credentials.refreshToken && (config || credentials.oauthConfig)) {
@@ -1235,11 +1204,14 @@ function registerIpcHandlers(): void {
     } catch (error) {
       console.warn('[Monday Auth] Remote token revocation failed; clearing local credentials.', error)
     }
+    context.assert()
     writeMondayCredentials(null)
     return { success: true }
   })
 
   ipcMain.handle('monday:login', async (_event, config: MondayPublicConfig): Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }> => {
+    const context = accountContext()
+    const generation = mondayCredentialGeneration
     let oauthConfig: { client_id: string; redirect_uri: string }
     try {
       oauthConfig = await mondayOauthProxy(config, { action: 'config' })
@@ -1306,7 +1278,8 @@ function registerIpcHandlers(): void {
           })
 
           if (tokenData.access_token) {
-            parityAccountSession = null
+            context.assert()
+            if (generation !== mondayCredentialGeneration) throw new Error('The Monday connection changed.')
             writeMondayCredentials({
               accessToken: tokenData.access_token,
               refreshToken: tokenData.refresh_token,
@@ -1405,7 +1378,7 @@ function registerIpcHandlers(): void {
       } catch {}
       const rawHtml = await captureUrl(url)
       const frozenHtml = freezeSnapshot(rawHtml, url)
-      return { success: true, html: frozenHtml }
+      return { success: true, html: frozenHtml, auditContext: buildAuditCaptureContext(rawHtml, url) }
     } catch (error) {
       const msg = (error as Error).message || ''
       const is404 = msg.includes('SESSION_EXPIRED_404') || msg.includes('404')
@@ -1420,45 +1393,64 @@ function registerIpcHandlers(): void {
 
   // Monday-authenticated private account data. The renderer never receives a
   // Monday access token or Supabase service credential.
+  ipcMain.handle('account:status', () => getAccountStatus())
+  ipcMain.handle('account:login-google', () => loginWithGoogle())
+  ipcMain.handle('account:sign-out', () => signOutAccount())
+  ipcMain.handle('account:initialize', async (_event, mode: 'new' | 'monday') => {
+    let credentials = readMondayCredentials()
+    if (mode === 'monday' && !credentials) {
+      const legacy = join(app.getPath('userData'), 'monday-credentials.bin')
+      if (existsSync(legacy) && safeStorage.isEncryptionAvailable()) credentials = JSON.parse(safeStorage.decryptString(readFileSync(legacy)))
+    }
+    if (credentials?.authType === 'oauth' && credentials.expiresAt && credentials.expiresAt < Date.now()) credentials = await refreshMondayCredentials(credentials)
+    const result = await initializeAccount(mode, mode === 'monday' ? credentials?.accessToken : undefined)
+    if (credentials && result.user) writeMondayCredentials(credentials)
+    return result
+  })
   ipcMain.handle('account:bootstrap', () => bootstrapParityAccount())
-  ipcMain.handle('account:save-state', async (_event, data: Partial<ParityAccountState>) => {
+  ipcMain.handle('account:save-state', async (_event, data: Partial<ParityAccountState>, expectedOwner: string) => {
     try {
+      assertAccountOwner(expectedOwner)
       const result = await parityAccountRequest('save_state', { data })
       return { success: true, updatedAt: result.updatedAt }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to save account settings.' }
     }
   })
-  ipcMain.handle('account:save-note', async (_event, note: NoteDocument) => {
+  ipcMain.handle('account:save-note', async (_event, note: NoteDocument, expectedOwner: string) => {
     try {
+      assertAccountOwner(expectedOwner)
       const result = await parityAccountRequest('save_note', { note })
       return { success: true, updatedAt: result.updatedAt }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to save note.' }
     }
   })
-  ipcMain.handle('account:delete-note', async (_event, noteId: string) => {
+  ipcMain.handle('account:delete-note', async (_event, noteId: string, expectedOwner: string) => {
     try {
+      assertAccountOwner(expectedOwner)
       await parityAccountRequest('delete_note', { noteId })
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to delete note.' }
     }
   })
-  ipcMain.handle('notes:save-attachment', async (_event, input: { dataUrl: string; name: string }) => {
+  ipcMain.handle('notes:save-attachment', async (_event, input: { dataUrl: string; name: string }, expectedOwner: string) => {
     try {
-      if (!parityAccountSession) await parityAccountRequest('bootstrap')
-      if (!parityAccountSession?.user.ownerKey) throw new Error('Connect Monday.com before attaching files.')
-      return { success: true, attachment: await saveLocalNoteAttachment(parityAccountSession.user.ownerKey, input) }
+      assertAccountOwner(expectedOwner)
+      const owner = accountOwner()
+      if (!owner) throw new Error('Sign in to Parity before attaching files.')
+      return { success: true, attachment: await saveLocalNoteAttachment(owner, input) }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to save attachment.' }
     }
   })
-  ipcMain.handle('notes:delete-attachments', async (_event, attachmentIds: string[]) => {
+  ipcMain.handle('notes:delete-attachments', async (_event, attachmentIds: string[], expectedOwner: string) => {
     try {
-      if (!parityAccountSession) await parityAccountRequest('bootstrap')
-      if (!parityAccountSession?.user.ownerKey) throw new Error('Connect Monday.com before deleting attachments.')
-      deleteLocalNoteAttachments(parityAccountSession.user.ownerKey, attachmentIds)
+      assertAccountOwner(expectedOwner)
+      const owner = accountOwner()
+      if (!owner) throw new Error('Sign in to Parity before deleting attachments.')
+      deleteLocalNoteAttachments(owner, attachmentIds)
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to delete attachments.' }
@@ -1474,15 +1466,18 @@ function registerIpcHandlers(): void {
   })
 
   // Projects remain available offline and synchronize opportunistically when
-  // a Monday-authenticated cloud account is available.
-  ipcMain.handle('projects:list', () => getProjects())
-  ipcMain.handle('projects:save', async (_event, project: Project) => {
+  // an independent Parity account is available.
+  ipcMain.handle('projects:list', () => getProjects().map(project => ({ ...project, localOwnerKey: accountOwner() })))
+  ipcMain.handle('projects:save', async (_event, project: Project, expectedOwner?: string | null) => {
+    if (expectedOwner !== undefined) assertAccountOwner(expectedOwner)
+    if (project.localOwnerKey !== undefined) assertAccountOwner(project.localOwnerKey)
     const next = { ...project, updatedAt: Date.now() }
     saveProject(next)
     try { await parityAccountRequest('save_project', { project: cloudProject(next) }) }
     catch (error) { console.warn('[Parity Account] Project queued for the next sync:', error) }
   })
-  ipcMain.handle('projects:delete', async (_event, id: string) => {
+  ipcMain.handle('projects:delete', async (_event, id: string, expectedOwner?: string | null) => {
+    if (expectedOwner !== undefined) assertAccountOwner(expectedOwner)
     deleteProject(id)
     const ownerKey = getProjectOwner()
     if (!ownerKey) return
@@ -1497,6 +1492,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle('workspace-html:load', (_event, tabId: string) => loadWorkspaceHtml(tabId))
   ipcMain.handle('workspace-html:save', (_event, tabId: string, html: string) => saveWorkspaceHtml(tabId, html))
   ipcMain.handle('workspace-html:delete', (_event, tabId: string) => deleteWorkspaceHtml(tabId))
+  ipcMain.handle('workspace-audit-context:load', (_event, tabId: string) => loadWorkspaceAuditContext(tabId))
+  ipcMain.handle('workspace-audit-context:save', (_event, tabId: string, context) => saveWorkspaceAuditContext(tabId, context))
 
   // Snapshots: CRUD
   ipcMain.handle('snapshot:create', (_event, params) => createSnapshot(params))
@@ -1517,7 +1514,8 @@ function registerIpcHandlers(): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await restoreAccount()
   protocol.handle('parity-note', async (request) => {
     const attachment = loadLocalNoteAttachment(request.url)
     if (!attachment) return new Response('Attachment not found on this device.', { status: 404 })
@@ -1529,12 +1527,15 @@ app.whenReady().then(() => {
       status: 200,
       headers: {
         'Content-Type': attachment.mimeType,
-        'Cache-Control': 'private, max-age=31536000, immutable',
+        'Cache-Control': 'no-store',
         'Content-Security-Policy': "default-src 'none'"
       }
     })
   })
   registerIpcHandlers()
+  registerInspectorHandlers()
+  registerTicketHandlers()
+  registerAuditExportHandlers()
   createWindow()
   initializeAppUpdater(() => mainWindow)
 })

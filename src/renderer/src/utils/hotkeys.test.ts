@@ -41,6 +41,8 @@ describe('hotkeys', () => {
     expect(isReservedHotkey('Ctrl + Shift + R')).toBe(true)
     expect(isReservedHotkey('Meta + Alt + R')).toBe(true)
     expect(isReservedHotkey('Ctrl + Shift + I')).toBe(true)
+    expect(isReservedHotkey('Ctrl + Shift + F')).toBe(true)
+    expect(isReservedHotkey('Meta + Shift + F')).toBe(true)
     expect(isReservedHotkey('Alt + R')).toBe(false)
   })
 })

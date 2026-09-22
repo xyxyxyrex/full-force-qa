@@ -1,0 +1,28 @@
+.ticket-ui { color: var(--text-primary, #e4e4e7); font-size: 13px; }
+.ticket-ui p { line-height: 1.6; color: var(--text-secondary, #a1a1aa); }
+.ticket-ui button, .ticket-ui input, .ticket-ui select, .ticket-ui textarea { font: inherit; color: inherit; border: 1px solid var(--border-color, #3f3f46); border-radius: 6px; padding: 8px 10px; background: var(--bg-secondary, #202024); }
+.ticket-ui button { cursor: pointer; }
+.ticket-ui button:hover { border-color: var(--accent-color, #8b5cf6); }
+.ticket-ui button:disabled { opacity: .45; cursor: default; }
+.ticket-ui label { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.ticket-ui label:has(input[type=checkbox]) { flex-direction: row; align-items: center; }
+.ticket-ui input[type=checkbox] { width: auto; }
+.ticket-heading, .ticket-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ticket-heading h2, .ticket-card h3 { margin: 0; }
+.ticket-actions, .ticket-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ticket-filters { margin: 16px 0; }
+.ticket-filters > input { flex: 1; min-width: 150px; }
+.ticket-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.ticket-card { padding: 18px; border: 1px solid var(--border-color, #34343a); border-radius: 10px; background: var(--bg-secondary, #18181b); }
+.ticket-card-meta { font-size: 11px; color: var(--text-secondary, #a1a1aa); margin-bottom: 12px; }
+.ticket-description { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 120px; overflow: auto; }
+.ticket-error { color: #f59e8b !important; }
+.ticket-conflict { margin-top: 12px; padding: 12px; border: 1px solid #b98636; border-radius: 6px; }
+.ticket-conflict pre { max-height: 250px; overflow: auto; white-space: pre-wrap; }
+.ticket-project-link { margin: 10px 8px 0 0; }
+.ticket-modal-backdrop { position: fixed; inset: 0; z-index: 11000; background: #0009; display: grid; place-items: center; padding: 28px; }
+.ticket-modal { background: var(--bg-primary, #18181b); border: 1px solid var(--border-color, #3f3f46); border-radius: 12px; width: min(680px, 92vw); max-height: 86vh; overflow: auto; padding: 24px; box-shadow: 0 20px 80px #0008; }
+.ticket-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.ticket-source-options { max-height: 230px; overflow: auto; }
+.ticket-ui fieldset { border: 1px solid var(--border-color, #3f3f46); margin: 12px 0; border-radius: 6px; }
+.parity-account-panel { max-width: 650px; }

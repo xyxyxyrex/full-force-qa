@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { usePaletteProvider } from '../palette/registry'
 import { runSeoAudit, type SeoAuditReport } from '../utils/seoAudit'
 import {
   applyIssueSuggestion,
@@ -19,11 +20,14 @@ import {
   dataUrlByteLength,
   formatAuditResourceSize
 } from '../utils/auditResourceSize'
+import { buildAuditExportPayload } from '../utils/auditExport'
+import type { AuditCaptureContext, AuditExportKind, AuditExportProgress, AuditExportResult, AuditExportScanResult } from '../../../shared/auditExport'
 import './SeoAuditRightPanel.css'
 
 interface Props {
   html: string
   sourceUrl: string
+  auditContext?: AuditCaptureContext | null
   editor: Editor | null
   selectedComponent: any
   canvasZoom: number
@@ -37,6 +41,7 @@ type AuditOverlayKey = 'showLinks' | 'showAltText' | 'showHrefs' | 'showHeadings
 export default function SeoAuditRightPanel({
   html,
   sourceUrl,
+  auditContext,
   editor,
   selectedComponent,
   canvasZoom,
@@ -55,6 +60,11 @@ export default function SeoAuditRightPanel({
   })
 
   const [copied, setCopied] = useState(false)
+  const [exportKind, setExportKind] = useState<AuditExportKind | null>(null)
+  const [exportProgress, setExportProgress] = useState<AuditExportProgress | null>(null)
+  const [exportReview, setExportReview] = useState<AuditExportScanResult | null>(null)
+  const [exportResult, setExportResult] = useState<AuditExportResult | null>(null)
+  const [exportError, setExportError] = useState('')
   const [grammarFilter, setGrammarFilter] = useState<'all' | 'spelling' | 'grammar'>('all')
   const auditRequestRef = useRef(0)
   const auditSignatureRef = useRef('')
@@ -109,6 +119,64 @@ export default function SeoAuditRightPanel({
   const report: SeoAuditReport = useMemo(() => {
     return runSeoAudit(html, sourceUrl)
   }, [html, sourceUrl])
+
+  const auditExportPayload = useMemo(
+    () => buildAuditExportPayload(html, sourceUrl, report, auditContext),
+    [html, sourceUrl, report, auditContext]
+  )
+
+  useEffect(() => {
+    if (typeof window.electronAPI?.onAuditExportProgress !== 'function') return
+    return window.electronAPI.onAuditExportProgress((progress) => {
+      setExportProgress(progress)
+      setExportKind(progress.phase === 'complete' || progress.phase === 'cancelled' ? null : progress.kind)
+    })
+  }, [])
+
+  const runPreparedExport = useCallback(async (scan: AuditExportScanResult) => {
+    setExportReview(null)
+    setExportResult(null)
+    setExportError('')
+    setExportKind(scan.kind)
+    try {
+      const result = await window.electronAPI.startAuditExport(scan.planId)
+      setExportResult(result)
+      if (result.error) setExportError(result.error)
+      if (result.cancelled && !result.folderPath) setExportProgress(null)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Audit export failed.')
+    } finally {
+      setExportKind(null)
+    }
+  }, [])
+
+  const startAuditExport = useCallback(async (kind: AuditExportKind) => {
+    if (exportKind) return
+    setExportKind(kind)
+    setExportProgress(null)
+    setExportReview(null)
+    setExportResult(null)
+    setExportError('')
+    try {
+      const scan = await window.electronAPI.scanAuditExport({ kind, payload: auditExportPayload })
+      if (scan.reviewRequired) {
+        setExportReview(scan)
+        setExportKind(null)
+        return
+      }
+      await runPreparedExport(scan)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Unable to prepare the audit export.')
+      setExportKind(null)
+    }
+  }, [auditExportPayload, exportKind, runPreparedExport])
+
+  const cancelAuditExport = useCallback(async () => {
+    if (!exportProgress?.jobId) return
+    await window.electronAPI.cancelAuditExport(exportProgress.jobId)
+  }, [exportProgress])
+
+  const exportButtonClass = (kind: AuditExportKind) => `seo-overlay-btn seo-download-btn ${exportKind === kind ? 'active busy' : ''}`
 
   const getIframeDoc = useCallback((): Document | null => {
     if (iframeRef?.current?.contentDocument?.body) {
@@ -709,6 +777,20 @@ export default function SeoAuditRightPanel({
     setTimeout(() => setCopied(false), 2000)
   }
 
+  usePaletteProvider({
+    id: 'audit-actions', label: 'Audit',
+    commands: () => [
+      ...(['images', 'text', 'links', 'seo-data', 'assets', 'bundle'] as const).map(kind => ({
+        id: `audit.download:${kind}`, title: `Audit: download ${kind === 'bundle' ? 'complete bundle' : kind}`,
+        description: 'Export from the captured snapshot', group: 'Commands' as const,
+        disabled: exportKind ? 'An export is already running' : undefined,
+        run: () => { void startAuditExport(kind) },
+      })),
+      { id: 'audit.report', title: 'Audit: export JSON report', group: 'Commands', run: exportReportJson },
+      { id: 'audit.copy', title: 'Audit: copy Markdown summary', group: 'Commands', run: copyMarkdownSummary },
+    ],
+  })
+
   return (
     <div className="seo-audit-right-panel">
       {/* ── Main Section Header matching Layout's SELECTORS / STYLE ── */}
@@ -817,6 +899,60 @@ export default function SeoAuditRightPanel({
             {overlayModeBadge('showFileSizes')}
           </button>
         </div>
+      </div>
+
+      <div className="seo-overlay-toggles-bar seo-downloads-bar">
+        <div className="seo-toggle-bar-title">Audit Downloads</div>
+        <div className="seo-toggle-btn-group">
+          <button type="button" className={exportButtonClass('images')} onClick={() => void startAuditExport('images')} disabled={!!exportKind} title="Download all captured images" aria-label="Download all captured images">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 2-2 5 5"/></svg>
+          </button>
+          <button type="button" className={exportButtonClass('text')} onClick={() => void startAuditExport('text')} disabled={!!exportKind} title="Export page text" aria-label="Export page text">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M8 6v14m8-14v14M5 20h6m2 0h6"/></svg>
+          </button>
+          <button type="button" className={exportButtonClass('links')} onClick={() => void startAuditExport('links')} disabled={!!exportKind} title="Export and check links" aria-label="Export and check links">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-2 2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l2-2"/></svg>
+          </button>
+          <button type="button" className={exportButtonClass('seo-data')} onClick={() => void startAuditExport('seo-data')} disabled={!!exportKind} title="Export SEO metadata and structured data" aria-label="Export SEO metadata and structured data">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 3v6h6M8 13h8M8 17h6"/></svg>
+          </button>
+          <button type="button" className={exportButtonClass('assets')} onClick={() => void startAuditExport('assets')} disabled={!!exportKind} title="Download captured CSS, scripts, fonts, video, and audio" aria-label="Download captured assets">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M5 19h14"/><path d="M4 5h4M16 5h4"/></svg>
+          </button>
+          <button type="button" className={exportButtonClass('bundle')} onClick={() => void startAuditExport('bundle')} disabled={!!exportKind} title="Export the complete audit bundle" aria-label="Export the complete audit bundle">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>
+          </button>
+        </div>
+
+        {exportReview && (
+          <div className="seo-export-status review" role="dialog" aria-label="Review large audit export">
+            <strong>Review export</strong>
+            <span>{exportReview.fileCount} files · {formatAuditResourceSize(exportReview.knownBytes)} known{exportReview.unknownSizeCount ? ` · ${exportReview.unknownSizeCount} unknown` : ''}</span>
+            {exportReview.warnings.map((warning) => <span key={warning} className="seo-export-warning">{warning}</span>)}
+            <div className="seo-export-actions">
+              <button type="button" onClick={() => void runPreparedExport(exportReview)}>Continue</button>
+              <button type="button" onClick={() => setExportReview(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {exportKind && (
+          <div className="seo-export-status" role="status" aria-live="polite">
+            <span>{exportProgress ? `${exportProgress.phase} · ${exportProgress.completed}/${exportProgress.total}` : 'Scanning captured page…'}</span>
+            {exportProgress?.current && <span className="seo-export-current">{exportProgress.current}</span>}
+            {exportProgress?.jobId && exportProgress.phase !== 'complete' && exportProgress.phase !== 'cancelled' && (
+              <button type="button" onClick={() => void cancelAuditExport()}>Cancel</button>
+            )}
+          </div>
+        )}
+
+        {exportResult?.folderPath && !exportKind && (
+          <div className={`seo-export-status ${exportResult.failed.length ? 'partial' : 'complete'}`} role="status">
+            <span>{exportResult.cancelled ? 'Export cancelled' : 'Export complete'} · {exportResult.downloaded} downloaded{exportResult.failed.length ? ` · ${exportResult.failed.length} failed` : ''}</span>
+            <button type="button" onClick={() => void window.electronAPI.openAuditExportFolder(exportResult.folderPath!)}>Open Folder</button>
+          </div>
+        )}
+        {exportError && <div className="seo-export-status error" role="alert">{exportError}</div>}
       </div>
 
       <div className="seo-sectors-wrap">

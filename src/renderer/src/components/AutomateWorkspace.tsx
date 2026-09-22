@@ -5,6 +5,8 @@ import type { PixelComparison, ResultState } from '../../../shared/automation'
 import { visualFindings } from '../../../shared/automationFindings'
 import { ComparisonView } from '../automation/ComparisonView'
 import './AutomateWorkspace.css'
+import { usePaletteProvider } from '../palette/registry'
+import { pageSearchExpression, pageBatch, type PageSearchResponse } from '../palette/pageSearch'
 
 interface FrameSummary { id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }
 
@@ -311,6 +313,19 @@ export default function AutomateWorkspace({ sourceUrl, figmaUrl = '', projectId,
   const currentPage = Math.min(findingPage, pageCount - 1)
   const pageFindings = filteredFindings.slice(currentPage * 50, (currentPage + 1) * 50)
   const displayValue = (value: unknown) => value === undefined ? 'Not available' : typeof value === 'string' ? value : JSON.stringify(value)
+  usePaletteProvider({
+    id: 'automate-page', label: 'Automate page',
+    search: async (query, signal, options) => {
+      if (!['All', 'Page', 'Files'].includes(options.group)) return { items: [] }
+      const view = webviewRef.current
+      if (!view || !ready) throw new Error('Wait for the Automate page to load.')
+      const response = await view.executeJavaScript(pageSearchExpression({ action: 'search', query, limit: options.limit, kind: options.group === 'All' ? undefined : options.group as 'Page' | 'Files' }), true) as PageSearchResponse
+      if (signal.aborted) return { items: [] }
+      return pageBatch(response, (token, id) => view.executeJavaScript(pageSearchExpression({ action: 'reveal', token, id }), true))
+    },
+    release: () => { void webviewRef.current?.executeJavaScript(pageSearchExpression({ action: 'release' })).catch(() => {}) },
+  })
+
   return <div className="automate-workspace">
     <webview ref={webviewRef} className="automate-capture-webview" src={sourceUrl} webpreferences="backgroundThrottling=no" style={{ width: captureWidth, height: captureViewportHeight }} />
     <div className="automate-capture-shield" aria-hidden="true" />

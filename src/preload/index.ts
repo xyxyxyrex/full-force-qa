@@ -1,8 +1,58 @@
 import type { PixelComparisonResponse } from '../shared/automation'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
+import type { AuditCaptureContext, AuditExportProgress, AuditExportScanRequest } from '../shared/auditExport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  onOpenCommandPalette: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('palette:open', handler)
+    return () => { ipcRenderer.removeListener('palette:open', handler) }
+  },
+  inspectorStart: (input: { webContentsId: number; previewId: string; projectId?: string }) => ipcRenderer.invoke('inspector:start', input),
+  inspectorStop: (sessionId: string) => ipcRenderer.invoke('inspector:stop', sessionId),
+  inspectorReconnect: (sessionId: string) => ipcRenderer.invoke('inspector:reconnect', sessionId),
+  inspectorChildren: (ref: import('../shared/inspector').InspectorNodeRef) => ipcRenderer.invoke('inspector:children', ref),
+  inspectorResolveSelector: (sessionId: string, generation: number, selector: string) => ipcRenderer.invoke('inspector:resolve-selector', sessionId, generation, selector),
+  inspectorGetNode: (ref: import('../shared/inspector').InspectorNodeRef) => ipcRenderer.invoke('inspector:get-node', ref),
+  inspectorStyles: (ref: import('../shared/inspector').InspectorNodeRef) => ipcRenderer.invoke('inspector:styles', ref),
+  inspectorHighlight: (ref: import('../shared/inspector').InspectorNodeRef | null, mode?: 'all' | 'content' | 'padding' | 'border' | 'margin') => ipcRenderer.invoke('inspector:highlight', ref, mode),
+  inspectorScrollIntoView: (ref: import('../shared/inspector').InspectorNodeRef) => ipcRenderer.invoke('inspector:scroll-into-view', ref),
+  inspectorSearch: (sessionId: string, generation: number, query: string, mode: 'text' | 'selector' | 'xpath', fromIndex?: number) => ipcRenderer.invoke('inspector:search', sessionId, generation, query, mode, fromIndex),
+  inspectorDiscardSearch: (sessionId: string, searchId: string) => ipcRenderer.invoke('inspector:discard-search', sessionId, searchId),
+  inspectorOuterHtml: (ref: import('../shared/inspector').InspectorNodeRef) => ipcRenderer.invoke('inspector:outer-html', ref),
+  inspectorSelectorPath: (ref: import('../shared/inspector').InspectorNodeRef) => ipcRenderer.invoke('inspector:selector-path', ref),
+  inspectorStyleSheetText: (sessionId: string, styleSheetId: string) => ipcRenderer.invoke('inspector:stylesheet-text', sessionId, styleSheetId),
+  inspectorEditDom: (edit: import('../shared/inspector').InspectorDomEdit) => ipcRenderer.invoke('inspector:edit-dom', edit),
+  inspectorEditDeclaration: (edit: import('../shared/inspector').InspectorDeclarationEdit) => ipcRenderer.invoke('inspector:edit-declaration', edit),
+  inspectorEditSelector: (edit: import('../shared/inspector').InspectorSelectorEdit) => ipcRenderer.invoke('inspector:edit-selector', edit),
+  inspectorAddRule: (ref: import('../shared/inspector').InspectorNodeRef, selector: string) => ipcRenderer.invoke('inspector:add-rule', ref, selector),
+  inspectorForcePseudo: (ref: import('../shared/inspector').InspectorNodeRef, states: string[]) => ipcRenderer.invoke('inspector:force-pseudo', ref, states),
+  inspectorSetLayoutOverlay: (ref: import('../shared/inspector').InspectorNodeRef, kind: 'flex' | 'grid' | 'none') => ipcRenderer.invoke('inspector:layout-overlay', ref, kind),
+  inspectorUndo: (sessionId: string) => ipcRenderer.invoke('inspector:undo', sessionId),
+  inspectorRedo: (sessionId: string) => ipcRenderer.invoke('inspector:redo', sessionId),
+  inspectorHistory: (sessionId: string) => ipcRenderer.invoke('inspector:history', sessionId),
+  inspectorPatches: (sessionId: string) => ipcRenderer.invoke('inspector:patches', sessionId),
+  onInspectorEvent(callback: (event: import('../shared/inspector').InspectorEvent) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, inspectorEvent: import('../shared/inspector').InspectorEvent) => callback(inspectorEvent)
+    ipcRenderer.on('inspector:event', handler)
+    return () => ipcRenderer.removeListener('inspector:event', handler)
+  },
+  accountStatus: () => ipcRenderer.invoke('account:status'),
+  accountLoginGoogle: () => ipcRenderer.invoke('account:login-google'),
+  accountInitialize: (mode: 'new' | 'monday') => ipcRenderer.invoke('account:initialize', mode),
+  accountSignOut: () => ipcRenderer.invoke('account:sign-out'),
+  onAccountChanged(callback: () => void) {
+    const handler = () => callback()
+    ipcRenderer.on('account:changed', handler)
+    return () => ipcRenderer.removeListener('account:changed', handler)
+  },
+  ticketsList: () => ipcRenderer.invoke('tickets:list'),
+  ticketsSave: (ticket: import('../shared/types').Ticket, ownerKey: string) => ipcRenderer.invoke('tickets:save', ticket, ownerKey),
+  ticketsSync: () => ipcRenderer.invoke('tickets:sync'),
+  ticketsImportMonday: (tickets: import('../shared/types').Ticket[], connectionId: string, ownerKey: string) => ipcRenderer.invoke('tickets:import-monday', tickets, connectionId, ownerKey),
+  ticketsRefreshFailed: (message: string, ownerKey: string) => ipcRenderer.invoke('tickets:refresh-failed', message, ownerKey),
+  ticketsResolve: (id: string, choice: 'local' | 'remote', ownerKey: string) => ipcRenderer.invoke('tickets:resolve', id, choice, ownerKey),
   login(adminUrl: string): Promise<void> {
     return ipcRenderer.invoke('auth:login', adminUrl)
   },
@@ -24,20 +74,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   accountBootstrap() {
     return ipcRenderer.invoke('account:bootstrap')
   },
-  accountSaveState(data: Partial<ParityAccountState>) {
-    return ipcRenderer.invoke('account:save-state', data)
+  accountSaveState(data: Partial<ParityAccountState>, ownerKey: string) {
+    return ipcRenderer.invoke('account:save-state', data, ownerKey)
   },
-  accountSaveNote(note: NoteDocument) {
-    return ipcRenderer.invoke('account:save-note', note)
+  accountSaveNote(note: NoteDocument, ownerKey: string) {
+    return ipcRenderer.invoke('account:save-note', note, ownerKey)
   },
-  accountDeleteNote(noteId: string) {
-    return ipcRenderer.invoke('account:delete-note', noteId)
+  accountDeleteNote(noteId: string, ownerKey: string) {
+    return ipcRenderer.invoke('account:delete-note', noteId, ownerKey)
   },
-  saveNoteAttachment(input: { dataUrl: string; name: string }) {
-    return ipcRenderer.invoke('notes:save-attachment', input)
+  saveNoteAttachment(input: { dataUrl: string; name: string }, ownerKey: string) {
+    return ipcRenderer.invoke('notes:save-attachment', input, ownerKey)
   },
-  deleteNoteAttachments(attachmentIds: string[]) {
-    return ipcRenderer.invoke('notes:delete-attachments', attachmentIds)
+  deleteNoteAttachments(attachmentIds: string[], ownerKey: string) {
+    return ipcRenderer.invoke('notes:delete-attachments', attachmentIds, ownerKey)
   },
   openNoteAttachment(uri: string) {
     return ipcRenderer.invoke('notes:open-attachment', uri)
@@ -48,11 +98,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getProjects(): Promise<Project[]> {
     return ipcRenderer.invoke('projects:list')
   },
-  saveProject(project: Project): Promise<void> {
-    return ipcRenderer.invoke('projects:save', project)
+  saveProject(project: Project, ownerKey?: string | null): Promise<void> {
+    return ipcRenderer.invoke('projects:save', project, ownerKey)
   },
-  deleteProject(id: string): Promise<void> {
-    return ipcRenderer.invoke('projects:delete', id)
+  deleteProject(id: string, ownerKey?: string | null): Promise<void> {
+    return ipcRenderer.invoke('projects:delete', id, ownerKey)
   },
   loadWorkspaceHtml(tabId: string): Promise<string | null> {
     return ipcRenderer.invoke('workspace-html:load', tabId)
@@ -62,6 +112,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   deleteWorkspaceHtml(tabId: string): Promise<void> {
     return ipcRenderer.invoke('workspace-html:delete', tabId)
+  },
+  loadWorkspaceAuditContext(tabId: string): Promise<AuditCaptureContext | null> {
+    return ipcRenderer.invoke('workspace-audit-context:load', tabId)
+  },
+  saveWorkspaceAuditContext(tabId: string, context: AuditCaptureContext): Promise<void> {
+    return ipcRenderer.invoke('workspace-audit-context:save', tabId, context)
+  },
+  scanAuditExport(request: AuditExportScanRequest) {
+    return ipcRenderer.invoke('audit-export:scan', request)
+  },
+  startAuditExport(planId: string) {
+    return ipcRenderer.invoke('audit-export:start', planId)
+  },
+  cancelAuditExport(jobId: string) {
+    return ipcRenderer.invoke('audit-export:cancel', jobId)
+  },
+  openAuditExportFolder(folderPath: string) {
+    return ipcRenderer.invoke('audit-export:open-folder', folderPath)
+  },
+  onAuditExportProgress(callback: (progress: AuditExportProgress) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, progress: AuditExportProgress) => callback(progress)
+    ipcRenderer.on('audit-export:progress', handler)
+    return () => ipcRenderer.removeListener('audit-export:progress', handler)
   },
   clearCache(): Promise<{ success: boolean }> {
     return ipcRenderer.invoke('app:clear-cache')

@@ -90,7 +90,7 @@ export function findHotkeyConflicts(hotkeys: AppHotkeys): Map<keyof AppHotkeys, 
   return conflicts
 }
 
-export const RESERVED_HOTKEYS = new Set(['Ctrl + R', 'Meta + R', 'F5', 'F12', 'Ctrl + Shift + I', 'Meta + Alt + I'])
+export const RESERVED_HOTKEYS = new Set(['Ctrl + R', 'Meta + R', 'F5', 'F12', 'Ctrl + Shift + I', 'Meta + Alt + I', 'Ctrl + Shift + F', 'Shift + Meta + F'])
 
 export function isReservedHotkey(binding: string): boolean {
   const normalized = normalizeHotkey(binding)
@@ -101,6 +101,7 @@ export function isReservedHotkey(binding: string): boolean {
   // Electron's app-level handler treats any Ctrl/Meta + R variation as a
   // reload, including combinations with additional modifiers.
   if (key === 'R' && (parts.has('Ctrl') || parts.has('Meta'))) return true
+  if (key === 'F' && parts.has('Shift') && !parts.has('Alt') && (parts.has('Ctrl') || parts.has('Meta'))) return true
   if (key === 'I' && parts.has('Ctrl') && parts.has('Shift')) return true
   if (key === 'I' && parts.has('Meta') && parts.has('Alt')) return true
   return false

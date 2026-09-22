@@ -26,3 +26,7 @@ verify_jwt = false
 
 [functions.parity-account]
 verify_jwt = false
+
+[functions.parity-account-v2]
+# The handler verifies Supabase access tokens with auth.getUser().
+verify_jwt = false

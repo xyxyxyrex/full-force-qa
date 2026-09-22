@@ -1,10 +1,10 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import type { AppUpdateStatus, Project } from '../../shared/types'
 import Dashboard from './components/Dashboard'
+import { refreshMondayTickets, syncTickets } from './services/ticketService'
 import CaptureScreen, { type CaptureProjectDetails } from './components/CaptureScreen'
 import EditorWorkspace, { type WorkspaceTab } from './components/EditorWorkspace'
 import NotesWorkspace from './components/NotesWorkspace'
-import { fetchMondayTicketsApi } from './utils/mondayApi'
 import SettingsModal from './components/SettingsModal'
 import { loadSettings, applyTheme } from './theme/themeSystem'
 import type { AppSettings } from '../../shared/types'
@@ -13,6 +13,12 @@ import parityLightIcon from './assets/parity-light-512.png'
 import { applyCloudAccountState, collectLocalAccountState, queueAccountStateSave, resetLocalAccountState, setAccountStateSyncReady } from './services/accountStateService'
 import './theme/themes.css'
 import './App.css'
+import type { AuditCaptureContext } from '../../shared/auditExport'
+import CommandPalette from './components/CommandPalette'
+import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/registry'
+import { getPaletteNotes, setPaletteNotes, workspaceItems } from './palette/workspaceSearch'
+import { HOTKEY_DEFINITIONS, THEME_LIST, saveSettings } from './theme/themeSystem'
+import type { ProjectFolder } from '../../shared/types'
 
 export type View = 'dashboard' | 'capture' | 'editor' | 'notes'
 
@@ -28,7 +34,13 @@ export interface TabState {
   prefillStaging: string
   skipAutoCapture: boolean
   newProjectFolderId?: string
+  dashboardFolderId?: string | null
+  dashboardFolderName?: string
+  dashboardFolderPath?: string
   workspaceTab?: WorkspaceTab
+  auditContext?: AuditCaptureContext | null
+  initialNoteId?: string
+  initialTicketId?: string
 }
 
 function isRenderableSnapshot(html: string | null): html is string {
@@ -43,43 +55,56 @@ function isRenderableSnapshot(html: string | null): html is string {
 }
 
 export default function App() {
+  const viewOwner = localStorage.getItem('parity_account_owner_key')
+  const saveScopedProject = (project: Project) => { project.localOwnerKey = viewOwner; return window.electronAPI.saveProject(project, viewOwner) }
   const lastSyncRef = useRef<number>(0)
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [accountReady, setAccountReady] = useState(false)
+  const accountGeneration = useRef(0)
   const [activityBarPinned, setActivityBarPinned] = useState(() => localStorage.getItem('parity_activity_bar_pinned') === 'true')
   const [activityBarVisible, setActivityBarVisible] = useState(true)
   const activityHideTimerRef = useRef<number | null>(null)
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({ state: 'idle', currentVersion: '' })
 
   const syncMondayTickets = useCallback(async (): Promise<boolean> => {
-    try {
-      const status = await window.electronAPI.mondayStatus()
-      if (!status.connected) return false
-      await fetchMondayTicketsApi()
-      lastSyncRef.current = Date.now()
-      window.dispatchEvent(new CustomEvent('monday_tickets_updated'))
-      return true
-    } catch (error) {
-      console.warn('[Monday] Sync skipped:', error)
-      return false
-    }
+    try { if (!(await window.electronAPI.mondayStatus()).connected) return false; await refreshMondayTickets(); lastSyncRef.current = Date.now(); return true } catch { return false }
   }, [])
 
   const syncPrivateAccount = useCallback(async () => {
-    const status = await window.electronAPI.mondayStatus()
-    if (!status.connected) {
-      setAccountStateSyncReady(false)
+    const generation = ++accountGeneration.current
+    const status = await window.electronAPI.accountStatus()
+    if (generation !== accountGeneration.current) return
+    const previousOwnerKey = localStorage.getItem('parity_account_owner_key')
+    const ownerKey = status.user?.ownerKey
+    const accountChanged = previousOwnerKey !== (ownerKey || null)
+    if (accountChanged && previousOwnerKey) localStorage.setItem('parity_local_state:' + previousOwnerKey, JSON.stringify(collectLocalAccountState()))
+    if (!ownerKey) {
+      setPaletteNotes(null, [])
+      setAccountStateSyncReady(false, true)
+      if (previousOwnerKey) {
+        localStorage.setItem('parity_legacy_owner_key', previousOwnerKey)
+        localStorage.removeItem('parity_account_owner_key')
+      }
+      if (previousOwnerKey) resetLocalAccountState()
+      if (accountChanged) window.dispatchEvent(new Event('parity:account-owner-changed'))
+      setAccountReady(true)
       return
     }
+    if (accountChanged) {
+      setPaletteNotes(null, [])
+      setAccountStateSyncReady(false, true)
+      resetLocalAccountState()
+      window.dispatchEvent(new Event('parity:account-owner-changed'))
+    }
+    localStorage.setItem('parity_account_owner_key', ownerKey)
+    const savedState = localStorage.getItem('parity_local_state:' + ownerKey)
+    if (accountChanged && savedState) { try { setSettings(applyCloudAccountState(JSON.parse(savedState))) } catch {} }
+    setAccountReady(true)
     setAccountStateSyncReady(false, true)
     const result = await window.electronAPI.accountBootstrap()
-    if (!result.connected) {
-      setAccountStateSyncReady(false)
-      return
-    }
-    const previousOwnerKey = localStorage.getItem('parity_account_owner_key')
-    const accountChanged = !!(result.user && previousOwnerKey && previousOwnerKey !== result.user.ownerKey)
-    if (result.user) localStorage.setItem('parity_account_owner_key', result.user.ownerKey)
+    if (generation !== accountGeneration.current || !result.connected) return
+    setPaletteNotes(ownerKey, result.notes || [])
     if (result.state) {
       if (accountChanged) resetLocalAccountState()
       setSettings(applyCloudAccountState(result.state))
@@ -94,22 +119,36 @@ export default function App() {
     }
     if (accountChanged) window.dispatchEvent(new Event('parity:account-owner-changed'))
     window.dispatchEvent(new Event('qa_projects_updated'))
+    void syncTickets()
   }, [])
 
   useEffect(() => {
-    const onConnected = () => void syncPrivateAccount()
-    const onDisconnected = () => setAccountStateSyncReady(false, true)
+    const onConnected = () => {
+      setPaletteNotes(null, [])
+      setAccountReady(false)
+      setAccountStateSyncReady(false, true)
+      window.dispatchEvent(new Event('parity:account-owner-changed'))
+      void syncPrivateAccount().catch(() => setAccountReady(true))
+    }
+    const openSettings = () => setSettingsOpen(true)
+    const unsubscribe = window.electronAPI.onAccountChanged(onConnected)
+    window.addEventListener('parity:open-account', openSettings)
+    window.addEventListener('parity:open-integrations', openSettings)
     const onStateDirty = (event: Event) => {
       const detail = (event as CustomEvent).detail
       if (detail && typeof detail === 'object') queueAccountStateSave(detail)
     }
-    window.addEventListener('parity:monday-connected', onConnected)
-    window.addEventListener('parity:monday-disconnected', onDisconnected)
     window.addEventListener('parity:account-state-dirty', onStateDirty)
-    void syncPrivateAccount().catch(() => {})
+    const reconnect = () => void syncPrivateAccount().catch(() => {})
+    window.addEventListener('online', reconnect)
+    const retry = window.setInterval(reconnect, 120000)
+    void syncPrivateAccount().catch(() => setAccountReady(true))
     return () => {
-      window.removeEventListener('parity:monday-connected', onConnected)
-      window.removeEventListener('parity:monday-disconnected', onDisconnected)
+      unsubscribe()
+      clearInterval(retry)
+      window.removeEventListener('online', reconnect)
+      window.removeEventListener('parity:open-account', openSettings)
+      window.removeEventListener('parity:open-integrations', openSettings)
       window.removeEventListener('parity:account-state-dirty', onStateDirty)
     }
   }, [syncPrivateAccount])
@@ -224,7 +263,8 @@ export default function App() {
         sessionStorage.removeItem(`fullforce_snapshot_html_${t.id}`)
         return {
           ...t,
-          snapshotHtml: null
+          snapshotHtml: null,
+          auditContext: null
         }
       })
       sessionStorage.setItem('fullforce_app_tabs', JSON.stringify(serialized))
@@ -246,12 +286,16 @@ export default function App() {
       if (editorTabs.length === 0) return
       const loaded = await Promise.all(editorTabs.map(async (tab) => ({
         tabId: tab.id,
-        html: await window.electronAPI.loadWorkspaceHtml(tab.id)
+        html: await window.electronAPI.loadWorkspaceHtml(tab.id),
+        auditContext: await window.electronAPI.loadWorkspaceAuditContext(tab.id)
       })))
       if (cancelled) return
-      const byTabId = new Map(loaded.filter((item) => isRenderableSnapshot(item.html)).map((item) => [item.tabId, item.html!]))
+      const byTabId = new Map(loaded.filter((item) => isRenderableSnapshot(item.html)).map((item) => [item.tabId, item]))
       if (byTabId.size > 0) {
-        setTabs((current) => current.map((tab) => byTabId.has(tab.id) ? { ...tab, snapshotHtml: byTabId.get(tab.id)! } : tab))
+        setTabs((current) => current.map((tab) => {
+          const loadedTab = byTabId.get(tab.id)
+          return loadedTab ? { ...tab, snapshotHtml: loadedTab.html!, auditContext: loadedTab.auditContext } : tab
+        }))
       }
     }
     void hydrateWorkspaceHtml().catch((error) => console.warn('[Workspace HTML] Unable to restore tabs:', error))
@@ -358,7 +402,7 @@ export default function App() {
     updateActiveTab(t => ({
       ...t,
       view: 'dashboard',
-      title: 'Dashboard',
+      title: t.dashboardFolderName || 'Dashboard',
       snapshotHtml: null,
       activeProject: null
     }))
@@ -442,7 +486,7 @@ export default function App() {
     }))
   }
 
-  const handleCapture = async (html: string, url: string, adminUrl: string, details: CaptureProjectDetails) => {
+  const handleCapture = async (html: string, url: string, adminUrl: string, details: CaptureProjectDetails, auditContext?: AuditCaptureContext) => {
     const activeTab = tabs.find(t => t.id === activeTabId)
     const now = Date.now()
     const project: Project = activeTab?.activeProject
@@ -454,6 +498,7 @@ export default function App() {
           figmaUrl: details.figmaUrl || undefined,
           googleSheetUrl: details.googleSheetUrl || undefined,
           mondayTicketId: details.mondayTicketId || activeTab.activeProject.mondayTicketId,
+          ticketRef: details.ticketRef || activeTab.activeProject.ticketRef,
           lastOpenedAt: now
         }
       : {
@@ -464,16 +509,18 @@ export default function App() {
           figmaUrl: details.figmaUrl || undefined,
           googleSheetUrl: details.googleSheetUrl || undefined,
           mondayTicketId: details.mondayTicketId,
+          ticketRef: details.ticketRef,
           folderId: activeTab?.newProjectFolderId,
           createdAt: now,
           lastOpenedAt: now
         }
 
-    await window.electronAPI.saveProject(project)
+    await saveScopedProject(project)
     window.dispatchEvent(new CustomEvent('qa_projects_updated'))
     const tabId = activeTabId
     try {
       await window.electronAPI.saveWorkspaceHtml(tabId, html)
+      if (auditContext) await window.electronAPI.saveWorkspaceAuditContext(tabId, auditContext)
     } catch (error) {
       // A cache write must never prevent a successful capture from opening.
       console.warn('[Workspace HTML] Capture will remain available in memory:', error)
@@ -483,12 +530,38 @@ export default function App() {
       ...t,
       activeProject: project,
       snapshotHtml: html,
+      auditContext: auditContext || null,
       captureUrl: url,
       snapshotKey: t.snapshotKey + 1,
       view: 'editor',
       title: project.name || deriveProjectName(url)
     }))
   }
+
+  const handleDashboardFolderChange = useCallback((location: {
+    folderId: string | null
+    folderName: string
+    folderPath: string
+  }) => {
+    setTabs((current) => current.map((tab) => {
+      if (tab.id !== activeTabId) return tab
+      const dashboardTitle = location.folderName || 'Dashboard'
+      const title = tab.view === 'dashboard' ? dashboardTitle : tab.title
+      if (
+        tab.dashboardFolderId === location.folderId &&
+        tab.dashboardFolderName === location.folderName &&
+        tab.dashboardFolderPath === location.folderPath &&
+        tab.title === title
+      ) return tab
+      return {
+        ...tab,
+        title,
+        dashboardFolderId: location.folderId,
+        dashboardFolderName: location.folderName,
+        dashboardFolderPath: location.folderPath,
+      }
+    }))
+  }, [activeTabId])
 
   const handleAddProject = async (details: CaptureProjectDetails) => {
     const activeTab = tabs.find((tab) => tab.id === activeTabId)
@@ -501,11 +574,12 @@ export default function App() {
       figmaUrl: details.figmaUrl || undefined,
       googleSheetUrl: details.googleSheetUrl || undefined,
       mondayTicketId: details.mondayTicketId,
+          ticketRef: details.ticketRef,
       folderId: activeTab?.newProjectFolderId,
       createdAt: now,
       lastOpenedAt: now
     }
-    await window.electronAPI.saveProject(project)
+    await saveScopedProject(project)
     window.dispatchEvent(new CustomEvent('qa_projects_updated'))
     goToDashboard()
   }
@@ -515,13 +589,13 @@ export default function App() {
     const project = activeTab?.activeProject
     if (!project || project.thumbnailUrl || !dataUrl.startsWith('data:image/')) return
     const updatedProject: Project = { ...project, thumbnailUrl: dataUrl }
-    await window.electronAPI.saveProject(updatedProject)
+    await saveScopedProject(updatedProject)
     window.dispatchEvent(new CustomEvent('qa_projects_updated'))
     updateActiveTab((tab) => ({ ...tab, activeProject: tab.activeProject?.id === updatedProject.id ? updatedProject : tab.activeProject }))
   }
 
   const handleProjectUpdated = useCallback(async (updatedProject: Project) => {
-    await window.electronAPI.saveProject(updatedProject)
+    await saveScopedProject(updatedProject)
     setTabs((current) => current.map((tab) =>
       tab.activeProject?.id === updatedProject.id
         ? { ...tab, activeProject: updatedProject }
@@ -551,12 +625,14 @@ export default function App() {
     const updatedProject = activeTab.activeProject
       ? { ...activeTab.activeProject, stagingUrl: targetUrl, lastOpenedAt: Date.now() }
       : null
-    if (updatedProject) await window.electronAPI.saveProject(updatedProject)
+    if (updatedProject) await saveScopedProject(updatedProject)
     await window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html)
+    if (result.auditContext) await window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext)
     setTabs((current) => current.map((tab) => tab.id === activeTab.id ? {
       ...tab,
       activeProject: updatedProject || tab.activeProject,
       snapshotHtml: result.html!,
+      auditContext: result.auditContext || null,
       captureUrl: targetUrl,
       snapshotKey: tab.snapshotKey + 1,
     } : tab))
@@ -582,7 +658,8 @@ export default function App() {
         return
       }
       void window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html).catch(() => {})
-      updateActiveTab(t => ({ ...t, snapshotHtml: result.html!, snapshotKey: t.snapshotKey + 1 }))
+      if (result.auditContext) void window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext).catch(() => {})
+      updateActiveTab(t => ({ ...t, snapshotHtml: result.html!, auditContext: result.auditContext || null, snapshotKey: t.snapshotKey + 1 }))
     } else if (result.is404 || result.isSessionExpired) {
       updateActiveTab(t => ({ ...t, view: 'capture' }))
     }
@@ -613,6 +690,47 @@ export default function App() {
   }, [])
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0]
+
+  const paletteData = useRef<Promise<PaletteItem[]> | null>(null)
+  const openSearchTab = (view: 'dashboard' | 'notes', values: Partial<TabState>) => {
+    const id = `tab-search-${crypto.randomUUID()}`
+    setTabs(current => [...current, { id, title: view === 'notes' ? 'Notes' : 'Dashboard', view, snapshotHtml: null, captureUrl: '', snapshotKey: 0, activeProject: null, prefillAdmin: '', prefillStaging: '', skipAutoCapture: false, ...values }])
+    setActiveTabId(id)
+  }
+  usePaletteProvider({
+    id: 'application', label: 'Workspace data',
+    commands: () => [
+      { id: 'app.dashboard', title: 'Open Dashboard', group: 'Commands', run: () => openUtilityView('dashboard') },
+      { id: 'app.notes', title: 'Open Notes', group: 'Commands', run: () => openUtilityView('notes') },
+      { id: 'app.capture', title: 'New project / capture website', group: 'Commands', run: () => handleNewProject() },
+      { id: 'app.tab', title: 'New tab', group: 'Commands', run: handleNewTab },
+      { id: 'app.settings', title: 'Open Settings', group: 'Commands', description: 'Account, integrations, shortcuts, appearance and directory', run: () => setSettingsOpen(true) },
+      ...(['account', 'general', 'hotkeys', 'appearance', 'integrations'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
+      ...THEME_LIST.map(theme => ({ id: `theme:${theme.id}`, title: `Theme: ${theme.name}`, description: theme.description, group: 'Commands' as const, run: () => { const next = { ...settings, theme: theme.id }; setSettings(next); saveSettings(next) } })),
+      ...tabs.map(tab => ({ id: `tab:${tab.id}`, title: tab.title, description: `Switch to ${tab.view} tab`, group: 'Tabs' as const, run: () => setActiveTabId(tab.id) })),
+      ...(activeTab?.view === 'editor' ? [] : HOTKEY_DEFINITIONS.map(command => ({ id: `workspace:${command.key}`, title: command.label, description: command.description, shortcut: settings.hotkeys[command.key], group: 'Commands' as const, disabled: 'Open a captured project first', run: () => {} }))),
+    ],
+    search: async (query, signal, options) => {
+      const owner = localStorage.getItem('parity_account_owner_key')
+      if (!paletteData.current) paletteData.current = (async () => {
+        const [projects, ticketState] = await Promise.all([window.electronAPI.getProjects(), owner ? window.electronAPI.ticketsList().catch(() => null) : null])
+        if (owner !== localStorage.getItem('parity_account_owner_key')) return []
+        let folders: ProjectFolder[] = []
+        try { folders = JSON.parse(localStorage.getItem('qa_project_folders') || '[]') } catch {}
+        const guard = (run: () => void) => { if (owner !== localStorage.getItem('parity_account_owner_key')) throw new Error('Account changed. Search again.'); run() }
+        return workspaceItems({ projects, folders, tickets: ticketState?.ownerKey === owner ? ticketState.records.map(record => record.ticket) : [], notes: getPaletteNotes(owner) }, {
+          project: project => guard(() => handleOpenProject(project)),
+          folder: folder => guard(() => openSearchTab('dashboard', { dashboardFolderId: folder.id, title: folder.name, dashboardFolderName: folder.name })),
+          ticket: ticket => guard(() => openSearchTab('dashboard', { initialTicketId: ticket.id })),
+          note: note => guard(() => openSearchTab('notes', { initialNoteId: note.id })),
+        })
+      })()
+      const items = await paletteData.current
+      if (signal.aborted || owner !== localStorage.getItem('parity_account_owner_key')) return { items: [] }
+      return rankItemsAsync(options.group === 'All' ? items : items.filter(item => item.group === options.group), query, signal, options.limit)
+    },
+    release: () => { paletteData.current = null },
+  })
 
   const persistTabHtml = (tabId: string, mountedSnapshotKey: number, updatedHtml: string) => {
     // Reject an iframe's transient about:blank document. Persisting that value
@@ -647,7 +765,7 @@ export default function App() {
                   key={t.id}
                   className={`app-tab-item ${isActive ? 'active' : ''}`}
                   onClick={() => setActiveTabId(t.id)}
-                  title={t.title}
+                  title={t.dashboardFolderPath ? `Dashboard / ${t.dashboardFolderPath}` : t.title}
                 >
                   <span className="app-tab-title">{t.title}</span>
                   <button
@@ -706,19 +824,21 @@ export default function App() {
           <svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v5h5M9 12h7M9 16h7"/></svg><span>Notes</span>
         </button>
         <div className="app-activity-spacer" />
+        <button onClick={() => window.dispatchEvent(new Event('parity:open-palette'))} title="Search and commands (Ctrl+Shift+F)" aria-label="Search and commands"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><span>Search and commands</span></button>
         <button onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7L10.5 2h-3l-.7 2.3-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2.3.7v3l2.3.7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2.3h3l.7-2.3 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7z"/></svg><span>Settings</span></button>
         <button className={activityBarPinned ? 'pinned' : ''} onClick={toggleActivityBarPin} title={activityBarPinned ? 'Auto-hide sidebar' : 'Keep sidebar visible'} aria-label={activityBarPinned ? 'Auto-hide sidebar' : 'Keep sidebar visible'}><svg viewBox="0 0 24 24"><path d="M8 4h8l-1 6 3 3H6l3-3zM12 13v8"/></svg><span>{activityBarPinned ? 'Auto-hide' : 'Pin sidebar'}</span></button>
       </aside>
 
       {/* Tab Workspaces Render Area */}
       <div className="app-workspace-host">
-        {activeTab && (
+        {accountReady && activeTab && (
           <div key={activeTab.id} style={{ height: '100%', width: '100%' }}>
             {activeTab.view === 'editor' && activeTab.snapshotHtml ? (
               <EditorWorkspace
                 key={`${activeTab.id}:${activeTab.snapshotKey}`}
                 html={activeTab.snapshotHtml}
                 sourceUrl={activeTab.captureUrl}
+                auditContext={activeTab.auditContext}
                 hotkeys={settings.hotkeys}
                 project={activeTab.activeProject}
                 onReset={handleReset}
@@ -732,13 +852,16 @@ export default function App() {
                 onNavigateCapture={handleWorkspaceNavigate}
               />
             ) : activeTab.view === 'notes' ? (
-              <NotesWorkspace onOpenDashboard={() => openUtilityView('dashboard')} />
+              <NotesWorkspace initialNoteId={activeTab.initialNoteId} onOpenDashboard={() => openUtilityView('dashboard')} />
             ) : (
               <>
                 <Dashboard
                   onNewProject={handleNewProject}
                   onOpenProject={handleOpenProject}
                   onOpenSettings={() => setSettingsOpen(true)}
+                  initialFolderId={activeTab.dashboardFolderId}
+                  initialTicketId={activeTab.initialTicketId}
+                  onFolderChange={handleDashboardFolderChange}
                 />
                 {activeTab.view === 'capture' && (
                   <CaptureScreen
@@ -761,6 +884,7 @@ export default function App() {
       </div>
 
       {/* Global Settings Modal */}
+      <CommandPalette scopeKey={`${viewOwner}:${activeTab?.id}:${activeTab?.workspaceTab}:${activeTab?.snapshotKey}`} />
       <SettingsModal
         isOpen={settingsOpen}
         settings={settings}

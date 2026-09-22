@@ -6,26 +6,38 @@ let pendingPatch: Partial<ParityAccountState> = {}
 let saveTimer: number | null = null
 let syncReady = false
 
+let generation = 0
+const owner = () => localStorage.getItem('parity_account_owner_key')
+const pendingKey = (key: string) => 'parity_pending_state:' + key
 function scheduleSave(): void {
-  if (!syncReady || saveTimer !== null || !Object.keys(pendingPatch).length) return
+  const ownerKey = owner()
+  if (!syncReady || !ownerKey || saveTimer !== null || !Object.keys(pendingPatch).length) return
   saveTimer = window.setTimeout(async () => {
+    const currentGeneration = generation
     const payload = pendingPatch
     pendingPatch = {}
     saveTimer = null
-    const result = await window.electronAPI.accountSaveState(payload)
+    const result = await window.electronAPI.accountSaveState(payload, ownerKey).catch(error => ({ success: false, error: String(error) }))
+    if (generation !== currentGeneration || owner() !== ownerKey) return
     if (!result.success) {
       pendingPatch = { ...payload, ...pendingPatch }
       window.dispatchEvent(new CustomEvent('parity:account-sync-error', { detail: result.error }))
     }
+    localStorage.setItem(pendingKey(ownerKey), JSON.stringify(pendingPatch))
+    if (!result.success) saveTimer = window.setTimeout(() => { saveTimer = null; scheduleSave() }, 30000)
+    else scheduleSave()
   }, 650)
 }
 
 export function setAccountStateSyncReady(ready: boolean, discardPending = false): void {
   syncReady = ready
+  ++generation
+  if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null }
   if (discardPending) pendingPatch = {}
-  if (!ready && saveTimer !== null) {
-    window.clearTimeout(saveTimer)
-    saveTimer = null
+  const ownerKey = owner()
+  if (ready && ownerKey) {
+    try { pendingPatch = { ...JSON.parse(localStorage.getItem(pendingKey(ownerKey)) || '{}'), ...pendingPatch } } catch {}
+    applyCloudAccountState(pendingPatch)
   }
   scheduleSave()
 }
@@ -87,7 +99,9 @@ export function applyCloudAccountState(state: ParityAccountState): AppSettings {
 }
 
 export function queueAccountStateSave(patch: Partial<ParityAccountState>): void {
+  if (!syncReady || !owner()) return
   pendingPatch = { ...pendingPatch, ...patch }
+  localStorage.setItem(pendingKey(owner()!), JSON.stringify(pendingPatch))
   if (saveTimer !== null) window.clearTimeout(saveTimer)
   saveTimer = null
   scheduleSave()

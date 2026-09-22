@@ -9,6 +9,7 @@ import React, {
   useMemo,
 } from "react";
 import type { AppHotkeys, FigmaConnectionStatus, Project, ProjectAutomateState, SnapshotItem } from "../../../shared/types";
+import type { AuditCaptureContext } from "../../../shared/auditExport";
 import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
@@ -30,8 +31,11 @@ import {
 import { toggleCanvasDuplicates } from "../utils/seoCanvasOverlay";
 import figmaIcon from "../assets/figma.png";
 import mondayIcon from "../assets/monday-icon-svgrepo-com.svg";
-import { fetchMondayTicketsApi, type MondayTicket } from "../utils/mondayApi";
-import { DEFAULT_HOTKEYS, readThemeAccentColor } from "../theme/themeSystem";
+import { listIntakeTickets } from "../services/ticketService";
+import type { IntakeTicket as MondayTicket } from "../../../shared/tickets";
+import { DEFAULT_HOTKEYS, HOTKEY_DEFINITIONS, readThemeAccentColor } from "../theme/themeSystem";
+import { usePaletteProvider, rankItems, type PaletteItem } from "../palette/registry";
+import { pageSearch, pageSearchExpression, pageBatch, type PageSearchRequest, type PageSearchResponse } from "../palette/pageSearch";
 import { nextCanvasZoomFromWheel } from "../utils/canvasZoom";
 import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { findHotkeyCommand, isEditableHotkeyTarget, matchesHotkey, normalizeHotkey } from "../utils/hotkeys";
@@ -184,6 +188,7 @@ function getGoogleSheetsEmbedUrl(rawUrl: string): string {
 interface Props {
   html: string;
   sourceUrl: string;
+  auditContext?: AuditCaptureContext | null;
   hotkeys?: AppHotkeys;
   project?: Project | null;
   onReset: () => void;
@@ -709,6 +714,7 @@ function serializeWorkspaceHtml(doc: Document): string {
 export default function EditorWorkspace({
   html,
   sourceUrl,
+  auditContext,
   project,
   onReset,
   onNewCapture,
@@ -1470,39 +1476,10 @@ export default function EditorWorkspace({
   const googleSheetInputRef = useRef<HTMLInputElement>(null);
 
   const loadMondayTicketsForPicker = async () => {
-    let hasCached = false;
-    const cached = localStorage.getItem("qa_cached_monday_tickets");
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMondayTicketsList(parsed);
-          hasCached = true;
-        }
-      } catch (_) {}
-    }
-
-    if (!hasCached) {
-      setLoadingMondayTickets(true);
-    }
-
-    try {
-      const status = await window.electronAPI.mondayStatus();
-      if (status.connected) {
-        const fetched = await fetchMondayTicketsApi();
-        if (fetched && fetched.length > 0) {
-          setMondayTicketsList(fetched);
-          localStorage.setItem(
-            "qa_cached_monday_tickets",
-            JSON.stringify(fetched),
-          );
-        }
-      }
-    } catch (e) {
-      console.warn("[MondayPicker] Error fetching tickets:", e);
-    } finally {
-      setLoadingMondayTickets(false);
-    }
+    setLoadingMondayTickets(true);
+    try { setMondayTicketsList(await listIntakeTickets()); }
+    catch { setMondayTicketsList([]); }
+    finally { setLoadingMondayTickets(false); }
   };
 
   const openMondayTicketPicker = (target: "mastersheet" | "figma") => {
@@ -3313,6 +3290,11 @@ export default function EditorWorkspace({
 
     // Hotkey handler inside native iframe: Ctrl+A, Spacebar panning, and Undo/Redo
     const handleIframeKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        window.dispatchEvent(new Event('parity:open-palette'));
+        return;
+      }
       const isEditable = isEditableHotkeyTarget(e.target);
       const command = findHotkeyCommand(e, hotkeysRef.current);
 
@@ -4027,6 +4009,7 @@ export default function EditorWorkspace({
   useEffect(() => {
     if (typeof window.electronAPI?.onGlobalEscape === "function") {
       const handleEscape = () => {
+        if (document.querySelector('.command-palette-overlay')) return;
         if (document.querySelector(".settings-modal-overlay")) return;
         if (normalizeHotkey(hotkeysRef.current.deselect) !== "Escape") return;
         if (isEditableHotkeyTarget(document.activeElement)) return;
@@ -5832,6 +5815,65 @@ export default function EditorWorkspace({
   };
   hotkeyCommandRef.current = executeHotkeyCommand;
 
+  const searchActivePage = async (request: PageSearchRequest) => {
+    if (workspaceTab === 'editBeta') {
+      if (!editBetaRef.current) throw new Error('The Edit page is not ready.');
+      return editBetaRef.current.searchPage(request);
+    }
+    if (workspaceTab === 'live') {
+      if (!liveWebviewRef.current) throw new Error('The Live page is not ready.');
+      return liveWebviewRef.current.executeJavaScript(pageSearchExpression(request), true);
+    }
+    const doc = liveIframeRef.current?.contentDocument;
+    if (!doc) throw new Error('The captured document is not ready.');
+    return pageSearch(doc, request);
+  };
+  usePaletteProvider({
+    id: 'editor', label: 'Active page',
+    commands: () => {
+      const disabledFor = (key: keyof AppHotkeys): string | undefined => {
+        if (key === 'panMode') return 'Hold Space and drag the canvas';
+        if (key.startsWith('annotation') && (!annotationsAvailable || !isAnnotateActive)) return 'Enable Annotate first';
+        if (key === 'toggleAnnotate' && !annotationsAvailable) return 'Annotations are unavailable in this workspace';
+        if (key === 'toggleRecording' && workspaceTab !== 'editBeta') return 'Open Edit to record changes';
+        if ((key === 'undo' || key === 'redo') && !['editBeta', 'layout', 'audit'].includes(workspaceTab)) return 'Open Edit or Audit to use history';
+        if (key.startsWith('toggle') && key.endsWith('Panel') && workspaceTab === 'automate') return 'These panels are unavailable in Automate';
+        if (key === 'generateItems' && isCapturingFullsite) return 'Capture is already running';
+      };
+      const items: PaletteItem[] = HOTKEY_DEFINITIONS.map(command => ({
+        id: `workspace:${command.key}`, title: command.label, description: `${command.group} · ${command.description}`,
+        group: 'Commands', shortcut: hotkeys[command.key], disabled: disabledFor(command.key),
+        run: () => { if (!hotkeyCommandRef.current(command.key)) throw new Error('This command is unavailable in the current workspace.'); },
+      }));
+      const add = (id: string, title: string, run: () => void | Promise<void>, disabled?: string) => items.push({ id, title, group: 'Commands', description: 'Workspace', run, disabled });
+      add('viewport.pin', viewportIslandPinned ? 'Unlock viewport toolbar' : 'Lock viewport toolbar', () => setViewportIslandPinned(value => !value));
+      add('page.reload', 'Reload active preview', () => workspaceTab === 'editBeta' ? editBetaRef.current?.reload() : handleLiveReload());
+      add('page.animations', 'Reveal animations and hidden headings', toggleRevealAnimations);
+      add('page.fonts', 'Load missing fonts', handleLoadFonts);
+      add('snapshot.image', 'Save image snapshot', () => handleCreateSnapshot('image'));
+      add('snapshot.html', 'Save HTML snapshot', () => handleCreateSnapshot('html'));
+      add('snapshot.breakpoints', 'Capture multiple breakpoints', handleCaptureMultiBreakpoints);
+      add('figma.open', 'Open Figma comparison', handleFigmaButtonClick);
+      add('viewport.free', 'Free transform viewport', enterFreeMode);
+      return items;
+    },
+    search: async (query, signal, options) => {
+      if (workspaceTab === 'automate') return { items: [] };
+      if (!['All', 'Page', 'Files', 'Annotations'].includes(options.group)) return { items: [] };
+      const kind = options.group === 'Page' || options.group === 'Files' ? options.group : undefined;
+      const result = options.group === 'Annotations' ? { token: '', matches: [], total: 0 } : await searchActivePage({ action: 'search', query, limit: options.limit, kind }) as PageSearchResponse;
+      if (signal.aborted) return { items: [] };
+      const batch = pageBatch(result, (token, id) => searchActivePage({ action: 'reveal', token, id }));
+      const annotations = rankItems((['All', 'Annotations'].includes(options.group) ? liveAnnotations : []).map(annotation => ({ id: `active-annotation:${annotation.id}`, title: annotation.title || `Annotation ${annotation.badgeNumber}`, description: plainTextFromRichText(annotation.notes || ''), group: 'Annotations', run: () => handleSelectWorkspaceAnnotation(annotation) })), query, options.limit);
+      const assets = rankItems((['All', 'Files'].includes(options.group) ? auditContext?.resources || [] : []).map((resource, index) => ({ id: `captured-resource:${index}`, title: resource.url.split('/').pop() || resource.url, description: resource.url, keywords: `${resource.kind} ${resource.source}`, group: 'Files', run: async () => {
+        if (!/^https?:\/\//i.test(resource.url)) throw new Error('This captured resource does not have an HTTP URL. Use Audit Downloads.');
+        await window.electronAPI.openExternal(resource.url);
+      } })), query, options.limit);
+      return { items: [...batch.items, ...annotations.items, ...assets.items], total: (batch.total || 0) + (annotations.total || 0) + (assets.total || 0), warning: batch.warning };
+    },
+    release: () => { if (workspaceTab !== 'automate') void searchActivePage({ action: 'release' }).catch(() => {}); },
+  });
+
   useEffect(() => {
     const activatePanHotkey = (code: string) => {
       panHotkeyCodeRef.current = code;
@@ -5864,7 +5906,7 @@ export default function EditorWorkspace({
     const onKeyDown = (event: KeyboardEvent) => {
       // Settings owns keyboard input while open so existing shortcuts can be
       // captured and rebound instead of firing against the workspace behind it.
-      if (document.querySelector(".settings-modal-overlay")) return;
+      if (document.querySelector(".settings-modal-overlay, .command-palette-overlay")) return;
       const command = findHotkeyCommand(event, hotkeysRef.current);
       if (!command) return;
       if (isEditableHotkeyTarget(event.target) && command !== "quickSave") return;
@@ -6925,9 +6967,9 @@ export default function EditorWorkspace({
                     setViewportIslandPinned((pinned) => !pinned);
                     if (viewportIslandPinned && event.detail > 0) event.currentTarget.blur();
                   }}
-                  aria-label={viewportIslandPinned ? "Enable viewport controls auto-hide" : "Keep viewport controls visible"}
+                  aria-label={viewportIslandPinned ? "Viewport controls locked. Enable auto-hide" : "Lock viewport controls in place"}
                   aria-pressed={viewportIslandPinned}
-                  title={viewportIslandPinned ? "Unpin viewport controls" : "Pin viewport controls"}
+                  title={viewportIslandPinned ? "Locked in place — click to enable auto-hide" : "Lock viewport controls in place"}
                 >
                   <svg
                     width="12"
@@ -11259,7 +11301,7 @@ export default function EditorWorkspace({
                               height="14"
                               style={{ objectFit: "contain" }}
                             />
-                            <span>Add from Monday Ticket</span>
+                            <span>Add from ticket</span>
                           </button>
                         </div>
                       </div>
@@ -11566,6 +11608,7 @@ export default function EditorWorkspace({
                   <SeoAuditRightPanel
                     html={html}
                     sourceUrl={sourceUrl}
+                    auditContext={auditContext}
                     editor={editorRef.current}
                      selectedComponent={selectedComponent}
                      canvasZoom={zoom}
@@ -11689,7 +11732,7 @@ export default function EditorWorkspace({
                   />
                 </div>
                 <div>
-                  <h3>Select Monday.com Ticket</h3>
+                  <h3>Select ticket</h3>
                   <p>
                     Pull{" "}
                     {mondayPickerTarget === "mastersheet"
@@ -11777,7 +11820,7 @@ export default function EditorWorkspace({
                     fontSize: 12,
                   }}
                 >
-                  Loading Monday tickets...
+                  Loading tickets...
                 </div>
               ) : filteredMondayTickets.length === 0 ? (
                 <div
@@ -11790,7 +11833,7 @@ export default function EditorWorkspace({
                 >
                   {mondaySearchQuery
                     ? `No tickets matching "${mondaySearchQuery}"`
-                    : "No Monday tickets found. Make sure you are logged into Monday.com on the Dashboard."}
+                    : "No tickets found. Sign in to Parity and add tickets on the Dashboard."}
                 </div>
               ) : (
                 filteredMondayTickets.map((ticket) => {
@@ -11934,7 +11977,7 @@ export default function EditorWorkspace({
                 </div>
                 <div>
                   <h3>Figma Reference</h3>
-                  <p>Attach live app URL, local PNG, or pull from Monday.com</p>
+                  <p>Attach a live app URL, local PNG, or a ticket resource</p>
                 </div>
               </div>
               <button
@@ -11998,7 +12041,7 @@ export default function EditorWorkspace({
                   height="14"
                   style={{ objectFit: "contain" }}
                 />
-                <span>Monday Ticket</span>
+                <span>Ticket</span>
               </button>
             </div>
 
@@ -12230,7 +12273,7 @@ export default function EditorWorkspace({
                         fontSize: 11,
                       }}
                     >
-                      Loading Monday tickets...
+                      Loading tickets...
                     </div>
                   ) : filteredMondayTickets.length === 0 ? (
                     <div
@@ -12243,7 +12286,7 @@ export default function EditorWorkspace({
                     >
                       {mondaySearchQuery
                         ? `No tickets matching "${mondaySearchQuery}"`
-                        : "No Monday tickets found with Figma links"}
+                        : "No tickets found with Figma links"}
                     </div>
                   ) : (
                     filteredMondayTickets.map((t) => {

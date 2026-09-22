@@ -195,6 +195,86 @@
   flex-shrink: 0;
 }
 
+.seo-downloads-bar {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.seo-download-btn.busy svg {
+  animation: seo-download-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.seo-download-btn:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.seo-export-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.seo-export-status.review {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.seo-export-status.complete {
+  border-color: color-mix(in srgb, var(--accent-color) 50%, var(--border-color));
+}
+
+.seo-export-status.error,
+.seo-export-status.partial,
+.seo-export-warning {
+  color: var(--text-secondary);
+}
+
+.seo-export-current {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  color: var(--text-muted);
+}
+
+.seo-export-status button,
+.seo-export-actions button {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.seo-export-status button:hover,
+.seo-export-actions button:hover {
+  border-color: var(--accent-color);
+}
+
+.seo-export-actions {
+  display: flex;
+  gap: 6px;
+}
+
+@keyframes seo-download-pulse {
+  from { opacity: 0.35; transform: translateY(1px); }
+  to { opacity: 1; transform: translateY(-1px); }
+}
+
 @media (max-width: 420px) {
   .seo-toggle-btn-group {
     gap: 4px;

@@ -3,6 +3,8 @@ import type { AppHotkeys, AppSettings, AppTheme } from '../../../shared/types'
 import { THEME_LIST, saveSettings, DEFAULT_HOTKEYS, HOTKEY_DEFINITIONS } from '../theme/themeSystem'
 import { findHotkeyConflicts, hotkeyFromEvent, isReservedHotkey, normalizeHotkey } from '../utils/hotkeys'
 import './SettingsModal.css'
+import AccountPanel from './AccountPanel'
+import MondayIntegration from './MondayIntegration'
 
 interface Props {
   isOpen: boolean
@@ -11,7 +13,7 @@ interface Props {
   onSave: (newSettings: AppSettings) => void
 }
 
-type TabType = 'general' | 'hotkeys' | 'appearance' | 'integrations'
+type TabType = 'account' | 'general' | 'hotkeys' | 'appearance' | 'integrations'
 
 export default function SettingsModal({ isOpen, settings, onClose, onSave }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>('general')
@@ -27,6 +29,19 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
   useEffect(() => {
     setFormSettings(settings)
   }, [settings, isOpen])
+
+  useEffect(() => {
+    const account = () => setActiveTab('account')
+    const section = (event: Event) => {
+      const value = (event as CustomEvent).detail
+      if (['account', 'general', 'hotkeys', 'appearance', 'integrations'].includes(value)) setActiveTab(value)
+    }
+    window.addEventListener('parity:settings-section', section)
+    const integrations = () => setActiveTab('integrations')
+    window.addEventListener('parity:open-account', account)
+    window.addEventListener('parity:open-integrations', integrations)
+    return () => { window.removeEventListener('parity:settings-section', section); window.removeEventListener('parity:open-account', account); window.removeEventListener('parity:open-integrations', integrations) }
+  }, [])
 
   if (!isOpen) return null
 
@@ -129,6 +144,13 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
         <div className="settings-body">
           {/* Sidebar */}
           <div className="settings-sidebar">
+            <button className={`settings-nav-btn ${activeTab === 'account' ? 'active' : ''}`} onClick={() => setActiveTab('account')}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21a8 8 0 0 1 16 0" />
+              </svg>
+              <span>Account</span>
+            </button>
             <button
               className={`settings-nav-btn ${activeTab === 'general' ? 'active' : ''}`}
               onClick={() => setActiveTab('general')}
@@ -172,6 +194,7 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
 
           {/* Panel Content */}
           <div className="settings-content-panel">
+            {activeTab === 'account' && <AccountPanel />}
             {activeTab === 'general' && (
               <div className="settings-tab-section">
                 <div className="settings-section-heading">Snapshot Storage Directory</div>
@@ -301,7 +324,8 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
 
             {activeTab === 'integrations' && (
               <div className="settings-tab-section">
-                <div className="settings-section-heading">Monday.com & Capture Options</div>
+                <MondayIntegration />
+                <div className="settings-section-heading">Ticket refresh & Capture Options</div>
                 <div className="settings-field-group">
                   <div className="settings-field-label">Monday Sync Interval</div>
                   <div className="settings-field-desc">Frequency to fetch updated QA tickets from Monday.com</div>

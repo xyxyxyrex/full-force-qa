@@ -1,7 +1,16 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
+import type { InspectorApi } from './inspector'
+import type {
+  AuditCaptureContext,
+  AuditExportProgress,
+  AuditExportResult,
+  AuditExportScanRequest,
+  AuditExportScanResult
+} from './auditExport'
 export interface CaptureResult {
   success: boolean
   html?: string
+  auditContext?: AuditCaptureContext
   error?: string
   is404?: boolean
   isSessionExpired?: boolean
@@ -53,6 +62,8 @@ export interface ProjectWorkspaceData {
 }
 
 export interface Project {
+  /** Local IPC ownership guard; excluded from cloud documents. */
+  localOwnerKey?: string | null
   id: string
   name: string
   adminUrl: string
@@ -66,6 +77,7 @@ export interface Project {
   deletedAt?: number
   folderId?: string
   mondayTicketId?: string
+  ticketRef?: TicketSourceRef
   workspaceData?: ProjectWorkspaceData
   updatedAt?: number
 }
@@ -79,9 +91,64 @@ export interface ProjectFolder {
 
 export interface ParityAccountUser {
   ownerKey: string
-  mondayUserId: string
+  authUserId?: string
+  mondayUserId?: string
   name: string
   email?: string
+}
+
+export interface AccountStatus {
+  signedIn: boolean
+  needsSetup: boolean
+  email?: string
+  user?: ParityAccountUser
+  error?: string
+}
+
+export type TicketProvider = 'monday' | 'opsmosis' | 'manual'
+export type TicketQaStatus = 'To review' | 'In review' | 'Needs fixes' | 'Verified'
+export interface TicketSourceRef {
+  provider: TicketProvider
+  connectionId: string
+  externalId: string
+  url?: string
+  aliases?: string[]
+}
+export interface TicketProgress { active: boolean; qaStatus: TicketQaStatus }
+export interface TicketResources {
+  stagingUrl: string
+  adminUrl: string
+  figmaUrl?: string
+  googleSheetUrl?: string
+  otherLinks: Array<{ url: string; label: string }>
+}
+export interface Ticket {
+  id: string
+  source: TicketSourceRef
+  title: string
+  description: string
+  sourceStatus: string
+  sourceGroup: string
+  assignees: Array<{ id: string; name: string }>
+  resources: TicketResources
+  progress: TicketProgress
+  archived: boolean
+  createdAt: number
+  updatedAt: number
+  sourceUpdatedAt?: string
+}
+export interface TicketRecord {
+  ticket: Ticket
+  revision: number
+  pending: boolean
+  conflict?: { ticket: Ticket; revision: number }
+}
+export interface TicketStoreSnapshot {
+  ownerKey: string
+  records: TicketRecord[]
+  lastRefreshAt?: number
+  refreshError?: string
+  syncError?: string
 }
 
 export interface ParityAccountState {
@@ -321,7 +388,18 @@ export interface ResourceFileSizeResult {
   contentType?: string
 }
 
-export interface ElectronAPI {
+export interface ElectronAPI extends InspectorApi {
+  accountStatus: () => Promise<AccountStatus>
+  accountLoginGoogle: () => Promise<AccountStatus>
+  accountInitialize: (mode: 'new' | 'monday') => Promise<AccountStatus>
+  accountSignOut: () => Promise<void>
+  onAccountChanged: (callback: () => void) => () => void
+  ticketsList: () => Promise<TicketStoreSnapshot>
+  ticketsSave: (ticket: Ticket, ownerKey: string) => Promise<TicketStoreSnapshot>
+  ticketsSync: () => Promise<TicketStoreSnapshot>
+  ticketsImportMonday: (tickets: Ticket[], connectionId: string, ownerKey: string) => Promise<TicketStoreSnapshot>
+  ticketsRefreshFailed: (message: string, ownerKey: string) => Promise<void>
+  ticketsResolve: (id: string, choice: 'local' | 'remote', ownerKey: string) => Promise<TicketStoreSnapshot>
   login: (adminUrl: string) => Promise<void>
   mondayLogin: (config: MondayPublicConfig) => Promise<{ success: boolean; status?: MondayConnectionStatus; error?: string }>
   mondayStatus: () => Promise<MondayConnectionStatus>
@@ -329,19 +407,26 @@ export interface ElectronAPI {
   mondayDisconnect: (config?: MondayPublicConfig) => Promise<{ success: boolean; error?: string }>
   mondayGraphQL: (query: string, variables?: Record<string, unknown>) => Promise<any>
   accountBootstrap: () => Promise<ParityAccountBootstrap>
-  accountSaveState: (data: Partial<ParityAccountState>) => Promise<{ success: boolean; updatedAt?: string; error?: string }>
-  accountSaveNote: (note: NoteDocument) => Promise<{ success: boolean; updatedAt?: string; error?: string }>
-  accountDeleteNote: (noteId: string) => Promise<{ success: boolean; error?: string }>
-  saveNoteAttachment: (input: { dataUrl: string; name: string }) => Promise<{ success: boolean; attachment?: NoteAttachment; error?: string }>
-  deleteNoteAttachments: (attachmentIds: string[]) => Promise<{ success: boolean; error?: string }>
+  accountSaveState: (data: Partial<ParityAccountState>, ownerKey: string) => Promise<{ success: boolean; updatedAt?: string; error?: string }>
+  accountSaveNote: (note: NoteDocument, ownerKey: string) => Promise<{ success: boolean; updatedAt?: string; error?: string }>
+  accountDeleteNote: (noteId: string, ownerKey: string) => Promise<{ success: boolean; error?: string }>
+  saveNoteAttachment: (input: { dataUrl: string; name: string }, ownerKey: string) => Promise<{ success: boolean; attachment?: NoteAttachment; error?: string }>
+  deleteNoteAttachments: (attachmentIds: string[], ownerKey: string) => Promise<{ success: boolean; error?: string }>
   openNoteAttachment: (uri: string) => Promise<{ success: boolean; error?: string }>
   capture: (url: string) => Promise<CaptureResult>
   getProjects: () => Promise<Project[]>
-  saveProject: (project: Project) => Promise<void>
-  deleteProject: (id: string) => Promise<void>
+  saveProject: (project: Project, ownerKey?: string | null) => Promise<void>
+  deleteProject: (id: string, ownerKey?: string | null) => Promise<void>
   loadWorkspaceHtml: (tabId: string) => Promise<string | null>
   saveWorkspaceHtml: (tabId: string, html: string) => Promise<void>
   deleteWorkspaceHtml: (tabId: string) => Promise<void>
+  loadWorkspaceAuditContext: (tabId: string) => Promise<AuditCaptureContext | null>
+  saveWorkspaceAuditContext: (tabId: string, context: AuditCaptureContext) => Promise<void>
+  scanAuditExport: (request: AuditExportScanRequest) => Promise<AuditExportScanResult>
+  startAuditExport: (planId: string) => Promise<AuditExportResult>
+  cancelAuditExport: (jobId: string) => Promise<{ success: boolean }>
+  openAuditExportFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
+  onAuditExportProgress: (callback: (progress: AuditExportProgress) => void) => () => void
   clearCache: () => Promise<{ success: boolean }>
   getResourceFileSizes: (urls: string[], refererUrl?: string) => Promise<ResourceFileSizeResult[]>
   openExternal: (url: string) => Promise<void>
@@ -377,5 +462,6 @@ export interface ElectronAPI {
   installUpdate: () => Promise<{ success: boolean; error?: string }>
   onUpdateStatus: (callback: (status: AppUpdateStatus) => void) => () => void
   onGlobalEscape: (callback: () => void) => () => void
+  onOpenCommandPalette: (callback: () => void) => () => void
 }
 

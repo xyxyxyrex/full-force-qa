@@ -15,3 +15,4 @@ resources/visual-worker/visual-compare*
 *.7z
 tsconfig.node.tsbuildinfo
 .worktrees/
+supabase/.temp/

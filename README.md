@@ -19,8 +19,10 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 - **Project management**: Create or edit projects with staging, admin, Figma, Google Sheets, and Monday ticket references. Browse nested folders as a familiar grid, drag projects or folders between locations, rubber-band multi-select items for bulk moves or guarded deletion, pin important work, search and sort, switch between card and list views, and move projects through a recoverable trash workflow. Folder hierarchy and placement are included in account sync.
 - **Capture intake**: Add a project and all of its references immediately without waiting for Chromium capture, assign an optional display name, create it directly inside the current folder, or populate individual staging, Figma, and QA fields from Monday using compact inline pickers. Capture remains available when page content is needed.
 - **Monday.com integration**: OAuth 2.1 with PKCE identifies the current user, stores desktop credentials with Electron `safeStorage`, refreshes credentials automatically, and supports editable board and assignee sources. An encrypted personal API token remains available as an advanced fallback.
-- **Monday work queue**: Fetches and groups tickets, filters by board, status, or search text, detects attached staging/admin/Figma/Sheets resources, and can create or update a Parity project from a ticket.
-- **Account state sync**: A Supabase Edge Function verifies Monday identity and isolates each user's settings, folders, pinned projects, project metadata, and notes.
+- **Shared ticket queue**: Fetch Monday tickets or enter Opsmosis and generic tickets manually. Filter by provider, source group/status and private QA status, review extracted resource links, and link multiple page projects to a ticket. Local pending changes and revision conflicts survive restarts.
+- **Independent Parity accounts**: Sign in with Google through Supabase Auth. Existing users can restore their Monday workspace with fresh Monday identity verification. Notes, settings, folders, projects and tickets stay private to the active account; disconnecting Monday does not sign out of Parity. See [account setup and restoration](docs/independent-accounts-and-tickets.md).
+- **Command palette**: Press `Ctrl+Shift+F` to search commands, workspace records and the active page. Enter `>` for commands. See [search scope and keyboard controls](docs/COMMAND_PALETTE.md).
+- **Folder tabs**: Tabs display the current folder and preserve navigation when switching between them.
 - **Figma connection**: Maintains a reusable in-app browser session and an encrypted REST API token for Live and Automate workflows.
 
 ### Private Notes
@@ -41,9 +43,9 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 
 ### 2. Edit Workspace (`editBeta`)
 - **Left Panel**:
-  - **DOM Layer Tree**: Parses and renders the iframe DOM node hierarchy for layer selection, visibility toggling, and component isolation.
-  - **CSS Inspector & Editor**: Reads and directly edits authored stylesheets with selector context, formatting, and live application to the page.
-  - **History Stack**: Tracks local DOM and CSS patches with undo (`Ctrl+Z`), redo (`Ctrl+Y`), quick save, and revert-all controls.
+  - **DOM Layer Tree**: Uses Chromium node identities to show actual tags and full attributes, author shadow roots and iframe boundaries, with lazy expansion, search and selection highlighting.
+  - **CSS Inspector & Editor**: Rules, Computed and Layout tabs expose matched selectors, declarations, source locations, pseudo-states and box models. Stylesheet edits affect matching elements in the active preview.
+  - **Temporary History**: Tracks DOM and CSS changes with undo/redo. Edits stay with the mounted preview and reset on reload; saved annotations and explicit recordings remain separate.
 - **Right Panel (`NativeStylePanel.tsx`)**:
   - **Typography Controls**: Font family selection, numeric font weights (100–900), font size, line height, letter spacing, text color hex picker, text alignment, text decoration, and text transform.
   - **Layout Controls**: Detects block, flexbox, and grid containers and edits direction, wrapping, distribution, alignment, row gap, and column gap. An optional flex/grid overlay visualizes the selected container on the active viewport.
@@ -72,6 +74,7 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 - **Grammar & Spell Checking (`grammarSpellAudit.ts`)**:
   - Integrates `harper.js` and `nspell` (Hunspell English dictionary) to parse rendered text nodes, locate spelling and grammar issues, show suggested corrections, and ignore individual findings.
 - **Visual Canvas Overlays**: Shows links, image alt text, button targets, headings, grammar/spelling findings, and downloaded media file sizes directly on the audited page.
+- **Audit Downloads**: Export images, text, links, SEO/data, assets or a complete bundle from the saved capture. Choose a destination folder and follow progress, cancellation and per-file outcomes in the generated manifests; legacy captures report partial coverage.
 - **Overlay Display Modes**: Each overlay cycles independently through off, show on hover, show on click for multi-selection, and show all. Overlay labels scale responsively with canvas zoom.
 - **Reporting**: Copies a Markdown audit summary or exports the structured report as JSON.
 

@@ -2,6 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import type { NoteAttachment, NoteDocument, NoteFolder, ParityAccountUser } from '../../../shared/types'
 import { queueAccountStateSave } from '../services/accountStateService'
 import './NotesWorkspace.css'
+import { setPaletteNotes } from '../palette/workspaceSearch'
 
 type NoteFilter = 'active' | 'pinned' | 'archived'
 type NoteSort = 'updated' | 'created' | 'title'
@@ -89,7 +90,7 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: () => void }) {
+export default function NotesWorkspace({ onOpenDashboard, initialNoteId }: { onOpenDashboard: () => void; initialNoteId?: string }) {
   const [notes, setNotes] = useState<NoteDocument[]>([])
   const [folders, setFolders] = useState<NoteFolder[]>(() => {
     try { return JSON.parse(localStorage.getItem('parity_note_folders') || '[]') } catch { return [] }
@@ -113,20 +114,25 @@ export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: (
   const pendingNoteRef = useRef<NoteDocument | null>(null)
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve())
 
+  const ownerRef = useRef<string>('')
+  const loadGeneration = useRef(0)
   const selectedNote = notes.find((note) => note.id === selectedId) || null
 
   const loadNotes = useCallback(async () => {
+    const generation = ++loadGeneration.current
     setLoading(true)
     setError('')
     const result = await window.electronAPI.accountBootstrap()
+    if (generation !== loadGeneration.current) return
     if (!result.connected || !result.user) {
       setUser(null)
       setNotes([])
       setSelectedId('')
-      setError(result.error || 'Connect Monday.com from the Dashboard to use private Notes.')
+      setError(result.error || 'Sign in to Parity in Settings → Account to use private Notes.')
       setLoading(false)
       return
     }
+    ownerRef.current = result.user.ownerKey
     setUser(result.user)
     const remoteNotes = result.notes || []
     setNotes(remoteNotes)
@@ -140,20 +146,33 @@ export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: (
 
   useEffect(() => { void loadNotes() }, [loadNotes])
 
+  useEffect(() => { if (user) setPaletteNotes(user.ownerKey, notes) }, [notes, user])
+  useEffect(() => {
+    if (loading || !initialNoteId) return
+    const note = notes.find(item => item.id === initialNoteId)
+    if (note) { setSelectedId(note.id); setSelectedFolder('all'); setFilter(note.archived ? 'archived' : 'active'); setSearch('') }
+  }, [loading, initialNoteId])
+
   useEffect(() => {
     const reconnect = () => void loadNotes()
     const disconnect = () => {
+      ++loadGeneration.current
+      ownerRef.current = ''
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
+      pendingNoteRef.current = null
       setUser(null)
       setNotes([])
       setFolders([])
       setSelectedId('')
-      setError('Connect Monday.com from the Dashboard to use private Notes.')
+      setError('Sign in to Parity in Settings → Account to use private Notes.')
     }
-    window.addEventListener('parity:monday-connected', reconnect)
-    window.addEventListener('parity:monday-disconnected', disconnect)
+    const unsubscribe = window.electronAPI.onAccountChanged(() => { disconnect(); void loadNotes() })
+    window.addEventListener('parity:account-connected', reconnect)
+    window.addEventListener('parity:account-disconnected', disconnect)
     return () => {
-      window.removeEventListener('parity:monday-connected', reconnect)
-      window.removeEventListener('parity:monday-disconnected', disconnect)
+      unsubscribe()
+      window.removeEventListener('parity:account-connected', reconnect)
+      window.removeEventListener('parity:account-disconnected', disconnect)
     }
   }, [loadNotes])
 
@@ -165,13 +184,16 @@ export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: (
   useEffect(() => () => {
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
     const pending = pendingNoteRef.current
-    if (pending) void saveChainRef.current.catch(() => {}).then(() => window.electronAPI.accountSaveNote(pending))
+    const owner = ownerRef.current
+    ++loadGeneration.current
+    if (pending && owner) void saveChainRef.current.catch(() => {}).then(() => window.electronAPI.accountSaveNote(pending, owner))
   }, [])
 
   const persistNote = useCallback(async (note: NoteDocument) => {
+    const owner = ownerRef.current
     const operation = saveChainRef.current.catch(() => {}).then(async () => {
       setSaveState('saving')
-      const result = await window.electronAPI.accountSaveNote(note)
+      const result = await window.electronAPI.accountSaveNote(note, owner)
       if (!result.success) {
         setSaveState('error')
         setError(result.error || 'Unable to save note.')
@@ -219,10 +241,11 @@ export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: (
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = null
     pendingNoteRef.current = null
+    const owner = ownerRef.current
     await saveChainRef.current.catch(() => {})
-    const result = await window.electronAPI.accountDeleteNote(selectedNote.id)
+    const result = await window.electronAPI.accountDeleteNote(selectedNote.id, owner)
     if (!result.success) { setError(result.error || 'Unable to delete note.'); return }
-    await window.electronAPI.deleteNoteAttachments(selectedNote.attachments.map((attachment) => attachment.id))
+    await window.electronAPI.deleteNoteAttachments(selectedNote.attachments.map((attachment) => attachment.id), owner)
     setNotes((current) => {
       const next = current.filter((note) => note.id !== selectedNote.id)
       setSelectedId(next[0]?.id || '')
@@ -284,13 +307,15 @@ export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: (
 
   const attachFiles = async (files: File[], preferImages: boolean) => {
     if (!selectedNote || !files.length) return
+    const owner = ownerRef.current
     rememberSelection()
     setSaveState('saving')
     const newAttachments: NoteAttachment[] = []
     try {
       for (const file of files) {
         if (preferImages && !file.type.startsWith('image/')) continue
-        const result = await window.electronAPI.saveNoteAttachment({ dataUrl: await fileToDataUrl(file), name: file.name })
+        const result = await window.electronAPI.saveNoteAttachment({ dataUrl: await fileToDataUrl(file), name: file.name }, owner)
+        if (ownerRef.current !== owner) return
         if (!result.success || !result.attachment) throw new Error(result.error || 'Attachment failed.')
         newAttachments.push(result.attachment)
         if (result.attachment.kind === 'image') {
@@ -358,7 +383,7 @@ export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: (
       <div className="notes-folder-spacer"/>
       <button className={filter === 'pinned' ? 'active' : ''} onClick={() => setFilter(filter === 'pinned' ? 'active' : 'pinned')}><Icon name="pin"/>Pinned</button>
       <button className={filter === 'archived' ? 'active' : ''} onClick={() => setFilter(filter === 'archived' ? 'active' : 'archived')}><Icon name="trash"/>Archive</button>
-      {user && <div className="notes-account"><span>{user.name.slice(0, 1).toUpperCase()}</span><div><strong>{user.name}</strong><small>Monday private workspace</small></div></div>}
+      {user && <div className="notes-account"><span>{user.name.slice(0, 1).toUpperCase()}</span><div><strong>{user.name}</strong><small>Private Parity workspace</small></div></div>}
     </aside>
 
     <section className="notes-index">
@@ -378,7 +403,7 @@ export default function NotesWorkspace({ onOpenDashboard }: { onOpenDashboard: (
     </section>
 
     <main className="notes-editor-pane">
-      {!user ? <div className="notes-connection-empty"><Icon name="paperclip"/><h2>Monday account required</h2><p>{error || 'Connect Monday.com to keep your notes private and synchronized.'}</p><button onClick={onOpenDashboard}>Open Dashboard</button></div>
+      {!user ? <div className="notes-connection-empty"><Icon name="paperclip"/><h2>Sign in to Parity</h2><p>{error || 'Sign in to keep your notes private and synchronized.'}</p><button onClick={() => window.dispatchEvent(new Event('parity:open-account'))}>Open Account settings</button></div>
       : !selectedNote ? <div className="notes-connection-empty"><h2>Your notes, organized</h2><p>Create a note to begin. Rich text is stored privately in Supabase; attachments stay on this device.</p><button onClick={() => void createNote()}>Create first note</button></div>
       : <>
         <header className="notes-document-header">

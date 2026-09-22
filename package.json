@@ -1,6 +1,6 @@
 {
   "name": "parity",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
@@ -11,6 +11,10 @@
     "deploy:viewer": "npm run build:viewer && wrangler pages deploy dist-viewer --project-name parity-gfx",
     "preview": "node scripts/electron-dev.js electron-vite preview",
     "test": "vitest run",
+    "test:accounts:database": "node scripts/test-account-database.cjs",
+    "test:accounts:electron": "node scripts/test-account-electron.cjs",
+    "test:inspector:electron": "node scripts/test-inspector-electron.cjs",
+    "test:palette:electron": "node scripts/test-palette-electron.cjs",
     "test:automation:electron": "node scripts/test-automation-electron.cjs",
     "test:watch": "vitest",
     "build:visual-worker": "python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py",
@@ -72,7 +76,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

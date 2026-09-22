@@ -282,7 +282,5 @@ export async function fetchMondayTicketsApi(preferencesOrLegacyToken?: MondaySyn
   }
 
   deduped.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  localStorage.setItem('monday_tickets', JSON.stringify(deduped))
-  localStorage.setItem('qa_cached_monday_tickets', JSON.stringify(deduped))
   return deduped
 }

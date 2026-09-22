@@ -420,6 +420,7 @@
 /* Viewport controls live close to the canvas they affect. Edit has a browser
    bar below the main toolbar, so its island clears that row. */
 .viewport-zoom-island {
+  --viewport-island-hide-delay: 1500ms;
   position: absolute;
   top: calc(100% + 8px);
   left: 50%;
@@ -451,8 +452,8 @@
   box-sizing: border-box;
   will-change: opacity, transform;
   transition:
-    opacity 180ms ease 3s,
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1) 3s;
+    opacity 180ms ease var(--viewport-island-hide-delay),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1) var(--viewport-island-hide-delay);
 }
 
 .editor-workspace.workspace-editBeta .viewport-zoom-island,
@@ -481,13 +482,15 @@
   font: inherit;
   cursor: pointer;
   transition:
-    color 160ms ease 3s,
-    opacity 160ms ease 3s,
-    border-color 160ms ease 3s;
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease var(--viewport-island-hide-delay),
+    opacity 160ms ease var(--viewport-island-hide-delay),
+    border-color 160ms ease var(--viewport-island-hide-delay);
 }
 
 .viewport-island-indicator svg {
-  transition: transform 180ms ease 3s;
+  transition: transform 180ms ease var(--viewport-island-hide-delay);
 }
 
 .viewport-island-indicator:focus-visible {
@@ -517,6 +520,15 @@
 .editor-workspace:not(.workspace-live) .viewport-zoom-island.is-pinned .viewport-island-indicator svg {
   transform: rotate(180deg);
   transition-delay: 0s;
+}
+
+.editor-workspace:not(.workspace-live) .viewport-zoom-island.is-pinned .viewport-island-indicator {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--accent-foreground);
+  box-shadow:
+    0 4px 12px color-mix(in srgb, var(--accent-color) 38%, transparent),
+    inset 0 1px rgba(255, 255, 255, 0.16);
 }
 
 /* Live remains browser-first: its viewport controls retain their original
@@ -755,7 +767,7 @@
 @media (prefers-reduced-motion: reduce) {
   .viewport-zoom-island-content {
     transform: none;
-    transition: opacity 1ms linear 3s;
+    transition: opacity 1ms linear var(--viewport-island-hide-delay);
   }
 
   .editor-workspace:not(.workspace-live) .viewport-zoom-island:hover .viewport-zoom-island-content,
