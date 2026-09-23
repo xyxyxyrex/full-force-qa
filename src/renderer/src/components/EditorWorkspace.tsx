@@ -8,13 +8,14 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import type { AppHotkeys, FigmaConnectionStatus, Project, ProjectAutomateState, SnapshotItem } from "../../../shared/types";
+import type { AppHotkeys, FigmaConnectionStatus, Project, ProjectAutomateState, ProjectFolder, SnapshotItem } from "../../../shared/types";
 import type { AuditCaptureContext } from "../../../shared/auditExport";
 import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
 import SeoAuditRightPanel from "./SeoAuditRightPanel";
 import BrowserComparisonPanel from "./BrowserComparisonPanel";
+import { normalizeWorkspaceUrl, sameWorkspacePage } from "../utils/workspaceUrl";
 import type { BrowserComparisonCapture, ComparisonEngine } from "../../../shared/crossBrowser";
 import EditBetaWorkspace from "./EditBetaWorkspace";
 import type { EditBetaWorkspaceHandle, EyedropperSample, FontInspectorMode, InteractionMode } from "./EditBetaWorkspace";
@@ -238,6 +239,30 @@ interface Props {
   initialWorkspaceTab?: WorkspaceTab;
   onWorkspaceTabChange?: (workspaceTab: WorkspaceTab) => void;
   onNavigateCapture?: (url: string) => Promise<{ success: boolean; error?: string }>;
+  onCaptureNewProject?: (url: string, folderId?: string) => Promise<{ success: boolean; error?: string }>;
+  onOpenExistingProject?: (project: Project) => void;
+  pendingCaptureUrl?: string;
+  onDismissPendingCapture?: () => void;
+}
+
+function readWorkspaceFolders(): ProjectFolder[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem('qa_project_folders') || '[]')
+    return Array.isArray(value) ? value.filter((folder): folder is ProjectFolder => !!folder && typeof folder.id === 'string' && typeof folder.name === 'string') : []
+  } catch { return [] }
+}
+
+function workspaceFolderPath(folder: ProjectFolder, folders: ProjectFolder[]): string {
+  const byId = new Map(folders.map((item) => [item.id, item]))
+  const names: string[] = []
+  const visited = new Set<string>()
+  let current: ProjectFolder | undefined = folder
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    names.unshift(current.name)
+    current = current.parentId ? byId.get(current.parentId) : undefined
+  }
+  return names.join(' / ')
 }
 
 type DevicePreset = "Desktop" | "Tablet" | "Mobile";
@@ -764,6 +789,10 @@ export default function EditorWorkspace({
   initialWorkspaceTab,
   onWorkspaceTabChange,
   onNavigateCapture,
+  onCaptureNewProject,
+  onOpenExistingProject,
+  pendingCaptureUrl,
+  onDismissPendingCapture,
   hotkeys = DEFAULT_HOTKEYS,
 }: Props & { onOpenSettings?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3026,6 +3055,16 @@ export default function EditorWorkspace({
   const [auditUrl, setAuditUrl] = useState<string>(sourceUrl || "");
   const [auditNavigationPending, setAuditNavigationPending] = useState(false);
   const [auditNavigationError, setAuditNavigationError] = useState("");
+  const [capturePrompt, setCapturePrompt] = useState<{
+    url: string;
+    folderId?: string;
+    folders: ProjectFolder[];
+    existingProject?: Project;
+    error?: string;
+  } | null>(null);
+  const [capturePromptBusy, setCapturePromptBusy] = useState(false);
+  const capturePromptBusyRef = useRef(false);
+  const capturePromptRequest = useRef(0);
 
   useEffect(() => {
     if (sourceUrl) {
@@ -3034,25 +3073,79 @@ export default function EditorWorkspace({
     }
   }, [sourceUrl]);
 
+  const dismissCapturePrompt = useCallback(() => {
+    capturePromptRequest.current++;
+    setCapturePrompt(null);
+    onDismissPendingCapture?.();
+  }, [onDismissPendingCapture]);
+
+  const showCapturePrompt = useCallback((rawUrl: string) => {
+    const targetUrl = normalizeWorkspaceUrl(rawUrl);
+    if (!targetUrl || !project || sameWorkspacePage(targetUrl, project.stagingUrl || sourceUrl)) {
+      dismissCapturePrompt();
+      return;
+    }
+    const folders = readWorkspaceFolders();
+    const folderId = folders.some((folder) => folder.id === project.folderId) ? project.folderId : undefined;
+    const request = ++capturePromptRequest.current;
+    const owner = localStorage.getItem('parity_account_owner_key');
+    setCapturePrompt({ url: targetUrl, folderId, folders });
+    void window.electronAPI.getProjects().then((projects) => {
+      if (request !== capturePromptRequest.current || owner !== localStorage.getItem('parity_account_owner_key')) return;
+      const existingProject = projects.find((item) => item.id !== project.id && !item.inTrash && sameWorkspacePage(item.stagingUrl, targetUrl));
+      if (existingProject) setCapturePrompt((current) => current?.url === targetUrl ? { ...current, existingProject } : current);
+    }).catch(() => {});
+  }, [dismissCapturePrompt, project, sourceUrl]);
+
+  useEffect(() => {
+    if (pendingCaptureUrl) showCapturePrompt(pendingCaptureUrl);
+  }, [pendingCaptureUrl, showCapturePrompt]);
+
+  const capturePromptPage = useCallback(async () => {
+    if (!capturePrompt || !onCaptureNewProject || capturePromptBusyRef.current) return;
+    capturePromptBusyRef.current = true;
+    setCapturePromptBusy(true);
+    setCapturePrompt((current) => current && { ...current, error: undefined });
+    try {
+      const result = await onCaptureNewProject(capturePrompt.url, capturePrompt.folderId);
+      if (result.success) dismissCapturePrompt();
+      else setCapturePrompt((current) => current && { ...current, error: result.error || 'Unable to capture this page.' });
+    } catch (error) {
+      setCapturePrompt((current) => current && { ...current, error: error instanceof Error ? error.message : 'Unable to capture this page.' });
+    } finally {
+      capturePromptBusyRef.current = false;
+      setCapturePromptBusy(false);
+    }
+  }, [capturePrompt, capturePromptBusy, dismissCapturePrompt, onCaptureNewProject]);
+
+  useEffect(() => {
+    if (!capturePrompt) return;
+    const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !capturePromptBusy) dismissCapturePrompt(); };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [capturePrompt, capturePromptBusy, dismissCapturePrompt]);
+
   const handleNavigateAuditUrl = useCallback(async (rawUrl = auditUrl) => {
     if (!onNavigateCapture || auditNavigationPending) return;
-    let targetUrl = rawUrl.trim();
-    if (!targetUrl) return;
-    if (!/^https?:\/\//i.test(targetUrl)) targetUrl = `https://${targetUrl}`;
+    const targetUrl = normalizeWorkspaceUrl(rawUrl);
+    if (!targetUrl) { setAuditNavigationError('Enter a valid website URL.'); return; }
     setAuditUrl(targetUrl);
     setAuditNavigationPending(true);
     setAuditNavigationError("");
     try {
       const result = await onNavigateCapture(targetUrl);
       if (!result.success) setAuditNavigationError(result.error || "Unable to load this page.");
+      // Audit remounts after a new snapshot. App carries the suggestion to
+      // the new workspace instance so it is not lost with this component.
     } catch (error) {
       setAuditNavigationError(error instanceof Error ? error.message : "Unable to load this page.");
     } finally {
       setAuditNavigationPending(false);
     }
-  }, [auditNavigationPending, auditUrl, onNavigateCapture]);
+  }, [auditNavigationPending, auditUrl, onNavigateCapture, showCapturePrompt]);
 
   const liveWebviewRef = useRef<any>(null);
+  const liveNavigationSequenceRef = useRef(0);
   const captureChromiumForComparison = useCallback(async (): Promise<Omit<BrowserComparisonCapture, "projectId" | "engine">> => {
     if (workspaceTab === "editBeta") {
       const view = editBetaRef.current;
@@ -3171,26 +3264,28 @@ export default function EditorWorkspace({
   }, []);
 
   const handleNavigateLiveUrl = useCallback((targetUrl: string) => {
-    let target = targetUrl.trim();
+    const target = normalizeWorkspaceUrl(targetUrl);
     if (!target) return;
-    if (!/^https?:\/\//i.test(target)) {
-      target = "https://" + target;
-    }
     setLiveUrl(target);
     if (
       liveWebviewRef.current &&
       typeof liveWebviewRef.current.loadURL === "function"
     ) {
       try {
-        liveWebviewRef.current.loadURL(target);
+        const view = liveWebviewRef.current;
+        const sequence = ++liveNavigationSequenceRef.current;
+        void Promise.resolve(view.loadURL(target)).then(() => {
+          if (sequence === liveNavigationSequenceRef.current) showCapturePrompt(view.getURL?.() || target);
+        }).catch(() => {});
       } catch {}
     } else {
       const iframe = liveIframeRef.current;
       if (iframe) {
         iframe.src = target;
+        showCapturePrompt(target);
       }
     }
-  }, []);
+  }, [showCapturePrompt]);
 
   useEffect(() => {
     const webview = liveWebviewRef.current;
@@ -6842,6 +6937,41 @@ export default function EditorWorkspace({
 
   return (
     <div className={`editor-workspace workspace-${workspaceTab}`}>
+      {capturePrompt && (
+        <section className="workspace-capture-prompt" role="region" aria-label="Capture this page as a project">
+          <div className="workspace-capture-prompt-heading">
+            <strong>Capture this page as a new project?</strong>
+            <button type="button" onClick={dismissCapturePrompt} disabled={capturePromptBusy} aria-label="Dismiss capture suggestion">×</button>
+          </div>
+          <p className="workspace-capture-prompt-url" title={capturePrompt.url}>{capturePrompt.url}</p>
+          <label className="workspace-capture-prompt-location">
+            <span>Save in</span>
+            <select
+              value={capturePrompt.folderId || ''}
+              disabled={capturePromptBusy}
+              onChange={(event) => setCapturePrompt((current) => current && { ...current, folderId: event.target.value || undefined })}
+              aria-label="Project destination folder"
+            >
+              <option value="">Dashboard / Root</option>
+              {[...capturePrompt.folders].sort((left, right) => workspaceFolderPath(left, capturePrompt.folders).localeCompare(workspaceFolderPath(right, capturePrompt.folders))).map((folder) => (
+                <option key={folder.id} value={folder.id}>{workspaceFolderPath(folder, capturePrompt.folders)}</option>
+              ))}
+            </select>
+          </label>
+          {capturePrompt.existingProject && onOpenExistingProject && (
+            <button className="workspace-capture-prompt-existing" type="button" disabled={capturePromptBusy} onClick={() => { onOpenExistingProject(capturePrompt.existingProject!); dismissCapturePrompt(); }}>
+              Already captured as {capturePrompt.existingProject.name} · Open project
+            </button>
+          )}
+          {capturePrompt.error && <p className="workspace-capture-prompt-error" role="alert">{capturePrompt.error}</p>}
+          <div className="workspace-capture-prompt-actions">
+            <button type="button" disabled={capturePromptBusy} onClick={dismissCapturePrompt}>Just browse</button>
+            <button type="button" disabled={capturePromptBusy || !onCaptureNewProject} onClick={() => void capturePromptPage()}>
+              {capturePromptBusy ? 'Capturing…' : 'Capture new project'}
+            </button>
+          </div>
+        </section>
+      )}
       {/* ── Top toolbar ──────────────────────────── */}
       <div className={`editor-toolbar ${isLiveWorkspace ? "is-live" : ""}`}>
         <div className="toolbar-left">
@@ -9441,6 +9571,7 @@ export default function EditorWorkspace({
                 snapshotLabel={snapshotLabel}
                 onFigmaViewModeChange={setFigmaViewMode}
                 onOpenFigmaSettings={openFigmaModal}
+                onManualNavigate={showCapturePrompt}
                 onCloseFigmaPanel={() => {
                   setFigmaSplitOpen(false);
                   setFigmaCardDismissed(true);

@@ -1,5 +1,26 @@
 import type { InspectorDomNode } from '../../../shared/inspector'
 
+export function inspectorNodeChildren(node: InspectorDomNode): InspectorDomNode[] {
+  return [...(node.children || []), ...(node.shadowRoots || []), ...(node.pseudoElements || [])]
+}
+
+/** Hide only HTML formatting whitespace, not non-breaking or other authored spaces. */
+export function isFormattingWhitespaceNode(node: InspectorDomNode): boolean {
+  return node.nodeType === 3 && /^[\t\n\f\r ]*$/.test(node.nodeValue)
+}
+
+export function visibleInspectorChildren(
+  node: InspectorDomNode,
+  showInternals: boolean,
+  showWhitespace: boolean,
+  selectedNodeId?: number,
+): InspectorDomNode[] {
+  return inspectorNodeChildren(node).filter(child =>
+    (showInternals || !child.isParityInternal) &&
+    (showWhitespace || !isFormattingWhitespaceNode(child) || child.ref.nodeId === selectedNodeId),
+  )
+}
+
 /**
  * Merge a CDP node snapshot without throwing away branches that were loaded
  * separately. Chromium omits `children` when a describe depth is exhausted;

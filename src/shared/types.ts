@@ -440,6 +440,9 @@ export interface ElectronAPI extends InspectorApi {
   cancelAuditExport: (jobId: string) => Promise<{ success: boolean }>
   openAuditExportFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>
   onAuditExportProgress: (callback: (progress: AuditExportProgress) => void) => () => void
+  previewAuditMedia: (request: import('./auditExport').AuditMediaRequest) => Promise<import('./auditExport').AuditMediaPreviewResult>
+  saveAuditMedia: (request: import('./auditExport').AuditMediaRequest) => Promise<import('./auditExport').AuditMediaSaveResult>
+  revealAuditMediaFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   clearCache: () => Promise<{ success: boolean }>
   getResourceFileSizes: (urls: string[], refererUrl?: string) => Promise<ResourceFileSizeResult[]>
   openExternal: (url: string) => Promise<void>

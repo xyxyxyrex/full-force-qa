@@ -11,6 +11,9 @@ import type {
   AuditExportResult,
   AuditExportScanRequest,
   AuditExportScanResult,
+  AuditMediaPreviewResult,
+  AuditMediaRequest,
+  AuditMediaSaveResult,
   AuditResourceKind
 } from '../shared/auditExport'
 import { kindFromUrl, resolveResourceUrl } from './auditCaptureContext'
@@ -20,6 +23,7 @@ const REVIEW_FILE_COUNT = 100
 const REVIEW_BYTES = 250 * 1024 * 1024
 const PLAN_TTL_MS = 10 * 60 * 1000
 const MAX_RESOURCES = 5_000
+const MAX_MEDIA_PREVIEW_BYTES = 24 * 1024 * 1024
 
 interface ExportPlan extends AuditExportScanResult {
   senderId: number
@@ -36,10 +40,12 @@ interface ExportJob {
 const plans = new Map<string, ExportPlan>()
 const jobs = new Map<string, ExportJob>()
 const exportedFolders = new Set<string>()
+const savedMediaFiles = new Map<string, number>()
 
 function resourcesForKind(kind: AuditExportKind, payload: AuditExportPayload): AuditExportResource[] {
   if (kind === 'images') return payload.resources.filter((item) => item.kind === 'image')
   if (kind === 'assets') return payload.resources.filter((item) => item.kind !== 'image')
+  if (kind === 'media') return payload.resources.filter((item) => ['image', 'video', 'audio'].includes(item.kind))
   if (kind === 'bundle') return payload.resources
   return []
 }
@@ -55,12 +61,13 @@ function dedupeResources(resources: AuditExportResource[]): AuditExportResource[
 }
 
 function dataUrlBuffer(url: string): { bytes: Buffer; mimeType?: string } | null {
-  const match = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(url)
+  const match = /^data:([^,]*),(.*)$/s.exec(url)
   if (!match) return null
   try {
+    const isBase64 = /(?:^|;)base64(?:;|$)/i.test(match[1])
     return {
-      bytes: match[2] ? Buffer.from(match[3], 'base64') : Buffer.from(decodeURIComponent(match[3]), 'utf8'),
-      mimeType: match[1] || undefined
+      bytes: isBase64 ? Buffer.from(match[2], 'base64') : Buffer.from(decodeURIComponent(match[2]), 'utf8'),
+      mimeType: match[1].split(';')[0] || undefined
     }
   } catch { return null }
 }
@@ -102,7 +109,8 @@ function extensionFor(mimeType: string | undefined, url: string, kind: AuditReso
   const map: Record<string, string> = {
     'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp', 'image/svg+xml': '.svg', 'image/avif': '.avif',
     'text/css': '.css', 'text/javascript': '.js', 'application/javascript': '.js', 'application/json': '.json',
-    'font/woff': '.woff', 'font/woff2': '.woff2', 'font/ttf': '.ttf', 'video/mp4': '.mp4', 'audio/mpeg': '.mp3'
+    'font/woff': '.woff', 'font/woff2': '.woff2', 'font/ttf': '.ttf', 'video/mp4': '.mp4', 'video/webm': '.webm',
+    'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/wav': '.wav', 'audio/mp4': '.m4a'
   }
   const normalized = mimeType?.split(';')[0].trim().toLowerCase()
   if (normalized && map[normalized]) return map[normalized]
@@ -110,7 +118,74 @@ function extensionFor(mimeType: string | undefined, url: string, kind: AuditReso
     const ext = extname(new URL(url).pathname).slice(0, 12)
     if (/^\.[a-z0-9]+$/i.test(ext)) return ext.toLowerCase()
   } catch {}
-  return kind === 'image' ? '.img' : kind === 'stylesheet' ? '.css' : kind === 'script' ? '.js' : kind === 'font' ? '.font' : '.bin'
+  return kind === 'image' ? '.img' : kind === 'video' ? '.video' : kind === 'audio' ? '.audio' : kind === 'stylesheet' ? '.css' : kind === 'script' ? '.js' : kind === 'font' ? '.font' : '.bin'
+}
+
+function validateMediaRequest(request: AuditMediaRequest): AuditExportResource {
+  if (!request || !request.resource || !['image', 'video', 'audio'].includes(request.resource.kind)) throw new Error('Invalid media resource.')
+  if (!/^https?:\/\//i.test(request.refererUrl) || request.refererUrl.length > 4096) throw new Error('Invalid captured page URL.')
+  const resource = request.resource
+  if (typeof resource.url !== 'string' || resource.url.length > MAX_MEDIA_PREVIEW_BYTES * 2 ||
+      !/^(?:https?:\/\/|data:|blob:|inline-svg:|canvas:)/i.test(resource.url)) throw new Error('Unsupported media URL.')
+  if (resource.inlineContent != null && (resource.kind !== 'image' || resource.mimeType !== 'image/svg+xml' ||
+      Buffer.byteLength(resource.inlineContent, 'utf8') > MAX_MEDIA_PREVIEW_BYTES)) throw new Error('Invalid inline media.')
+  return resource
+}
+
+function mediaMimeType(resource: AuditExportResource, responseMime?: string | null): string {
+  const given = (responseMime || resource.mimeType || '').split(';')[0].trim().toLowerCase()
+  if (/^(?:image|video|audio)\//.test(given)) return given
+  const extension = extensionFor(undefined, resource.url, resource.kind)
+  const byExtension: Record<string, string> = {
+    '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon',
+    '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogv': 'video/ogg',
+    '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg'
+  }
+  return byExtension[extension] || ''
+}
+
+async function previewMedia(resource: AuditExportResource, referer: string): Promise<AuditMediaPreviewResult> {
+  if (resource.url.startsWith('canvas:')) return { error: 'Canvas pixels were not saved in this capture.' }
+  if (resource.url.startsWith('blob:')) return { error: 'This blob URL expired when the original page closed.' }
+  if (resource.inlineContent != null || resource.url.startsWith('data:')) {
+    const bytes = resource.inlineContent != null ? Buffer.from(resource.inlineContent, 'utf8') : dataUrlBuffer(resource.url)?.bytes
+    if (!bytes) return { error: 'The saved data URL is invalid.' }
+    if (bytes.length > MAX_MEDIA_PREVIEW_BYTES) return { error: 'This media file is too large for an in-app preview.' }
+    const mimeType = mediaMimeType(resource, resource.inlineContent != null ? 'image/svg+xml' : dataUrlBuffer(resource.url)?.mimeType)
+    if (!mimeType) return { error: 'This media format cannot be previewed.' }
+    return { dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}`, mimeType, bytes: bytes.length, finalUrl: resource.url }
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 20_000)
+  try {
+    const response = await session.defaultSession.fetch(resource.url, {
+      credentials: 'include', cache: 'no-store', redirect: 'follow',
+      headers: { Accept: 'image/*,video/*,audio/*,*/*', Referer: referer }, signal: controller.signal
+    })
+    if (!response.ok) return { error: `Media request returned HTTP ${response.status}.` }
+    if (/^(?:text\/html|application\/json)/i.test(response.headers.get('content-type') || '')) return { error: 'The server returned a page instead of media. The resource may require authentication.' }
+    const mimeType = mediaMimeType(resource, response.headers.get('content-type'))
+    if (!mimeType) return { error: 'The server did not return a previewable media type.' }
+    const knownSize = Number(response.headers.get('content-length'))
+    if (knownSize > MAX_MEDIA_PREVIEW_BYTES) return { error: 'This media file is too large for an in-app preview.', finalUrl: response.url || resource.url, mimeType, bytes: knownSize }
+    const reader = response.body?.getReader()
+    if (!reader) return { error: 'The media response had no body.' }
+    const chunks: Buffer[] = []
+    let total = 0
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > MAX_MEDIA_PREVIEW_BYTES) {
+        await reader.cancel()
+        return { error: 'This media file is too large for an in-app preview.', finalUrl: response.url || resource.url, mimeType, bytes: total }
+      }
+      chunks.push(Buffer.from(value))
+    }
+    return { dataUrl: `data:${mimeType};base64,${Buffer.concat(chunks, total).toString('base64')}`, finalUrl: response.url || resource.url, mimeType, bytes: total }
+  } catch (error) { return { error: error instanceof Error ? error.message : 'Media preview failed.' } }
+  finally { clearTimeout(timer) }
 }
 
 function uniqueFilePath(directory: string, requestedName: string): string {
@@ -308,7 +383,7 @@ async function runExport(sender: WebContents, plan: ExportPlan, baseDirectory: s
 }
 
 function validateScanRequest(request: AuditExportScanRequest): void {
-  if (!request || !['images', 'text', 'links', 'seo-data', 'assets', 'bundle'].includes(request.kind)) throw new Error('Invalid audit export kind.')
+  if (!request || !['images', 'text', 'links', 'seo-data', 'assets', 'media', 'bundle'].includes(request.kind)) throw new Error('Invalid audit export kind.')
   if (!request.payload || typeof request.payload.html !== 'string' || request.payload.html.length > 50 * 1024 * 1024) throw new Error('Invalid audit export payload.')
   if (typeof request.payload.sourceUrl !== 'string' || request.payload.resources.length > MAX_RESOURCES) throw new Error('Audit export contains too many resources.')
 }
@@ -328,7 +403,7 @@ export function registerAuditExportHandlers(): void {
     }
     const generatedFiles = request.kind === 'text' ? 6 : request.kind === 'links' ? 4 : request.kind === 'seo-data' ? 6 : request.kind === 'bundle' ? 16 : resources.length ? 4 : 2
     const fileCount = resources.length + generatedFiles
-    const requiresPreFreezeContext = request.kind === 'assets' || request.kind === 'seo-data' || request.kind === 'bundle'
+    const requiresPreFreezeContext = request.kind === 'assets' || request.kind === 'media' || request.kind === 'seo-data' || request.kind === 'bundle'
     const coverage = !requiresPreFreezeContext || request.payload.captureContext?.complete ? 'complete' : 'partial'
     const warnings = coverage === 'partial' ? ['This legacy capture has no pre-freeze audit context. Removed scripts and structured data may be absent.'] : []
     const result: AuditExportScanResult = {
@@ -369,5 +444,40 @@ export function registerAuditExportHandlers(): void {
     if (!resolvedPath || !exportedFolders.has(resolvedPath) || !existsSync(resolvedPath)) return { success: false, error: 'This export folder is no longer available.' }
     const error = await shell.openPath(resolvedPath)
     return error ? { success: false, error } : { success: true }
+  })
+
+  ipcMain.handle('audit-media:preview', async (_event, request: AuditMediaRequest): Promise<AuditMediaPreviewResult> => {
+    try { return await previewMedia(validateMediaRequest(request), request.refererUrl) }
+    catch (error) { return { error: error instanceof Error ? error.message : 'Media preview failed.' } }
+  })
+
+  ipcMain.handle('audit-media:save', async (event, request: AuditMediaRequest): Promise<AuditMediaSaveResult> => {
+    try {
+      const resource = validateMediaRequest(request)
+      if (resource.url.startsWith('blob:') || resource.url.startsWith('canvas:')) return { error: 'This media was not retained in the captured page.' }
+      let stem = 'captured-media'
+      try { stem = safeSegment(basename(new URL(resource.url).pathname, extname(new URL(resource.url).pathname)), stem) } catch {
+        if (resource.url.startsWith('inline-svg:')) stem = safeSegment(resource.url, 'inline-svg')
+      }
+      const defaultPath = `${stem}${extensionFor(resource.mimeType, resource.url, resource.kind)}`
+      const parent = BrowserWindow.fromWebContents(event.sender)
+      const options: Electron.SaveDialogOptions = { title: 'Save Captured Media', defaultPath }
+      const selected = await (parent ? dialog.showSaveDialog(parent, options) : dialog.showSaveDialog(options))
+      if (selected.canceled || !selected.filePath) return { cancelled: true }
+      const job: ExportJob = { senderId: event.sender.id, cancelled: false, controllers: new Set() }
+      const response = await fetchResource(resource, request.refererUrl, job)
+      if (/^(?:text\/html|application\/json)/i.test(response.mimeType || '')) return { error: 'The server returned a page instead of media. The resource may require authentication.' }
+      atomicWrite(selected.filePath, response.bytes)
+      savedMediaFiles.set(resolve(selected.filePath), event.sender.id)
+      while (savedMediaFiles.size > 100) savedMediaFiles.delete(savedMediaFiles.keys().next().value!)
+      return { filePath: selected.filePath }
+    } catch (error) { return { error: error instanceof Error ? error.message : 'Unable to save media.' } }
+  })
+
+  ipcMain.handle('audit-media:reveal', (event, filePath: string) => {
+    const resolvedPath = typeof filePath === 'string' ? resolve(filePath) : ''
+    if (!resolvedPath || savedMediaFiles.get(resolvedPath) !== event.sender.id || !existsSync(resolvedPath)) return { success: false, error: 'This saved media file is no longer available.' }
+    shell.showItemInFolder(resolvedPath)
+    return { success: true }
   })
 }

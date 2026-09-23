@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import type { InspectorDomNode, InspectorSessionSnapshot } from '../../../shared/inspector'
-import { mergeInspectorTreeNode } from './inspectorTreeState'
+import { inspectorNodeChildren, mergeInspectorTreeNode, visibleInspectorChildren } from './inspectorTreeState'
 
 interface Props {
   session: InspectorSessionSnapshot | null
@@ -35,10 +35,6 @@ function mergeNode(map: Map<number, InspectorDomNode>, node: InspectorDomNode) {
   mergeInspectorTreeNode(map, node)
 }
 
-function nodeChildren(node: InspectorDomNode) {
-  return [...(node.children || []), ...(node.shadowRoots || []), ...(node.pseudoElements || [])]
-}
-
 function attributeText(node: InspectorDomNode) {
   return node.attributes.map(attribute => ` ${attribute.name}="${attribute.value}"`).join('')
 }
@@ -47,8 +43,12 @@ function NodeLabel({ node }: { node: InspectorDomNode }) {
   if (node.nodeType === 9) return <><b>#document</b></>
   if (node.nodeType === 11 || node.shadowRootType) return <><b>#shadow-root</b><span> ({node.shadowRootType || 'open'})</span></>
   if (node.pseudoType) return <><b>::{node.pseudoType}</b></>
+  if (node.nodeType === 10) return <b>&lt;!DOCTYPE {node.nodeName}&gt;</b>
+  if (node.nodeType === 7) return <><b>&lt;?{node.nodeName}</b><span> {node.nodeValue}</span><b>?&gt;</b></>
+  if (node.nodeType === 4) return <><b>&lt;![CDATA[</b><span>{node.nodeValue.slice(0, 100)}</span><b>]]&gt;</b></>
   if (node.nodeType === 3) return <><b>#text</b><span> “{node.nodeValue.replace(/\s+/g, ' ').trim().slice(0, 100)}”</span></>
   if (node.nodeType === 8) return <><b>&lt;!--</b><span>{node.nodeValue.slice(0, 100)}</span><b>--&gt;</b></>
+  if (node.nodeType !== 1) return <><b>#{node.nodeName.toLowerCase()}</b><span> {node.nodeValue.slice(0, 100)}</span></>
   const name = node.localName || node.nodeName.toLowerCase()
   return <><b>&lt;{name}</b><span>{attributeText(node)}</span><b>&gt;</b>{node.slotName && <em> slot {node.slotName}</em>}{node.isFrameBoundary && <em> iframe contents unavailable</em>}</>
 }
@@ -59,6 +59,7 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set(initialTreeState.current?.expanded || []))
   const [loading, setLoading] = useState<Set<number>>(new Set())
   const [showInternals, setShowInternals] = useState(false)
+  const [showWhitespace, setShowWhitespace] = useState(false)
   const [scrollTop, setScrollTop] = useState(initialTreeState.current?.scrollTop || 0)
   const [search, setSearch] = useState('')
   const [searchMode, setSearchMode] = useState<'text' | 'selector' | 'xpath'>('selector')
@@ -86,7 +87,7 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
     const defaults = new Set<number>()
     if (session?.root) {
       defaults.add(session.root.ref.nodeId)
-      for (const child of nodeChildren(session.root)) defaults.add(child.ref.nodeId)
+      for (const child of inspectorNodeChildren(session.root)) defaults.add(child.ref.nodeId)
     }
     setExpanded(defaults)
     setSearchResult({ count: 0, nodes: [], start: 0 })
@@ -138,11 +139,11 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
       if (!showInternals && node.isParityInternal) return
       result.push({ node, depth })
       if (!expanded.has(node.ref.nodeId)) return
-      for (const child of nodeChildren(nodes.get(node.ref.nodeId) || node)) visit(child, depth + 1)
+      for (const child of visibleInspectorChildren(nodes.get(node.ref.nodeId) || node, showInternals, showWhitespace, selected?.ref.nodeId)) visit(child, depth + 1)
     }
     visit(nodes.get(session.root.ref.nodeId) || session.root, 0)
     return result
-  }, [expanded, nodes, session?.root, showInternals])
+  }, [expanded, nodes, session?.root, selected?.ref.nodeId, showInternals, showWhitespace])
 
   const rowHeight = 24
   const viewportHeight = viewportRef.current?.clientHeight || 260
@@ -163,7 +164,8 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
     const id = node.ref.nodeId
     if (expanded.has(id)) { setExpanded(current => { const next = new Set(current); next.delete(id); return next }); return }
     setExpanded(current => new Set(current).add(id))
-    if (nodeChildren(nodes.get(id) || node).length || node.childNodeCount === 0) return
+    const currentNode = nodes.get(id) || node
+    if (currentNode.childNodeCount === 0 || (currentNode.children && currentNode.children.length >= currentNode.childNodeCount)) return
     setLoading(current => new Set(current).add(id))
     try {
       const children = await window.electronAPI.inspectorChildren(node.ref)
@@ -274,7 +276,7 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
         {visible.map((row, visibleIndex) => {
           const index = start + visibleIndex
           const node = nodes.get(row.node.ref.nodeId) || row.node
-          const hasChildren = node.childNodeCount > 0 || nodeChildren(node).length > 0
+          const hasChildren = visibleInspectorChildren(node, showInternals, showWhitespace, selected?.ref.nodeId).length > 0 || node.childNodeCount > (node.children?.length || 0)
           const isSelected = selected?.ref.nodeId === node.ref.nodeId
           const isSearch = searchResult.nodes.some(match => match.ref.nodeId === node.ref.nodeId)
           return <div key={`${node.ref.generation}:${node.ref.nodeId}`} className={`inspector-tree-row ${isSelected ? 'selected' : ''} ${isSearch ? 'search-match' : ''}`} style={{ top: index * rowHeight, paddingLeft: 4 + row.depth * 12 }} onMouseEnter={() => void window.electronAPI.inspectorHighlight(node.ref)} onMouseLeave={() => void window.electronAPI.inspectorHighlight(selected?.ref || null)} onContextMenu={event => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, node }) }}>
@@ -284,7 +286,10 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
         })}
       </div>
     </div>
-    <label className="inspector-internals-toggle"><input type="checkbox" checked={showInternals} onChange={event => setShowInternals(event.target.checked)} /> Show Parity internals</label>
+    <div className="inspector-tree-options">
+      <label className="inspector-internals-toggle"><input type="checkbox" checked={showInternals} onChange={event => setShowInternals(event.target.checked)} /> Show Parity internals</label>
+      <label className="inspector-internals-toggle"><input type="checkbox" checked={showWhitespace} onChange={event => setShowWhitespace(event.target.checked)} /> Show whitespace</label>
+    </div>
     {menu && <div className="inspector-context-menu" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
       {menu.node.parentId && nodes.get(menu.node.parentId) && <button onClick={() => { onSelect(nodes.get(menu.node.parentId!)!); setMenu(null) }}>Inspect parent</button>}
       <button onClick={() => { void window.electronAPI.inspectorScrollIntoView(menu.node.ref); setMenu(null) }}>Scroll into view</button>

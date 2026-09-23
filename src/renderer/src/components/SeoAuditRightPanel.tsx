@@ -21,7 +21,9 @@ import {
   formatAuditResourceSize
 } from '../utils/auditResourceSize'
 import { buildAuditExportPayload } from '../utils/auditExport'
+import { collectAuditMedia } from '../utils/auditMediaGallery'
 import type { AuditCaptureContext, AuditExportKind, AuditExportProgress, AuditExportResult, AuditExportScanResult } from '../../../shared/auditExport'
+import AuditMediaGallery from './AuditMediaGallery'
 import './SeoAuditRightPanel.css'
 
 interface Props {
@@ -65,6 +67,7 @@ export default function SeoAuditRightPanel({
   const [exportReview, setExportReview] = useState<AuditExportScanResult | null>(null)
   const [exportResult, setExportResult] = useState<AuditExportResult | null>(null)
   const [exportError, setExportError] = useState('')
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [grammarFilter, setGrammarFilter] = useState<'all' | 'spelling' | 'grammar'>('all')
   const auditRequestRef = useRef(0)
   const auditSignatureRef = useRef('')
@@ -124,6 +127,9 @@ export default function SeoAuditRightPanel({
     () => buildAuditExportPayload(html, sourceUrl, report, auditContext),
     [html, sourceUrl, report, auditContext]
   )
+  const mediaItems = useMemo(() => collectAuditMedia(auditExportPayload.resources), [auditExportPayload.resources])
+
+  useEffect(() => { setGalleryOpen(false) }, [html, sourceUrl])
 
   useEffect(() => {
     if (typeof window.electronAPI?.onAuditExportProgress !== 'function') return
@@ -786,6 +792,8 @@ export default function SeoAuditRightPanel({
         disabled: exportKind ? 'An export is already running' : undefined,
         run: () => { void startAuditExport(kind) },
       })),
+      { id: 'audit.gallery', title: 'Audit: open media gallery', description: 'Browse media in the captured snapshot', group: 'Commands' as const, run: () => setGalleryOpen(true) },
+      { id: 'audit.download:media', title: 'Audit: export all media', description: 'Export captured images, video, and audio', group: 'Commands' as const, disabled: exportKind ? 'An export is already running' : undefined, run: () => { void startAuditExport('media') } },
       { id: 'audit.report', title: 'Audit: export JSON report', group: 'Commands', run: exportReportJson },
       { id: 'audit.copy', title: 'Audit: copy Markdown summary', group: 'Commands', run: copyMarkdownSummary },
     ],
@@ -953,6 +961,13 @@ export default function SeoAuditRightPanel({
           </div>
         )}
         {exportError && <div className="seo-export-status error" role="alert">{exportError}</div>}
+      </div>
+
+      <div className="seo-media-gallery-entry">
+        <button type="button" onClick={() => setGalleryOpen(true)} aria-label={`Open Media Gallery, ${mediaItems.length} captured items`} title="Browse captured images, SVGs, icons, video, and audio">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Media Gallery</span><span className="seo-media-gallery-count">{mediaItems.length}</span>
+        </button>
       </div>
 
       <div className="seo-sectors-wrap">
@@ -1385,6 +1400,24 @@ export default function SeoAuditRightPanel({
         </div>
 
       </div>
+
+      {galleryOpen && <AuditMediaGallery
+        items={mediaItems}
+        sourceUrl={sourceUrl}
+        capturedAt={auditContext?.capturedAt}
+        coveragePartial={!auditContext?.complete}
+        onClose={() => setGalleryOpen(false)}
+        onExportAll={() => { setGalleryOpen(false); void startAuditExport('media') }}
+        onLocate={selector => {
+          try {
+            const element = getIframeDoc()?.querySelector(selector)
+            if (!element) return false
+            selectElementOnCanvas(element as HTMLElement)
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            return true
+          } catch { return false }
+        }}
+      />}
     </div>
   )
 }

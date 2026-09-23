@@ -37,6 +37,7 @@ import {
 import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { bindMobileViewportScrollbar, isMobilePreview } from "../utils/mobileViewportScrollbar";
 import { normalizeClassNames } from "../utils/editBetaClasses";
+import { normalizeWorkspaceUrl } from "../utils/workspaceUrl";
 import { mergeViewportPatches } from "../utils/viewportLayoutPatches";
 import { pageSearchExpression, type PageSearchRequest, type PageSearchResponse } from "../palette/pageSearch";
 
@@ -121,6 +122,7 @@ interface Props {
   snapshotLabel?: string;
   onFigmaViewModeChange?: (mode: "live" | "png") => void;
   onOpenFigmaSettings?: () => void;
+  onManualNavigate?: (url: string) => void;
   onCloseFigmaPanel?: () => void;
   onCloseSnapshotPanel?: () => void;
   renderBrowserComparison?: (scrollY: number, onHeaderPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void) => React.ReactNode;
@@ -4194,6 +4196,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       snapshotLabel = "Site Snapshot",
       onFigmaViewModeChange,
       onOpenFigmaSettings,
+      onManualNavigate,
       onCloseFigmaPanel,
       onCloseSnapshotPanel,
       renderBrowserComparison,
@@ -4217,6 +4220,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     ref,
   ) {
     const webviewRef = useRef<any>(null);
+    const manualNavigationSequenceRef = useRef(0);
     const webviewsMapRef = useRef<Record<string, any>>({});
     const figmaWebviewRef = useRef<any>(null);
     const canvasRef = useRef<HTMLElement>(null);
@@ -6459,9 +6463,16 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       [deselect, executeActive, hardReload, height, reconnectInspector, width],
     );
     const navigate = () => {
-      let next = url.trim();
-      if (!/^https?:\/\//i.test(next)) next = `https://${next}`;
-      webviewRef.current?.loadURL?.(next);
+      const next = normalizeWorkspaceUrl(url);
+      if (!next) return;
+      const view = webviewRef.current;
+      if (!view?.loadURL) return;
+      const sequence = ++manualNavigationSequenceRef.current;
+      try {
+        void Promise.resolve(view.loadURL(next)).then(() => {
+          if (sequence === manualNavigationSequenceRef.current) onManualNavigate?.(view.getURL?.() || next);
+        }).catch(() => {});
+      } catch {}
     };
     const toggleLeftSection = (section: keyof typeof leftSections) =>
       setLeftSections((current) => ({

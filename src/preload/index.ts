@@ -1,7 +1,7 @@
 import type { PixelComparisonResponse } from '../shared/automation'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
-import type { AuditCaptureContext, AuditExportProgress, AuditExportScanRequest } from '../shared/auditExport'
+import type { AuditCaptureContext, AuditExportProgress, AuditExportScanRequest, AuditMediaRequest } from '../shared/auditExport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   comparisonStatus: () => ipcRenderer.invoke('comparison:status'),
@@ -152,6 +152,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event: Electron.IpcRendererEvent, progress: AuditExportProgress) => callback(progress)
     ipcRenderer.on('audit-export:progress', handler)
     return () => ipcRenderer.removeListener('audit-export:progress', handler)
+  },
+  previewAuditMedia(request: AuditMediaRequest) {
+    return ipcRenderer.invoke('audit-media:preview', request)
+  },
+  saveAuditMedia(request: AuditMediaRequest) {
+    return ipcRenderer.invoke('audit-media:save', request)
+  },
+  revealAuditMediaFile(filePath: string) {
+    return ipcRenderer.invoke('audit-media:reveal', filePath)
   },
   clearCache(): Promise<{ success: boolean }> {
     return ipcRenderer.invoke('app:clear-cache')

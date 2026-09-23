@@ -304,6 +304,35 @@
   overflow: visible;
 }
 
+.workspace-capture-prompt {
+  position: absolute;
+  top: 91px;
+  right: 18px;
+  z-index: 1300;
+  width: min(356px, calc(100% - 36px));
+  box-sizing: border-box;
+  padding: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--header-bg);
+  color: var(--text-primary);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, .45);
+  font-size: 12px;
+}
+.workspace-capture-prompt-heading,
+.workspace-capture-prompt-actions { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.workspace-capture-prompt-heading strong { font-size: 12px; }
+.workspace-capture-prompt-heading button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 18px; line-height: 1; }
+.workspace-capture-prompt-url { margin: 9px 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.workspace-capture-prompt-location { display: grid; gap: 5px; color: var(--text-muted); }
+.workspace-capture-prompt-location select { min-width: 0; width: 100%; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-app); color: var(--text-primary); font: inherit; }
+.workspace-capture-prompt-existing { width: 100%; margin-top: 9px; padding: 7px 8px; border: 1px solid var(--border-color); border-radius: 5px; background: transparent; color: var(--accent-color); text-align: left; cursor: pointer; font: inherit; }
+.workspace-capture-prompt-error { margin: 9px 0 0; color: #ff9ca6; }
+.workspace-capture-prompt-actions { justify-content: flex-end; margin-top: 12px; }
+.workspace-capture-prompt-actions button { padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 5px; background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; }
+.workspace-capture-prompt-actions button:last-child { border-color: var(--accent-color); background: var(--accent-color); color: var(--accent-foreground); }
+.workspace-capture-prompt button:disabled { opacity: .55; cursor: wait; }
+
 .audit-browser-navbar {
   position: relative;
   z-index: 20;

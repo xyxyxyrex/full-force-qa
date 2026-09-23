@@ -200,6 +200,12 @@
   padding-bottom: 9px;
 }
 
+.seo-media-gallery-entry { padding: 8px 14px; border-bottom: 1px solid var(--border-color); background: var(--bg-card); flex-shrink: 0; }
+.seo-media-gallery-entry button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-input); color: var(--text-primary); font: 600 10px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace; cursor: pointer; text-align: left; }
+.seo-media-gallery-entry button:hover { border-color: var(--accent-color); background: var(--bg-card-hover); }
+.seo-media-gallery-entry svg { flex: none; color: var(--accent-color); }
+.seo-media-gallery-count { margin-left: auto; padding: 1px 6px; border-radius: 4px; background: var(--bg-elevated); color: var(--text-secondary); }
+
 .seo-download-btn.busy svg {
   animation: seo-download-pulse 0.9s ease-in-out infinite alternate;
 }

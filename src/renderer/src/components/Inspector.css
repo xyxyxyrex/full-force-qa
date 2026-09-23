@@ -18,7 +18,8 @@
 .inspector-tree-label b { color:#22d3ee; font-weight:550; }
 .inspector-tree-label span { color:#c084fc; }
 .inspector-tree-label em { margin-left:8px; color:#f59e0b; font-size:8px; font-style:normal; }
-.inspector-internals-toggle { display:flex; align-items:center; gap:6px; padding:5px 8px; border-top:1px solid var(--border-color,#302a43); color:var(--text-muted,#8b8a99); font-size:9px; }
+.inspector-tree-options { display:flex; flex-wrap:wrap; gap:4px 12px; padding:5px 8px; border-top:1px solid var(--border-color,#302a43); }
+.inspector-internals-toggle { display:flex; align-items:center; gap:6px; color:var(--text-muted,#8b8a99); font-size:9px; white-space:nowrap; }
 .inspector-search-status { display:flex; align-items:center; justify-content:flex-end; gap:4px; padding:2px 7px; border-bottom:1px solid var(--border-color,#302a43); color:var(--text-muted,#8b8a99); }
 .inspector-search-status button { width:20px; padding:0; border:0; background:transparent; color:inherit; cursor:pointer; }
 .inspector-inline-error { padding:6px 8px; border-bottom:1px solid #f8717144; background:#f8717112; color:#fca5a5; font-size:9px; overflow-wrap:anywhere; }

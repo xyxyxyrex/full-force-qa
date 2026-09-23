@@ -19,6 +19,7 @@ import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/
 import { getPaletteNotes, setPaletteNotes, workspaceItems } from './palette/workspaceSearch'
 import { HOTKEY_DEFINITIONS, THEME_LIST, saveSettings } from './theme/themeSystem'
 import type { ProjectFolder } from '../../shared/types'
+import { normalizeWorkspaceUrl, sameWorkspacePage } from './utils/workspaceUrl'
 
 export type View = 'dashboard' | 'capture' | 'editor' | 'notes'
 
@@ -41,6 +42,8 @@ export interface TabState {
   auditContext?: AuditCaptureContext | null
   initialNoteId?: string
   initialTicketId?: string
+  previewOnly?: boolean
+  pendingCaptureUrl?: string
 }
 
 function isRenderableSnapshot(html: string | null): html is string {
@@ -263,6 +266,9 @@ export default function App() {
         sessionStorage.removeItem(`fullforce_snapshot_html_${t.id}`)
         return {
           ...t,
+          captureUrl: t.previewOnly && t.activeProject ? t.activeProject.stagingUrl : t.captureUrl,
+          previewOnly: false,
+          pendingCaptureUrl: undefined,
           snapshotHtml: null,
           auditContext: null
         }
@@ -607,12 +613,13 @@ export default function App() {
   const handleWorkspaceNavigate = useCallback(async (rawUrl: string) => {
     const activeTab = tabs.find((tab) => tab.id === activeTabId)
     if (!activeTab) return { success: false, error: 'No active project tab.' }
+    const ownerAtStart = localStorage.getItem('parity_account_owner_key')
 
-    let targetUrl = rawUrl.trim()
-    if (!targetUrl) return { success: false, error: 'Enter a website URL.' }
-    if (!/^https?:\/\//i.test(targetUrl)) targetUrl = `https://${targetUrl}`
+    const targetUrl = normalizeWorkspaceUrl(rawUrl)
+    if (!targetUrl) return { success: false, error: 'Enter a valid website URL.' }
 
     const result = await window.electronAPI.capture(targetUrl)
+    if (ownerAtStart !== localStorage.getItem('parity_account_owner_key')) return { success: false, error: 'The active account changed. Try again.' }
     if (!result.success || !result.html) {
       return { success: false, error: result.error || 'Unable to capture this URL.' }
     }
@@ -622,23 +629,102 @@ export default function App() {
       return { success: false, error: result.isSessionExpired ? 'The website session has expired.' : 'The page could not be captured.' }
     }
 
-    const updatedProject = activeTab.activeProject
-      ? { ...activeTab.activeProject, stagingUrl: targetUrl, lastOpenedAt: Date.now() }
-      : null
-    if (updatedProject) await saveScopedProject(updatedProject)
-    await window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html)
-    if (result.auditContext) await window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext)
+    const previewOnly = !!activeTab.activeProject && !sameWorkspacePage(targetUrl, activeTab.activeProject.stagingUrl)
+    if (!previewOnly) {
+      await window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html)
+      if (result.auditContext) await window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext)
+    }
     setTabs((current) => current.map((tab) => tab.id === activeTab.id ? {
       ...tab,
-      activeProject: updatedProject || tab.activeProject,
       snapshotHtml: result.html!,
       auditContext: result.auditContext || null,
       captureUrl: targetUrl,
       snapshotKey: tab.snapshotKey + 1,
+      previewOnly,
+      pendingCaptureUrl: previewOnly ? targetUrl : undefined,
     } : tab))
-    if (updatedProject) window.dispatchEvent(new CustomEvent('qa_projects_updated'))
     return { success: true }
   }, [activeTabId, tabs])
+
+  const handleCaptureFromWorkspace = async (sourceTabId: string, rawUrl: string, requestedFolderId?: string) => {
+    const sourceTab = tabs.find((tab) => tab.id === sourceTabId)
+    const targetUrl = normalizeWorkspaceUrl(rawUrl)
+    if (!sourceTab || !targetUrl) return { success: false, error: 'This page is no longer available.' }
+    const ownerAtStart = localStorage.getItem('parity_account_owner_key')
+    const result = await window.electronAPI.capture(targetUrl)
+    if (ownerAtStart !== localStorage.getItem('parity_account_owner_key')) return { success: false, error: 'The active account changed. Try again.' }
+    if (!result.success || !result.html) return { success: false, error: result.error || 'Unable to capture this page.' }
+    const lower = result.html.toLowerCase()
+    if (result.is404 || result.isSessionExpired || lower.includes('<title>page not found') || lower.includes('class="error404"') || lower.includes('wp-login.php')) {
+      return { success: false, error: result.isSessionExpired ? 'The website session has expired.' : 'This page could not be captured.' }
+    }
+    let folders: ProjectFolder[] = []
+    try { folders = JSON.parse(localStorage.getItem('qa_project_folders') || '[]') } catch {}
+    if (!Array.isArray(folders)) folders = []
+    if (requestedFolderId && !folders.some((folder) => folder.id === requestedFolderId)) return { success: false, error: 'The selected folder no longer exists. Choose another location.' }
+    const folderId = requestedFolderId
+    const sourceProject = sourceTab.activeProject
+    let adminUrl = ''
+    try {
+      if (sourceProject?.adminUrl && new URL(sourceProject.stagingUrl).origin === new URL(targetUrl).origin) adminUrl = sourceProject.adminUrl
+    } catch {}
+    const now = Date.now()
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name: deriveCapturedPageName(targetUrl, result.html),
+      adminUrl,
+      stagingUrl: targetUrl,
+      folderId,
+      createdAt: now,
+      lastOpenedAt: now,
+      localOwnerKey: ownerAtStart,
+    }
+    await window.electronAPI.saveProject(project, ownerAtStart)
+    const tabId = `tab-${crypto.randomUUID()}`
+    try {
+      await window.electronAPI.saveWorkspaceHtml(tabId, result.html)
+      if (result.auditContext) await window.electronAPI.saveWorkspaceAuditContext(tabId, result.auditContext)
+    } catch (error) {
+      console.warn('[Workspace HTML] New project will remain available in memory:', error)
+    }
+    if (ownerAtStart !== localStorage.getItem('parity_account_owner_key')) return { success: false, error: 'The active account changed. Reopen the project from Dashboard.' }
+    setTabs((current) => [...current.map((tab) => tab.id === sourceTabId && tab.pendingCaptureUrl ? { ...tab, pendingCaptureUrl: undefined } : tab), {
+      id: tabId,
+      title: project.name,
+      view: 'editor',
+      snapshotHtml: result.html!,
+      captureUrl: targetUrl,
+      snapshotKey: 0,
+      activeProject: project,
+      auditContext: result.auditContext || null,
+      prefillAdmin: adminUrl,
+      prefillStaging: targetUrl,
+      skipAutoCapture: false,
+      workspaceTab: sourceTab.workspaceTab,
+    }])
+    setActiveTabId(tabId)
+    window.dispatchEvent(new CustomEvent('qa_projects_updated'))
+    return { success: true }
+  }
+
+  const handleOpenExistingFromWorkspace = (project: Project) => {
+    const existing = tabs.find((tab) => tab.activeProject?.id === project.id && tab.view !== 'dashboard')
+    if (existing) { setActiveTabId(existing.id); return }
+    const id = `tab-${crypto.randomUUID()}`
+    setTabs((current) => [...current, {
+      id,
+      title: project.name,
+      view: 'capture',
+      snapshotHtml: null,
+      captureUrl: project.stagingUrl,
+      snapshotKey: 0,
+      activeProject: project,
+      prefillAdmin: project.adminUrl || '',
+      prefillStaging: project.stagingUrl,
+      skipAutoCapture: false,
+    }])
+    setActiveTabId(id)
+  }
 
   const handleWorkspaceTabChange = useCallback((workspaceTab: WorkspaceTab) => {
     setTabs((current) => current.map((tab) =>
@@ -657,8 +743,10 @@ export default function App() {
         updateActiveTab(t => ({ ...t, view: 'capture' }))
         return
       }
-      void window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html).catch(() => {})
-      if (result.auditContext) void window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext).catch(() => {})
+      if (!activeTab.previewOnly) {
+        void window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html).catch(() => {})
+        if (result.auditContext) void window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext).catch(() => {})
+      }
       updateActiveTab(t => ({ ...t, snapshotHtml: result.html!, auditContext: result.auditContext || null, snapshotKey: t.snapshotKey + 1 }))
     } else if (result.is404 || result.isSessionExpired) {
       updateActiveTab(t => ({ ...t, view: 'capture' }))
@@ -740,7 +828,7 @@ export default function App() {
       const currentTab = prev.find((tab) => tab.id === tabId)
       // Ignore teardown from an editor that was replaced by a newer recapture.
       if (!currentTab || currentTab.snapshotKey !== mountedSnapshotKey) return prev
-      void window.electronAPI.saveWorkspaceHtml(tabId, updatedHtml).catch((error) => {
+      if (!currentTab.previewOnly) void window.electronAPI.saveWorkspaceHtml(tabId, updatedHtml).catch((error) => {
         console.warn('[Workspace HTML] Unable to persist editor changes:', error)
       })
       return prev.map((tab) => tab.id === tabId ? { ...tab, snapshotHtml: updatedHtml } : tab)
@@ -850,6 +938,10 @@ export default function App() {
                 initialWorkspaceTab={activeTab.workspaceTab}
                 onWorkspaceTabChange={handleWorkspaceTabChange}
                 onNavigateCapture={handleWorkspaceNavigate}
+                onCaptureNewProject={(url, folderId) => handleCaptureFromWorkspace(activeTab.id, url, folderId)}
+                onOpenExistingProject={handleOpenExistingFromWorkspace}
+                pendingCaptureUrl={activeTab.pendingCaptureUrl}
+                onDismissPendingCapture={() => setTabs((current) => current.map((tab) => tab.id === activeTab.id && tab.pendingCaptureUrl ? { ...tab, pendingCaptureUrl: undefined } : tab))}
               />
             ) : activeTab.view === 'notes' ? (
               <NotesWorkspace initialNoteId={activeTab.initialNoteId} onOpenDashboard={() => openUtilityView('dashboard')} />
@@ -905,4 +997,17 @@ function deriveProjectName(url: string): string {
   } catch {
     return 'Untitled Project'
   }
+}
+
+function deriveCapturedPageName(url: string, html: string): string {
+  try {
+    const path = new URL(url).pathname.split('/').filter(Boolean).pop()
+    if (path) {
+      const name = decodeURIComponent(path).replace(/\.[a-z\d]+$/i, '').replace(/[-_]+/g, ' ').trim()
+      if (name) return name.replace(/\b\w/g, (letter) => letter.toUpperCase()).slice(0, 100)
+    }
+    const title = new DOMParser().parseFromString(html, 'text/html').title.trim()
+    if (title) return title.slice(0, 100)
+  } catch {}
+  return deriveProjectName(url)
 }

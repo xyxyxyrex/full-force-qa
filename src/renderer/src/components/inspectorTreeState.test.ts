@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { InspectorDomNode } from '../../../shared/inspector'
-import { mergeInspectorTreeNode } from './inspectorTreeState'
+import { isFormattingWhitespaceNode, mergeInspectorTreeNode, visibleInspectorChildren } from './inspectorTreeState'
 
 function node(id: number, name: string, children?: InspectorDomNode[]): InspectorDomNode {
   return {
@@ -41,5 +41,24 @@ describe('inspector DOM tree merging', () => {
     mergeInspectorTreeNode(nodes, node(3, 'body', []))
 
     expect(nodes.get(3)?.children).toEqual([])
+  })
+})
+
+describe('inspector DOM tree presentation', () => {
+  it('hides formatting text without hiding real text, SVG text elements, or comments', () => {
+    const indentation = { ...node(2, '#text'), nodeType: 3, nodeName: '#text', nodeValue: '\n    ' }
+    const copy = { ...node(3, '#text'), nodeType: 3, nodeName: '#text', nodeValue: 'Hello world' }
+    const nonBreakingSpace = { ...node(4, '#text'), nodeType: 3, nodeName: '#text', nodeValue: '\u00a0' }
+    const svgText = node(5, 'text')
+    const comment = { ...node(6, '#comment'), nodeType: 8, nodeName: '#comment', nodeValue: 'authored comment' }
+    const internal = { ...node(7, 'div'), isParityInternal: true }
+    const parent = node(1, 'body', [indentation, copy, nonBreakingSpace, svgText, comment, internal])
+
+    expect(isFormattingWhitespaceNode(indentation)).toBe(true)
+    expect(isFormattingWhitespaceNode(nonBreakingSpace)).toBe(false)
+    expect(visibleInspectorChildren(parent, false, false).map(child => child.ref.nodeId)).toEqual([3, 4, 5, 6])
+    expect(visibleInspectorChildren(parent, false, false, 2).map(child => child.ref.nodeId)).toEqual([2, 3, 4, 5, 6])
+    expect(visibleInspectorChildren(parent, true, true).map(child => child.ref.nodeId)).toEqual([2, 3, 4, 5, 6, 7])
+    expect(parent.children).toHaveLength(6)
   })
 })

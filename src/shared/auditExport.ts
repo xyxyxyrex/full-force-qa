@@ -1,4 +1,4 @@
-export type AuditExportKind = 'images' | 'text' | 'links' | 'seo-data' | 'assets' | 'bundle'
+export type AuditExportKind = 'images' | 'text' | 'links' | 'seo-data' | 'assets' | 'media' | 'bundle'
 
 export type AuditResourceKind =
   | 'image'
@@ -32,6 +32,25 @@ export interface AuditExportResource {
   descriptor?: string
   inlineContent?: string
   mimeType?: string
+}
+
+export interface AuditMediaRequest {
+  resource: AuditExportResource
+  refererUrl: string
+}
+
+export interface AuditMediaPreviewResult {
+  dataUrl?: string
+  finalUrl?: string
+  mimeType?: string
+  bytes?: number
+  error?: string
+}
+
+export interface AuditMediaSaveResult {
+  cancelled?: boolean
+  filePath?: string
+  error?: string
 }
 
 export interface AuditTextRecord {

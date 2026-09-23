@@ -74,10 +74,28 @@ function classifyCssUrl(url: string, propertyText: string): AuditResourceKind {
 }
 
 function parseSrcset(value: string): Array<{ url: string; descriptor?: string }> {
-  return value.split(',').map((candidate) => {
-    const [url, ...descriptor] = candidate.trim().split(/\s+/)
-    return { url, descriptor: descriptor.join(' ') || undefined }
-  }).filter((item) => item.url)
+  const result: Array<{ url: string; descriptor?: string }> = []
+  let index = 0
+  while (index < value.length) {
+    while (index < value.length && /[\s,]/.test(value[index])) index++
+    if (index >= value.length) break
+    const dataUrl = value.slice(index, index + 5).toLowerCase() === 'data:'
+    const start = index
+    while (index < value.length && !/\s/.test(value[index]) && (dataUrl || value[index] !== ',')) index++
+    const rawUrl = value.slice(start, index)
+    const url = rawUrl.replace(/,+$/, '')
+    if (dataUrl && rawUrl.endsWith(',')) {
+      if (url) result.push({ url })
+      continue
+    }
+    while (index < value.length && /\s/.test(value[index])) index++
+    const descriptorStart = index
+    while (index < value.length && value[index] !== ',') index++
+    const descriptor = value.slice(descriptorStart, index).trim()
+    if (url) result.push({ url, descriptor: descriptor || undefined })
+    if (index < value.length) index++
+  }
+  return result
 }
 
 function metadataMap(doc: Document, prefix: string): Record<string, string> {
@@ -145,8 +163,12 @@ export function buildAuditExportPayload(
     addResource(element.getAttribute('content'), 'image', element.getAttribute('property') || element.getAttribute('name') || 'social-image', element)
   })
   doc.querySelectorAll('script[src]').forEach((element) => addResource(element.getAttribute('src'), 'script', 'script[src]', element))
-  doc.querySelectorAll('video[src], video source[src]').forEach((element) => addResource(element.getAttribute('src'), 'video', 'video source', element))
-  doc.querySelectorAll('audio[src], audio source[src]').forEach((element) => addResource(element.getAttribute('src'), 'audio', 'audio source', element))
+  doc.querySelectorAll('video, video source').forEach((element) => {
+    for (const attr of ['src', 'data-src', 'data-lazy-src', 'data-original']) addResource(element.getAttribute(attr), 'video', `${element.tagName.toLowerCase()}[${attr}]`, element)
+  })
+  doc.querySelectorAll('audio, audio source').forEach((element) => {
+    for (const attr of ['src', 'data-src', 'data-lazy-src', 'data-original']) addResource(element.getAttribute(attr), 'audio', `${element.tagName.toLowerCase()}[${attr}]`, element)
+  })
   doc.querySelectorAll('object[data], embed[src]').forEach((element) => addResource(element.getAttribute('data') || element.getAttribute('src'), 'other', element.tagName.toLowerCase(), element))
 
   doc.querySelectorAll('svg').forEach((element, index) => {
