@@ -17,6 +17,7 @@ import type {
   AuditResourceKind
 } from '../shared/auditExport'
 import { kindFromUrl, resolveResourceUrl } from './auditCaptureContext'
+import { capturedResourceCandidates, safeResourceReferer } from './resourceReferrer'
 export { buildAuditCaptureContext } from './auditCaptureContext'
 
 const REVIEW_FILE_COUNT = 100
@@ -41,6 +42,27 @@ const plans = new Map<string, ExportPlan>()
 const jobs = new Map<string, ExportJob>()
 const exportedFolders = new Set<string>()
 const savedMediaFiles = new Map<string, number>()
+
+async function fetchCapturedAsset(url: string, pageUrl: string, options: RequestInit): Promise<Response> {
+  const candidates = capturedResourceCandidates(url, pageUrl)
+  let lastError: unknown
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index]
+    const headers = new Headers(options.headers)
+    const referer = safeResourceReferer(candidate, pageUrl)
+    if (referer) headers.set('Referer', referer)
+    else headers.delete('Referer')
+    try {
+      const response = await session.defaultSession.fetch(candidate, { ...options, headers })
+      if (response.ok || index === candidates.length - 1) return response
+      try { await response.body?.cancel() } catch {}
+    } catch (error) {
+      lastError = error
+      if (index === candidates.length - 1) throw error
+    }
+  }
+  throw lastError || new Error('The captured asset could not be fetched.')
+}
 
 function resourcesForKind(kind: AuditExportKind, payload: AuditExportPayload): AuditExportResource[] {
   if (kind === 'images') return payload.resources.filter((item) => item.kind === 'image')
@@ -81,9 +103,9 @@ async function fetchSize(url: string, referer: string): Promise<{ size: number |
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8_000)
   try {
-    const response = await session.defaultSession.fetch(url, {
+    const response = await fetchCapturedAsset(url, referer, {
       method: 'HEAD', credentials: 'include', cache: 'no-store', redirect: 'follow',
-      headers: { Accept: '*/*', Referer: referer }, signal: controller.signal
+      headers: { Accept: '*/*' }, signal: controller.signal
     })
     const value = Number(response.headers.get('content-length'))
     return { size: Number.isFinite(value) && value >= 0 ? value : null, contentType: response.headers.get('content-type') || undefined }
@@ -159,9 +181,9 @@ async function previewMedia(resource: AuditExportResource, referer: string): Pro
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 20_000)
   try {
-    const response = await session.defaultSession.fetch(resource.url, {
+    const response = await fetchCapturedAsset(resource.url, referer, {
       credentials: 'include', cache: 'no-store', redirect: 'follow',
-      headers: { Accept: 'image/*,video/*,audio/*,*/*', Referer: referer }, signal: controller.signal
+      headers: { Accept: 'image/*,video/*,audio/*,*/*' }, signal: controller.signal
     })
     if (!response.ok) return { error: `Media request returned HTTP ${response.status}.` }
     if (/^(?:text\/html|application\/json)/i.test(response.headers.get('content-type') || '')) return { error: 'The server returned a page instead of media. The resource may require authentication.' }
@@ -230,9 +252,9 @@ async function fetchResource(resource: AuditExportResource, referer: string, job
   job.controllers.add(controller)
   const timer = setTimeout(() => controller.abort(), 30_000)
   try {
-    const response = await session.defaultSession.fetch(resource.url, {
+    const response = await fetchCapturedAsset(resource.url, referer, {
       credentials: 'include', cache: 'no-store', redirect: 'follow',
-      headers: { Accept: '*/*', Referer: referer }, signal: controller.signal
+      headers: { Accept: '*/*' }, signal: controller.signal
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return {
@@ -252,8 +274,11 @@ async function probeLink(url: string, referer: string, job: ExportJob): Promise<
   job.controllers.add(controller)
   const timer = setTimeout(() => controller.abort(), 10_000)
   try {
-    let response = await session.defaultSession.fetch(url, { method: 'HEAD', credentials: 'include', cache: 'no-store', redirect: 'follow', headers: { Referer: referer }, signal: controller.signal })
-    if (response.status === 405 || response.status === 501) response = await session.defaultSession.fetch(url, { method: 'GET', credentials: 'include', cache: 'no-store', redirect: 'follow', headers: { Range: 'bytes=0-0', Referer: referer }, signal: controller.signal })
+    const requestHeaders: Record<string, string> = {}
+    const safeReferer = safeResourceReferer(url, referer)
+    if (safeReferer) requestHeaders.Referer = safeReferer
+    let response = await session.defaultSession.fetch(url, { method: 'HEAD', credentials: 'include', cache: 'no-store', redirect: 'follow', headers: requestHeaders, signal: controller.signal })
+    if (response.status === 405 || response.status === 501) response = await session.defaultSession.fetch(url, { method: 'GET', credentials: 'include', cache: 'no-store', redirect: 'follow', headers: { ...requestHeaders, Range: 'bytes=0-0' }, signal: controller.signal })
     return { status: response.status, finalUrl: response.url || url }
   } catch (error) { return { error: error instanceof Error ? error.message : 'Link check failed.' } }
   finally { clearTimeout(timer); job.controllers.delete(controller) }

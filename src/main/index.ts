@@ -13,6 +13,7 @@ import { cancelPixelComparison, runPixelComparison } from './automation/runCompa
 import sharp from 'sharp'
 import { captureAutomatePage } from './automation/capture'
 import { assertFigmaNativeSize } from './automation/captureNormalization'
+import { safeResourceReferer } from './resourceReferrer'
 
 const PARITY_APP_ID = 'com.fullforce.parity'
 
@@ -61,6 +62,7 @@ import {
 import { createServer } from 'http'
 import { randomBytes, createHash } from 'crypto'
 import nspell from 'nspell'
+import { isAcceptedSpelling } from './spellingHeuristics'
 import { deleteLocalNoteAttachments, loadLocalNoteAttachment, openLocalNoteAttachment, saveLocalNoteAttachment } from './noteAttachments'
 
 function figmaTokenPath() {
@@ -622,9 +624,8 @@ async function fetchResourceFileSize(url: string, refererUrl?: string): Promise<
       try {
         const headers: Record<string, string> = { Accept: '*/*' }
         if (method === 'GET' && useRange) headers.Range = 'bytes=0-0'
-        if (refererUrl?.startsWith('http://') || refererUrl?.startsWith('https://')) {
-          headers.Referer = refererUrl
-        }
+        const safeReferer = safeResourceReferer(url, refererUrl)
+        if (safeReferer) headers.Referer = safeReferer
         return await session.defaultSession.fetch(url, {
           method,
           credentials: 'include',
@@ -1069,6 +1070,17 @@ function registerIpcHandlers(): void {
     let totalCharacters = 0
     let scannedElements = 0
 
+    const seenSpans = new Set<string>()
+    const spellingValidity = new Map<string, boolean>()
+    const acceptsSpelling = (word: string) => {
+      const key = word.toLowerCase()
+      const cached = spellingValidity.get(key)
+      if (cached !== undefined) return cached
+      const accepted = isAcceptedSpelling(spellCheckerInstance, word)
+      spellingValidity.set(key, accepted)
+      return accepted
+    }
+
     for (const item of items.slice(0, 1500)) {
       const { tag, index: elementIdx, path = '' } = item
       const text = typeof item.text === 'string' ? item.text.slice(0, 12000) : ''
@@ -1097,6 +1109,10 @@ function registerIpcHandlers(): void {
             const kind = typeof lint.lint_kind === 'function' ? lint.lint_kind() : 'Grammar'
             const category = typeof lint.lint_kind_pretty === 'function' ? lint.lint_kind_pretty() : kind
             const type = kind === 'Spelling' || kind === 'Typo' ? 'spelling' : 'grammar'
+            if (type === 'spelling' && acceptsSpelling(phrase)) continue
+            const spanKey = `${elementIdx}:${start}:${end}:${type}`
+            if (seenSpans.has(spanKey)) continue
+            seenSpans.add(spanKey)
             const suggestions = typeof lint.suggestions === 'function'
               ? Array.from(new Set<string>((lint.suggestions() || [])
                   .map((suggestion: any) => typeof suggestion.get_replacement_text === 'function'
@@ -1138,7 +1154,7 @@ function registerIpcHandlers(): void {
           const start = match.index || 0
           if (word.length < 3 || word.length > 45 || /^[A-Z]{2,}$/.test(word) || /[A-Z].*[A-Z]/.test(word.slice(1))) continue
           try {
-            if (spellCheckerInstance.correct(word) || spellCheckerInstance.correct(word.toLowerCase())) continue
+            if (acceptsSpelling(word)) continue
             const suggestions = (spellCheckerInstance.suggest(word) || spellCheckerInstance.suggest(word.toLowerCase()) || []).slice(0, 5)
             globalIdx++
             issues.push({

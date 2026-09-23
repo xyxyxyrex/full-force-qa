@@ -1,4 +1,5 @@
 import { BrowserWindow, net } from 'electron'
+import { safeResourceReferer } from './resourceReferrer'
 
 export function sanitizeUrl(rawUrl: string): string {
   if (!rawUrl) return ''
@@ -21,12 +22,13 @@ async function netFetchWithHeaders(
   refererUrl: string,
   accept: string = 'text/css,*/*;q=0.1'
 ): Promise<string | null> {
+  const safeReferer = safeResourceReferer(href, refererUrl)
   const headerSets: Record<string, string>[] = [
     // Preserve Electron Chromium's native UA and Fetch Metadata. Supplying a
     // different Chrome version here creates a contradictory WAF fingerprint.
     {
       'Accept': accept,
-      'Referer': refererUrl,
+      ...(safeReferer ? { 'Referer': safeReferer } : {}),
       'Accept-Language': 'en-US,en;q=0.9'
     },
     // Minimal fallback for CDNs that reject a synthetic Referer.
@@ -597,11 +599,12 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       const imageCache = new Map<string, string>()
       for (const imgSrc of imgUrls) {
         try {
+          const safeReferer = safeResourceReferer(imgSrc, url)
           const response = await net.fetch(imgSrc, {
             credentials: 'include',
             headers: {
               'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-              'Referer': url
+              ...(safeReferer ? { 'Referer': safeReferer } : {})
             }
           })
           if (response.ok) {

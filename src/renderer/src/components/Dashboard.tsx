@@ -781,6 +781,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
             </div>
             <div className="col-time">{formatDate(project.lastOpenedAt)}</div>
             <div className="col-actions" onClick={(event) => event.stopPropagation()}>
+              <button className="list-action-btn" aria-label={`More actions for ${project.name}`} title="More actions" onClick={(event) => { event.stopPropagation(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}>⋯</button>
               <button className="list-action-btn" onClick={() => onOpenProject(project, true)} title="Edit Settings">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
               </button>
@@ -1003,6 +1004,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
                           </div>
                         )}
                         <div className="card-actions-overlay" onClick={(e) => e.stopPropagation()}>
+                          <button className="card-action-btn" aria-label={`More actions for ${project.name}`} title="More actions" onClick={(event) => { event.stopPropagation(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}>⋯</button>
                           <button
                             className="card-action-btn pin-btn pinned"
                             onClick={(e) => togglePinProject(project.id, e)}
@@ -1208,6 +1210,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
                             </div>
                           )}
                           <div className="card-actions-overlay" onClick={(e) => e.stopPropagation()}>
+                            <button className="card-action-btn" aria-label={`More actions for ${project.name}`} title="More actions" onClick={(event) => { event.stopPropagation(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}>⋯</button>
                             <button
                               className="card-action-btn pin-btn"
                               onClick={(e) => togglePinProject(project.id, e)}
@@ -1315,6 +1318,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
                         </div>
                         <div className="col-time">{formatDate(project.lastOpenedAt)}</div>
                         <div className="col-actions" onClick={(e) => e.stopPropagation()}>
+                          <button className="list-action-btn" aria-label={`More actions for ${project.name}`} title="More actions" onClick={(event) => { event.stopPropagation(); setProjectContextMenu({ x: event.clientX, y: event.clientY, project }) }}>⋯</button>
                           <button
                             className="list-action-btn"
                             onClick={() => onOpenProject(project, true)}
@@ -1421,8 +1425,38 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
         </div>
       </div>
 
-
-
+      {projectContextMenu && <div className="project-context-menu" role="menu" aria-label={`Project actions for ${projectContextMenu.project.name}`} style={{ left: Math.min(projectContextMenu.x, window.innerWidth - 228), top: Math.min(projectContextMenu.y, window.innerHeight - 310) }} onClick={(event) => event.stopPropagation()}>
+        <div className="project-context-title"><b>{projectContextMenu.project.name}</b><small>Project actions</small></div>
+        <button role="menuitem" onClick={() => { onOpenProject(projectContextMenu.project); setProjectContextMenu(null) }}>Open project</button>
+        <button role="menuitem" onClick={() => { openProjectEditor(projectContextMenu.project); setProjectContextMenu(null) }}>Rename / edit project</button>
+        <button role="menuitem" onClick={() => void createSiblingProject(projectContextMenu.project)}>Create another page</button>
+        <button role="menuitem" onClick={() => { togglePinProject(projectContextMenu.project.id); setProjectContextMenu(null) }}>{pinnedProjectIds.includes(projectContextMenu.project.id) ? 'Unpin project' : 'Pin project'}</button>
+        <div className="project-context-divider" />
+        <div className="project-context-move"><button role="menuitem" aria-haspopup="menu">Move to folder <span aria-hidden="true">›</span></button><div className="project-context-submenu" role="menu">
+          <button role="menuitem" onClick={() => void moveProjectToFolder(projectContextMenu.project)}>Home</button>
+          {folders.map((folder) => <button role="menuitem" key={folder.id} onClick={() => void moveProjectToFolder(projectContextMenu.project, folder.id)}><span>{folder.name}</span></button>)}
+          <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined, projectId: projectContextMenu.project.id }); setProjectContextMenu(null) }}>New folder…</button>
+        </div></div>
+        <div className="project-context-divider" />
+        {getProjectTicketId(projectContextMenu.project)
+          ? <button role="menuitem" onClick={() => { const id = getProjectTicketId(projectContextMenu.project); if (id) void toggleActiveTicket(id); setProjectContextMenu(null) }}>Set inactive</button>
+          : <button role="menuitem" className="danger" onClick={() => { setDeleteConfirmProject(projectContextMenu.project); setProjectContextMenu(null) }}>Move to Trash</button>}
+      </div>}
+      {folderContextMenu && <div className="project-context-menu" role="menu" aria-label={`Folder actions for ${folderContextMenu.folder.name}`} style={{ left: Math.min(folderContextMenu.x, window.innerWidth - 228), top: Math.min(folderContextMenu.y, window.innerHeight - 245) }} onClick={(event) => event.stopPropagation()}>
+        <div className="project-context-title"><b>{folderContextMenu.folder.name}</b><small>Folder actions</small></div>
+        <button role="menuitem" onClick={() => { setCurrentFolderId(folderContextMenu.folder.id); setFolderContextMenu(null) }}>Open folder</button>
+        <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'rename', name: folderContextMenu.folder.name, folderId: folderContextMenu.folder.id }); setFolderContextMenu(null) }}>Rename folder</button>
+        <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: folderContextMenu.folder.id }); setFolderContextMenu(null) }}>New subfolder</button>
+        <div className="project-context-move"><button role="menuitem" aria-haspopup="menu">Move to folder <span aria-hidden="true">›</span></button><div className="project-context-submenu" role="menu">
+          <button role="menuitem" onClick={() => moveFolderToFolder(folderContextMenu.folder.id)}>Home</button>
+          {folders.filter((folder) => canMoveFolder(folders, folderContextMenu.folder.id, folder.id)).map((folder) => <button role="menuitem" key={folder.id} onClick={() => moveFolderToFolder(folderContextMenu.folder.id, folder.id)}><span>{folder.name}</span></button>)}
+        </div></div>
+        <div className="project-context-divider" />
+        <button role="menuitem" className="danger" onClick={() => void deleteFolder(folderContextMenu.folder)}>Delete folder</button>
+      </div>}
+      {dashboardContextMenu && <div className="project-context-menu" role="menu" aria-label="Dashboard actions" style={{ left: dashboardContextMenu.x, top: dashboardContextMenu.y }} onClick={(event) => event.stopPropagation()}>
+        <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined }); setDashboardContextMenu(null) }}>New folder</button>
+      </div>}
       {/* ── MOVE TO TRASH CONFIRMATION MODAL ───────────────────────── */}
       {editingProject && (
         <div className="modal-overlay project-edit-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingProject(null) }}>

@@ -38,7 +38,7 @@ export interface LiveEditorOptions {
 export function attachLiveEditor(
   doc: Document,
   options: LiveEditorOptions
-): { cleanup: () => void; updateOptions: (newOpts: Partial<LiveEditorOptions>) => void; setPaused: (p: boolean) => void; selectElement: (el: HTMLElement) => void; setZoom: (z: number) => void } {
+): { cleanup: () => void; updateOptions: (newOpts: Partial<LiveEditorOptions>) => void; setPaused: (p: boolean) => void; selectElement: (el: HTMLElement) => void; deselect: () => void; setZoom: (z: number) => void } {
   let mode = options.mode || 'edit'
   let revealAnimations = options.revealAnimations ?? false
   let currentZoom = options.zoom || 100
@@ -1115,10 +1115,21 @@ export function attachLiveEditor(
     selectElement(el)
   }
 
+  const deselect = () => {
+    selectedEls.forEach((element) => {
+      element.removeAttribute('data-live-selected')
+      element.removeAttribute('contenteditable')
+    })
+    selectedEls.clear()
+    selectedEl = null
+    removeToolbar()
+    options.onSelect(null, null)
+  }
+
   const setZoom = (z: number) => {
     currentZoom = z
     positionToolbar()
   }
 
-  return { cleanup, updateOptions, setPaused, selectElement: selectElementExternally, setZoom }
+  return { cleanup, updateOptions, setPaused, selectElement: selectElementExternally, deselect, setZoom }
 }

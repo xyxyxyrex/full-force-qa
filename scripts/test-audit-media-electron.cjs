@@ -39,7 +39,9 @@ async function smoke() {
   const image = fs.readFileSync(path.join(__dirname, '../src/renderer/src/assets/parity-180.png'))
   const audio = wave()
   const assets = new Map([['/photo.png', { bytes: image, type: 'image/png' }], ['/sound.wav', { bytes: audio, type: 'audio/wav' }], ['/clip.mp4', { bytes: Buffer.from('not a playable video'), type: 'video/mp4' }]])
+  const receivedRequests = []
   const server = http.createServer((request, response) => {
+    receivedRequests.push({ path: request.url, referer: request.headers.referer })
     const asset = assets.get(request.url)
     if (!asset) { response.writeHead(404); response.end(); return }
     response.writeHead(200, { 'Content-Type': asset.type, 'Content-Length': asset.bytes.length })
@@ -62,6 +64,16 @@ async function smoke() {
     await until("document.querySelectorAll('.audit-media-tile').length===4")
     await until("document.querySelector('.audit-media-preview img')?.src.startsWith('data:image/png;base64,')")
     assert.equal(await js("document.querySelector('.audit-media-preview img').naturalWidth>0"), true)
+    const securePagePreview = await js(`window.electronAPI.previewAuditMedia({resource:{url:${JSON.stringify(`${base}/photo.png`)},kind:'image',source:'img[src]'},refererUrl:'https://127.0.0.1/private-page'})`)
+    assert.equal(securePagePreview.mimeType, 'image/png')
+    assert.equal(securePagePreview.bytes, image.length)
+    assert.equal(receivedRequests.at(-1).referer, undefined)
+    const downgradedSavePath = path.join(directory, 'saved-http-from-https.png')
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: downgradedSavePath })
+    const downgradedSave = await js(`window.electronAPI.saveAuditMedia({resource:{url:${JSON.stringify(`${base}/photo.png`)},kind:'image',source:'img[src]'},refererUrl:'https://127.0.0.1/private-page'})`)
+    assert.equal(downgradedSave.filePath, downgradedSavePath)
+    assert.deepEqual(fs.readFileSync(downgradedSavePath), image)
+    assert.equal(receivedRequests.at(-1).referer, undefined)
     assert.equal(await js("document.querySelectorAll('.audit-media-usage').length"), 2)
     await js("document.querySelector('.audit-media-usage button').click()")
     assert.equal(await js("window.__located"), 'main img')

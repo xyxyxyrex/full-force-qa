@@ -14,6 +14,7 @@ import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
 import SeoAuditRightPanel from "./SeoAuditRightPanel";
+import AuditInspectorPanel from "./AuditInspectorPanel";
 import BrowserComparisonPanel from "./BrowserComparisonPanel";
 import { normalizeWorkspaceUrl, sameWorkspacePage } from "../utils/workspaceUrl";
 import type { BrowserComparisonCapture, ComparisonEngine } from "../../../shared/crossBrowser";
@@ -725,6 +726,14 @@ const ZOOM_MIN = 25;
 const ZOOM_MAX = 200;
 const ZOOM_STEP = 10;
 
+const PSEUDO_AUDIT_ATTRIBUTES = [
+  'data-audit-force-hover',
+  'data-audit-force-active',
+  'data-audit-force-focus',
+  'data-audit-force-focus-visible',
+  'data-audit-force-focus-within',
+];
+
 function serializeWorkspaceHtml(doc: Document): string {
   const root = doc.documentElement.cloneNode(true) as HTMLElement;
   const hadColorHighlightOverlay = !!root.querySelector(
@@ -742,6 +751,7 @@ function serializeWorkspaceHtml(doc: Document): string {
     ".__bd-container",
     "#__color-highlight-overlay",
     "#seo-audit-canvas-styles",
+    "#parity-audit-forced-pseudo",
     ".seo-duplicate-badge",
     "#__audit-overlay-container",
   ];
@@ -751,13 +761,14 @@ function serializeWorkspaceHtml(doc: Document): string {
 
   root
     .querySelectorAll<HTMLElement>(
-      "[data-live-selected], [data-live-hover], [contenteditable], [data-npath]",
+      "[data-live-selected], [data-live-hover], [contenteditable], [data-npath], [data-audit-force-hover], [data-audit-force-active], [data-audit-force-focus], [data-audit-force-focus-visible], [data-audit-force-focus-within]",
     )
     .forEach((el) => {
       el.removeAttribute("data-live-selected");
       el.removeAttribute("data-live-hover");
       el.removeAttribute("contenteditable");
       el.removeAttribute("data-npath");
+      PSEUDO_AUDIT_ATTRIBUTES.forEach((attribute) => el.removeAttribute(attribute));
     });
   root
     .querySelectorAll<HTMLElement>(".seo-duplicate-highlight")
@@ -1627,7 +1638,7 @@ export default function EditorWorkspace({
   }, [workspaceTab]);
 
   // ── Panel resize state ────────────────────────
-  const [leftPanelWidth, setLeftPanelWidth] = useState(260);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(360);
   const [rightPanelWidth, setRightPanelWidth] = useState(260);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
@@ -3043,6 +3054,7 @@ export default function EditorWorkspace({
   };
 
   const selectedNativeElRef = useRef<HTMLElement | null>(null);
+  const pendingAuditInspectorSelection = useRef<{ path: string; tag: string; id: string; sourceUrl: string; createdAt: number } | null>(null);
   const [selectedNativeEl, setSelectedNativeEl] = useState<HTMLElement | null>(
     null,
   );
@@ -3496,6 +3508,21 @@ export default function EditorWorkspace({
     if (!iframe || !iframe.contentDocument) return;
     const doc = iframe.contentDocument;
     nativeIframeLoadedRef.current = true;
+    selectedNativeElRef.current = null;
+    setSelectedNativeEl(null);
+    setNativeStyleRevision((revision) => revision + 1);
+    doc.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      liveEditorRef.current?.deselect();
+      editorRef.current?.select(undefined as any);
+      selectedNativeElRef.current = null;
+      setSelectedNativeEl(null);
+      setSelectedComponent(null);
+    }, true);
 
     // Mark editor as ready & store initial DOM snapshot for Undo/Redo
     isEditorReadyRef.current = true;
@@ -3665,7 +3692,17 @@ export default function EditorWorkspace({
       },
     });
     liveEditorRef.current = live;
-  }, [interactionMode, revealAnimations, pushHistoryStep]);
+    const pendingSelection = pendingAuditInspectorSelection.current;
+    pendingAuditInspectorSelection.current = null;
+    if (pendingSelection && pendingSelection.sourceUrl === sourceUrl && Date.now() - pendingSelection.createdAt < 3000) {
+      const restored = Array.from(doc.querySelectorAll<HTMLElement>('[data-npath]')).find((element) =>
+        element.getAttribute('data-npath') === pendingSelection.path &&
+        element.tagName === pendingSelection.tag &&
+        element.id === pendingSelection.id,
+      );
+      if (restored) live.selectElement(restored);
+    }
+  }, [interactionMode, revealAnimations, pushHistoryStep, sourceUrl]);
 
   // ── Editor lifecycle ──────────────────────────
   useEffect(() => {
@@ -3724,8 +3761,7 @@ export default function EditorWorkspace({
               const isEdit =
                 target &&
                 (target.tagName === "INPUT" ||
-                  target.tagName === "TEXTAREA" ||
-                  target.isContentEditable);
+                  target.tagName === "TEXTAREA");
               if (!isEdit) {
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -3733,6 +3769,9 @@ export default function EditorWorkspace({
                 if (sel && typeof sel.deselect === "function") sel.deselect();
                 if (typeof (editor as any).select === "function")
                   (editor as any).select(undefined as any);
+                liveEditorRef.current?.deselect();
+                selectedNativeElRef.current = null;
+                setSelectedNativeEl(null);
                 setSelectedComponent(null);
               }
             }
@@ -5189,7 +5228,7 @@ export default function EditorWorkspace({
             // Hard-drag collapse threshold: dragging left below 90px snaps panel closed
             if (rawWidth < 90) {
               setLeftPanelOpen(false);
-              setLeftPanelWidth(260);
+              setLeftPanelWidth(360);
               onUp();
               return;
             }
@@ -5876,6 +5915,11 @@ export default function EditorWorkspace({
 
   const clearWorkspaceSelection = () => {
     if (workspaceTab === "editBeta") editBetaRef.current?.deselect();
+    if (workspaceTab === "audit" || workspaceTab === "layout") {
+      liveEditorRef.current?.deselect();
+      selectedNativeElRef.current = null;
+      setSelectedNativeEl(null);
+    }
 
     const ed: any = editorRef.current;
     if (ed) {
@@ -9001,9 +9045,42 @@ export default function EditorWorkspace({
               className="editor-panel panel-left"
               style={{ width: leftPanelWidth }}
             >
+              {workspaceTab === "audit" && <AuditInspectorPanel
+                doc={liveIframeRef.current?.contentDocument || null}
+                selected={selectedNativeEl}
+                revision={nativeStyleRevision}
+                annotations={liveAnnotations.map(({ id, title, badgeNumber, notes, viewportWidth, viewportHeight }) => ({ id, title, badgeNumber, notes, viewportWidth, viewportHeight }))}
+                activeViewport={{ width: vpWidth, height: vpHeight }}
+                onSelect={(element) => {
+                  liveEditorRef.current?.selectElement(element);
+                  selectedNativeElRef.current = element;
+                  setSelectedNativeEl(element);
+                  setNativeStyleRevision((revision) => revision + 1);
+                }}
+                onSelectAnnotation={(id) => {
+                  const annotation = liveAnnotations.find((item) => item.id === id);
+                  if (annotation) handleSelectWorkspaceAnnotation(annotation);
+                }}
+                onChange={(description) => {
+                  const currentDoc = liveIframeRef.current?.contentDocument;
+                  const currentSelection = selectedNativeElRef.current;
+                  const path = currentSelection?.isConnected ? currentSelection.getAttribute('data-npath') : null;
+                  pendingAuditInspectorSelection.current = path && currentSelection ? {
+                    path,
+                    tag: currentSelection.tagName,
+                    id: currentSelection.id,
+                    sourceUrl,
+                    createdAt: Date.now(),
+                  } : null;
+                  if (currentDoc) onPersistHtmlRef.current?.(serializeWorkspaceHtml(currentDoc));
+                  pushHistoryStep("Inspector edit", description, "edit");
+                  setNativeStyleRevision((revision) => revision + 1);
+                }}
+              />}
               {/* Collapsible Layers Section */}
               <div
                 className={`accordion-section ${layersExpanded ? "expanded" : "collapsed"}`}
+                style={workspaceTab === "audit" ? { display: "none" } : undefined}
               >
                 <div
                   className="accordion-header"
@@ -9233,6 +9310,7 @@ export default function EditorWorkspace({
               {/* Collapsible CSS Inspector Section */}
               <div
                 className={`accordion-section ${cssExpanded ? "expanded" : "collapsed"}`}
+                style={workspaceTab === "audit" ? { display: "none" } : undefined}
               >
                 <div
                   className="accordion-header"

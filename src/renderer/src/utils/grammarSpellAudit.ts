@@ -59,14 +59,26 @@ const emptyReport = (): GrammarSpellReport => ({
   engines: { harper: false, spellingFallback: false, warnings: [] }
 })
 
-function isVisibleForAudit(element: HTMLElement): boolean {
-  if (element.closest(EXCLUDED_ANCESTOR_SELECTOR)) return false
-  if (element.hidden || element.getAttribute('aria-hidden') === 'true') return false
+function isVisibleForAudit(element: HTMLElement, cache: WeakMap<HTMLElement, boolean>): boolean {
+  const cached = cache.get(element)
+  if (cached !== undefined) return cached
   const view = element.ownerDocument.defaultView
   if (!view) return true
   try {
-    const style = view.getComputedStyle(element)
-    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0
+    let current: HTMLElement | null = element
+    const traversed: HTMLElement[] = []
+    let visible = true
+    while (current) {
+      const cachedAncestor = cache.get(current)
+      if (cachedAncestor !== undefined) { visible = cachedAncestor; break }
+      traversed.push(current)
+      if (current.matches(EXCLUDED_ANCESTOR_SELECTOR) || current.hidden || current.getAttribute('aria-hidden') === 'true') { visible = false; break }
+      const style = view.getComputedStyle(current)
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity || 1) === 0) { visible = false; break }
+      current = current.parentElement
+    }
+    traversed.forEach((item) => cache.set(item, visible))
+    return visible
   } catch {
     return true
   }
@@ -98,11 +110,12 @@ function elementPath(element: Element): string {
 export function collectAuditableTextElements(doc: Document): AuditableTextElement[] {
   if (!doc.body) return []
   const selected = new Set<HTMLElement>()
+  const visibilityCache = new WeakMap<HTMLElement, boolean>()
   const add = (element: Element) => {
     if (element.nodeType !== Node.ELEMENT_NODE || element.ownerDocument !== doc) return
     const htmlElement = element as HTMLElement
     const text = auditText(htmlElement)
-    if (text.length < 3 || text.length > 12000 || !isVisibleForAudit(htmlElement)) return
+    if (text.length < 3 || text.length > 12000 || !isVisibleForAudit(htmlElement, visibilityCache)) return
     selected.add(htmlElement)
   }
 
@@ -117,7 +130,17 @@ export function collectAuditableTextElements(doc: Document): AuditableTextElemen
     if (!element.querySelector(`${PRIMARY_TEXT_SELECTOR}, a, span, div, section, article`)) add(element)
   })
 
+  // A heading or list item can contain other matching tags. Scan its text once,
+  // rather than reporting the same word for both the parent and its descendants.
   return Array.from(selected)
+    .filter((element) => {
+      let ancestor = element.parentElement
+      while (ancestor && ancestor !== doc.body) {
+        if (selected.has(ancestor)) return false
+        ancestor = ancestor.parentElement
+      }
+      return true
+    })
     .sort((a, b) => a === b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
     .map((element, index) => {
       const path = elementPath(element)
