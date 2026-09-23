@@ -1,6 +1,6 @@
 {
   "name": "parity",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
@@ -14,6 +14,8 @@
     "test:accounts:database": "node scripts/test-account-database.cjs",
     "test:accounts:electron": "node scripts/test-account-electron.cjs",
     "test:inspector:electron": "node scripts/test-inspector-electron.cjs",
+    "test:comparison:electron": "node scripts/test-comparison-electron.cjs",
+    "test:comparison:ui": "node scripts/test-comparison-ui-electron.cjs",
     "test:palette:electron": "node scripts/test-palette-electron.cjs",
     "test:automation:electron": "node scripts/test-automation-electron.cjs",
     "test:watch": "vitest",
@@ -31,6 +33,7 @@
     "harper.js": "^2.7.0",
     "nspell": "^2.1.5",
     "pixelmatch": "^7.2.0",
+    "playwright": "1.63.0",
     "pngjs": "^7.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

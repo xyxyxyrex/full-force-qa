@@ -389,6 +389,19 @@ export interface ResourceFileSizeResult {
 }
 
 export interface ElectronAPI extends InspectorApi {
+  comparisonStatus: () => Promise<Record<import('./crossBrowser').ComparisonEngine, boolean>>
+  comparisonInstall: (engine: import('./crossBrowser').ComparisonEngine) => Promise<void>
+  comparisonOpenLogin: (engine: import('./crossBrowser').ComparisonEngine, projectId: string, url: string) => Promise<void>
+  comparisonFinishLogin: (engine: import('./crossBrowser').ComparisonEngine, projectId: string) => Promise<void>
+  comparisonClearSession: (engine: import('./crossBrowser').ComparisonEngine, projectId: string) => Promise<void>
+  comparisonCapture: (input: import('./crossBrowser').BrowserComparisonCapture) => Promise<import('./crossBrowser').BrowserComparisonImage>
+  comparisonCancel: () => Promise<void>
+  comparisonList: (projectId: string) => Promise<import('./crossBrowser').BrowserComparison[]>
+  comparisonLoad: (projectId: string, id: string) => Promise<import('./crossBrowser').BrowserComparisonImage>
+  comparisonSaveAnnotations: (projectId: string, id: string, annotations: import('./crossBrowser').ComparisonAnnotation[]) => Promise<import('./crossBrowser').BrowserComparison>
+  comparisonDelete: (projectId: string, id: string) => Promise<void>
+  comparisonExport: (projectId: string, id: string) => Promise<string | null>
+  onComparisonProgress: (callback: (progress: import('./crossBrowser').BrowserComparisonProgress) => void) => () => void
   accountStatus: () => Promise<AccountStatus>
   accountLoginGoogle: () => Promise<AccountStatus>
   accountInitialize: (mode: 'new' | 'monday') => Promise<AccountStatus>
@@ -437,7 +450,7 @@ export interface ElectronAPI extends InspectorApi {
   onFigmaAuthChanged: (callback: (status: FigmaConnectionStatus) => void) => () => void
   listFigmaFrames: (url: string) => Promise<{ success: boolean; fileName?: string; lastModified?: string; requestedNodeId?: string; frames?: Array<{ id: string; name: string; type: string; pageName: string; path?: string; width: number; height: number }>; styleNames?: Record<string, string>; error?: string }>
   getFigmaFrame: (url: string, nodeId?: string) => Promise<{ success: boolean; node?: any; imageDataUrl?: string; error?: string }>
-  captureAutomatePage: (webContentsId: number, viewportWidth: number, viewportHeight: number) => Promise<{ success: boolean; dataUrl?: string; documentWidth?: number; documentHeight?: number; domNodes?: any[]; tiles?: number; mode?: string; error?: string; fallback?: boolean }>
+  captureAutomatePage: (webContentsId: number, viewportWidth: number, viewportHeight: number, allowHorizontalOverflow?: boolean) => Promise<{ success: boolean; dataUrl?: string; documentWidth?: number; documentHeight?: number; domNodes?: any[]; tiles?: number; mode?: string; error?: string; fallback?: boolean }>
   compareVisuals: (jobId: string, designDataUrl: string, liveDataUrl: string) => Promise<PixelComparisonResponse>
   cancelVisualComparison: (jobId: string) => Promise<{ success: boolean }>
   toggleMaximizeWindow: () => Promise<void>

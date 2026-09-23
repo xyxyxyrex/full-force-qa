@@ -4,6 +4,23 @@ import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPubli
 import type { AuditCaptureContext, AuditExportProgress, AuditExportScanRequest } from '../shared/auditExport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  comparisonStatus: () => ipcRenderer.invoke('comparison:status'),
+  comparisonInstall: (engine: import('../shared/crossBrowser').ComparisonEngine) => ipcRenderer.invoke('comparison:install', engine),
+  comparisonOpenLogin: (engine: import('../shared/crossBrowser').ComparisonEngine, projectId: string, url: string) => ipcRenderer.invoke('comparison:open-login', engine, projectId, url),
+  comparisonFinishLogin: (engine: import('../shared/crossBrowser').ComparisonEngine, projectId: string) => ipcRenderer.invoke('comparison:finish-login', engine, projectId),
+  comparisonClearSession: (engine: import('../shared/crossBrowser').ComparisonEngine, projectId: string) => ipcRenderer.invoke('comparison:clear-session', engine, projectId),
+  comparisonCapture: (input: import('../shared/crossBrowser').BrowserComparisonCapture) => ipcRenderer.invoke('comparison:capture', input),
+  comparisonCancel: () => ipcRenderer.invoke('comparison:cancel'),
+  comparisonList: (projectId: string) => ipcRenderer.invoke('comparison:list', projectId),
+  comparisonLoad: (projectId: string, id: string) => ipcRenderer.invoke('comparison:load', projectId, id),
+  comparisonSaveAnnotations: (projectId: string, id: string, annotations: import('../shared/crossBrowser').ComparisonAnnotation[]) => ipcRenderer.invoke('comparison:save-annotations', projectId, id, annotations),
+  comparisonDelete: (projectId: string, id: string) => ipcRenderer.invoke('comparison:delete', projectId, id),
+  comparisonExport: (projectId: string, id: string) => ipcRenderer.invoke('comparison:export', projectId, id),
+  onComparisonProgress(callback: (progress: import('../shared/crossBrowser').BrowserComparisonProgress) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, progress: import('../shared/crossBrowser').BrowserComparisonProgress) => callback(progress)
+    ipcRenderer.on('comparison:progress', handler)
+    return () => ipcRenderer.removeListener('comparison:progress', handler)
+  },
   onOpenCommandPalette: (callback: () => void) => {
     const handler = () => callback()
     ipcRenderer.on('palette:open', handler)
@@ -168,8 +185,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFigmaFrame(url: string, nodeId?: string): Promise<any> {
     return ipcRenderer.invoke('figma:get-frame', url, nodeId)
   },
-  captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number): Promise<any> {
-    return ipcRenderer.invoke('automate:capture-page', webContentsId, viewportWidth, viewportHeight)
+  captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number, allowHorizontalOverflow = false): Promise<any> {
+    return ipcRenderer.invoke('automate:capture-page', webContentsId, viewportWidth, viewportHeight, allowHorizontalOverflow)
   },
   compareVisuals(jobId: string, designDataUrl: string, liveDataUrl: string): Promise<PixelComparisonResponse> {
     return ipcRenderer.invoke('automate:visual-compare', jobId, designDataUrl, liveDataUrl)

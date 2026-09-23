@@ -66,13 +66,13 @@ function capturePromiseWithTimeout<T>(promise: Promise<T>, milliseconds: number,
 }
 
 const activeCaptures = new Set<number>()
-export async function captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number) {
+export async function captureAutomatePage(webContentsId: number, viewportWidth: number, viewportHeight: number, allowHorizontalOverflow = false) {
   if (activeCaptures.has(webContentsId)) throw new Error('This page is still finishing its previous capture. Wait for cleanup before running again.')
   activeCaptures.add(webContentsId)
-  try { return await performCapture(webContentsId, viewportWidth, viewportHeight) }
+  try { return await performCapture(webContentsId, viewportWidth, viewportHeight, allowHorizontalOverflow) }
   finally { activeCaptures.delete(webContentsId) }
 }
-async function performCapture(webContentsId: number, viewportWidth: number, viewportHeight: number) {
+async function performCapture(webContentsId: number, viewportWidth: number, viewportHeight: number, allowHorizontalOverflow: boolean) {
   const debuggerLease = acquireDebugger(webContentsId, `capture:${webContentsId}:${Date.now()}`)
   const resumeInspector = await debuggerLease.beginExclusive()
   const target = debuggerLease.target
@@ -103,7 +103,7 @@ async function performCapture(webContentsId: number, viewportWidth: number, view
     const measured = await sendCaptureCommand('Runtime.evaluate', { expression: `(() => { const root = document.documentElement; const body = document.body; const scroller = document.scrollingElement || root; const viewportHeight = Math.max(1, Math.ceil(scroller.clientHeight || innerHeight || ${tileHeight})); const height = Math.ceil(Math.max(scroller.scrollHeight, root.scrollHeight, body?.scrollHeight || 0, viewportHeight)); const scrollRange = Math.ceil(Math.max(0, scroller.scrollHeight - scroller.clientHeight, root.scrollHeight - root.clientHeight, (body?.scrollHeight || 0) - (body?.clientHeight || 0))); return { width: Math.ceil(Math.max(root.scrollWidth, body?.scrollWidth || 0)), height, viewportHeight, scrollRange }; })()`, returnByValue: true })
     const measuredValue = measured?.result?.value || {}
     const documentWidth = Math.max(width, Number(measuredValue.width || width))
-    if (documentWidth !== width) throw new Error('Horizontal overflow is outside the capture viewport. Full-width coverage is unavailable; no screenshot was resized.')
+    if (documentWidth !== width && !allowHorizontalOverflow) throw new Error('Horizontal overflow is outside the capture viewport. Full-width coverage is unavailable; no screenshot was resized.')
     const effectiveViewportHeight = Math.max(1, Number(measuredValue.viewportHeight || tileHeight))
     const documentHeight = Math.max(tileHeight, Number(measuredValue.height || tileHeight), Number(measuredValue.scrollRange || 0) + effectiveViewportHeight)
     if (width * documentHeight > 45_000_000 || documentHeight > 24000) throw new Error('The page exceeds the verified Chromium tile limit.')
@@ -134,7 +134,10 @@ async function performCapture(webContentsId: number, viewportWidth: number, view
     const semantic = await sendCaptureCommand('Runtime.evaluate', { expression: AUTOMATE_DOM_EXPRESSION, returnByValue: true }, 15_000)
     const semanticValue = semantic?.result?.value
     if (!Array.isArray(semanticValue?.nodes)) throw new Error('Semantic snapshot unavailable.')
-    assertStablePage(width, documentHeight, semanticValue.pageWidth, Math.max(tileHeight, semanticValue.pageHeight))
+    // Comparison captures intentionally show the fixed-width viewport column.
+    // Content overflowing horizontally is outside that preview, while every
+    // captured tile remains at the requested native viewport resolution.
+    assertStablePage(width, documentHeight, allowHorizontalOverflow ? width : semanticValue.pageWidth, Math.max(tileHeight, semanticValue.pageHeight))
     const stitched = await sharp({ create: { width, height: documentHeight, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).png({ compressionLevel: 6 }).toBuffer()
     return { success: true, dataUrl: `data:image/png;base64,${stitched.toString('base64')}`, documentWidth, documentHeight, domNodes: semantic?.result?.value?.nodes || [], tiles: composites.length, mode: 'verified-cdp-tiles' }
   } finally {

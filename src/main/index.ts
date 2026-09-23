@@ -5,6 +5,7 @@ import { accountRequest, accountOwner, accountAuthId, accountContext, restoreAcc
 import { registerTicketHandlers } from './ticketStore'
 import { registerInspectorHandlers } from './inspector'
 import { buildAuditCaptureContext, registerAuditExportHandlers } from './auditExport'
+import { closeComparisonWork, registerComparisonHandlers } from './crossBrowser'
 import { app, BrowserWindow, ipcMain, shell, session, Menu, dialog, safeStorage, protocol } from 'electron'
 import { join } from 'path'
 import { cpSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
@@ -875,8 +876,8 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('automate:capture-page', async (_event, webContentsId: number, viewportWidth: number, viewportHeight: number) => {
-    try { return await captureAutomatePage(Number(webContentsId), Number(viewportWidth), Number(viewportHeight)) }
+  ipcMain.handle('automate:capture-page', async (_event, webContentsId: number, viewportWidth: number, viewportHeight: number, allowHorizontalOverflow?: boolean) => {
+    try { return await captureAutomatePage(Number(webContentsId), Number(viewportWidth), Number(viewportHeight), allowHorizontalOverflow === true) }
     catch (error: any) { return { success: false, error: error?.message || 'Atomic Chromium capture failed.', fallback: true } }
   })
 
@@ -1394,9 +1395,10 @@ function registerIpcHandlers(): void {
   // Monday-authenticated private account data. The renderer never receives a
   // Monday access token or Supabase service credential.
   ipcMain.handle('account:status', () => getAccountStatus())
-  ipcMain.handle('account:login-google', () => loginWithGoogle())
-  ipcMain.handle('account:sign-out', () => signOutAccount())
+  ipcMain.handle('account:login-google', async () => { await closeComparisonWork(); return loginWithGoogle() })
+  ipcMain.handle('account:sign-out', async () => { await closeComparisonWork(); return signOutAccount() })
   ipcMain.handle('account:initialize', async (_event, mode: 'new' | 'monday') => {
+    await closeComparisonWork()
     let credentials = readMondayCredentials()
     if (mode === 'monday' && !credentials) {
       const legacy = join(app.getPath('userData'), 'monday-credentials.bin')
@@ -1536,6 +1538,7 @@ app.whenReady().then(async () => {
   registerInspectorHandlers()
   registerTicketHandlers()
   registerAuditExportHandlers()
+  registerComparisonHandlers()
   createWindow()
   initializeAppUpdater(() => mainWindow)
 })

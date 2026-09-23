@@ -14,6 +14,8 @@ import { initEditor, loadMissingFonts } from "../grapesjs/init";
 import { attachLiveEditor } from "../utils/liveEditorBridge";
 import type { Editor } from "grapesjs";
 import SeoAuditRightPanel from "./SeoAuditRightPanel";
+import BrowserComparisonPanel from "./BrowserComparisonPanel";
+import type { BrowserComparisonCapture, ComparisonEngine } from "../../../shared/crossBrowser";
 import EditBetaWorkspace from "./EditBetaWorkspace";
 import type { EditBetaWorkspaceHandle, EyedropperSample, FontInspectorMode, InteractionMode } from "./EditBetaWorkspace";
 import AutomateWorkspace from "./AutomateWorkspace";
@@ -38,6 +40,7 @@ import { usePaletteProvider, rankItems, type PaletteItem } from "../palette/regi
 import { pageSearch, pageSearchExpression, pageBatch, type PageSearchRequest, type PageSearchResponse } from "../palette/pageSearch";
 import { nextCanvasZoomFromWheel } from "../utils/canvasZoom";
 import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
+import { bindMobileViewportScrollbar, isMobilePreview } from "../utils/mobileViewportScrollbar";
 import { findHotkeyCommand, isEditableHotkeyTarget, matchesHotkey, normalizeHotkey } from "../utils/hotkeys";
 import {
   annotationSequencePosition,
@@ -152,6 +155,42 @@ function useStoredBoolean(
     [storageKey],
   );
 
+  return [value, setStoredValue];
+}
+
+function useStoredNumber(
+  storageKey: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): [number, React.Dispatch<React.SetStateAction<number>>] {
+  const readValue = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored === null) return fallback;
+      const parsed = Number(stored);
+      return Number.isFinite(parsed)
+        ? Math.min(maximum, Math.max(minimum, parsed))
+        : fallback;
+    } catch {
+      return fallback;
+    }
+  }, [fallback, maximum, minimum, storageKey]);
+  const [value, setValue] = useState(readValue);
+  const setStoredValue = useCallback<React.Dispatch<React.SetStateAction<number>>>(
+    (nextValue) => {
+      setValue((currentValue) => {
+        const requested =
+          typeof nextValue === "function" ? nextValue(currentValue) : nextValue;
+        const resolved = Math.min(maximum, Math.max(minimum, requested));
+        try {
+          localStorage.setItem(storageKey, String(resolved));
+        } catch {}
+        return resolved;
+      });
+    },
+    [maximum, minimum, storageKey],
+  );
   return [value, setStoredValue];
 }
 
@@ -760,6 +799,11 @@ export default function EditorWorkspace({
   const [mode, setMode] = useState<ViewportMode>("preset");
   const [vpWidth, setVpWidth] = useState(1920);
   const [vpHeight, setVpHeight] = useState(1200);
+  const [comparisonEngine, setComparisonEngine] = useState<ComparisonEngine | "chromium">("chromium");
+  const [comparisonLiveScrollY, setComparisonLiveScrollY] = useState(0);
+
+  useEffect(() => { setComparisonEngine("chromium"); }, [workspaceTab, project?.id, sourceUrl]);
+  useEffect(() => window.electronAPI.onAccountChanged(() => setComparisonEngine("chromium")), []);
 
   // ── Multi-device Viewport Canvas State ─────────────────
   const [canvasViewMode, setCanvasViewMode] = useState<"single" | "multi">("single");
@@ -1838,6 +1882,37 @@ export default function EditorWorkspace({
     width: number;
     height: number;
   } | null>(null);
+  const [liveComparisonOffset, setLiveComparisonOffset] = useState({ x: 0, y: 0 });
+  const beginLiveComparisonDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("button, input, select")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const header = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startOffset = liveComparisonOffset;
+    header.setPointerCapture(pointerId);
+    document.body.style.cursor = "grabbing";
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return;
+      setLiveComparisonOffset({
+        x: startOffset.x + next.clientX - startX,
+        y: startOffset.y + next.clientY - startY,
+      });
+    };
+    const finish = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return;
+      document.body.style.cursor = "";
+      if (header.hasPointerCapture(pointerId)) header.releasePointerCapture(pointerId);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", finish, true);
+      window.removeEventListener("pointercancel", finish, true);
+    };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", finish, true);
+    window.addEventListener("pointercancel", finish, true);
+  }, [liveComparisonOffset]);
 
   const getCanvasFrame = useCallback(() => {
     const inner = canvasInnerRef.current;
@@ -1860,6 +1935,20 @@ export default function EditorWorkspace({
   // ── Font inspector state ──────────────────────
   const [fontInspectorMode, setFontInspectorMode] =
     useState<FontInspectorMode>("off");
+  const [fontInspectorSettingsOpen, setFontInspectorSettingsOpen] = useState(false);
+  const [fontInspectorTransparency, setFontInspectorTransparency] = useStoredNumber(
+    "parity:font-inspector-transparency",
+    25,
+    0,
+    90,
+  );
+  const [fontInspectorScale, setFontInspectorScale] = useStoredNumber(
+    "parity:font-inspector-scale",
+    100,
+    50,
+    150,
+  );
+  const fontInspectorSettingsRef = useRef<HTMLDivElement>(null);
   const fontInspectorCleanupRef = useRef<(() => void) | null>(null);
 
   // ── Boundaries (element inspection) state ─────
@@ -2964,6 +3053,48 @@ export default function EditorWorkspace({
   }, [auditNavigationPending, auditUrl, onNavigateCapture]);
 
   const liveWebviewRef = useRef<any>(null);
+  const captureChromiumForComparison = useCallback(async (): Promise<Omit<BrowserComparisonCapture, "projectId" | "engine">> => {
+    if (workspaceTab === "editBeta") {
+      const view = editBetaRef.current;
+      const geometry = view?.getViewportGeometry();
+      const chromiumImage = await view?.captureFullPage(true);
+      if (!chromiumImage) throw new Error("The Edit page could not be captured in full.");
+      return {
+        url: view?.getCurrentUrl() || sourceUrl,
+        width: geometry?.pageWidth || vpWidth,
+        height: geometry?.pageHeight || vpHeight,
+        scrollY: await view?.getScrollY() || 0,
+        chromiumImage,
+        chromiumDocumentWidth: await view?.getDocumentWidth() || undefined,
+        chromiumEdited: (await view?.getPatches() || []).length > 0,
+      };
+    }
+    const view = liveWebviewRef.current;
+    if (!view || typeof view.getWebContentsId !== "function") throw new Error("The Live preview is not ready to capture.");
+    const scrollY = await view.executeJavaScript("window.scrollY || document.documentElement.scrollTop || 0", true).catch(() => 0);
+    const width = view.offsetWidth || vpWidth;
+    const height = view.offsetHeight || vpHeight;
+    const result = await window.electronAPI.captureAutomatePage(view.getWebContentsId(), width, height, true);
+    if (!result?.success || !result.dataUrl) throw new Error(result?.error || "The Live page could not be captured in full.");
+    return { url: view.getURL?.() || liveUrl || sourceUrl, width, height, scrollY, chromiumImage: result.dataUrl, chromiumDocumentWidth: result.documentWidth };
+  }, [workspaceTab, sourceUrl, liveUrl, vpWidth, vpHeight]);
+
+  useEffect(() => {
+    if (workspaceTab !== "live" || comparisonEngine === "chromium") return;
+    let pending = false;
+    const poll = () => {
+      const view = liveWebviewRef.current;
+      if (pending || !view?.executeJavaScript) return;
+      pending = true;
+      void view.executeJavaScript("window.scrollY || document.documentElement.scrollTop || 0", true)
+        .then((value: unknown) => { if (typeof value === "number") setComparisonLiveScrollY(value); })
+        .catch(() => {})
+        .finally(() => { pending = false; });
+    };
+    poll();
+    const timer = window.setInterval(poll, 160);
+    return () => window.clearInterval(timer);
+  }, [workspaceTab, comparisonEngine]);
 
   const handleLiveBack = useCallback(() => {
     if (
@@ -3088,6 +3219,13 @@ export default function EditorWorkspace({
       } catch {}
     };
   }, [workspaceTab]);
+
+  useEffect(() => {
+    if (workspaceTab !== "live") return;
+    const webview = liveWebviewRef.current;
+    if (!webview) return;
+    return bindMobileViewportScrollbar(webview, isMobilePreview(vpWidth) || comparisonEngine !== "chromium");
+  }, [workspaceTab, vpWidth, comparisonEngine]);
 
   // ── Compute CSS rules for selected element (DevTools-style) ──
   const refreshCssRules = useCallback((el: HTMLElement | null) => {
@@ -3929,15 +4067,18 @@ export default function EditorWorkspace({
         const scale = zoomRef.current / 100;
         const cw = (vpWidthRef.current || 1920) * scale;
         const ch = (vpHeightRef.current || 1200) * scale;
+        const contentWidth = isLiveWorkspace && comparisonEngine !== "chromium"
+          ? cw * 2 + 24
+          : cw;
         // Keep at least 200px of content visible in each axis
         const margin = 200;
-        x = Math.max(-cw + margin, Math.min(vw - margin, x));
+        x = Math.max(-contentWidth + margin, Math.min(vw - margin, x));
         y = Math.max(-ch + margin, Math.min(vh - margin, y));
       }
       panOffsetRef.current = { x, y };
       updateNativeTransform(x, y, zoomRef.current);
     },
-    [updateNativeTransform],
+    [comparisonEngine, isLiveWorkspace, updateNativeTransform],
   );
 
   // ── Zoom ──────────────────────────────────────
@@ -5293,6 +5434,27 @@ export default function EditorWorkspace({
     return () => document.removeEventListener("mousedown", onClick);
   }, [rulerDropdownOpen]);
 
+  useEffect(() => {
+    if (!fontInspectorSettingsOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        fontInspectorSettingsRef.current &&
+        !fontInspectorSettingsRef.current.contains(event.target as Node)
+      ) {
+        setFontInspectorSettingsOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFontInspectorSettingsOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [fontInspectorSettingsOpen]);
+
 
 
   // ── Font Inspector ───────────────────────────
@@ -5317,6 +5479,7 @@ export default function EditorWorkspace({
 
     // Clean up any previous badges/tooltip
     iframeDoc.querySelectorAll(".__fi-badge").forEach((el) => el.remove());
+    iframeDoc.querySelector("#__fi-badge-layer")?.remove();
     const existingTooltip = iframeDoc.querySelector(".__fi-tooltip");
     if (existingTooltip) existingTooltip.remove();
 
@@ -5338,6 +5501,8 @@ export default function EditorWorkspace({
       "TH",
     ];
     const inspectorInverseScale = 100 / Math.max(1, zoomRef.current);
+    const inspectorBadgeScale = fontInspectorScale / 100;
+    const inspectorBadgeOpacity = 1 - fontInspectorTransparency / 100;
 
     // Inject badge style
     let styleEl = iframeDoc.querySelector(
@@ -5351,9 +5516,7 @@ export default function EditorWorkspace({
     styleEl.textContent = `
       .__fi-badge {
         position: absolute;
-        top: 0;
-        right: 0;
-        background: rgba(0,0,0,0.75);
+        background: rgba(0,0,0,${inspectorBadgeOpacity.toFixed(2)});
         color: #fff;
         font-size: 9px;
         padding: 1px 4px;
@@ -5363,8 +5526,11 @@ export default function EditorWorkspace({
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
         line-height: 1.3;
         white-space: nowrap;
-        transform: scale(${inspectorInverseScale});
-        transform-origin: top right;
+        max-width: none;
+        overflow: visible;
+        text-overflow: clip;
+        transform: scale(${inspectorInverseScale * inspectorBadgeScale});
+        transform-origin: top left;
       }
       .__fi-tooltip {
         position: absolute;
@@ -5394,6 +5560,13 @@ export default function EditorWorkspace({
       }
     `;
 
+    const badgeLayer = iframeDoc.createElement("div");
+    badgeLayer.id = "__fi-badge-layer";
+    badgeLayer.setAttribute("data-parity-internal", "font-inspector");
+    badgeLayer.style.cssText =
+      "position:absolute;top:0;left:0;width:0;height:0;overflow:visible;pointer-events:none;z-index:999999;";
+    iframeDoc.documentElement.appendChild(badgeLayer);
+
     const formatFontBadge = (cs: CSSStyleDeclaration): string => {
       const fontFamily = cs.fontFamily || "";
       const shortFont =
@@ -5408,7 +5581,23 @@ export default function EditorWorkspace({
         weightLabel = "400";
       else if (rawWeight === "600") weightLabel = "SemiBold (600)";
 
-      return `${shortFont} | ${fontSize} | ${weightLabel}`;
+      return `${shortFont} · ${fontSize} · ${weightLabel}`;
+    };
+
+    const appendFontBadge = (
+      element: HTMLElement,
+      computedStyle: CSSStyleDeclaration,
+    ) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const label = formatFontBadge(computedStyle);
+      const badge = iframeDoc.createElement("span");
+      badge.className = "__fi-badge";
+      badge.textContent = label;
+      badge.title = label;
+      badge.style.left = `${rect.left + (iframeDoc.defaultView?.scrollX || 0)}px`;
+      badge.style.top = `${rect.top + (iframeDoc.defaultView?.scrollY || 0)}px`;
+      badgeLayer.appendChild(badge);
     };
 
     // Walk DOM and inject badges
@@ -5427,17 +5616,7 @@ export default function EditorWorkspace({
       const shortFont = fontFamily.split(",")[0].replace(/['"]/g, "").trim();
       if (!shortFont) return;
 
-      // Make the element position relative if static so badge can position absolutely
-      const pos = cs.position;
-      if (pos === "static") {
-        htmlEl.style.position = "relative";
-        htmlEl.setAttribute("data-fi-was-static", "true");
-      }
-
-      const badge = iframeDoc.createElement("span");
-      badge.className = "__fi-badge";
-      badge.textContent = formatFontBadge(cs);
-      htmlEl.appendChild(badge);
+      appendFontBadge(htmlEl, cs);
     });
 
     // Also check divs with direct text content
@@ -5463,15 +5642,7 @@ export default function EditorWorkspace({
       const fontFamily = cs.fontFamily;
       const shortFont = fontFamily.split(",")[0].replace(/['"]/g, "").trim();
       if (!shortFont) return;
-      const pos = cs.position;
-      if (pos === "static") {
-        htmlEl.style.position = "relative";
-        htmlEl.setAttribute("data-fi-was-static", "true");
-      }
-      const badge = iframeDoc.createElement("span");
-      badge.className = "__fi-badge";
-      badge.textContent = formatFontBadge(cs);
-      htmlEl.appendChild(badge);
+      appendFontBadge(htmlEl, cs);
     });
 
     // Create tooltip element
@@ -5523,7 +5694,7 @@ export default function EditorWorkspace({
         <div style="font-weight:600;margin-bottom:2px">${selector}</div>
         <div>${dims}</div>
         <div><span class="__fi-tooltip-swatch" style="background:${color}"></span>${color}</div>
-        <div>${fontSize} ${fontFamily}</div>
+        <div>${fontFamily} · ${fontSize} · ${cs.fontWeight}</div>
       `;
       tooltip.style.display = "block";
 
@@ -5551,6 +5722,7 @@ export default function EditorWorkspace({
       iframeDoc.removeEventListener("mouseover", onMouseOver, true);
       iframeDoc.removeEventListener("mouseout", onMouseOut, true);
       iframeDoc.querySelectorAll(".__fi-badge").forEach((el) => el.remove());
+      iframeDoc.querySelector("#__fi-badge-layer")?.remove();
       const tip = iframeDoc.querySelector(".__fi-tooltip");
       if (tip) tip.remove();
       const style = iframeDoc.querySelector("#__fi-styles");
@@ -5563,7 +5735,7 @@ export default function EditorWorkspace({
     };
 
     fontInspectorCleanupRef.current = cleanup;
-  }, []);
+  }, [fontInspectorScale, fontInspectorTransparency]);
 
   const deactivateFontInspector = useCallback(() => {
     if (fontInspectorCleanupRef.current) {
@@ -7183,6 +7355,26 @@ export default function EditorWorkspace({
 
               <div className="toolbar-divider" />
 
+              {(workspaceTab === "editBeta" || workspaceTab === "live") && <div
+                className={`browser-engine-picker ${comparisonEngine !== "chromium" ? "is-comparing" : ""}`}
+                title={`Browser engine: ${comparisonEngine === "webkit" ? "WebKit" : comparisonEngine === "firefox" ? "Firefox" : "Chromium"}`}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="15" rx="2" />
+                  <path d="M3 9h18M9 19v2m6-2v2M7 21h10" />
+                </svg>
+                <select
+                  className="browser-engine-select"
+                  aria-label="Browser engine"
+                  value={comparisonEngine}
+                  onChange={event => setComparisonEngine(event.target.value as ComparisonEngine | "chromium")}
+                >
+                  <option value="chromium">Chromium</option>
+                  <option value="firefox">Firefox</option>
+                  <option value="webkit">WebKit</option>
+                </select>
+              </div>}
+
               {/* Custom dimension inputs with DevTools presets caret dropdown */}
               <div className="dimension-inputs-wrap" ref={devtoolsDropdownRef}>
                 <div className="dimension-inputs">
@@ -7489,34 +7681,99 @@ export default function EditorWorkspace({
               </div>
 
               {/* Font inspector toggle */}
-              <button
-                className={`device-btn font-inspector-toggle live-excluded ${fontInspectorMode !== "off" ? "active" : ""} font-mode-${fontInspectorMode}`}
-                onClick={toggleFontInspector}
-                title={
-                  fontInspectorMode === "off"
-                    ? "Show fonts for selected elements"
-                    : fontInspectorMode === "selected"
-                      ? "Selected element fonts shown · Click to show all fonts"
-                      : "All element fonts shown · Click to turn off"
-                }
-                aria-label={
-                  fontInspectorMode === "off"
-                    ? "Font inspector off"
-                    : fontInspectorMode === "selected"
-                      ? "Font inspector showing selected elements"
-                      : "Font inspector showing all elements"
-                }
+              <div
+                className="ruler-dropdown-wrap live-excluded font-inspector-settings-wrap"
+                ref={fontInspectorSettingsRef}
               >
-                <span className="font-inspector-label">Aa</span>
-                {fontInspectorMode !== "off" && (
-                  <span
-                    className="font-inspector-state-badge"
-                    aria-hidden="true"
+                <button
+                  className={`device-btn font-inspector-toggle ${fontInspectorMode !== "off" ? "active" : ""} font-mode-${fontInspectorMode}`}
+                  onClick={toggleFontInspector}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setFontInspectorSettingsOpen((current) => !current);
+                  }}
+                  title={
+                    fontInspectorMode === "off"
+                      ? "Show fonts for selected elements · Right-click for overlay settings"
+                      : fontInspectorMode === "selected"
+                        ? "Selected element fonts shown · Click to show all · Right-click for settings"
+                        : "All element fonts shown · Click to turn off · Right-click for settings"
+                  }
+                  aria-label={
+                    fontInspectorMode === "off"
+                      ? "Font inspector off"
+                      : fontInspectorMode === "selected"
+                        ? "Font inspector showing selected elements"
+                        : "Font inspector showing all elements"
+                  }
+                  aria-haspopup="dialog"
+                  aria-expanded={fontInspectorSettingsOpen}
+                >
+                  <span className="font-inspector-label">Aa</span>
+                  {fontInspectorMode !== "off" && (
+                    <span
+                      className="font-inspector-state-badge"
+                      aria-hidden="true"
+                    >
+                      {fontInspectorMode === "selected" ? "S" : "∞"}
+                    </span>
+                  )}
+                </button>
+                {fontInspectorSettingsOpen && (
+                  <div
+                    className="ruler-dropdown tool-settings-dropdown font-inspector-settings"
+                    role="dialog"
+                    aria-label="Font display settings"
                   >
-                    {fontInspectorMode === "selected" ? "S" : "∞"}
-                  </span>
+                    <div className="tool-menu-header">
+                      <span className="tool-menu-header-icon" aria-hidden="true">
+                        <span className="font-inspector-label">Aa</span>
+                      </span>
+                      <span>
+                        <strong>Font Display</strong>
+                        <small>Adjust the labels drawn over page text</small>
+                      </span>
+                    </div>
+                    <label className="font-inspector-range-row">
+                      <span>
+                        <strong>Transparency</strong>
+                        <output>{fontInspectorTransparency}%</output>
+                      </span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="90"
+                        step="5"
+                        value={fontInspectorTransparency}
+                        onChange={(event) =>
+                          setFontInspectorTransparency(Number(event.target.value))
+                        }
+                        aria-label="Font overlay transparency"
+                      />
+                    </label>
+                    <label className="font-inspector-range-row">
+                      <span>
+                        <strong>Chip scale</strong>
+                        <output>{fontInspectorScale}%</output>
+                      </span>
+                      <input
+                        type="range"
+                        min="50"
+                        max="150"
+                        step="5"
+                        value={fontInspectorScale}
+                        onChange={(event) =>
+                          setFontInspectorScale(Number(event.target.value))
+                        }
+                        aria-label="Font overlay chip scale"
+                      />
+                    </label>
+                    <div className="font-inspector-settings-hint">
+                      Labels use Family · Size · Weight and are no longer clipped by the text element.
+                    </div>
+                  </div>
                 )}
-              </button>
+              </div>
 
               {/* Boundaries (element inspection) dropdown */}
               <div className="ruler-dropdown-wrap live-excluded" ref={boundariesDropdownRef}>
@@ -9131,6 +9388,8 @@ export default function EditorWorkspace({
                 interactionMode={interactionMode}
                 revealAnimations={revealAnimations}
                 fontInspectorMode={fontInspectorMode}
+                fontInspectorTransparency={fontInspectorTransparency}
+                fontInspectorScale={fontInspectorScale}
                 hotkeys={hotkeys}
                 onHotkeyCommand={handleEmbeddedHotkey}
                 annotateMode={annotationsAvailable && isAnnotateActive}
@@ -9187,6 +9446,17 @@ export default function EditorWorkspace({
                   setFigmaCardDismissed(true);
                 }}
                 onCloseSnapshotPanel={() => setSnapshotImage(null)}
+                renderBrowserComparison={comparisonEngine !== "chromium" ? (scrollY, onHeaderPointerDown) => <BrowserComparisonPanel
+                  key={`${project?.id || "unsaved"}:editBeta:${comparisonEngine}`}
+                  engine={comparisonEngine}
+                  projectId={project?.id}
+                  captureChromium={captureChromiumForComparison}
+                  getPageUrl={() => editBetaRef.current?.getCurrentUrl() || sourceUrl}
+                  scrollY={scrollY}
+                  onScroll={top => editBetaRef.current?.scrollToInstant(top)}
+                  onClose={() => setComparisonEngine("chromium")}
+                  onHeaderPointerDown={onHeaderPointerDown}
+                /> : undefined}
                 onThumbnailCaptured={
                   project?.thumbnailUrl ? undefined : onThumbnailCaptured
                 }
@@ -10393,6 +10663,24 @@ export default function EditorWorkspace({
                     allowpopups="true"
                   />
                 </div>
+                {workspaceTab === "live" && comparisonEngine !== "chromium" && canvasFrame && (
+                  <div className="live-browser-comparison-card" style={{ left: canvasFrame.left + canvasFrame.width + 24 + liveComparisonOffset.x, top: canvasFrame.top + liveComparisonOffset.y, width: canvasFrame.width, height: canvasFrame.height }}>
+                    <BrowserComparisonPanel
+                      key={`${project?.id || "unsaved"}:live:${comparisonEngine}`}
+                      engine={comparisonEngine}
+                      projectId={project?.id}
+                      captureChromium={captureChromiumForComparison}
+                      getPageUrl={() => liveWebviewRef.current?.getURL?.() || liveUrl || sourceUrl}
+                      scrollY={comparisonLiveScrollY}
+                      onScroll={top => {
+                        setComparisonLiveScrollY(top);
+                        void liveWebviewRef.current?.executeJavaScript?.(`window.scrollTo({ top: ${Math.max(0, Math.round(top))}, behavior: 'instant' })`, true).catch(() => {});
+                      }}
+                      onClose={() => setComparisonEngine("chromium")}
+                      onHeaderPointerDown={beginLiveComparisonDrag}
+                    />
+                  </div>
+                )}
 
                 {/* ── IN-CANVAS 3-WAY SIDE-BY-SIDE / OVERLAY / DIFF ── */}
                 {!isLiveWorkspace && canvasFrame && (
