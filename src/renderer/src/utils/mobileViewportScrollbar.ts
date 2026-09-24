@@ -28,17 +28,24 @@ export function bindMobileViewportScrollbar(view: ScrollbarWebview, mobile: bool
   let cssKey: string | null = null
 
   const remove = (key: string | null) => {
-    if (key) void view.removeInsertedCSS(key).catch(() => {})
+    if (!key) return
+    // Electron throws synchronously if React has already detached the webview.
+    // A rejected-promise handler alone cannot protect effect cleanup.
+    try {
+      void view.removeInsertedCSS(key).catch(() => {})
+    } catch {}
   }
 
   const install = () => {
     const current = ++generation
     remove(cssKey)
     cssKey = null
-    void view.insertCSS(MOBILE_SCROLLBAR_CSS).then(key => {
-      if (disposed || current !== generation) remove(key)
-      else cssKey = key
-    }).catch(() => {})
+    try {
+      void view.insertCSS(MOBILE_SCROLLBAR_CSS).then(key => {
+        if (disposed || current !== generation) remove(key)
+        else cssKey = key
+      }).catch(() => {})
+    } catch {}
   }
 
   view.addEventListener('dom-ready', install)

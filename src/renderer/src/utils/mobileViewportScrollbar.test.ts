@@ -49,4 +49,42 @@ describe('mobile preview scrollbar', () => {
     await Promise.resolve()
     expect(view.removeInsertedCSS).toHaveBeenCalledWith('late-key')
   })
+
+  it('does not crash when a viewport or workspace switch detaches the webview first', async () => {
+    const { view } = mockWebview()
+    const cleanup = bindMobileViewportScrollbar(view, true)
+    await Promise.resolve()
+    view.removeInsertedCSS = vi.fn(() => {
+      throw new Error('The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called.')
+    })
+
+    expect(cleanup).not.toThrow()
+    expect(cleanup).not.toThrow()
+    expect(view.removeInsertedCSS).toHaveBeenCalledWith('css-1')
+  })
+
+  it('ignores CSS insertion when a webview detaches during navigation', () => {
+    const { view } = mockWebview()
+    view.insertCSS = vi.fn(() => {
+      throw new Error('The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called.')
+    })
+
+    const cleanup = bindMobileViewportScrollbar(view, true)
+    expect(cleanup).not.toThrow()
+  })
+
+  it('ignores a late insertion whose CSS cannot be removed after detach', async () => {
+    let resolveInsert!: (key: string) => void
+    const { view } = mockWebview()
+    view.insertCSS = vi.fn(() => new Promise<string>(resolve => { resolveInsert = resolve }))
+    const cleanup = bindMobileViewportScrollbar(view, true)
+    cleanup()
+    view.removeInsertedCSS = vi.fn(() => {
+      throw new Error('WebView detached')
+    })
+
+    resolveInsert('late-key')
+    await Promise.resolve()
+    expect(view.removeInsertedCSS).toHaveBeenCalledWith('late-key')
+  })
 })
