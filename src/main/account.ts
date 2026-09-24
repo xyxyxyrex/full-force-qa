@@ -100,7 +100,7 @@ export async function accountRequest(action: string, payload: Record<string, unk
   const result = await response.json() as any
   if (generation !== epoch) throw new Error('The active account changed.')
   if (!response.ok) throw new Error(result.error || `Account service returned ${response.status}.`)
-  if (result.needsSetup && !['status', 'initialize'].includes(action)) throw new Error('Finish setting up your Parity workspace in Settings → Account.')
+  if (result.needsSetup && !['status', 'initialize', 'submit_feedback'].includes(action)) throw new Error('Finish setting up your Parity workspace in Settings → Account.')
   return result
 }
 export async function getAccountStatus(): Promise<AccountStatus> {

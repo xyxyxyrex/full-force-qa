@@ -19,6 +19,9 @@
     .landing { min-height:100vh; padding:24px; }
     .landing-frame { width:min(1120px,100%); min-height:calc(100vh - 48px); display:flex; flex-direction:column; margin:0 auto; overflow:hidden; border:1px solid #303934; border-radius:24px; background:#161c19; box-shadow:0 24px 80px #0005; }
     .landing-nav { min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:0 28px; border-bottom:1px solid #303934; }
+    .landing-footer { display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px; padding:17px 28px; border-top:1px solid #303934; color:#9eaaa4; font-size:12px; }
+    .landing-footer a { color:#cbd9d1; text-decoration:none; }
+    .landing-footer a:hover,.landing-footer a:focus-visible { color:#fff; text-decoration:underline; }
     .landing-brand { display:flex; align-items:center; gap:11px; color:#f2f5f3; font:700 17px/1 "Space Grotesk",Inter,system-ui,sans-serif; letter-spacing:-.02em; text-decoration:none; }
     .landing-mark { width:30px; height:30px; display:grid; place-items:center; border:1px solid #3e4a44; border-radius:8px; background:#1c2321; }
     .landing-mark svg { width:20px; height:20px; }
@@ -29,6 +32,7 @@
     .landing-kicker::before { width:7px; height:7px; border-radius:50%; background:#44c593; box-shadow:0 0 0 4px #44c59318; content:""; }
     .landing h1 { max-width:700px; margin:0; color:#f4f7f5; font:700 clamp(64px,8vw,118px)/.88 "Space Grotesk",Inter,system-ui,sans-serif; letter-spacing:-.075em; }
     .landing-description { max-width:650px; margin:30px 0 0; color:#aeb8b2; font-size:clamp(17px,1.6vw,21px); line-height:1.6; letter-spacing:-.01em; }
+    .landing-purpose { max-width:610px; margin:16px 0 0; color:#8f9e95; font-size:14px; line-height:1.6; }
     .install-panel { align-self:center; padding:26px; border:1px solid #37423c; border-radius:16px; background:#111613; }
     .install-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:22px; }
     .install-label { margin:0; color:#f0f4f2; font-size:15px; font-weight:800; }
@@ -213,6 +217,7 @@
           <p class="landing-kicker">Visual QA workspace for Windows</p>
           <h1 id="landingTitle">Parity</h1>
           <p class="landing-description">Compare implementations, annotate issues, and share focused reviews from one desktop workspace.</p>
+          <p class="landing-purpose">Google sign-in identifies your Parity account so private Notes, project information, and tickets can sync across sessions. Parity only requests basic account profile information for this purpose.</p>
         </div>
         <section class="install-panel" aria-labelledby="installTitle">
           <div class="install-head">
@@ -229,6 +234,7 @@
           </div>
         </section>
       </div>
+      <footer class="landing-footer"><span>© 2026 Parity</span><a href="/privacy/">Privacy policy</a><a href="/terms/">Terms of service</a><a href="mailto:xyrexkyle@gmail.com">Contact</a></footer>
     </section>
   </main>
 

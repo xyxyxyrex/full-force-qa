@@ -18,7 +18,7 @@ async function smoke() {
   const { app, BrowserWindow, ipcMain, safeStorage, shell } = require('electron'), http = require('node:http')
   const dir = process.argv[process.argv.indexOf('--smoke') + 1]
   app.setPath('userData', path.join(dir, 'profile')); app.disableHardwareAcceleration(); await app.whenReady()
-  const users = new Map(), accounts = new Map(), records = new Map(); let requests = 0, oauthEmail = 'old@example.test'
+  const users = new Map(), accounts = new Map(), records = new Map(), feedback = []; let requests = 0, oauthEmail = 'old@example.test'
   const uid = email => email === 'old@example.test' ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000002'
   const session = email => {
     const user = { id: uid(email), aud: 'authenticated', role: 'authenticated', email, email_confirmed_at: new Date().toISOString(), app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -36,6 +36,7 @@ async function smoke() {
     if (req.url.startsWith('/auth/v1/logout')) return reply({})
     if (!identity) return reply({ error: 'Unauthorized' }, 401)
     requests++
+    if (body.action === 'submit_feedback') { feedback.push({ userId: identity.id, ...body.feedback }); return reply({ id: '00000000-0000-4000-8000-000000000321' }) }
     if (body.action === 'initialize') {
       if (body.mode === 'monday' && body.mondayToken !== 'fresh-monday-proof') return reply({ error: 'Monday proof required' }, 401)
       const ownerKey = body.mode === 'monday' ? 'monday:7' : 'parity:' + identity.id
@@ -88,6 +89,8 @@ async function smoke() {
     fs.writeFileSync(path.join(dir, 'account-sign-in.png'), (await window.capturePage()).toPNG())
     await click('Continue with Google')
     await until("document.body.textContent.includes('Restore my existing Monday workspace')")
+    assert.equal((await api.accountRequest('submit_feedback', { feedback: { kind: 'bug', title: 'Sign-in issue', details: 'This happened before setup.', area: 'settings', appVersion: '1.4.6', platform: 'win32' } })).id, '00000000-0000-4000-8000-000000000321')
+    assert.equal(feedback[0].userId, uid('old@example.test'))
     await js('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     fs.writeFileSync(path.join(dir, 'account-setup.png'), (await window.capturePage()).toPNG())
     await click('Restore my existing Monday workspace'); await until("document.body.textContent.includes('Your workspace is ready')")

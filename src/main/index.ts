@@ -13,6 +13,7 @@ import { cancelPixelComparison, runPixelComparison } from './automation/runCompa
 import sharp from 'sharp'
 import { captureAutomatePage } from './automation/capture'
 import { assertFigmaNativeSize } from './automation/captureNormalization'
+import { validateFeedback } from './feedback'
 import { safeResourceReferer } from './resourceReferrer'
 
 const PARITY_APP_ID = 'com.fullforce.parity'
@@ -1411,6 +1412,16 @@ function registerIpcHandlers(): void {
   // Monday-authenticated private account data. The renderer never receives a
   // Monday access token or Supabase service credential.
   ipcMain.handle('account:status', () => getAccountStatus())
+  ipcMain.handle('feedback:submit', async (_event, input: unknown) => {
+    const feedback = validateFeedback(input)
+    const context = accountContext()
+    const result = await accountRequest('submit_feedback', {
+      feedback: { ...feedback, appVersion: app.getVersion(), platform: process.platform }
+    })
+    context.assert()
+    if (typeof result.id !== 'string') throw new Error('Feedback was submitted without a confirmation ID.')
+    return { id: result.id }
+  })
   ipcMain.handle('account:login-google', async () => { await closeComparisonWork(); return loginWithGoogle() })
   ipcMain.handle('account:sign-out', async () => { await closeComparisonWork(); return signOutAccount() })
   ipcMain.handle('account:initialize', async (_event, mode: 'new' | 'monday') => {

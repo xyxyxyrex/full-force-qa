@@ -59,7 +59,7 @@ export default function AccountPanel() {
         <GoogleLogo />
         {pending === 'google' ? 'Waiting for Google…' : 'Continue with Google'}
       </button>
-      <small>A secure browser window will open to complete sign-in.</small>
+      <small>A secure browser window will open to complete sign-in. <a href="https://parity-gfx.pages.dev/privacy/" onClick={event => { event.preventDefault(); void window.electronAPI.openExternal('https://parity-gfx.pages.dev/privacy/') }}>Privacy policy</a></small>
     </div> : <>
       <div className="account-identity-card">
         <div className="account-avatar">{email?.charAt(0).toUpperCase() || 'G'}</div>

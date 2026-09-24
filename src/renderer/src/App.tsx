@@ -1,11 +1,12 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
-import type { AppUpdateStatus, Project } from '../../shared/types'
+import type { AppUpdateStatus, FeedbackArea, Project } from '../../shared/types'
 import Dashboard from './components/Dashboard'
 import { refreshMondayTickets, syncTickets } from './services/ticketService'
 import CaptureScreen, { type CaptureProjectDetails } from './components/CaptureScreen'
 import EditorWorkspace, { type WorkspaceTab } from './components/EditorWorkspace'
 import NotesWorkspace from './components/NotesWorkspace'
 import SettingsModal from './components/SettingsModal'
+import FeedbackModal from './components/FeedbackModal'
 import { loadSettings, applyTheme } from './theme/themeSystem'
 import type { AppSettings } from '../../shared/types'
 import parityIcon from './assets/parity-favicon.svg'
@@ -63,6 +64,7 @@ export default function App() {
   const lastSyncRef = useRef<number>(0)
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
   const [activityBarPinned, setActivityBarPinned] = useState(() => localStorage.getItem('parity_activity_bar_pinned') === 'true')
@@ -778,6 +780,9 @@ export default function App() {
   }, [])
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0]
+  const feedbackArea: FeedbackArea = activeTab?.view === 'editor'
+    ? activeTab.workspaceTab === 'live' ? 'live' : activeTab.workspaceTab === 'audit' ? 'audit' : activeTab.workspaceTab === 'automate' ? 'automate' : 'edit'
+    : activeTab?.view === 'notes' ? 'notes' : activeTab?.view === 'dashboard' ? 'dashboard' : 'other'
 
   const paletteData = useRef<Promise<PaletteItem[]> | null>(null)
   const openSearchTab = (view: 'dashboard' | 'notes', values: Partial<TabState>) => {
@@ -793,6 +798,7 @@ export default function App() {
       { id: 'app.capture', title: 'New project / capture website', group: 'Commands', run: () => handleNewProject() },
       { id: 'app.tab', title: 'New tab', group: 'Commands', run: handleNewTab },
       { id: 'app.settings', title: 'Open Settings', group: 'Commands', description: 'Account, integrations, shortcuts, appearance and directory', run: () => setSettingsOpen(true) },
+      { id: 'app.feedback', title: 'Send feedback or report a bug', group: 'Commands', description: 'Tell us about a problem or suggest a Parity feature', run: () => setFeedbackOpen(true) },
       ...(['account', 'general', 'hotkeys', 'appearance', 'integrations'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
       ...THEME_LIST.map(theme => ({ id: `theme:${theme.id}`, title: `Theme: ${theme.name}`, description: theme.description, group: 'Commands' as const, run: () => { const next = { ...settings, theme: theme.id }; setSettings(next); saveSettings(next) } })),
       ...tabs.map(tab => ({ id: `tab:${tab.id}`, title: tab.title, description: `Switch to ${tab.view} tab`, group: 'Tabs' as const, run: () => setActiveTabId(tab.id) })),
@@ -885,6 +891,16 @@ export default function App() {
               <path d="M5 17v2h14v-2" />
             </svg>
             {(updateStatus.state === 'available' || updateStatus.state === 'downloaded') && <span className="app-update-dot" />}
+          </button>
+          <button
+            type="button"
+            className={`app-feedback-btn ${feedbackOpen ? 'active' : ''}`}
+            onClick={() => setFeedbackOpen(true)}
+            title="Feedback & report a bug"
+            aria-label="Feedback and report a bug"
+            aria-pressed={feedbackOpen}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4V5Z" /><path d="M8 9h8M8 12h5" /></svg>
           </button>
           <button
             type="button"
@@ -986,6 +1002,15 @@ export default function App() {
           applyTheme(newSettings.theme)
         }}
       />
+      {feedbackOpen && <FeedbackModal
+        initialArea={feedbackArea}
+        onClose={() => setFeedbackOpen(false)}
+        onOpenAccount={() => {
+          setFeedbackOpen(false)
+          setSettingsOpen(true)
+          window.dispatchEvent(new Event('parity:open-account'))
+        }}
+      />}
     </div>
   )
 }

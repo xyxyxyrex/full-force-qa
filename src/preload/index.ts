@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   accountLoginGoogle: () => ipcRenderer.invoke('account:login-google'),
   accountInitialize: (mode: 'new' | 'monday') => ipcRenderer.invoke('account:initialize', mode),
   accountSignOut: () => ipcRenderer.invoke('account:sign-out'),
+  submitFeedback: (feedback: import('../shared/types').FeedbackSubmission) => ipcRenderer.invoke('feedback:submit', feedback),
   onAccountChanged(callback: () => void) {
     const handler = () => callback()
     ipcRenderer.on('account:changed', handler)

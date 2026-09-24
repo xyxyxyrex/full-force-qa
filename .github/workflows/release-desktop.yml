@@ -71,6 +71,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:palette:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:feedback:edge
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:feedback:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build landing page installer
         run: npm run build:viewer
       - name: Install visual comparison builder

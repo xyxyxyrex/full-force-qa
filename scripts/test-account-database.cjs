@@ -21,7 +21,9 @@ try {
     insert into parity_projects values ('monday:7','monday-42','{"id":"monday-42","folderId":"folder-1"}',now());
     insert into parity_user_state values ('monday:7','{"folders":[{"id":"folder-1"}],"settings":{"theme":"dark"}}',now());`)
   sql(fs.readFileSync(path.join(__dirname, '../supabase/migrations/20260921090000_independent_accounts_and_tickets.sql'), 'utf8'))
+  sql(fs.readFileSync(path.join(__dirname, '../supabase/migrations/20260924090000_parity_feedback.sql'), 'utf8'))
   console.log(sql(fs.readFileSync(path.join(__dirname, 'fixtures/account-database.sql'), 'utf8')).trim())
+  console.log(sql(fs.readFileSync(path.join(__dirname, 'fixtures/feedback-database.sql'), 'utf8')).trim())
   console.log('PASS: additive migration, dual-identity restoration, repeated linking, ownership conflicts, private table/RPC permissions and ticket revisions.')
 } finally {
   if (started) run('pg_ctl', ['-D', path.join(dir, 'data'), '-m', 'fast', '-w', 'stop'])

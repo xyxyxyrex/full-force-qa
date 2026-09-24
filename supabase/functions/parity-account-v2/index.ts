@@ -20,6 +20,30 @@ Deno.serve(async request => {
   const user = identity.user
     const body = object(await request.json())
     const action = String(body.action || '')
+    if (action === 'submit_feedback') {
+      const feedback = object(body.feedback, 10_000)
+      const kind = feedback.kind
+      const area = feedback.area
+      const title = typeof feedback.title === 'string' ? feedback.title.trim() : ''
+      const details = typeof feedback.details === 'string' ? feedback.details.trim() : ''
+      const appVersion = typeof feedback.appVersion === 'string' ? feedback.appVersion.trim() : ''
+      const platform = typeof feedback.platform === 'string' ? feedback.platform.trim() : ''
+      if (!['bug', 'feature', 'general'].includes(kind) ||
+        !['dashboard', 'edit', 'live', 'audit', 'automate', 'notes', 'settings', 'other'].includes(area) ||
+        title.length < 4 || title.length > 120 || details.length < 10 || details.length > 4000 ||
+        !/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-z0-9.-]+)?$/i.test(appVersion) ||
+        !['win32', 'darwin', 'linux'].includes(platform) || !user.email) return json({ error: 'Complete the feedback form and try again.' }, 400)
+      const since = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      const { count, error: countError } = await admin.from('parity_feedback').select('id', { count: 'exact', head: true }).eq('auth_user_id', user.id).gte('created_at', since)
+      if (countError) throw countError
+      if ((count || 0) >= 5) return json({ error: 'You have sent several reports recently. Please try again in an hour.' }, 429)
+      const { data, error } = await admin.from('parity_feedback').insert({
+        auth_user_id: user.id, contact_email: user.email, kind, title, details, area,
+        app_version: appVersion, platform
+      }).select('id').single()
+      if (error) throw error
+      return json({ id: data.id })
+    }
     if (action === 'initialize') {
       if (!['new', 'monday'].includes(body.mode)) return json({ error: 'Choose how to initialize your workspace.' }, 400)
       let mondayId: string | null = null

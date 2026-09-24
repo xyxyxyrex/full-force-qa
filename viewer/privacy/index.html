@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How Parity handles account information, workspace data, shared reviews, and feedback.">
+  <link rel="icon" type="image/svg+xml" href="/parity-favicon.svg">
+  <link rel="stylesheet" href="/legal.css">
+  <title>Privacy policy · Parity</title>
+</head>
+<body>
+  <div class="shell">
+    <nav class="nav" aria-label="Main navigation"><a class="brand" href="/"><img src="/parity-180.png" alt="">Parity</a><a href="/terms/">Terms of service</a></nav>
+    <main>
+      <h1>Privacy policy</h1>
+      <p class="date">Effective September 24, 2026</p>
+      <p>Parity is a desktop workspace for visual QA and website review. This policy explains the information Parity uses when you sign in, sync a workspace, connect a ticket provider, share a review, or send product feedback. For privacy questions or requests, contact <a href="mailto:xyrexkyle@gmail.com">xyrexkyle@gmail.com</a>.</p>
+
+      <h2>Information Parity handles</h2>
+      <ul>
+        <li><strong>Account:</strong> When you sign in with Google through Supabase Auth, Parity uses your Google account identifier, email address, and available basic profile information, such as your name and profile image. Google handles your password. Parity receives a Supabase account session and stores it encrypted on your device.</li>
+        <li><strong>Private workspace:</strong> If you use account synchronization, Parity stores Notes, ticket information and QA progress, project metadata, and workspace settings in Supabase for your account. Website captures, local attachments, and downloaded assets ordinarily remain on your device.</li>
+        <li><strong>Optional integrations:</strong> If you connect Monday.com, Parity accesses the boards and tickets you select. Connection credentials are stored encrypted on your device. Manual Opsmosis or other tickets contain the information you enter.</li>
+        <li><strong>Shared reviews:</strong> If you explicitly create a share link, the selected capture, annotations, and any comments submitted through that link are stored with Supabase so link recipients can view them. Anyone with an active share link may be able to see that shared material.</li>
+        <li><strong>Feedback:</strong> If you send a bug report or suggestion, Parity stores your message, account email, app version, and operating-system platform in Supabase. It does not automatically attach screenshots, Notes, page content, or credentials.</li>
+      </ul>
+
+      <h2>Google sign-in data</h2>
+      <p>Parity requests Google sign-in information so it can recognize your account, keep your private Notes, projects, and tickets associated with that account, and show your email in account settings. Parity does not request access to your Gmail messages, Google Drive files, contacts, or calendar. Your Google sign-in details are processed by Google and Supabase Auth; Parity does not sell them, use them for targeted advertising, or provide them to connected ticket services. A share link does not include your Google account details unless you choose to put them into the material you share.</p>
+
+      <h2>How information is used and shared</h2>
+      <p>Parity uses this information to sign you in, synchronize your private workspace, fetch requested ticket data, display shared reviews, and respond to feedback. Google provides sign-in, Supabase provides authentication and hosted data services, and Cloudflare serves the public website. Connected services such as Monday.com handle data when you choose to use them. Parity does not publish your private Notes or ticket queue as part of a review link.</p>
+
+      <h2>How information is protected</h2>
+      <p>Parity encrypts saved account sessions and connected-service credentials using the operating system's secure storage. Private workspace data is accessed through an authenticated account service rather than exposed as a public database table. Shared reviews are different: recipients with an active link can access the review content you chose to share.</p>
+
+      <h2>Websites you inspect</h2>
+      <p>When you open or capture a website in Parity, your device connects to that website and may send ordinary browser requests, including any session cookies already associated with it. That website's own privacy practices apply to those interactions. Parity only uploads a capture for review sharing when you choose to create a share link.</p>
+
+      <h2>Retention and your choices</h2>
+      <p>Account and synchronized workspace information is retained while needed to provide your account and its features, unless you delete individual items or request account-data deletion. You can remove individual Notes, projects, and local captures, and manage or archive tickets in the app. Shared review links have an expiration shown when they are created; cleanup of stored copies may occur after expiration. Contact <a href="mailto:xyrexkyle@gmail.com">xyrexkyle@gmail.com</a> to request access to, correction of, or deletion of account data. Some information may remain temporarily in backups or where needed to handle a request.</p>
+
+      <h2>Updates</h2>
+      <p>If Parity's data practices change, this page will be updated with a new effective date. Questions can be sent to <a href="mailto:xyrexkyle@gmail.com">xyrexkyle@gmail.com</a>.</p>
+    </main>
+    <footer class="footer"><span>© 2026 Parity</span><a href="/">Home</a><a href="/terms/">Terms of service</a></footer>
+  </div>
+</body>
+</html>

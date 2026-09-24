@@ -105,6 +105,16 @@ export interface AccountStatus {
   error?: string
 }
 
+export type FeedbackKind = 'bug' | 'feature' | 'general'
+export type FeedbackArea = 'dashboard' | 'edit' | 'live' | 'audit' | 'automate' | 'notes' | 'settings' | 'other'
+export interface FeedbackSubmission {
+  kind: FeedbackKind
+  title: string
+  details: string
+  area: FeedbackArea
+}
+export interface FeedbackReceipt { id: string }
+
 export type TicketProvider = 'monday' | 'opsmosis' | 'manual'
 export type TicketQaStatus = 'To review' | 'In review' | 'Needs fixes' | 'Verified'
 export interface TicketSourceRef {
@@ -407,6 +417,7 @@ export interface ElectronAPI extends InspectorApi {
   accountInitialize: (mode: 'new' | 'monday') => Promise<AccountStatus>
   accountSignOut: () => Promise<void>
   onAccountChanged: (callback: () => void) => () => void
+  submitFeedback: (feedback: FeedbackSubmission) => Promise<FeedbackReceipt>
   ticketsList: () => Promise<TicketStoreSnapshot>
   ticketsSave: (ticket: Ticket, ownerKey: string) => Promise<TicketStoreSnapshot>
   ticketsSync: () => Promise<TicketStoreSnapshot>

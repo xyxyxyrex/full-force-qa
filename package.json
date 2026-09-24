@@ -1,6 +1,6 @@
 {
   "name": "parity",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:accounts:database": "node scripts/test-account-database.cjs",
     "test:accounts:electron": "node scripts/test-account-electron.cjs",
+    "test:feedback:electron": "node scripts/test-feedback-electron.cjs",
+    "test:feedback:edge": "node scripts/test-feedback-edge.cjs",
     "test:inspector:electron": "node scripts/test-inspector-electron.cjs",
     "test:audit-media:electron": "node scripts/test-audit-media-electron.cjs",
     "test:audit-inspector:electron": "node scripts/test-audit-inspector-electron.cjs",
