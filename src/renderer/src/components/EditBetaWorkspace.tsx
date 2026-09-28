@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import "./EditBetaWorkspace.css";
 import "./EditBetaWorkspace.ported.css";
 import "./Inspector.css";
@@ -38,6 +39,9 @@ import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils
 import { bindMobileViewportScrollbar, isMobilePreview } from "../utils/mobileViewportScrollbar";
 import { normalizeClassNames } from "../utils/editBetaClasses";
 import { normalizeWorkspaceUrl } from "../utils/workspaceUrl";
+import { finishGuideGesture, guidePositionFromViewport } from "../utils/guides";
+import ComparisonWipeHandle from "./ComparisonWipeHandle";
+import ComparisonModeIsland from "./ComparisonModeIsland";
 import { mergeViewportPatches } from "../utils/viewportLayoutPatches";
 import { pageSearchExpression, type PageSearchRequest, type PageSearchResponse } from "../palette/pageSearch";
 
@@ -107,11 +111,18 @@ interface Props {
   guidesOn: boolean;
   guidesAlwaysVisible: boolean;
   guides: Array<{ axis: "x" | "y"; position: number }>;
+  onGuidesChange: Dispatch<SetStateAction<Array<{ axis: "x" | "y"; position: number }>>>;
   viewportMode: "preset" | "free";
   onViewportResize: (width: number, height: number) => void;
   overlayImage?: string | null;
   overlayVisible?: boolean;
   overlayOpacity?: number;
+  overlayWipe?: number;
+  onOverlayWipeChange?: (value: number) => void;
+  onOverlayOpacityChange?: (value: number) => void;
+  diffContrast?: number;
+  showFigmaModeIsland?: boolean;
+  onFigmaModeChange?: (mode: "overlay" | "side-by-side" | "diff") => void;
   overlayMode?: "overlay" | "side-by-side" | "diff";
   overlayLabel?: string;
   figmaImage?: string | null;
@@ -262,7 +273,6 @@ interface BridgeOptions {
   annotateMode: boolean;
   boundaries: Props["boundaries"];
   rulers: {
-    enabled: boolean;
     guidesEnabled: boolean;
     guides: Array<{ axis: "x" | "y"; position: number }>;
   };
@@ -322,7 +332,6 @@ function installEditBetaBridge() {
       showGaps: true,
     },
     rulers: {
-      enabled: false,
       guidesEnabled: false,
       guides: [],
     },
@@ -510,7 +519,6 @@ function installEditBetaBridge() {
       selectedFontVisible ||
       (options.boundaries.enabled &&
         (options.boundaries.scope === "all" || selectedBoundariesVisible)) ||
-      options.rulers.enabled ||
       options.rulers.guidesEnabled ||
       ((options.annotateMode || captureInspectionForced) && options.boundaries.enabled);
     const nextDisplay = showProperties ? "" : "none";
@@ -534,76 +542,6 @@ function installEditBetaBridge() {
       transform: `translate(${-scrollX}px, ${-scrollY}px)`,
       transformOrigin: "top left",
     });
-
-    if (options.rulers.enabled) {
-      nextInspectionSnapshot.push(
-        {
-          id: "inspection-ruler-top",
-          kind: "ruler-top",
-          coordinateSpace: "page",
-          xPx: 0,
-          yPagePx: 0,
-          widthPx: documentWidth,
-          heightPx: 22,
-          viewportWidth: window.innerWidth,
-          viewportHeight: window.innerHeight,
-        },
-        {
-          id: "inspection-ruler-left",
-          kind: "ruler-left",
-          coordinateSpace: "page",
-          xPx: 0,
-          yPagePx: 0,
-          widthPx: 22,
-          heightPx: documentHeight,
-          viewportWidth: window.innerWidth,
-          viewportHeight: window.innerHeight,
-        },
-      );
-      inspectionElement("qa-capture-ruler-top", {
-        position: "absolute",
-        left: "0",
-        top: "0",
-        width: `${documentWidth}px`,
-        height: "22px",
-        boxSizing: "border-box",
-        borderBottom: "1px solid #52525b",
-        background: "repeating-linear-gradient(90deg,#71717a 0 1px,transparent 1px 10px),#18181b",
-        opacity: "0.92",
-      });
-      inspectionElement("qa-capture-ruler-left", {
-        position: "absolute",
-        left: "0",
-        top: "0",
-        width: "22px",
-        height: `${documentHeight}px`,
-        boxSizing: "border-box",
-        borderRight: "1px solid #52525b",
-        background: "repeating-linear-gradient(0deg,#71717a 0 1px,transparent 1px 10px),#18181b",
-        opacity: "0.92",
-      });
-      for (let x = 0; x < documentWidth; x += 100) {
-        inspectionElement("qa-capture-ruler-label", {
-          position: "absolute",
-          left: `${x + 3}px`,
-          top: "3px",
-          color: "#d4d4d8",
-          font: "8px/1 monospace",
-          whiteSpace: "nowrap",
-        }, String(x));
-      }
-      for (let y = 100; y < documentHeight; y += 100) {
-        inspectionElement("qa-capture-ruler-label", {
-          position: "absolute",
-          left: "3px",
-          top: `${y + 3}px`,
-          color: "#d4d4d8",
-          font: "8px/1 monospace",
-          writingMode: "vertical-rl",
-          whiteSpace: "nowrap",
-        }, String(y));
-      }
-    }
 
     if (options.rulers.guidesEnabled) {
       for (const [guideIndex, guide] of (options.rulers.guides || []).entries()) {
@@ -800,7 +738,7 @@ function installEditBetaBridge() {
           ? Math.max(0.5, Math.min(1.5, options.fontInspectorScale / 100))
           : 1;
         const renderedScale = inverseZoom * badgeScale;
-        const minimumTop = options.rulers.enabled ? 23 : 0;
+        const minimumTop = 0;
         const badgeTop =
           top * canvasScale >= minimumTop + 20
             ? top - 19 * inverseZoom
@@ -2057,7 +1995,7 @@ function installEditBetaBridge() {
     }
     const command = commandFromEvent(event);
     if (!command) return;
-    if (editableTarget(event.target) && command !== "quickSave") return;
+    if (editableTarget(event.target) && command !== "quickSave" && command !== "openFigmaReference") return;
     if (
       command.startsWith("annotation") &&
       command !== "toggleAnnotate" &&
@@ -4181,11 +4119,18 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       guidesOn,
       guidesAlwaysVisible,
       guides,
+      onGuidesChange,
       viewportMode,
       onViewportResize,
       overlayImage,
       overlayVisible,
       overlayOpacity = 50,
+      overlayWipe = 50,
+      onOverlayWipeChange,
+      onOverlayOpacityChange,
+      diffContrast = 100,
+      showFigmaModeIsland = false,
+      onFigmaModeChange,
       overlayMode = "overlay",
       overlayLabel,
       figmaImage,
@@ -4283,7 +4228,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       annotateMode,
       boundaries,
       rulers: {
-        enabled: rulersOn,
         guidesEnabled: guidesOn || guidesAlwaysVisible,
         guides,
       },
@@ -4500,7 +4444,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const browserCardVisible = Boolean(renderBrowserComparison);
     const sideBySide = !!overlayVisible && overlayMode === "side-by-side";
     const figmaSideVisible =
-      sideBySide && figmaPanelVisible && !!(figmaUrl || figmaImage);
+      sideBySide && figmaPanelVisible;
     const snapshotSideVisible = sideBySide && !!snapshotImage;
     const scaledWidth = viewportGeometry.displayedWidth;
     const scaledHeight = viewportGeometry.displayedHeight;
@@ -4546,10 +4490,6 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     const activeViewportRef = useRef<HTMLDivElement | null>(null);
     const [multiFrameOffsets, setMultiFrameOffsets] = useState<Record<string, { x: number; y: number }>>({});
 
-    const [localGuides, setLocalGuides] = useState<
-      Array<{ id: string; axis: "x" | "y"; position: number }>
-    >([]);
-
     const drawCanvasRulers = useCallback(() => {
       if (!rulersOn) return;
       const topCanvas = topRulerRef.current;
@@ -4574,9 +4514,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       leftCanvas.style.width = `${leftWidth}px`;
       leftCanvas.style.height = `${leftHeight}px`;
 
-      const liveRect = liveFrameRef.current?.getBoundingClientRect();
+      const liveRect = activeViewportRef.current?.getBoundingClientRect()
+        || liveFrameRef.current?.getBoundingClientRect();
       const liveStageLeft = liveRect ? liveRect.left - rect.left - 24 : (28 + pan.x + liveFrameLeft - 24);
       const liveStageTop = liveRect ? liveRect.top - rect.top - 24 : (44 + pan.y + liveFrameTop - 24);
+      const liveStageWidth = liveRect?.width || width * scale;
+      const liveStageHeight = liveRect?.height || height * scale;
 
       // 1. Draw Top Ruler
       const ctxT = topCanvas.getContext("2d");
@@ -4624,10 +4567,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
         // Draw MS Word style downward pointing triangles for vertical guides (axis === "y")
         if (guidesOn || guidesAlwaysVisible) {
-          const allGuides = [...guides, ...localGuides];
+          const allGuides = guides;
           allGuides.forEach((g) => {
             if (g.axis === "y") {
-              const x = liveStageLeft + g.position * width * scale;
+              const x = liveStageLeft + g.position * liveStageWidth;
               if (x >= 0 && x <= topWidth) {
                 ctxT.fillStyle = "#38bdf8";
                 ctxT.beginPath();
@@ -4695,10 +4638,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
         // Draw MS Word style rightward pointing triangles for horizontal guides (axis === "x")
         if (guidesOn || guidesAlwaysVisible) {
-          const allGuides = [...guides, ...localGuides];
+          const allGuides = guides;
           allGuides.forEach((g) => {
             if (g.axis === "x") {
-              const y = liveStageTop + g.position * height * scale;
+              const y = liveStageTop + g.position * liveStageHeight;
               if (y >= 0 && y <= leftHeight) {
                 ctxL.fillStyle = "#38bdf8";
                 ctxL.beginPath();
@@ -4722,9 +4665,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       liveFrameLeft,
       liveFrameTop,
       guides,
-      localGuides,
       guidesOn,
       guidesAlwaysVisible,
+      activeViewportId,
       width,
       height,
     ]);
@@ -4757,20 +4700,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
     const calcGuidePos = useCallback(
       (axis: "x" | "y", moveX: number, moveY: number) => {
-        const liveRect = liveFrameRef.current?.getBoundingClientRect();
-        if (axis === "x") {
-          const topEdge = liveRect ? liveRect.top : 44 + pan.y + liveFrameTop;
-          const relY = moveY - topEdge;
-          const px = Math.round(relY / scale);
-          const ratio = relY / (height * scale);
-          return { px, ratio };
-        } else {
-          const leftEdge = liveRect ? liveRect.left : 28 + pan.x + liveFrameLeft;
-          const relX = moveX - leftEdge;
-          const px = Math.round(relX / scale);
-          const ratio = relX / (width * scale);
-          return { px, ratio };
-        }
+        const viewport = activeViewportRef.current?.getBoundingClientRect()
+          || liveFrameRef.current?.getBoundingClientRect()
+          || { left: 28 + pan.x + liveFrameLeft, top: 44 + pan.y + liveFrameTop, width: width * scale, height: height * scale };
+        return guidePositionFromViewport(axis, moveX, moveY, viewport, scale);
       },
       [pan, liveFrameLeft, liveFrameTop, scale, height, width],
     );
@@ -4792,8 +4725,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
 
       setDraggingRulerGuide({
         axis,
-        screenX: startX,
-        screenY: startY,
+        screenX: initial.screenX,
+        screenY: initial.screenY,
         canvasPx: initial.px,
         positionRatio: initial.ratio,
       });
@@ -4803,8 +4736,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         const pos = calcGuidePos(axis, moveEvent.clientX, moveEvent.clientY);
         setDraggingRulerGuide({
           axis,
-          screenX: moveEvent.clientX,
-          screenY: moveEvent.clientY,
+          screenX: pos.screenX,
+          screenY: pos.screenY,
           canvasPx: pos.px,
           positionRatio: pos.ratio,
         });
@@ -4813,7 +4746,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       const onUp = (upEvent: PointerEvent) => {
         if (upEvent.pointerId !== event.pointerId) return;
         const pos = calcGuidePos(axis, upEvent.clientX, upEvent.clientY);
-        const liveRect = liveFrameRef.current?.getBoundingClientRect();
+        const liveRect = activeViewportRef.current?.getBoundingClientRect() || liveFrameRef.current?.getBoundingClientRect();
         const canvasRect = canvasRef.current?.getBoundingClientRect();
 
         let isDiscarded = false;
@@ -4837,11 +4770,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           }
         }
 
-        if (!isDiscarded) {
-          const newId = `guide-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          setLocalGuides((prev) => [
+        if (!isDiscarded && upEvent.type !== "pointercancel") {
+          onGuidesChange((prev) => [
             ...prev,
-            { id: newId, axis, position: pos.ratio },
+            { axis, position: Math.max(0, Math.min(1, pos.ratio)) },
           ]);
         }
 
@@ -4857,7 +4789,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     };
 
     const beginExistingGuideDrag = (
-      guideId: string,
+      guideIndex: number,
       axis: "x" | "y",
       event: React.PointerEvent<HTMLDivElement>,
     ) => {
@@ -4868,29 +4800,31 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {}
 
-      setLocalGuides((prev) => prev.filter((g) => g.id !== guideId));
-
       const startX = event.clientX;
       const startY = event.clientY;
       const initial = calcGuidePos(axis, startX, startY);
+      let moved = false;
+      setHoveredGuideInfo(null);
 
       setDraggingRulerGuide({
-        id: guideId,
+        id: String(guideIndex),
         axis,
-        screenX: startX,
-        screenY: startY,
+        screenX: initial.screenX,
+        screenY: initial.screenY,
         canvasPx: initial.px,
         positionRatio: initial.ratio,
       });
 
       const onMove = (moveEvent: PointerEvent) => {
         if (moveEvent.pointerId !== event.pointerId) return;
+        if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) >= 4) moved = true;
+        if (!moved) return;
         const pos = calcGuidePos(axis, moveEvent.clientX, moveEvent.clientY);
         setDraggingRulerGuide({
-          id: guideId,
+          id: String(guideIndex),
           axis,
-          screenX: moveEvent.clientX,
-          screenY: moveEvent.clientY,
+          screenX: pos.screenX,
+          screenY: pos.screenY,
           canvasPx: pos.px,
           positionRatio: pos.ratio,
         });
@@ -4899,38 +4833,22 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       const onUp = (upEvent: PointerEvent) => {
         if (upEvent.pointerId !== event.pointerId) return;
         const pos = calcGuidePos(axis, upEvent.clientX, upEvent.clientY);
-        const liveRect = liveFrameRef.current?.getBoundingClientRect();
-        const canvasRect = canvasRef.current?.getBoundingClientRect();
-
-        let isDiscarded = false;
-        if (axis === "x") {
-          if (
-            (liveRect && upEvent.clientY < liveRect.top) ||
-            (canvasRect && upEvent.clientX < canvasRect.left + 24) ||
-            pos.ratio < -0.15 ||
-            pos.ratio > 1.25
-          ) {
-            isDiscarded = true;
-          }
-        } else {
-          if (
-            (liveRect && upEvent.clientX < liveRect.left) ||
-            (canvasRect && upEvent.clientY < canvasRect.top + 24) ||
-            pos.ratio < -0.15 ||
-            pos.ratio > 1.25
-          ) {
-            isDiscarded = true;
-          }
-        }
-
-        if (!isDiscarded) {
-          setLocalGuides((prev) => [
-            ...prev,
-            { id: guideId, axis, position: pos.ratio },
-          ]);
-        }
+        const liveRect = activeViewportRef.current?.getBoundingClientRect() || liveFrameRef.current?.getBoundingClientRect();
+        const isOutside = axis === "x"
+          ? !liveRect || upEvent.clientY < liveRect.top || upEvent.clientY > liveRect.bottom
+          : !liveRect || upEvent.clientX < liveRect.left || upEvent.clientX > liveRect.right;
+        onGuidesChange((prev) => finishGuideGesture(
+          prev,
+          guideIndex,
+          { x: startX, y: startY },
+          { x: upEvent.clientX, y: upEvent.clientY },
+          pos.ratio,
+          isOutside,
+          upEvent.type === "pointercancel",
+        ));
 
         setDraggingRulerGuide(null);
+        setHoveredGuideInfo(null);
         window.removeEventListener("pointermove", onMove, true);
         window.removeEventListener("pointerup", onUp, true);
         window.removeEventListener("pointercancel", onUp, true);
@@ -5873,9 +5791,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         annotateMode,
         boundaries,
         rulers: {
-          enabled: rulersOn,
           guidesEnabled: guidesOn || guidesAlwaysVisible,
-          guides: [...guides, ...localGuides],
+          guides,
         },
         zoomScale: Math.max(0.25, zoom / 100),
         accentColor,
@@ -5896,10 +5813,8 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       guides,
       guidesAlwaysVisible,
       guidesOn,
-      localGuides,
       ready,
       revealAnimations,
-      rulersOn,
       zoom,
     ]);
 
@@ -7302,6 +7217,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                   className="edit-beta-compare-frame edit-beta-compare-figma"
                   style={{ left: figmaFrameLeft, top: figmaFrameTop, width: scaledWidth, height: scaledHeight }}
                 >
+                  {showFigmaModeIsland && onFigmaModeChange && (
+                    <ComparisonModeIsland mode={overlayMode} hasImage={!!figmaImage} onModeChange={onFigmaModeChange} />
+                  )}
                   <div
                     className="edit-beta-compare-label"
                     onPointerDown={(event) => beginFrameDrag("figma", event)}
@@ -7313,7 +7231,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                         ? "Design"
                         : figmaUrl
                           ? "Live App"
-                          : "PNG Reference"}
+                          : figmaImage
+                            ? "PNG Reference"
+                            : "Reference"}
                     </span>
                     {figmaUrl && figmaImage && (
                       <span className="edit-beta-compare-switch">
@@ -7364,7 +7284,14 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                           transform: `translateY(-${pageScrollY * scale}px)`,
                         }}
                       />
-                    ) : null}
+                    ) : (
+                      <div className="edit-beta-figma-empty">
+                        <img src={figmaIcon} alt="" />
+                        <strong>Add a Figma reference</strong>
+                        <span>Paste a Figma link or an image with Ctrl+V.</span>
+                        <button type="button" onClick={onOpenFigmaSettings}>Choose a file or link</button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -7437,6 +7364,9 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                               }
                             }}
                           >
+                            {isActive && showFigmaModeIsland && !figmaSideVisible && onFigmaModeChange && (
+                              <ComparisonModeIsland mode={overlayMode} hasImage={!!figmaImage} onModeChange={onFigmaModeChange} />
+                            )}
                             <div
                               className="edit-beta-compare-label"
                               style={{
@@ -7564,9 +7494,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                     className={`edit-beta-guide edit-beta-guide-${guide.axis}`}
                                     style={
                                       guide.axis === "x"
-                                        ? { top: `${guide.position * 100}%` }
-                                        : { left: `${guide.position * 100}%` }
+                                        ? { top: `${guide.position * 100}%`, opacity: draggingRulerGuide?.id === String(index) ? 0 : 1, pointerEvents: guidesOn ? "auto" : "none" }
+                                        : { left: `${guide.position * 100}%`, opacity: draggingRulerGuide?.id === String(index) ? 0 : 1, pointerEvents: guidesOn ? "auto" : "none" }
                                     }
+                                    title="Click to delete · drag to move · drag outside to delete"
+                                    onPointerDown={(event) => beginExistingGuideDrag(index, guide.axis, event)}
                                     onMouseEnter={(e) => {
                                       const px =
                                         guide.axis === "x"
@@ -7680,23 +7612,30 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                 style={{
                                   width: fScaledWidth,
                                   height: fScaledHeight,
-                                  opacity:
-                                    overlayMode === "diff"
-                                      ? 1
-                                      : overlayOpacity / 100,
-                                  mixBlendMode:
-                                    overlayMode === "diff" ? "difference" : "normal",
                                 }}
                               >
-                                <img
-                                  className="edit-beta-overlay"
-                                  src={comparisonImage!}
-                                  alt={overlayLabel || "Design comparison"}
+                                <div
+                                  className="edit-beta-overlay-image-layer"
                                   style={{
-                                    width: fScaledWidth,
-                                    transform: `translateY(-${pageScrollY * scale}px)`,
+                                    opacity: overlayMode === "overlay" ? overlayOpacity / 100 : 1,
+                                    clipPath: overlayMode === "overlay" ? `inset(0 ${100 - overlayWipe}% 0 0)` : undefined,
+                                    mixBlendMode: overlayMode === "diff" ? "difference" : "normal",
                                   }}
-                                />
+                                >
+                                  <img
+                                    className="edit-beta-overlay"
+                                    src={comparisonImage!}
+                                    alt={overlayLabel || "Design comparison"}
+                                    style={{
+                                      width: fScaledWidth,
+                                      transform: `translateY(-${pageScrollY * scale}px)`,
+                                      filter: overlayMode === "diff" ? `contrast(${diffContrast}%)` : undefined,
+                                    }}
+                                  />
+                                </div>
+                                {overlayMode === "overlay" && onOverlayWipeChange && onOverlayOpacityChange && (
+                                  <ComparisonWipeHandle reveal={overlayWipe} opacity={overlayOpacity} width={fScaledWidth} onReveal={onOverlayWipeChange} onOpacity={onOverlayOpacityChange} />
+                                )}
                               </div>
                             )}
 

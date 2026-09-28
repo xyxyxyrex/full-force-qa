@@ -1,6 +1,6 @@
 {
   "name": "parity",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
@@ -21,6 +21,7 @@
     "test:dashboard-menu:electron": "node scripts/test-dashboard-context-menu-electron.cjs",
     "test:comparison:electron": "node scripts/test-comparison-electron.cjs",
     "test:comparison:ui": "node scripts/test-comparison-ui-electron.cjs",
+    "test:figma:ui": "node scripts/test-figma-comparison-ui-electron.cjs",
     "test:palette:electron": "node scripts/test-palette-electron.cjs",
     "test:automation:electron": "node scripts/test-automation-electron.cjs",
     "test:watch": "vitest",

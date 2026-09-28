@@ -1,0 +1,15 @@
+.comparison-drag-shield{position:fixed;inset:0;z-index:2147483646;cursor:grabbing;touch-action:none;background:transparent}
+.comparison-wipe{position:absolute;top:0;bottom:0;width:0;z-index:9;border-left:2px solid rgba(255,255,255,.94);filter:drop-shadow(0 0 3px #111);pointer-events:none}
+.comparison-wipe-handle{position:absolute;top:50%;left:0;transform:translate(-50%,-50%);width:38px;height:38px;display:grid;place-items:center;border:1px solid #e9d5ff;border-radius:12px;background:#251934;color:#f5edff;box-shadow:0 5px 18px #0009;cursor:grab;touch-action:none;pointer-events:auto}
+.comparison-wipe-handle:hover,.comparison-wipe-handle:focus-visible,.comparison-wipe.is-dragging .comparison-wipe-handle{background:#684196;outline:2px solid #e9d5ff;outline-offset:2px}
+.comparison-wipe.is-dragging .comparison-wipe-handle{cursor:grabbing}
+.comparison-wipe-value{position:absolute;top:calc(50% + 28px);left:0;transform:translateX(-50%);display:flex;gap:6px;padding:4px 7px;border:1px solid #7c5a9b;border-radius:6px;background:#251934;color:#f5edff;font:10px/1.2 monospace;white-space:nowrap;pointer-events:none;box-shadow:0 3px 10px #0007}
+.comparison-wipe-value b{font-weight:700}.comparison-wipe-value i{font-style:normal;color:#d6b7f4}
+.comparison-opacity-gauge{position:absolute;top:50%;left:32px;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 7px;border:1px solid #a97bd6;border-radius:9px;background:#22172ff2;color:#f7efff;opacity:0;transition:opacity .12s ease;pointer-events:none;box-shadow:0 5px 16px #0009}
+.comparison-wipe.is-dragging .comparison-opacity-gauge,.comparison-wipe:has(.comparison-wipe-handle:focus-visible) .comparison-opacity-gauge{opacity:1}
+.comparison-wipe.is-dragging .comparison-wipe-value{top:calc(50% + 72px)}
+.comparison-opacity-gauge small{font:700 8px/1 monospace;letter-spacing:.09em;color:#d9bcf0;writing-mode:vertical-rl}
+.comparison-opacity-track{position:relative;width:8px;height:64px;border-radius:6px;background:#ffffff36;overflow:hidden}
+.comparison-opacity-track>span{position:absolute;left:0;right:0;bottom:0;border-radius:6px;background:linear-gradient(#e1b8ff,#a86eda)}
+.comparison-opacity-gauge strong{font:700 10px/1 monospace}
+.comparison-wipe.near-right-edge .comparison-opacity-gauge{left:auto;right:32px}

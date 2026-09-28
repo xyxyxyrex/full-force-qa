@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppHotkeys } from '../../../shared/types'
+import { DEFAULT_HOTKEYS } from '../theme/themeSystem'
 import { findHotkeyCommand, findHotkeyConflicts, hotkeyFromEvent, isReservedHotkey, matchesHotkey, normalizeHotkey } from './hotkeys'
 
 const keyboard = (key: string, overrides: Partial<KeyboardEvent> = {}) => ({
@@ -28,6 +29,11 @@ describe('hotkeys', () => {
     const hotkeys = { undo: 'Ctrl + Z', redo: 'Ctrl + Shift + Z' } as AppHotkeys
     expect(matchesHotkey(keyboard('z', { ctrlKey: true }), hotkeys.undo)).toBe(true)
     expect(findHotkeyCommand(keyboard('z', { ctrlKey: true, shiftKey: true }), hotkeys)).toBe('redo')
+  })
+
+  it('opens the Figma reference with Ctrl+Shift+K', () => {
+    expect(findHotkeyCommand(keyboard('k', { ctrlKey: true, shiftKey: true }), DEFAULT_HOTKEYS))
+      .toBe('openFigmaReference')
   })
 
   it('reports duplicate bindings', () => {

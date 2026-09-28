@@ -1848,7 +1848,7 @@
 .guide-x {
   height: 0;
   border-top: 1px solid rgba(0, 212, 255, 0.8);
-  cursor: pointer;
+  cursor: row-resize;
   /* Expand hit area with transparent padding */
   padding: 3px 0;
 }
@@ -1856,7 +1856,7 @@
 .guide-y {
   width: 0;
   border-left: 1px solid rgba(0, 212, 255, 0.8);
-  cursor: pointer;
+  cursor: col-resize;
   padding: 0 3px;
 }
 
@@ -1864,6 +1864,11 @@
   opacity: 1 !important;
   border-color: rgba(0, 212, 255, 1);
   background: rgba(0, 212, 255, 0.08);
+}
+
+.guide-line.is-dragging,
+.guide-line.is-dragging:hover {
+  opacity: 0 !important;
 }
 
 /* ── Ruler dropdown ────────────────────────── */
@@ -2858,6 +2863,14 @@ body.is-free-transforming * {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 6px;
+}
+
+.overlay-dd-tip {
+  display: block;
+  margin-top: 9px;
+  color: #b8a7ce;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .overlay-slider-row {

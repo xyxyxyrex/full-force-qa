@@ -29,6 +29,7 @@ jobs:
       - run: npm run build
       - run: npm run test:feedback:edge
       - run: npm run test:feedback:electron
+      - run: npm run test:figma:ui
       - run: npm run test:automation:electron
 
   visual-worker-build:

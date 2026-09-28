@@ -318,6 +318,7 @@ export interface AppHotkeys {
   toggleGuides: string
   toggleBoundaries: string
   cycleFontInspector: string
+  openFigmaReference: string
   toggleLeftPanel: string
   toggleBottomPanel: string
   toggleRightPanel: string

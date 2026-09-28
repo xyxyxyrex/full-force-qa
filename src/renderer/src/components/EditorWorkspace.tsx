@@ -19,6 +19,8 @@ import BrowserComparisonPanel from "./BrowserComparisonPanel";
 import { normalizeWorkspaceUrl, sameWorkspacePage } from "../utils/workspaceUrl";
 import type { BrowserComparisonCapture, ComparisonEngine } from "../../../shared/crossBrowser";
 import EditBetaWorkspace from "./EditBetaWorkspace";
+import ComparisonWipeHandle from "./ComparisonWipeHandle";
+import ComparisonModeIsland from "./ComparisonModeIsland";
 import type { EditBetaWorkspaceHandle, EyedropperSample, FontInspectorMode, InteractionMode } from "./EditBetaWorkspace";
 import AutomateWorkspace from "./AutomateWorkspace";
 import type { AnnotationFromFindingSpec } from "../utils/visualCompare";
@@ -43,6 +45,8 @@ import { pageSearch, pageSearchExpression, pageBatch, type PageSearchRequest, ty
 import { nextCanvasZoomFromWheel } from "../utils/canvasZoom";
 import { isCanvasPanGesture, isMouseButtonHeld, mouseButtonMask } from "../utils/canvasPan";
 import { bindMobileViewportScrollbar, isMobilePreview } from "../utils/mobileViewportScrollbar";
+import { finishGuideGesture } from "../utils/guides";
+import { extractFigmaUrl } from "../utils/figmaClipboard";
 import { findHotkeyCommand, isEditableHotkeyTarget, matchesHotkey, normalizeHotkey } from "../utils/hotkeys";
 import {
   annotationSequencePosition,
@@ -1621,14 +1625,6 @@ export default function EditorWorkspace({
     }
   };
 
-  const handleFigmaButtonClick = () => {
-    if (storedFigmaUrl) {
-      window.electronAPI.openExternal(storedFigmaUrl);
-    } else {
-      openFigmaModal();
-    }
-  };
-
   // ── Auto-highlight canvas duplicates in Audit mode ──
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1817,7 +1813,7 @@ export default function EditorWorkspace({
   const [guidesOn, setGuidesOn] = useState(true);
   const [guidesAlwaysVisible, setGuidesAlwaysVisible] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
-  const [draggingGuide, setDraggingGuide] = useState<Guide | null>(null);
+  const [draggingGuide, setDraggingGuide] = useState<(Guide & { index?: number }) | null>(null);
   const [rulerDropdownOpen, setRulerDropdownOpen] = useState(false);
   const [addGuidesOpen, setAddGuidesOpen] = useState(false);
   const [layoutColumns, setLayoutColumns] = useState(3);
@@ -2228,11 +2224,13 @@ export default function EditorWorkspace({
     return "Figma Design";
   });
   const [overlayOpacity, setOverlayOpacity] = useState<number>(
-    () =>
-      Number(
-        localStorage.getItem(`qa_${activeProjectId}_figma_overlay_opacity`),
-      ) || 50,
+    () => {
+      const stored = localStorage.getItem(`qa_${activeProjectId}_figma_overlay_opacity`);
+      return stored === null ? 50 : Math.max(0, Math.min(100, Number(stored) || 0));
+    },
   );
+  const [overlayWipe, setOverlayWipe] = useState(50);
+  const [diffContrast, setDiffContrast] = useState(100);
   const [overlayVisible, setOverlayVisible] = useState<boolean>(
     () =>
       localStorage.getItem(`qa_${activeProjectId}_figma_overlay_visible`) !==
@@ -2249,6 +2247,7 @@ export default function EditorWorkspace({
   const [overlayPanelOpen, setOverlayPanelOpen] = useState(false);
   const [figmaCardDismissed, setFigmaCardDismissed] = useState(false);
   const [figmaViewMode, setFigmaViewMode] = useState<"live" | "png">("live");
+  const figmaTriggerRef = useRef<HTMLButtonElement>(null);
 
   const setFigmaImage = useCallback(
     (img: string | null) => {
@@ -2357,6 +2356,48 @@ export default function EditorWorkspace({
     },
     [activeProjectId, setFigmaImage, setSnapshotImage],
   );
+
+  const openFigmaReference = () => {
+    if (workspaceTab !== "editBeta") setWorkspaceTab("editBeta");
+    setFigmaModalOpen(false);
+    setFigmaCardDismissed(false);
+    setFigmaSplitOpen(true);
+    setOverlayVisible(true);
+    setOverlayMode("side-by-side");
+    setSnapshotPanelOpen(false);
+    if (figmaImage) setOverlayImage(figmaImage, "Figma Design");
+    else {
+      setOverlayImageState(null);
+      setOverlayLabelState("Figma Design");
+    }
+    setOverlayPanelOpen(false);
+    requestAnimationFrame(() => figmaTriggerRef.current?.focus());
+  };
+
+  const connectPastedFigmaUrl = (url: string) => {
+    localStorage.setItem(`qa_${activeProjectId}_figma_url`, url);
+    setStoredFigmaUrl(url);
+    setFigmaInputVal(url);
+    setFigmaModalOpen(false);
+    setFigmaCardDismissed(false);
+    setFigmaSplitOpen(true);
+    setFigmaViewMode("live");
+    setOverlayMode("side-by-side");
+    setOverlayVisible(true);
+    setOverlayPanelOpen(false);
+    if (project) void window.electronAPI.saveProject({ ...project, figmaUrl: url });
+  };
+
+  const showFigmaModeIsland = overlayVisible && overlayLabel === "Figma Design" &&
+    ((figmaSplitOpen && !figmaCardDismissed) || (!!figmaImage && overlayMode !== "side-by-side"));
+  const changeFigmaMode = (nextMode: "overlay" | "side-by-side" | "diff") => {
+    if (nextMode === "side-by-side") {
+      setFigmaSplitOpen(true);
+      setFigmaCardDismissed(false);
+    }
+    setOverlayMode(nextMode);
+    setOverlayVisible(true);
+  };
 
   useEffect(() => {
     localStorage.setItem(
@@ -3558,7 +3599,7 @@ export default function EditorWorkspace({
       const isEditable = isEditableHotkeyTarget(e.target);
       const command = findHotkeyCommand(e, hotkeysRef.current);
 
-      if (command && (!isEditable || command === "quickSave")) {
+      if (command && (!isEditable || command === "quickSave" || command === "openFigmaReference")) {
         if (command === "panMode") {
           if (!isEditable) {
             e.preventDefault();
@@ -4836,11 +4877,16 @@ export default function EditorWorkspace({
           return;
         }
       }
+      const figmaUrl = extractFigmaUrl(e.clipboardData?.getData("text/plain") || "");
+      if (figmaUrl) {
+        e.preventDefault();
+        connectPastedFigmaUrl(figmaUrl);
+      }
     };
 
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [setOverlayImage]);
+  }, [setOverlayImage, activeProjectId, project]);
 
   // Figma overlay file upload handler
   const handleOverlayFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -5549,8 +5595,65 @@ export default function EditorWorkspace({
     document.addEventListener("mouseup", onUp);
   };
 
-  const removeGuide = (index: number) => {
-    setGuides((prev) => prev.filter((_, i) => i !== index));
+  const onExistingGuidePointerDown = (
+    index: number,
+    axis: Guide["axis"],
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+    const iframe = editorRef.current?.Canvas.getFrameEl();
+    if (iframe) iframe.style.pointerEvents = "none";
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== event.pointerId) return;
+      if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) >= 4) moved = true;
+      if (!moved) return;
+      const inner = canvasInnerRef.current;
+      const frame = getCanvasFrame();
+      if (!inner || !frame) return;
+      const rect = inner.getBoundingClientRect();
+      const screenPosition = axis === "x" ? moveEvent.clientY - rect.top : moveEvent.clientX - rect.left;
+      const offset = axis === "x" ? frame.top : frame.left;
+      const dimension = axis === "x" ? frame.height : frame.width;
+      setDraggingGuide({ axis, index, position: snapCenter(toFraction(screenPosition, offset, dimension), dimension) });
+    };
+
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== event.pointerId) return;
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+      if (iframe) iframe.style.pointerEvents = "";
+      setDraggingGuide(null);
+      const inner = canvasInnerRef.current;
+      const frame = getCanvasFrame();
+      const rect = inner?.getBoundingClientRect();
+      const screenPosition = axis === "x" ? upEvent.clientY - (rect?.top ?? 0) : upEvent.clientX - (rect?.left ?? 0);
+      const offset = axis === "x" ? frame?.top : frame?.left;
+      const dimension = axis === "x" ? frame?.height : frame?.width;
+      const fraction = offset !== undefined && dimension
+        ? snapCenter(toFraction(screenPosition, offset, dimension), dimension)
+        : Number.NaN;
+      setGuides((prev) => finishGuideGesture(
+        prev,
+        index,
+        { x: startX, y: startY },
+        { x: upEvent.clientX, y: upEvent.clientY },
+        fraction,
+        !Number.isFinite(fraction) || fraction < 0 || fraction > 1,
+        upEvent.type === "pointercancel",
+      ));
+    };
+
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
   };
 
   // ── Ruler dropdown: close on outside click ──
@@ -6057,6 +6160,9 @@ export default function EditorWorkspace({
       case "cycleFontInspector":
         toggleFontInspector();
         return true;
+      case "openFigmaReference":
+        openFigmaReference();
+        return true;
       case "toggleLeftPanel":
         if (workspaceTab === "automate") return false;
         setLeftPanelOpen((current) => !current);
@@ -6164,7 +6270,6 @@ export default function EditorWorkspace({
       add('snapshot.image', 'Save image snapshot', () => handleCreateSnapshot('image'));
       add('snapshot.html', 'Save HTML snapshot', () => handleCreateSnapshot('html'));
       add('snapshot.breakpoints', 'Capture multiple breakpoints', handleCaptureMultiBreakpoints);
-      add('figma.open', 'Open Figma comparison', handleFigmaButtonClick);
       add('viewport.free', 'Free transform viewport', enterFreeMode);
       return items;
     },
@@ -6220,7 +6325,7 @@ export default function EditorWorkspace({
       if (document.querySelector(".settings-modal-overlay, .command-palette-overlay")) return;
       const command = findHotkeyCommand(event, hotkeysRef.current);
       if (!command) return;
-      if (isEditableHotkeyTarget(event.target) && command !== "quickSave") return;
+      if (isEditableHotkeyTarget(event.target) && command !== "quickSave" && command !== "openFigmaReference") return;
       if (command === "panMode") {
         beginPanHotkey(event);
         return;
@@ -6247,7 +6352,7 @@ export default function EditorWorkspace({
       const detail = (event as CustomEvent<EmbeddedHotkeyDetail>).detail;
       if (!detail) return;
       const command = findHotkeyCommand(detail, hotkeysRef.current);
-      if (!command || (detail.editable && command !== "quickSave")) return;
+      if (!command || (detail.editable && command !== "quickSave" && command !== "openFigmaReference")) return;
       if (command === "panMode") {
         if (!detail.repeat && !detail.editable) {
           activatePanHotkey(detail.code);
@@ -7802,7 +7907,7 @@ export default function EditorWorkspace({
                       <span className="tool-menu-row-icon">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 8h16M4 16h16" strokeDasharray="2 2" /><path d="M8 4v16M16 4v16" strokeDasharray="2 2" /></svg>
                       </span>
-                      <span className="tool-menu-copy"><strong>Guides</strong><small>Enable draggable alignment guides</small></span>
+                      <span className="tool-menu-copy"><strong>Guides</strong><small>Drag to move · click to delete</small></span>
                       <input
                         className="tool-menu-checkbox"
                         type="checkbox"
@@ -8103,12 +8208,13 @@ export default function EditorWorkspace({
               {/* Figma Design Overlay Dropdown */}
               <div className="ruler-dropdown-wrap live-excluded" ref={overlayDropdownRef}>
                 <button
+                  ref={figmaTriggerRef}
                   className={`device-btn ${overlayImage && overlayLabel === "Figma Design" ? "active" : ""}`}
                   onClick={() => {
                     setOverlayPanelOpen((p) => !p);
                     setSnapshotPanelOpen(false);
                   }}
-                  title="Figma Design Overlay (Ctrl+V to paste Figma image)"
+                  title="Figma reference (Ctrl+Shift+K, then Ctrl+V to paste an image or Figma link)"
                 >
                   <svg
                     width="18"
@@ -8278,7 +8384,7 @@ export default function EditorWorkspace({
                             <path d="M2 13v4a3 3 0 0 0 3 3h4" />
                           </svg>
                           <span>
-                            Copy a layer as PNG in Figma,
+                            Copy a layer as PNG or a Figma link,
                             <br />
                             then <strong>Ctrl + V</strong> here
                           </span>
@@ -8312,23 +8418,23 @@ export default function EditorWorkspace({
                         </div>
                         <div className="ruler-dd-divider" />
 
-                        <div className="overlay-dd-control">
-                          <label>Opacity</label>
+                        <div className="overlay-dd-control" style={{ display: overlayMode === "side-by-side" ? "none" : undefined }}>
+                          <label>{overlayMode === "diff" ? "Difference contrast" : "Overlay opacity"}</label>
                           <div className="overlay-slider-row">
                             <input
                               type="range"
-                              min="0"
-                              max="100"
-                              value={overlayOpacity}
-                              onChange={(e) =>
-                                setOverlayOpacity(Number(e.target.value))
-                              }
+                              min={overlayMode === "diff" ? 100 : 0}
+                              max={overlayMode === "diff" ? 400 : 100}
+                              value={overlayMode === "diff" ? diffContrast : overlayOpacity}
+                              onChange={(e) => overlayMode === "diff" ? setDiffContrast(Number(e.target.value)) : setOverlayOpacity(Number(e.target.value))}
                               className="overlay-slider"
+                              aria-label={overlayMode === "diff" ? "Difference contrast" : "Overlay opacity"}
                             />
                             <span className="overlay-slider-val">
-                              {overlayOpacity}%
+                              {overlayMode === "diff" ? diffContrast : overlayOpacity}%
                             </span>
                           </div>
+                          {overlayMode === "overlay" && <small className="overlay-dd-tip">Drag the canvas handle sideways to reveal, or vertically to change opacity.</small>}
                         </div>
 
                         <div className="ruler-dd-divider" />
@@ -8797,23 +8903,23 @@ export default function EditorWorkspace({
                         </div>
                         <div className="ruler-dd-divider" />
 
-                        <div className="overlay-dd-control">
-                          <label>Opacity</label>
+                        <div className="overlay-dd-control" style={{ display: overlayMode === "side-by-side" ? "none" : undefined }}>
+                          <label>{overlayMode === "diff" ? "Difference contrast" : "Overlay opacity"}</label>
                           <div className="overlay-slider-row">
                             <input
                               type="range"
-                              min="0"
-                              max="100"
-                              value={overlayOpacity}
-                              onChange={(e) =>
-                                setOverlayOpacity(Number(e.target.value))
-                              }
+                              min={overlayMode === "diff" ? 100 : 0}
+                              max={overlayMode === "diff" ? 400 : 100}
+                              value={overlayMode === "diff" ? diffContrast : overlayOpacity}
+                              onChange={(e) => overlayMode === "diff" ? setDiffContrast(Number(e.target.value)) : setOverlayOpacity(Number(e.target.value))}
                               className="overlay-slider"
+                              aria-label={overlayMode === "diff" ? "Difference contrast" : "Overlay opacity"}
                             />
                             <span className="overlay-slider-val">
-                              {overlayOpacity}%
+                              {overlayMode === "diff" ? diffContrast : overlayOpacity}%
                             </span>
                           </div>
+                          {overlayMode === "overlay" && <small className="overlay-dd-tip">Drag the canvas handle sideways to reveal, or vertically to change opacity.</small>}
                         </div>
 
                         <div className="ruler-dd-divider" />
@@ -9615,6 +9721,7 @@ export default function EditorWorkspace({
                 guidesOn={guidesOn}
                 guidesAlwaysVisible={guidesAlwaysVisible}
                 guides={guides}
+                onGuidesChange={setGuides}
                 viewportMode={mode}
                 onViewportResize={(nextWidth, nextHeight) => {
                   vpWidthRef.current = nextWidth;
@@ -9639,6 +9746,12 @@ export default function EditorWorkspace({
                 overlayImage={overlayImage}
                 overlayVisible={overlayVisible}
                 overlayOpacity={overlayOpacity}
+                overlayWipe={overlayWipe}
+                onOverlayWipeChange={setOverlayWipe}
+                onOverlayOpacityChange={setOverlayOpacity}
+                diffContrast={diffContrast}
+                showFigmaModeIsland={showFigmaModeIsland}
+                onFigmaModeChange={changeFigmaMode}
                 overlayMode={overlayMode}
                 overlayLabel={overlayLabel}
                 figmaImage={figmaImage}
@@ -10897,7 +11010,6 @@ export default function EditorWorkspace({
                     {/* LEFT PANEL: Standard Desktop Figma Live App / Reference PNG */}
                     {!figmaCardDismissed &&
                       figmaSplitOpen &&
-                      (storedFigmaUrl || figmaImage) &&
                       overlayMode === "side-by-side" && (
                         <div
                           className="figma-overlay-side"
@@ -10915,6 +11027,9 @@ export default function EditorWorkspace({
                             border: "1px solid rgba(255,255,255,0.12)",
                           }}
                         >
+                          {showFigmaModeIsland && (
+                            <ComparisonModeIsland mode={overlayMode} hasImage={!!figmaImage} onModeChange={changeFigmaMode} />
+                          )}
                           {/* Sleek Mini Floating Tooltip Pill ABOVE Frame */}
                           <div
                             style={{
@@ -11413,8 +11528,8 @@ export default function EditorWorkspace({
                       )}
 
                     {/* Opacity Overlay Mode (Figma or Snapshot) */}
-                    {overlayMode === "overlay" &&
-                      (snapshotImage || figmaImage || overlayImage) && (
+                    {overlayVisible && overlayMode === "overlay" &&
+                      (overlayImage || figmaImage || snapshotImage) && (
                         <div
                           className="figma-overlay-img"
                           style={{
@@ -11422,23 +11537,25 @@ export default function EditorWorkspace({
                             top: canvasFrame.top,
                             width: canvasFrame.width,
                             height: canvasFrame.height,
-                            opacity: overlayOpacity / 100,
                           }}
                         >
                           <img
-                            src={snapshotImage || figmaImage || overlayImage!}
+                            src={overlayImage || figmaImage || snapshotImage!}
                             alt=""
                             draggable={false}
                             style={{
                               transform: `translateY(-${iframeScrollY * (zoom / 100)}px)`,
+                              opacity: overlayOpacity / 100,
+                              clipPath: `inset(0 ${100 - overlayWipe}% 0 0)`,
                             }}
                           />
+                          <ComparisonWipeHandle reveal={overlayWipe} opacity={overlayOpacity} width={canvasFrame.width} onReveal={setOverlayWipe} onOpacity={setOverlayOpacity} />
                         </div>
                       )}
 
                     {/* Difference Blend Mode */}
-                    {overlayMode === "diff" &&
-                      (snapshotImage || figmaImage || overlayImage) && (
+                    {overlayVisible && overlayMode === "diff" &&
+                      (overlayImage || figmaImage || snapshotImage) && (
                         <div
                           className="figma-overlay-img figma-overlay-diff"
                           style={{
@@ -11449,15 +11566,24 @@ export default function EditorWorkspace({
                           }}
                         >
                           <img
-                            src={snapshotImage || figmaImage || overlayImage!}
+                            src={overlayImage || figmaImage || snapshotImage!}
                             alt=""
                             draggable={false}
                             style={{
                               transform: `translateY(-${iframeScrollY * (zoom / 100)}px)`,
+                              filter: `contrast(${diffContrast}%)`,
                             }}
                           />
                         </div>
                       )}
+                    {showFigmaModeIsland && overlayMode !== "side-by-side" && (
+                      <ComparisonModeIsland
+                        mode={overlayMode}
+                        hasImage={!!figmaImage}
+                        onModeChange={changeFigmaMode}
+                        style={{ left: canvasFrame.left + canvasFrame.width / 2, top: Math.max(8, canvasFrame.top - 78), maxWidth: Math.max(1, canvasFrame.width - 16) }}
+                      />
+                    )}
                   </>
                 )}
 
@@ -11472,27 +11598,30 @@ export default function EditorWorkspace({
                       height: canvasFrame.height,
                     }}
                   >
-                    {guidesOn &&
+                    {(guidesAlwaysVisible || (workspaceTab === "layout" && guidesOn)) &&
                       guides.map((g, i) => (
                         <div
                           key={i}
-                          className={`guide-line guide-${g.axis}`}
+                          className={`guide-line guide-${g.axis} ${draggingGuide?.index === i ? "is-dragging" : ""}`}
                           style={
                             g.axis === "x"
                               ? {
                                   top: `${g.position * 100}%`,
                                   left: -canvasFrame.left,
                                   width: `calc(100% + ${canvasFrame.left}px + ${canvasFrame.left}px)`,
-                                  opacity: guidesAlwaysVisible ? 1 : 0,
+                                  opacity: draggingGuide?.index === i ? 0 : 1,
+                                  pointerEvents: guidesOn ? "auto" : "none",
                                 }
                               : {
                                   left: `${g.position * 100}%`,
                                   top: -canvasFrame.top,
                                   height: `calc(100% + ${canvasFrame.top}px + ${canvasFrame.top}px)`,
-                                  opacity: guidesAlwaysVisible ? 1 : 0,
+                                  opacity: draggingGuide?.index === i ? 0 : 1,
+                                  pointerEvents: guidesOn ? "auto" : "none",
                                 }
                           }
-                          onDoubleClick={() => removeGuide(i)}
+                          title="Click to delete · drag to move · drag outside to delete"
+                          onPointerDown={(event) => onExistingGuidePointerDown(i, g.axis, event)}
                         />
                       ))}
                     {draggingGuide && (
@@ -12640,6 +12769,8 @@ export default function EditorWorkspace({
                           setOverlayImage(dataUrl, "Figma Design");
                           setFigmaViewMode("png");
                           setFigmaCardDismissed(false);
+                          setFigmaSplitOpen(true);
+                          setOverlayVisible(true);
                           setOverlayMode("side-by-side");
                         }
                       };

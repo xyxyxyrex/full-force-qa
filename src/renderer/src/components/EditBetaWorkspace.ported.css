@@ -490,6 +490,12 @@ body.is-viewport-resizing * {
   pointer-events: auto;
 }
 
+.edit-beta-overlay-image-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .edit-beta-figma-viewport {
   width: 100%;
   height: 100%;
@@ -518,6 +524,13 @@ body.is-viewport-resizing * {
   user-select: none;
   pointer-events: none;
 }
+
+.edit-beta-figma-empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:22px;text-align:center;color:#aca2b8;background:radial-gradient(circle at 50% 35%,#37244a 0,#1a1723 60%)}
+.edit-beta-figma-empty img{width:34px;height:34px;object-fit:contain;opacity:.9}
+.edit-beta-figma-empty strong{font-size:14px;color:#fff}
+.edit-beta-figma-empty span{font-size:11px;line-height:1.5}
+.edit-beta-figma-empty button{margin-top:5px;padding:7px 11px;border:1px solid #a77acb;border-radius:7px;background:#47305f;color:#fff;cursor:pointer}
+.edit-beta-figma-empty button:hover{background:#69408b}
 
 .edit-beta-dimension-badge {
   padding: 4px 7px;
