@@ -3,6 +3,7 @@ import {
   layoutModeFromDisplay,
   mergeViewportPatches,
   normalizeBoxModelValue,
+  normalizeNumericInputDraft,
 } from "./viewportLayoutPatches";
 
 describe("layoutModeFromDisplay", () => {
@@ -28,6 +29,22 @@ describe("normalizeBoxModelValue", () => {
       "calc(100% - 20px)",
     );
     expect(normalizeBoxModelValue("", "10px")).toBe("10px");
+  });
+});
+
+describe("normalizeNumericInputDraft", () => {
+  it("removes integer leading zeroes while the user types", () => {
+    expect(normalizeNumericInputDraft("04")).toBe("4");
+    expect(normalizeNumericInputDraft("045")).toBe("45");
+    expect(normalizeNumericInputDraft("-007")).toBe("-7");
+  });
+
+  it("preserves zero, decimals, empty drafts, and CSS keywords", () => {
+    expect(normalizeNumericInputDraft("0")).toBe("0");
+    expect(normalizeNumericInputDraft("0.5")).toBe("0.5");
+    expect(normalizeNumericInputDraft("-0.5")).toBe("-0.5");
+    expect(normalizeNumericInputDraft("")).toBe("");
+    expect(normalizeNumericInputDraft("auto")).toBe("auto");
   });
 });
 

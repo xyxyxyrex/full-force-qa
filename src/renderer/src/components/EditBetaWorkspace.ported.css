@@ -313,6 +313,16 @@ body.is-viewport-resizing * {
   border: 1.5px solid #3b82f6;
 }
 
+.edit-beta-selection-box.is-free-transform {
+  border-color: var(--accent-color);
+  transition: border-color 100ms ease;
+}
+
+.edit-beta-selection-box.is-free-transform-disabled {
+  border-style: dashed;
+  opacity: .72;
+}
+
 .box-padding {
   position: absolute;
   display: block;
@@ -341,6 +351,22 @@ body.is-viewport-resizing * {
   user-select: none;
   -webkit-user-drag: none;
   will-change: left, top;
+}
+
+.edit-beta-anchor.free-transform-anchor {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--bg-app);
+  border-radius: 1px;
+  background: var(--accent-color);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 78%, transparent);
+  transform: rotate(45deg);
+  transition: background-color 100ms ease, border-color 100ms ease, transform 100ms ease;
+}
+
+.edit-beta-anchor.free-transform-anchor[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .55;
 }
 
 .edit-beta-right textarea {
@@ -380,6 +406,24 @@ body.is-viewport-resizing * {
 
 .edit-beta-move-handle:hover {
   background: #2563eb;
+}
+
+.edit-beta-move-handle.is-translate {
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-color));
+  color: var(--accent-color);
+  cursor: move;
+  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+
+.edit-beta-move-handle.is-translate:hover {
+  background: var(--accent-color);
+  color: var(--accent-foreground);
+}
+
+.edit-beta-move-handle.is-translate[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .58;
 }
 
 .edit-beta-move-handle svg {
@@ -494,6 +538,26 @@ body.is-viewport-resizing * {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+.edit-beta-move-handle.is-translate::after {
+  background: var(--accent-color);
+}
+
+.edit-beta-transform-hud {
+  position: absolute;
+  z-index: 28;
+  min-width: max-content;
+  padding: 4px 7px;
+  transform: translate(-50%, -100%);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 56%, var(--border-color));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  box-shadow: 0 4px 12px #0006;
+  color: var(--text-primary);
+  pointer-events: none;
+  white-space: nowrap;
+  font: 600 9px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .edit-beta-figma-viewport {
@@ -624,6 +688,27 @@ body.is-viewport-resizing * {
   background: #3f3f46;
 }
 
+.edit-beta-free-transform-hint {
+  max-width: 92px;
+  padding: 3px 6px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent-color) 42%, var(--border-color));
+  border-radius: 3px;
+  background: var(--accent-light);
+  color: var(--accent-color);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 8px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  opacity: .92;
+  transition: opacity 100ms ease;
+}
+
+.edit-beta-free-transform-hint.unavailable {
+  border-color: color-mix(in srgb, #f87171 48%, var(--border-color));
+  background: color-mix(in srgb, #7f1d1d 24%, var(--bg-card));
+  color: #fca5a5;
+}
+
 .edit-beta-selection-toolbar button {
   width: 25px;
   height: 25px;
@@ -659,6 +744,22 @@ body.is-viewport-resizing * {
 .edit-beta-selection-toolbar button.edit-beta-toolbar-grip svg {
   fill: currentColor;
   stroke: none;
+}
+
+.edit-beta-selection-toolbar button.edit-beta-toolbar-grip.is-translate {
+  color: var(--accent-color);
+  cursor: move;
+}
+
+.edit-beta-selection-toolbar button.edit-beta-toolbar-grip.is-translate svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.edit-beta-selection-toolbar button.edit-beta-toolbar-grip.is-translate[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .55;
 }
 
 .edit-beta-selection-toolbar button:hover {

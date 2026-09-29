@@ -32,6 +32,7 @@ async function driver() {
 const fixture = `<!doctype html><html><head><style>
 * { box-sizing: border-box; }
 h1 { font-size: 28px; margin: 3px; color: blue; }
+.active h1 { font-family: serif; }
 .cs-hero h1, .other h1 { font-size: 60px !important; color: rgb(220, 20, 60); margin: 10px; }
 @media (min-width: 500px) { .cs-hero h1 { letter-spacing: 2px; } }
 #duplicate-me:hover { color: rgb(0, 128, 0); }
@@ -185,6 +186,61 @@ async function smoke() {
     const withNewRule = await invoke('inspector:add-rule', heading.ref, '.cs-hero h1')
     assert.ok(withNewRule.rules.some(rule => rule.parityInjected), 'new rules should be labeled as Parity inspector styles')
     await invoke('inspector:undo', session.sessionId)
+
+    // Background DOM/style notifications advance the inspector revision. An
+    // unchanged declaration from the visible Styles snapshot must still be
+    // editable, while a real concurrent change to that declaration must win.
+    const staleStyles = await invoke('inspector:styles', heading.ref)
+    const staleRule = staleStyles.rules.find(rule => rule.selectorText.includes('.cs-hero h1'))
+    const staleMargin = staleRule.declarations.find(item => item.name === 'margin')
+    const revisionNode = await invoke('inspector:resolve-selector', session.sessionId, session.generation, '.cs-hero')
+    await invoke('inspector:edit-dom', { sessionId: session.sessionId, generation: session.generation, nodeId: revisionNode.ref.nodeId, kind: 'set-attribute', name: 'class', value: 'cs-hero active' })
+    const reorderedStyles = await invoke('inspector:styles', heading.ref)
+    const reorderedRule = reorderedStyles.rules.find(rule => rule.selectorText.includes('.cs-hero h1'))
+    assert.notEqual(reorderedRule.id, staleRule.id, 'matching-rule insertion should exercise stale rule-ID rebasing')
+    const staleDraft = {
+      sessionId: session.sessionId,
+      generation: session.generation,
+      nodeId: heading.ref.nodeId,
+      ruleId: staleRule.id,
+      declarationId: staleMargin.id,
+      name: staleMargin.name,
+      important: staleMargin.important,
+      disabled: staleMargin.state === 'disabled',
+      revision: staleStyles.revision,
+      baseName: staleMargin.name,
+      baseValue: staleMargin.value,
+      baseImportant: staleMargin.important,
+      baseDisabled: staleMargin.state === 'disabled',
+      baseRuleKind: staleRule.kind,
+      baseRuleStyleSheetId: staleRule.styleSheetId,
+      baseRuleSelector: staleRule.selectorText,
+      baseRuleStartLine: staleRule.styleRange?.startLine,
+      baseRuleStartColumn: staleRule.styleRange?.startColumn,
+      draftId: 'stale-rule-live-draft',
+    }
+    await invoke('inspector:edit-declaration', { ...staleDraft, value: '11px', phase: 'preview' })
+    assert.equal(await inspected.webContents.executeJavaScript("getComputedStyle(document.querySelector('.cs-hero h1')).marginTop"), '11px', 'unrelated revision changes must not block live declaration previews')
+    await invoke('inspector:edit-declaration', { ...staleDraft, value: '12px', phase: 'preview' })
+    const rebasedStyles = await invoke('inspector:edit-declaration', { ...staleDraft, value: '12px', phase: 'commit' })
+    assert.equal(await inspected.webContents.executeJavaScript("getComputedStyle(document.querySelector('.cs-hero h1')).marginTop"), '12px', 'a rebased live draft should commit normally')
+    const rebasedRule = rebasedStyles.rules.find(rule => rule.selectorText.includes('.cs-hero h1'))
+    const rebasedMargin = rebasedRule.declarations.find(item => item.name === 'margin')
+    await invoke('inspector:edit-declaration', { sessionId: session.sessionId, generation: session.generation, nodeId: heading.ref.nodeId, ruleId: rebasedRule.id, declarationId: rebasedMargin.id, name: 'margin', value: '13px', revision: rebasedStyles.revision })
+    await assert.rejects(invoke('inspector:edit-declaration', {
+      sessionId: session.sessionId,
+      generation: session.generation,
+      nodeId: heading.ref.nodeId,
+      ruleId: rebasedRule.id,
+      declarationId: rebasedMargin.id,
+      name: 'margin',
+      value: '14px',
+      revision: rebasedStyles.revision,
+      baseName: rebasedMargin.name,
+      baseValue: rebasedMargin.value,
+      baseImportant: rebasedMargin.important,
+      baseDisabled: rebasedMargin.state === 'disabled',
+    }), /declaration changed since it was loaded/i)
 
     const capture = await api.captureAutomatePage(inspected.webContents.id, 800, 600)
     assert.equal(capture.success, true)

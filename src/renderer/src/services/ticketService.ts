@@ -1,6 +1,7 @@
 import type { Ticket, TicketStoreSnapshot } from '../../../shared/types'
 import { toIntakeTicket, projectTicketRef } from '../../../shared/tickets'
 import { ticketProviders } from './ticketProviders'
+import { friendlyMondayError } from '../../../shared/mondayErrors'
 
 export const ticketsChanged = () => window.dispatchEvent(new Event('parity:tickets-changed'))
 export async function listIntakeTickets() {
@@ -43,9 +44,11 @@ async function refreshMonday() {
     }
     ticketsChanged(); void syncTickets(); return state
   } catch (error) {
+    const message = friendlyMondayError(error)
+    console.error('[Monday] Ticket refresh failed.', error)
     try {
-      if ((await window.electronAPI.ticketsList()).ownerKey === before.ownerKey) await window.electronAPI.ticketsRefreshFailed(error instanceof Error ? error.message : 'Monday refresh failed.', before.ownerKey)
+      if ((await window.electronAPI.ticketsList()).ownerKey === before.ownerKey) await window.electronAPI.ticketsRefreshFailed(message, before.ownerKey)
     } catch {}
-    ticketsChanged(); throw error
+    ticketsChanged(); throw new Error(message)
   }
 }

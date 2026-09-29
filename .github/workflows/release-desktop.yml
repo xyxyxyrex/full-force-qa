@@ -69,6 +69,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:inspector:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:free-transform:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:palette:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:feedback:edge
@@ -76,6 +78,8 @@ jobs:
           npm run test:feedback:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:figma:ui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:dashboard-menu:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build landing page installer
         run: npm run build:viewer

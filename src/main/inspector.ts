@@ -503,6 +503,32 @@ function editedDeclarations(rule: InspectorRule, edit: InspectorDeclarationEdit)
   return next
 }
 
+function locateRule(rules: InspectorRule[], edit: Pick<InspectorDeclarationEdit, 'ruleId' | 'baseRuleKind' | 'baseRuleStyleSheetId' | 'baseRuleSelector' | 'baseRuleStartLine' | 'baseRuleStartColumn'>): InspectorRule | undefined {
+  const exact = rules.find(rule => rule.id === edit.ruleId)
+  const hasLocator = Boolean(edit.baseRuleKind)
+    || edit.baseRuleStyleSheetId !== undefined
+    || edit.baseRuleSelector !== undefined
+    || typeof edit.baseRuleStartLine === 'number'
+  const matchesLocator = (rule: InspectorRule) => (!edit.baseRuleKind || rule.kind === edit.baseRuleKind)
+    && (edit.baseRuleStyleSheetId === undefined || rule.styleSheetId === edit.baseRuleStyleSheetId)
+    && (edit.baseRuleSelector === undefined || rule.selectorText === edit.baseRuleSelector)
+  if (exact && (!hasLocator || matchesLocator(exact))) return exact
+  if (!hasLocator) return undefined
+  let candidates = rules
+  candidates = candidates.filter(matchesLocator)
+  if (!candidates.length) return undefined
+  if (typeof edit.baseRuleStartLine === 'number') {
+    candidates = [...candidates].sort((left, right) => {
+      const leftDistance = Math.abs((left.styleRange?.startLine ?? Number.MAX_SAFE_INTEGER) - edit.baseRuleStartLine!)
+        + Math.abs((left.styleRange?.startColumn ?? 0) - (edit.baseRuleStartColumn ?? 0)) / 10_000
+      const rightDistance = Math.abs((right.styleRange?.startLine ?? Number.MAX_SAFE_INTEGER) - edit.baseRuleStartLine!)
+        + Math.abs((right.styleRange?.startColumn ?? 0) - (edit.baseRuleStartColumn ?? 0)) / 10_000
+      return leftDistance - rightDistance
+    })
+  }
+  return candidates[0]
+}
+
 async function draftText(session: InspectorSession, draft: DeclarationDraft): Promise<string> {
   if (draft.kind === 'stylesheet') return getStyleSheetText(session, draft.styleSheetId!)
   const node = await describe(session, draft.nodeId, 0)
@@ -773,7 +799,7 @@ export function registerInspectorHandlers() {
         return stylesFor(session, edit.nodeId)
       }
 
-      if (!existingDraft && edit.revision != null && edit.revision !== session.revision) throw new Error('The stylesheet changed. Refresh Styles and retry this edit.')
+      const revisionChanged = !existingDraft && edit.revision != null && edit.revision !== session.revision
       if (edit.phase === 'preview') await assertValidDeclaration(session, edit)
 
       if (existingDraft) {
@@ -785,9 +811,21 @@ export function registerInspectorHandlers() {
         await writeDraftText(session, existingDraft, existingDraft.before)
       }
       const snapshot = await stylesFor(session, edit.nodeId)
-      const rule = snapshot.rules.find(item => item.id === edit.ruleId)
+      const rule = locateRule(snapshot.rules, edit)
       if (!rule) throw new Error('The CSS rule changed. Refresh Styles and try again.')
-      const next = editedDeclarations(rule, edit)
+      let currentDeclaration = edit.declarationId ? rule.declarations.find(item => item.id === edit.declarationId) : undefined
+      if (edit.declarationId && edit.baseName != null) {
+        const matchesBase = (item: InspectorDeclaration) => item.name === edit.baseName
+          && item.value === (edit.baseValue ?? '')
+          && item.important === Boolean(edit.baseImportant)
+          && (item.state === 'disabled') === Boolean(edit.baseDisabled)
+        if (!currentDeclaration || !matchesBase(currentDeclaration)) currentDeclaration = rule.declarations.find(matchesBase)
+        if (!currentDeclaration) throw new Error('This declaration changed since it was loaded. Refresh Styles before replacing the newer value.')
+      } else if (revisionChanged && edit.declarationId) {
+        throw new Error('The stylesheet changed. Refresh Styles and retry this edit.')
+      }
+      const resolvedEdit = currentDeclaration ? { ...edit, declarationId: currentDeclaration.id } : edit
+      const next = editedDeclarations(rule, resolvedEdit)
       const label = `${rule.kind === 'inline' ? 'Style' : 'Rule'} · ${edit.name}`
       const patch = { type: 'inspectorDeclaration', nodeId: edit.nodeId, ruleId: rule.id, name: edit.name, value: edit.value }
       if (rule.kind === 'inline' && (!rule.styleSheetId || !rule.styleRange)) {
@@ -795,7 +833,7 @@ export function registerInspectorHandlers() {
         const after = serializeStyle(next)
         const target = { kind: 'inline' as const, nodeId: edit.nodeId }
         await writeDraftText(session, target, after)
-        if (edit.phase === 'preview' && draftId) session.declarationDrafts.set(draftId, { id: draftId, nodeId: edit.nodeId, ruleId: rule.id, kind: 'inline', before: existingDraft?.before ?? before, expected: after, label, patch })
+        if (edit.phase === 'preview' && draftId) session.declarationDrafts.set(draftId, { id: draftId, nodeId: edit.nodeId, ruleId: edit.ruleId, kind: 'inline', before: existingDraft?.before ?? before, expected: after, label, patch })
         else await commit(session, { label, undo: async () => { await writeDraftText(session, target, before) }, redo: async () => { await writeDraftText(session, target, after) }, patch })
       } else {
         if (!rule.styleSheetId || !rule.styleRange || rule.readOnly) throw new Error('This browser or generated rule is read-only.')
@@ -805,7 +843,7 @@ export function registerInspectorHandlers() {
         finally { session.previewMutation = undefined }
         const after = await getStyleSheetText(session, rule.styleSheetId)
         const target = { kind: 'stylesheet' as const, nodeId: edit.nodeId, styleSheetId: rule.styleSheetId }
-        if (edit.phase === 'preview' && draftId) session.declarationDrafts.set(draftId, { id: draftId, nodeId: edit.nodeId, ruleId: rule.id, kind: 'stylesheet', styleSheetId: rule.styleSheetId, before: existingDraft?.before ?? before, expected: after, label, patch })
+        if (edit.phase === 'preview' && draftId) session.declarationDrafts.set(draftId, { id: draftId, nodeId: edit.nodeId, ruleId: edit.ruleId, kind: 'stylesheet', styleSheetId: rule.styleSheetId, before: existingDraft?.before ?? before, expected: after, label, patch })
         else await commit(session, { label, undo: async () => { await writeDraftText(session, target, before) }, redo: async () => { await writeDraftText(session, target, after) }, patch })
       }
       if (edit.phase !== 'preview') session.revision++
@@ -815,10 +853,14 @@ export function registerInspectorHandlers() {
   ipcMain.handle('inspector:edit-selector', async (event, edit: InspectorSelectorEdit) => {
     const session = refSession(event, { sessionId: edit.sessionId, generation: edit.generation, nodeId: edit.nodeId, backendNodeId: 0 })
     return queueMutation(session, async () => {
-      if (edit.revision != null && edit.revision !== session.revision) throw new Error('The stylesheet changed. Refresh Styles and retry this edit.')
+      const revisionChanged = edit.revision != null && edit.revision !== session.revision
       const snapshot = await stylesFor(session, edit.nodeId)
-      const rule = snapshot.rules.find(item => item.id === edit.ruleId)
+      const rule = locateRule(snapshot.rules, { ...edit, baseRuleSelector: edit.baseSelector })
       if (!rule?.styleSheetId || !rule.selectorRange || rule.readOnly) throw new Error('This selector cannot be edited.')
+      if (revisionChanged) {
+        if (edit.baseSelector == null) throw new Error('The stylesheet changed. Refresh Styles and retry this edit.')
+        if (rule.selectorText !== edit.baseSelector) throw new Error('This selector changed since it was loaded. Refresh Styles before replacing the newer selector.')
+      }
       const selector = assertText(edit.selector, 'selector', 10_000).trim()
       await mutateStyleSheet(session, rule.styleSheetId, 'Edit selector', async () => { await session.lease.send('CSS.setRuleSelector', { styleSheetId: rule.styleSheetId, range: rule.selectorRange, selector }) }, { type: 'inspectorSelector', ruleId: rule.id, selector })
       session.revision++

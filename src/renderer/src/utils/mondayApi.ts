@@ -1,3 +1,5 @@
+import { friendlyMondayError } from '../../../shared/mondayErrors'
+
 export interface MondayLink {
   url: string
   label: string
@@ -71,7 +73,12 @@ export function saveMondayPreferences(preferences: MondaySyncPreferences): void 
 
 async function mondayRequest(query: string, variables?: Record<string, unknown>): Promise<any> {
   if (!window.electronAPI?.mondayGraphQL) throw new Error('This Parity build does not include the secure Monday connector.')
-  return window.electronAPI.mondayGraphQL(query, variables)
+  try {
+    return await window.electronAPI.mondayGraphQL(query, variables)
+  } catch (error) {
+    console.error('[Monday] API request failed.', error)
+    throw new Error(friendlyMondayError(error))
+  }
 }
 
 export async function fetchMondayMetadataApi(): Promise<MondayMetadata> {

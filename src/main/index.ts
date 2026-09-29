@@ -15,6 +15,7 @@ import { captureAutomatePage } from './automation/capture'
 import { assertFigmaNativeSize } from './automation/captureNormalization'
 import { validateFeedback } from './feedback'
 import { safeResourceReferer } from './resourceReferrer'
+import { friendlyMondayError } from '../shared/mondayErrors'
 
 const PARITY_APP_ID = 'com.fullforce.parity'
 
@@ -336,15 +337,21 @@ async function mondayGraphQL(query: string, variables?: Record<string, unknown>,
   if (credentials.authType === 'oauth' && credentials.expiresAt && credentials.expiresAt - Date.now() < 5 * 60 * 1000) {
     credentials = await refreshMondayCredentials(credentials)
   }
-  const response = await fetch('https://api.monday.com/v2', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': credentials.accessToken,
-      'API-Version': '2026-07'
-    },
-    body: JSON.stringify({ query, variables })
-  })
+  let response: Response
+  try {
+    response = await fetch('https://api.monday.com/v2', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': credentials.accessToken,
+        'API-Version': '2026-07'
+      },
+      body: JSON.stringify({ query, variables })
+    })
+  } catch (error) {
+    console.warn('[Monday API] Request failed before receiving a response.', error)
+    throw new Error(friendlyMondayError(error))
+  }
   context.assert()
   if (readMondayCredentials()?.accessToken !== credentials.accessToken) throw new Error('The Monday connection changed.')
   if (response.status === 401 && authRetry && credentials.authType === 'oauth') {
@@ -359,10 +366,18 @@ async function mondayGraphQL(query: string, variables?: Record<string, unknown>,
     context.assert()
     return mondayGraphQL(query, variables, authRetry, rateRetry - 1)
   }
-  if (!response.ok) {
-    throw new Error(body?.error_message || body?.errors?.[0]?.message || `Monday API returned ${response.status}${retrySeconds ? `; retry after ${retrySeconds}s` : ''}.`)
+  const firstError = body?.errors?.[0]
+  if (!response.ok || firstError) {
+    const message = body?.error_message || firstError?.message || `Monday API returned ${response.status}.`
+    const code = firstError?.extensions?.code || firstError?.error_code || body?.error_code || body?.code
+    const status = Number(firstError?.extensions?.status_code || response.status)
+    console.warn('[Monday API] Request rejected.', {
+      status,
+      code,
+      requestId: firstError?.extensions?.request_id || response.headers.get('x-request-id') || undefined
+    })
+    throw new Error(friendlyMondayError('', { message, code, status, retryAfterSeconds: retrySeconds }))
   }
-  if (body?.errors?.length) throw new Error(body.errors.map((entry: any) => entry.message).join('; '))
   return body
 }
 
@@ -373,7 +388,7 @@ async function getMondayConnectionStatus(): Promise<MondayConnectionStatus> {
     const result = await mondayGraphQL('query ParityConnection { me { id name email } }')
     return { connected: true, authType: credentials.authType, user: result.data.me }
   } catch (error: any) {
-    return { connected: false, authType: credentials.authType, error: error?.message || 'Monday.com connection is unavailable.' }
+    return { connected: false, authType: credentials.authType, error: friendlyMondayError(error) }
   }
 }
 
@@ -1204,7 +1219,7 @@ function registerIpcHandlers(): void {
       }
       return { success: true, status }
     } catch (error: any) {
-      return { success: false, error: error?.message || 'Unable to connect Monday.com.' }
+      return { success: false, error: friendlyMondayError(error) }
     }
   })
 
@@ -1238,7 +1253,7 @@ function registerIpcHandlers(): void {
         throw new Error(`Monday redirect URI must be ${MONDAY_REDIRECT_URI}.`)
       }
     } catch (error: any) {
-      return { success: false, error: error?.message || 'Monday OAuth is not configured.' }
+      return { success: false, error: friendlyMondayError(error) }
     }
 
     // Close any previous OAuth callback server if still listening
@@ -1273,7 +1288,7 @@ function registerIpcHandlers(): void {
           res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#a1a1aa"><h2 style="color:#ef4444">Login Cancelled</h2><p>You can close this tab and return to the app.</p></body></html>')
           activeOAuthServer = null
           try { server.close() } catch { }
-          resolve({ success: false, error: error || (state !== expectedState ? 'OAuth state verification failed' : 'No authorization code received') })
+          resolve({ success: false, error: friendlyMondayError(error || (state !== expectedState ? 'OAuth state verification failed' : 'No authorization code received')) })
           return
         }
 
@@ -1318,7 +1333,7 @@ function registerIpcHandlers(): void {
             res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#f4f4f5"><h2 style="color:#ef4444">Token Exchange Failed</h2><p>Please try again in the app.</p></body></html>')
             activeOAuthServer = null
             try { server.close() } catch { }
-            resolve({ success: false, error: tokenData.error || 'Token exchange failed' })
+            resolve({ success: false, error: friendlyMondayError(tokenData.error || 'Token exchange failed') })
           }
         } catch (err) {
           resolved = true
@@ -1326,7 +1341,7 @@ function registerIpcHandlers(): void {
           res.end('<html><body style="font-family:system-ui;text-align:center;padding:60px;background:#18181b;color:#f4f4f5"><h2>Connection Error</h2></body></html>')
           activeOAuthServer = null
           try { server.close() } catch { }
-          resolve({ success: false, error: (err as Error).message })
+          resolve({ success: false, error: friendlyMondayError(err) })
         }
       })
 
@@ -1347,7 +1362,7 @@ function registerIpcHandlers(): void {
           } else {
             resolve({
               success: false,
-              error: `Server error: ${err.message}`
+              error: friendlyMondayError(err)
             })
           }
         }

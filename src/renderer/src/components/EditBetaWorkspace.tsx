@@ -43,6 +43,11 @@ import { finishGuideGesture, guidePositionFromViewport } from "../utils/guides";
 import ComparisonWipeHandle from "./ComparisonWipeHandle";
 import ComparisonModeIsland from "./ComparisonModeIsland";
 import { mergeViewportPatches } from "../utils/viewportLayoutPatches";
+import {
+  calculateFreeTransformResize,
+  scalePercent,
+  signedPixels,
+} from "../utils/freeTransform";
 import { pageSearchExpression, type PageSearchRequest, type PageSearchResponse } from "../palette/pageSearch";
 
 function rendererCaptureWithTimeout<T>(
@@ -244,6 +249,28 @@ interface RemoteElement {
   childElementCount: number;
   parentDisplay: string;
   cssSource: string;
+  freeTransform: {
+    generation: string;
+    supported: boolean;
+    reason: string;
+    hasReset: boolean;
+  };
+}
+
+interface FreeTransformBeginResult {
+  token: number;
+  generation: string;
+  path: string;
+  supported: boolean;
+  reason: string;
+  rect: RemoteElement["rect"];
+}
+
+interface FreeTransformDelta {
+  translateX: number;
+  translateY: number;
+  scaleX: number;
+  scaleY: number;
 }
 
 interface LayerRow {
@@ -282,10 +309,10 @@ interface BridgeOptions {
 
 // This function is serialized and executed inside the real guest page. It uses
 // a fixed Shadow DOM overlay, so inspection never changes site layout or CSS.
-function installEditBetaBridge() {
+export function installEditBetaBridge() {
   const guestWindow = window as any;
   if (guestWindow.__fullForceEditBeta) {
-    if (guestWindow.__fullForceEditBeta.version === 21) {
+    if (guestWindow.__fullForceEditBeta.version === 22) {
       guestWindow.__fullForceEditBeta.enable();
       return true;
     }
@@ -294,6 +321,9 @@ function installEditBetaBridge() {
     } catch {}
   }
 
+  const documentGeneration =
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   let mode = "edit";
   let selected: HTMLElement | null = null;
   const selectedElements = new Set<HTMLElement>();
@@ -305,6 +335,33 @@ function installEditBetaBridge() {
     string,
     { before: string; beforePriority: string }
   >();
+  type TransformDeclaration = {
+    value: string;
+    priority: string;
+  };
+  type TransformBaseline = {
+    transform: TransformDeclaration;
+    origin: TransformDeclaration;
+  };
+  type FreeTransformTransaction = {
+    token: number;
+    generation: string;
+    path: string;
+    element: HTMLElement;
+    startRect: { left: number; top: number; width: number; height: number };
+    before: TransformBaseline;
+    resetBaseline: TransformBaseline;
+    hadResetBaseline: boolean;
+    transition: TransformDeclaration;
+    anchorX: number;
+    anchorY: number;
+    rebased: DOMMatrix;
+    basis: { xx: number; xy: number; yx: number; yy: number };
+    delta: { translateX: number; translateY: number; scaleX: number; scaleY: number };
+  };
+  const freeTransformBaselines = new Map<string, TransformBaseline>();
+  let freeTransformSequence = 0;
+  let activeFreeTransform: FreeTransformTransaction | null = null;
   const cssSourceCache = new Map<string, string>();
   const cssEditorSourceCache = new Map<string, string>();
   const cssSourcePreviews = new Map<
@@ -875,6 +932,49 @@ function installEditBetaBridge() {
     cssSourcePreviews.clear();
     authoredDimensionCache.clear();
   };
+  const declaration = (el: HTMLElement, property: string): TransformDeclaration => ({
+    value: el.style.getPropertyValue(property),
+    priority: el.style.getPropertyPriority(property),
+  });
+  const restoreDeclaration = (
+    el: HTMLElement,
+    property: string,
+    value: TransformDeclaration,
+  ) => {
+    value.value
+      ? el.style.setProperty(property, value.value, value.priority)
+      : el.style.removeProperty(property);
+  };
+  const matrixCss = (matrix: DOMMatrix) =>
+    `matrix(${[matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f]
+      .map((value) => Math.abs(value) < 1e-9 ? 0 : Number(value.toFixed(8)))
+      .join(", ")})`;
+  const transformSupport = (el: HTMLElement | null) => {
+    if (!el) return { supported: false, reason: "Select an element first." };
+    const style = getComputedStyle(el);
+    if (style.display === "contents")
+      return { supported: false, reason: "Free Transform is unavailable for display: contents." };
+    const tag = el.tagName.toLowerCase();
+    const replacedInline = /^(img|video|canvas|iframe|embed|object|input|textarea|select|button)$/.test(tag);
+    if (style.display === "inline" && tag !== "svg" && !replacedInline)
+      return { supported: false, reason: "Use an inline-block or block element to transform this selection." };
+    if (el instanceof SVGElement && tag !== "svg")
+      return { supported: false, reason: "Select the SVG root to transform the complete graphic." };
+    let matrix: DOMMatrix;
+    try {
+      matrix = new DOMMatrix(style.transform === "none" ? undefined : style.transform);
+    } catch {
+      return { supported: false, reason: "The current transform cannot be represented as a 2D matrix." };
+    }
+    if (!matrix.is2D)
+      return { supported: false, reason: "Perspective and 3D transforms are not supported yet." };
+    if (Math.abs(matrix.a * matrix.d - matrix.b * matrix.c) < 1e-8)
+      return { supported: false, reason: "The current transform matrix cannot be inverted." };
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height)
+      return { supported: false, reason: "The selected element has no transformable visual box." };
+    return { supported: true, reason: "" };
+  };
   // A previous bridge instance may have been replaced while its guest page
   // stayed mounted. Saved patches are replayed after installation, so stale
   // style nodes must not become the baseline for the new history chain.
@@ -1249,6 +1349,12 @@ function installEditBetaBridge() {
       ) ||
       (el.children.length === 0 && !!(el.textContent || "").trim());
     const parent = el.parentElement;
+    const freeTransformSupport = transformSupport(el);
+    const transformBaseline = freeTransformBaselines.get(getPath(el));
+    const hasReset = !!transformBaseline && (
+      el.style.getPropertyValue("transform") !== transformBaseline.transform.value ||
+      el.style.getPropertyValue("transform-origin") !== transformBaseline.origin.value
+    );
     const parentBounds = parent?.getBoundingClientRect();
     const siblings = parent
       ? Array.from(parent.children)
@@ -1309,6 +1415,11 @@ function installEditBetaBridge() {
       childElementCount: Array.from(el.children).filter((child) => !isUi(child)).length,
       parentDisplay: parent ? getComputedStyle(parent).display : "",
       cssSource: getCssSource(el, styles),
+      freeTransform: {
+        generation: documentGeneration,
+        ...freeTransformSupport,
+        hasReset,
+      },
     };
   };
   const renderLayoutOverlay = () => {
@@ -1608,6 +1719,16 @@ function installEditBetaBridge() {
     history.push(entry);
     historyIndex = history.length - 1;
   };
+  const cancelFreeTransformTransaction = () => {
+    const transaction = activeFreeTransform;
+    if (!transaction) return false;
+    restoreDeclaration(transaction.element, "transform", transaction.before.transform);
+    restoreDeclaration(transaction.element, "transform-origin", transaction.before.origin);
+    restoreDeclaration(transaction.element, "transition", transaction.transition);
+    activeFreeTransform = null;
+    positionOverlay();
+    return true;
+  };
   let inlineEditing: HTMLElement | null = null;
   let inlineBeforeHtml = "";
   let inlineOriginalEditable: string | null = null;
@@ -1674,6 +1795,8 @@ function installEditBetaBridge() {
     }
   };
   const select = (el: HTMLElement | null, additive = false) => {
+    if (activeFreeTransform && activeFreeTransform.element !== el)
+      cancelFreeTransformTransaction();
     if (inlineEditing && inlineEditing !== el) finishInlineEdit(true);
     if (!additive) selectedElements.clear();
     if (el && additive && selectedElements.has(el)) {
@@ -1690,6 +1813,7 @@ function installEditBetaBridge() {
     scheduleCaptureInspection();
   };
   const deselect = () => {
+    cancelFreeTransformTransaction();
     const previousSelection = selected;
     const activeInlineEditor = inlineEditing;
     if (inlineEditing) finishInlineEdit(true);
@@ -1938,6 +2062,7 @@ function installEditBetaBridge() {
   let panShortcutCode = "";
   let panSequence = 0;
   let zoomSequence = 0;
+  let altTransformPressed = false;
   const editableTarget = (target: EventTarget | null) => {
     const el = target as HTMLElement | null;
     return !!el?.closest?.('input,textarea,select,[contenteditable="true"]');
@@ -1946,6 +2071,11 @@ function installEditBetaBridge() {
     console.info(
       `__FULLFORCE_PAN__${JSON.stringify({ screenX: event?.screenX || 0, screenY: event?.screenY || 0, buttons: event?.buttons || 0, buttonMask: panButtonMask, active, sequence: ++panSequence })}`,
     );
+  const emitAltTransform = (active: boolean) => {
+    if (altTransformPressed === active) return;
+    altTransformPressed = active;
+    console.info(`__FULLFORCE_ALT_TRANSFORM__${active ? "1" : "0"}`);
+  };
   const normalizedShortcut = (binding: string) => {
     const parts = String(binding || "").split("+").map((part) => part.trim()).filter(Boolean);
     let ctrl = false, alt = false, shift = false, meta = false, key = "";
@@ -1982,6 +2112,11 @@ function installEditBetaBridge() {
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (
+      event.key === "Alt" &&
+      !event.getModifierState?.("AltGraph") &&
+      !editableTarget(event.target)
+    ) emitAltTransform(true);
+    if (
       mode === "eyedropper" &&
       (event.ctrlKey || event.metaKey) &&
       event.key.toLowerCase() === "c" &&
@@ -2014,6 +2149,7 @@ function installEditBetaBridge() {
     console.info(`__FULLFORCE_HOTKEY__${command}`);
   };
   const onKeyUp = (event: KeyboardEvent) => {
+    if (event.key === "Alt") emitAltTransform(false);
     if (spacePressed && event.code === panShortcutCode) {
       spacePressed = false;
       panShortcutCode = "";
@@ -2052,6 +2188,7 @@ function installEditBetaBridge() {
     emitPan(true, event);
   };
   const onPanCancel = () => {
+    emitAltTransform(false);
     if (!panActive) return;
     panActive = false;
     emitPan(false);
@@ -2097,6 +2234,13 @@ function installEditBetaBridge() {
     if (patch.type === "style")
       el.style.setProperty(patch.property, patch.value, patch.priority || "");
     if (patch.type === "cssText") el.style.cssText = patch.value || "";
+    if (patch.type === "freeTransform" && patch.value) {
+      restoreDeclaration(el, "transform", patch.value.transform);
+      restoreDeclaration(el, "transform-origin", patch.value.origin);
+      patch.reset
+        ? freeTransformBaselines.delete(patch.path)
+        : freeTransformBaselines.set(patch.path, patch.baseline || patch.beforeValue);
+    }
     if (patch.type === "cssSource") {
       let style = localCssFor(patch.path);
       if (!style) {
@@ -2187,7 +2331,7 @@ function installEditBetaBridge() {
   window.addEventListener("resize", scheduleHighlights, true);
 
   const api = {
-    version: 21,
+    version: 22,
     enable() {
       host.style.display = "";
       positionOverlay();
@@ -2586,6 +2730,292 @@ function installEditBetaBridge() {
       positionOverlay();
       return true;
     },
+    beginFreeTransform(
+      operation: "translate" | "resize",
+      horizontal: -1 | 0 | 1 = 0,
+      vertical: -1 | 0 | 1 = 0,
+      expectedPath = "",
+      expectedGeneration = "",
+    ) {
+      const element = selected;
+      const selectedPath = element ? getPath(element) : "";
+      if (
+        (expectedGeneration && expectedGeneration !== documentGeneration) ||
+        (expectedPath && expectedPath !== selectedPath)
+      )
+        return {
+          token: 0,
+          generation: documentGeneration,
+          path: selectedPath,
+          supported: false,
+          reason: "The selected element changed before Free Transform started.",
+          rect: element ? describe(element)?.rect : null,
+        };
+      cancelFreeTransformTransaction();
+      const support = transformSupport(element);
+      if (!element || !support.supported)
+        return {
+          token: 0,
+          generation: documentGeneration,
+          path: selectedPath,
+          ...support,
+          rect: element ? describe(element)?.rect : null,
+        };
+
+      const path = selectedPath;
+      const style = getComputedStyle(element);
+      const startBounds = element.getBoundingClientRect();
+      let boxWidth = (element as HTMLElement).offsetWidth || parseFloat(style.width) || startBounds.width;
+      let boxHeight = (element as HTMLElement).offsetHeight || parseFloat(style.height) || startBounds.height;
+      if (element instanceof SVGSVGElement) {
+        const viewBox = element.viewBox?.baseVal;
+        boxWidth = element.clientWidth || viewBox?.width || boxWidth;
+        boxHeight = element.clientHeight || viewBox?.height || boxHeight;
+      }
+      boxWidth = Math.max(1, boxWidth);
+      boxHeight = Math.max(1, boxHeight);
+      const anchorX = operation === "translate"
+        ? boxWidth / 2
+        : horizontal < 0 ? boxWidth : horizontal > 0 ? 0 : boxWidth / 2;
+      const anchorY = operation === "translate"
+        ? boxHeight / 2
+        : vertical < 0 ? boxHeight : vertical > 0 ? 0 : boxHeight / 2;
+      const originParts = style.transformOrigin.split(/\s+/).map(Number.parseFloat);
+      const originX = Number.isFinite(originParts[0]) ? originParts[0] : boxWidth / 2;
+      const originY = Number.isFinite(originParts[1]) ? originParts[1] : boxHeight / 2;
+      const base = new DOMMatrix(style.transform === "none" ? undefined : style.transform);
+      const rebased = new DOMMatrix()
+        .translate(originX - anchorX, originY - anchorY)
+        .multiply(base)
+        .translate(anchorX - originX, anchorY - originY);
+      const before: TransformBaseline = {
+        transform: declaration(element, "transform"),
+        origin: declaration(element, "transform-origin"),
+      };
+      const existingReset = freeTransformBaselines.get(path);
+      const transition = declaration(element, "transition");
+      const setMatrix = (matrix: DOMMatrix) => {
+        element.style.setProperty("transition", "none", "important");
+        element.style.setProperty("transform-origin", `${anchorX}px ${anchorY}px`, "important");
+        element.style.setProperty("transform", matrixCss(matrix), "important");
+      };
+
+      setMatrix(rebased);
+      const baseRect = element.getBoundingClientRect();
+      setMatrix(new DOMMatrix().translate(1, 0).multiply(rebased));
+      const xRect = element.getBoundingClientRect();
+      setMatrix(new DOMMatrix().translate(0, 1).multiply(rebased));
+      const yRect = element.getBoundingClientRect();
+      setMatrix(rebased);
+      const basis = {
+        xx: xRect.left - baseRect.left,
+        xy: xRect.top - baseRect.top,
+        yx: yRect.left - baseRect.left,
+        yy: yRect.top - baseRect.top,
+      };
+      if (Math.abs(basis.xx * basis.yy - basis.xy * basis.yx) < 1e-8) {
+        restoreDeclaration(element, "transform", before.transform);
+        restoreDeclaration(element, "transform-origin", before.origin);
+        restoreDeclaration(element, "transition", transition);
+        return {
+          token: 0,
+          generation: documentGeneration,
+          path,
+          supported: false,
+          reason: "The transformed parent coordinate system cannot be inverted.",
+          rect: { left: startBounds.left, top: startBounds.top, width: startBounds.width, height: startBounds.height },
+        };
+      }
+      const token = ++freeTransformSequence;
+      activeFreeTransform = {
+        token,
+        generation: documentGeneration,
+        path,
+        element,
+        startRect: { left: startBounds.left, top: startBounds.top, width: startBounds.width, height: startBounds.height },
+        before,
+        resetBaseline: existingReset || before,
+        hadResetBaseline: !!existingReset,
+        transition,
+        anchorX,
+        anchorY,
+        rebased,
+        basis,
+        delta: { translateX: 0, translateY: 0, scaleX: 1, scaleY: 1 },
+      };
+      positionOverlay();
+      return {
+        token,
+        generation: documentGeneration,
+        path,
+        supported: true,
+        reason: "",
+        rect: activeFreeTransform.startRect,
+      };
+    },
+    previewFreeTransform(
+      token: number,
+      generation: string,
+      path: string,
+      delta: FreeTransformDelta,
+    ) {
+      const transaction = activeFreeTransform;
+      if (
+        !transaction ||
+        transaction.token !== token ||
+        transaction.generation !== generation ||
+        transaction.path !== path ||
+        !transaction.element.isConnected
+      )
+        return null;
+      const determinant = transaction.basis.xx * transaction.basis.yy - transaction.basis.xy * transaction.basis.yx;
+      const screenX = Number(delta.translateX) || 0;
+      const screenY = Number(delta.translateY) || 0;
+      const translateX = (screenX * transaction.basis.yy - transaction.basis.yx * screenY) / determinant;
+      const translateY = (transaction.basis.xx * screenY - screenX * transaction.basis.xy) / determinant;
+      const scaleX = Math.max(0.001, Number(delta.scaleX) || 1);
+      const scaleY = Math.max(0.001, Number(delta.scaleY) || 1);
+      const matrix = new DOMMatrix()
+        .translate(translateX, translateY)
+        .scale(scaleX, scaleY)
+        .multiply(transaction.rebased);
+      transaction.element.style.setProperty("transform", matrixCss(matrix), "important");
+      transaction.delta = { translateX: screenX, translateY: screenY, scaleX, scaleY };
+      positionOverlay();
+      return describe(transaction.element);
+    },
+    commitFreeTransform(token: number, generation: string, path: string) {
+      const transaction = activeFreeTransform;
+      if (
+        !transaction ||
+        transaction.token !== token ||
+        transaction.generation !== generation ||
+        transaction.path !== path ||
+        !transaction.element.isConnected
+      )
+        return null;
+      const changed = Math.abs(transaction.delta.translateX) > 0.01 ||
+        Math.abs(transaction.delta.translateY) > 0.01 ||
+        Math.abs(transaction.delta.scaleX - 1) > 0.0001 ||
+        Math.abs(transaction.delta.scaleY - 1) > 0.0001;
+      if (!changed) {
+        cancelFreeTransformTransaction();
+        return describe(transaction.element);
+      }
+      const element = transaction.element;
+      const after: TransformBaseline = {
+        transform: declaration(element, "transform"),
+        origin: declaration(element, "transform-origin"),
+      };
+      restoreDeclaration(element, "transition", transaction.transition);
+      const apply = (value: TransformBaseline) => {
+        restoreDeclaration(element, "transform", value.transform);
+        restoreDeclaration(element, "transform-origin", value.origin);
+      };
+      const redo = () => {
+        apply(after);
+        freeTransformBaselines.set(transaction.path, transaction.resetBaseline);
+      };
+      const undo = () => {
+        apply(transaction.before);
+        if (transaction.hadResetBaseline)
+          freeTransformBaselines.set(transaction.path, transaction.resetBaseline);
+        else freeTransformBaselines.delete(transaction.path);
+      };
+      redo();
+      const viewportId = String(guestWindow.__fullForceFrameId || "single-default");
+      const patch = {
+        type: "freeTransform",
+        path: transaction.path,
+        value: after,
+        beforeValue: transaction.before,
+        baseline: transaction.resetBaseline,
+        reset: false,
+        viewportId,
+        tag: element.tagName.toLowerCase(),
+      };
+      commit({ label: `${element.tagName.toLowerCase()} · free transform`, undo, redo }, patch);
+      activeFreeTransform = null;
+      authoredDimensionCache.clear();
+      positionOverlay();
+      return describe(element);
+    },
+    cancelFreeTransform(token?: number, generation?: string, path?: string) {
+      if (token && activeFreeTransform?.token !== token) return false;
+      if (generation && activeFreeTransform?.generation !== generation) return false;
+      if (path && activeFreeTransform?.path !== path) return false;
+      return cancelFreeTransformTransaction();
+    },
+    resetFreeTransform() {
+      const element = selected;
+      if (!element) return null;
+      cancelFreeTransformTransaction();
+      const path = getPath(element);
+      const baseline = freeTransformBaselines.get(path);
+      if (!baseline) return describe(element);
+      const before: TransformBaseline = {
+        transform: declaration(element, "transform"),
+        origin: declaration(element, "transform-origin"),
+      };
+      const apply = (value: TransformBaseline) => {
+        restoreDeclaration(element, "transform", value.transform);
+        restoreDeclaration(element, "transform-origin", value.origin);
+      };
+      const redo = () => {
+        apply(baseline);
+        freeTransformBaselines.delete(path);
+      };
+      const undo = () => {
+        apply(before);
+        freeTransformBaselines.set(path, baseline);
+      };
+      redo();
+      const viewportId = String(guestWindow.__fullForceFrameId || "single-default");
+      const patch = {
+        type: "freeTransform",
+        path,
+        value: baseline,
+        beforeValue: before,
+        baseline,
+        reset: true,
+        viewportId,
+        tag: element.tagName.toLowerCase(),
+      };
+      commit({ label: `${element.tagName.toLowerCase()} · reset transform`, undo, redo }, patch);
+      positionOverlay();
+      return describe(element);
+    },
+    applyFreeTransformPatch(patch: any) {
+      const element = resolve(patch?.path);
+      if (!element || !patch?.value) return false;
+      const path = getPath(element);
+      const before: TransformBaseline = {
+        transform: declaration(element, "transform"),
+        origin: declaration(element, "transform-origin"),
+      };
+      const previousBaseline = freeTransformBaselines.get(path);
+      const baseline = patch.baseline || before;
+      const apply = (value: TransformBaseline) => {
+        restoreDeclaration(element, "transform", value.transform);
+        restoreDeclaration(element, "transform-origin", value.origin);
+      };
+      const redo = () => {
+        apply(patch.value);
+        patch.reset ? freeTransformBaselines.delete(path) : freeTransformBaselines.set(path, baseline);
+      };
+      const undo = () => {
+        apply(before);
+        if (previousBaseline) freeTransformBaselines.set(path, previousBaseline);
+        else freeTransformBaselines.delete(path);
+      };
+      redo();
+      commit(
+        { label: `${element.tagName.toLowerCase()} · ${patch.reset ? "reset transform" : "free transform"}`, undo, redo },
+        { ...patch, path },
+      );
+      positionOverlay();
+      return true;
+    },
     previewStyle(property: string, value: string) {
       if (!selected) return false;
       const key = `${getPath(selected)}::${property}`;
@@ -2898,6 +3328,8 @@ function installEditBetaBridge() {
         else if (patch.type === "move") api.move(patch.direction);
         else if (patch.type === "reorder")
           api.reorder(patch.targetPath, patch.placement);
+        else if (patch.type === "freeTransform")
+          api.applyFreeTransformPatch(patch);
         if (patch.viewportId && history.length > previousLength) {
           const entry = history[history.length - 1] as any;
           if (entry?.patch) entry.patch.viewportId = patch.viewportId;
@@ -2912,6 +3344,7 @@ function installEditBetaBridge() {
       return historyIndex + 1;
     },
     revertAll() {
+      cancelFreeTransformTransaction();
       if (inlineEditing) finishInlineEdit(true);
       while (historyIndex >= 0) {
         history[historyIndex].undo();
@@ -2929,6 +3362,7 @@ function installEditBetaBridge() {
       history.splice(0);
       basePatches.splice(0);
       stylePreviews.clear();
+      freeTransformBaselines.clear();
       cssSourcePreviews.clear();
       purgeScopedCssOverrides();
       selected = null;
@@ -2938,6 +3372,7 @@ function installEditBetaBridge() {
       return true;
     },
     cleanup() {
+      cancelFreeTransformTransaction();
       if (inlineEditing) finishInlineEdit(true);
       document.removeEventListener("mousemove", onMove, true);
       document.removeEventListener("mouseleave", onMouseLeave, true);
@@ -2993,6 +3428,8 @@ function installEditBetaBridge() {
         rect: p.rectAfter || p.rect,
         tag: p.tag,
         viewportId: p.viewportId,
+        baseline: p.baseline,
+        reset: p.reset,
       }));
     },
   };
@@ -3305,7 +3742,7 @@ function cssColorHex(value: string) {
     .join("")}`;
 }
 
-function SelectionOverlay({
+export function SelectionOverlay({
   selected,
   scale,
   boundaries,
@@ -3315,6 +3752,13 @@ function SelectionOverlay({
   onCssDimensionChange,
   onTextStyle,
   onReorder,
+  altHeld,
+  onFreeTransformBegin,
+  onFreeTransformPreview,
+  onFreeTransformCommit,
+  onFreeTransformCancel,
+  onFreeTransformReset,
+  onFreeTransformActivity,
   onAction,
   onAnnotate,
 }: {
@@ -3333,12 +3777,43 @@ function SelectionOverlay({
   ) => void;
   onTextStyle: (values: Record<string, string>, isFinal?: boolean) => void;
   onReorder: (targetPath: string, placement: "before" | "after") => void;
+  altHeld: boolean;
+  onFreeTransformBegin: (
+    operation: "translate" | "resize",
+    horizontal: -1 | 0 | 1,
+    vertical: -1 | 0 | 1,
+  ) => Promise<FreeTransformBeginResult | null>;
+  onFreeTransformPreview: (
+    token: number,
+    generation: string,
+    path: string,
+    delta: FreeTransformDelta,
+  ) => Promise<RemoteElement | null>;
+  onFreeTransformCommit: (
+    token: number,
+    generation: string,
+    path: string,
+  ) => Promise<RemoteElement | null>;
+  onFreeTransformCancel: (
+    token?: number,
+    generation?: string,
+    path?: string,
+  ) => Promise<unknown>;
+  onFreeTransformReset: () => Promise<RemoteElement | null>;
+  onFreeTransformActivity: (active: boolean) => void;
   onAction: (action: "parent" | "up" | "down" | "duplicate" | "delete") => void;
   onAnnotate: () => void;
 }) {
   const { rect, box } = selected;
   const [dragRect, setDragRect] = useState(rect);
   const draggingRef = useRef(false);
+  const cancelFreeGestureRef = useRef<() => void>(() => undefined);
+  const [freeTransforming, setFreeTransforming] = useState(false);
+  const [transformHud, setTransformHud] = useState<{
+    text: string;
+    left: number;
+    top: number;
+  } | null>(null);
   const [moving, setMoving] = useState(false);
   const [moveOrigin, setMoveOrigin] = useState(rect);
   const [dropIndicator, setDropIndicator] = useState<{
@@ -3356,6 +3831,7 @@ function SelectionOverlay({
     toolbarOffsetRef.current = { x: 0, y: 0 };
     setToolbarOffset({ x: 0, y: 0 });
   }, [selected.path]);
+  useEffect(() => () => cancelFreeGestureRef.current(), [selected.path]);
   const startToolbarMove = (event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -3405,12 +3881,234 @@ function SelectionOverlay({
     target.addEventListener("pointerup", finish);
     target.addEventListener("pointercancel", finish);
   };
+  const startFreeTransform = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    operation: "translate" | "resize",
+    horizontal: -1 | 0 | 1,
+    vertical: -1 | 0 | 1,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!selected.freeTransform?.supported) return;
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = { ...rect };
+    let currentX = startX;
+    let currentY = startY;
+    let currentShift = event.shiftKey;
+    let token = 0;
+    let generation = "";
+    let gesturePath = selected.path;
+    let active = true;
+    let ending: "commit" | "cancel" | null = null;
+    let beginPromise: Promise<FreeTransformBeginResult | null> | null = null;
+    const pendingPreviews = new Set<Promise<RemoteElement | null>>();
+    let latestDelta: FreeTransformDelta = {
+      translateX: 0,
+      translateY: 0,
+      scaleX: 1,
+      scaleY: 1,
+    };
+    let frame = 0;
+    let previewSequence = 0;
+    draggingRef.current = true;
+    setFreeTransforming(true);
+    setMoving(false);
+    setDropIndicator(null);
+    onFreeTransformActivity(true);
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {}
+
+    const update = () => {
+      frame = 0;
+      if (!active) return;
+      const deltaX = (currentX - startX) / scale;
+      const deltaY = (currentY - startY) / scale;
+      if (operation === "translate") {
+        latestDelta = {
+          translateX: deltaX,
+          translateY: deltaY,
+          scaleX: 1,
+          scaleY: 1,
+        };
+        setDragRect({
+          ...origin,
+          left: origin.left + deltaX,
+          top: origin.top + deltaY,
+        });
+        setTransformHud({
+          text: `X ${signedPixels(deltaX)} · Y ${signedPixels(deltaY)}`,
+          left: (origin.left + deltaX + origin.width / 2) * scale,
+          top: (origin.top + deltaY - 38 / scale) * scale,
+        });
+      } else {
+        const resized = calculateFreeTransformResize(
+          origin,
+          horizontal,
+          vertical,
+          deltaX,
+          deltaY,
+          currentShift,
+        );
+        latestDelta = {
+          translateX: 0,
+          translateY: 0,
+          scaleX: resized.scaleX,
+          scaleY: resized.scaleY,
+        };
+        setDragRect(resized.rect);
+        setTransformHud({
+          text: `${scalePercent(resized.scaleX)} · ${scalePercent(resized.scaleY)}`,
+          left:
+            (horizontal < 0
+              ? resized.rect.left
+              : horizontal > 0
+                ? resized.rect.left + resized.rect.width
+                : resized.rect.left + resized.rect.width / 2) * scale,
+          top:
+            (vertical < 0
+              ? resized.rect.top - 12 / scale
+              : vertical > 0
+                ? resized.rect.top + resized.rect.height - 12 / scale
+                : resized.rect.top + resized.rect.height / 2 - 12 / scale) * scale,
+        });
+      }
+      if (token) {
+        const sequence = ++previewSequence;
+        const preview = onFreeTransformPreview(
+          token,
+          generation,
+          gesturePath,
+          latestDelta,
+        );
+        pendingPreviews.add(preview);
+        void preview
+          .then((result) => {
+            if (active && result && sequence === previewSequence)
+              setDragRect(result.rect);
+          })
+          .finally(() => pendingPreviews.delete(preview));
+      }
+    };
+    const scheduleUpdate = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId || !active) return;
+      moveEvent.preventDefault();
+      currentX = moveEvent.clientX;
+      currentY = moveEvent.clientY;
+      currentShift = moveEvent.shiftKey;
+      scheduleUpdate();
+    };
+    const cleanup = () => {
+      if (!active) return;
+      active = false;
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      draggingRef.current = false;
+      setFreeTransforming(false);
+      setTransformHud(null);
+      onFreeTransformActivity(false);
+      try {
+        if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      } catch {}
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onCancel);
+      handle.removeEventListener("lostpointercapture", onLostCapture);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("blur", onBlur);
+      cancelFreeGestureRef.current = () => undefined;
+    };
+    const complete = async (kind: "commit" | "cancel", finishEvent?: PointerEvent) => {
+      if (!active || ending) return;
+      ending = kind;
+      if (finishEvent?.pointerId === pointerId) {
+        currentX = finishEvent.clientX;
+        currentY = finishEvent.clientY;
+        currentShift = finishEvent.shiftKey;
+        update();
+      }
+      cleanup();
+      await beginPromise?.catch(() => null);
+      const activeToken = token;
+      const activeGeneration = generation;
+      const activePath = gesturePath;
+      await Promise.allSettled(Array.from(pendingPreviews));
+      if (kind === "cancel") {
+        if (activeToken)
+          await onFreeTransformCancel(
+            activeToken,
+            activeGeneration,
+            activePath,
+          );
+        setDragRect(origin);
+      } else if (activeToken) {
+        await onFreeTransformPreview(
+          activeToken,
+          activeGeneration,
+          activePath,
+          latestDelta,
+        );
+        const result = await onFreeTransformCommit(
+          activeToken,
+          activeGeneration,
+          activePath,
+        );
+        if (result) setDragRect(result.rect);
+      }
+    };
+    const onUp = (upEvent: PointerEvent) => { void complete("commit", upEvent); };
+    const onCancel = () => { void complete("cancel"); };
+    const onLostCapture = () => { if (!ending) void complete("cancel"); };
+    const onBlur = () => { void complete("cancel"); };
+    const onKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key !== "Escape") return;
+      keyEvent.preventDefault();
+      keyEvent.stopPropagation();
+      keyEvent.stopImmediatePropagation();
+      void complete("cancel");
+    };
+    cancelFreeGestureRef.current = () => { void complete("cancel"); };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onCancel);
+    handle.addEventListener("lostpointercapture", onLostCapture);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("blur", onBlur);
+
+    beginPromise = onFreeTransformBegin(operation, horizontal, vertical)
+      .then((result) => {
+        if (!result?.supported || !result.token) {
+          cleanup();
+          return null;
+        }
+        token = result.token;
+        generation = result.generation;
+        gesturePath = result.path;
+        if (active) update();
+        return result;
+      })
+      .catch(() => {
+        cleanup();
+        return null;
+      });
+  };
   const startResize = (
     event: React.PointerEvent<HTMLButtonElement>,
     horizontal: -1 | 0 | 1,
     vertical: -1 | 0 | 1,
   ) => {
     if (event.button !== 0) return;
+    if (altHeld || freeTransforming || event.altKey) {
+      startFreeTransform(event, "resize", horizontal, vertical);
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const handle = event.currentTarget;
@@ -3496,6 +4194,10 @@ function SelectionOverlay({
   ];
   const startMove = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
+    if (altHeld || freeTransforming || event.altKey) {
+      startFreeTransform(event, "translate", 0, 0);
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const handle = event.currentTarget;
@@ -3685,6 +4387,20 @@ function SelectionOverlay({
       height: dragRect.height * scale,
     },
   ].filter((style) => style.width > 0 && style.height > 0);
+  const freeTransformVisual = altHeld || freeTransforming;
+  const freeTransformSupported = selected.freeTransform?.supported !== false;
+  const freeTransformTitle = freeTransformSupported
+    ? "Hold Alt and drag to Free Transform"
+    : selected.freeTransform?.reason || "Free Transform is unavailable for this element.";
+  const freeTransformHandleTitle = (
+    horizontal: -1 | 0 | 1,
+    vertical: -1 | 0 | 1,
+  ) => {
+    if (!freeTransformSupported) return freeTransformTitle;
+    if (horizontal && vertical)
+      return "Scale proportionally; hold Shift to stretch";
+    return horizontal ? "Stretch horizontally" : "Stretch vertically";
+  };
   return (
     <>
       {moving && (
@@ -3724,8 +4440,17 @@ function SelectionOverlay({
           ))}
         </>
       )}
+      {transformHud && (
+        <div
+          className="edit-beta-transform-hud"
+          style={{ left: transformHud.left, top: transformHud.top }}
+          role="status"
+        >
+          {transformHud.text}
+        </div>
+      )}
       <div
-        className="edit-beta-selection-box"
+        className={`edit-beta-selection-box${freeTransformVisual ? " is-free-transform" : ""}${freeTransformVisual && !freeTransformSupported ? " is-free-transform-disabled" : ""}`}
         style={{
           left: dragRect.left * scale,
           top: dragRect.top * scale,
@@ -3756,18 +4481,21 @@ function SelectionOverlay({
         {handles.map(([name, horizontal, vertical]) => (
           <button
             key={name}
-            className={`edit-beta-anchor ${name}`}
+            className={`edit-beta-anchor ${name}${freeTransformVisual ? " free-transform-anchor" : ""}`}
             onPointerDown={(event) => startResize(event, horizontal, vertical)}
-            aria-label={`Resize ${name}`}
+            aria-disabled={freeTransformVisual && !freeTransformSupported}
+            title={freeTransformVisual ? freeTransformHandleTitle(horizontal, vertical) : `Resize ${name}`}
+            aria-label={freeTransformVisual ? `Free Transform ${name}` : `Resize ${name}`}
           />
         ))}
         <button
-          className="edit-beta-move-handle"
+          className={`edit-beta-move-handle${freeTransformVisual ? " is-translate" : ""}`}
           onPointerDown={startMove}
-          title="Move element"
-          aria-label="Move selected element"
+          aria-disabled={freeTransformVisual && !freeTransformSupported}
+          title={freeTransformVisual ? (freeTransformSupported ? "Translate element" : freeTransformTitle) : "Move element"}
+          aria-label={freeTransformVisual ? "Translate selected element" : "Move selected element"}
         >
-          <svg
+          {freeTransformVisual ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v6m0 8v6M2 12h6m8 0h6"/><path d="m9 5 3-3 3 3M9 19l3 3 3-3M5 9l-3 3 3 3M19 9l3 3-3 3"/></svg> : <svg
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -3777,7 +4505,7 @@ function SelectionOverlay({
           >
             <path d="M12 2v20M2 12h20" />
             <path d="m8 6 4-4 4 4M8 18l4 4 4-4M6 8l-4 4 4 4M18 8l4 4-4 4" />
-          </svg>
+          </svg>}
         </button>
         {boundaries.enabled && boundaries.showDimensions && (
           <EditableDimensions
@@ -3886,20 +4614,22 @@ function SelectionOverlay({
               {selected.tag}
             </strong>
             <button
-              className="edit-beta-toolbar-grip"
+              className={`edit-beta-toolbar-grip${freeTransformVisual ? " is-translate" : ""}`}
               onPointerDown={startMove}
-              title="Move the selected element"
-              aria-label="Move the selected element"
+              aria-disabled={freeTransformVisual && !freeTransformSupported}
+              title={freeTransformVisual ? (freeTransformSupported ? "Translate element" : freeTransformTitle) : "Move the selected element"}
+              aria-label={freeTransformVisual ? "Translate the selected element" : "Move the selected element"}
             >
-              <svg viewBox="0 0 24 24" fill="currentColor">
+              {freeTransformVisual ? <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v6m0 6v6M3 12h6m6 0h6"/></svg> : <svg viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="8" cy="6" r="1.5" />
                 <circle cx="16" cy="6" r="1.5" />
                 <circle cx="8" cy="12" r="1.5" />
                 <circle cx="16" cy="12" r="1.5" />
                 <circle cx="8" cy="18" r="1.5" />
                 <circle cx="16" cy="18" r="1.5" />
-              </svg>
+              </svg>}
             </button>
+            {freeTransformVisual && <span className={`edit-beta-free-transform-hint${freeTransformSupported ? "" : " unavailable"}`} title={freeTransformTitle}>{freeTransformSupported ? "Free Transform" : "Unavailable"}</span>}
             <span className="edit-beta-toolbar-divider" />
             <button
               onClick={() => onAction("parent")}
@@ -3949,6 +4679,15 @@ function SelectionOverlay({
                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
               </svg>
             </button>
+            {selected.freeTransform?.hasReset && (
+              <button
+                onClick={() => void onFreeTransformReset()}
+                title="Reset Free Transform"
+                aria-label="Reset Free Transform"
+              >
+                <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+            )}
             <button
               className="danger"
               onClick={() => onAction("delete")}
@@ -4236,10 +4975,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     });
     const bridgeStateEpochRef = useRef(0);
     const selectedStateKeyRef = useRef("");
+    const freeTransformGestureActiveRef = useRef(false);
     const historyStateKeyRef = useRef("");
     const bridgeHistoryIndexRef = useRef(-1);
     const [ready, setReady] = useState(false);
     const [mode, setMode] = useState<InteractionMode>(interactionMode);
+    const [altTransformHeld, setAltTransformHeld] = useState(false);
     const [selected, setSelected] = useState<RemoteElement | null>(null);
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
@@ -5151,11 +5892,10 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       };
     }, [constrainPan]);
 
-    const executeActive = useCallback(async (expression: string) => {
+    const executeViewport = useCallback(async (viewportId: string, expression: string) => {
       const view = [
-        webviewsMapRef.current[activeViewportId],
-        webviewRef.current,
-        ...Object.values(webviewsMapRef.current),
+        webviewsMapRef.current[viewportId],
+        viewportId === activeViewportIdRef.current ? webviewRef.current : null,
       ].find(isCallableWebview);
       if (!view) return null;
       try {
@@ -5163,7 +5903,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       } catch {
         return null;
       }
-    }, [activeViewportId]);
+    }, []);
+
+    const executeActive = useCallback(
+      async (expression: string) => executeViewport(activeViewportId, expression),
+      [activeViewportId, executeViewport],
+    );
 
     const deselect = useCallback(async () => {
       await executeActive(
@@ -5393,6 +6138,12 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
             if (command && Object.prototype.hasOwnProperty.call(optionsRef.current.hotkeys, command)) {
               onHotkeyCommand?.(command);
             }
+            return;
+          }
+          if (message.startsWith("__FULLFORCE_ALT_TRANSFORM__")) {
+            event.preventDefault?.();
+            if (frameId === activeViewportIdRef.current)
+              setAltTransformHeld(message.endsWith("1"));
             return;
           }
           if (message.startsWith("__FULLFORCE_EYEDROPPER__")) {
@@ -5845,6 +6596,41 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
       );
       return result;
     };
+    const callViewport = async (
+      viewportId: string,
+      method: string,
+      ...args: any[]
+    ) =>
+      executeViewport(
+        viewportId,
+        `window.__fullForceEditBeta?.[${JSON.stringify(method)}](...${JSON.stringify(args)})`,
+      );
+    const acceptRemoteElement = (result: unknown) => {
+      if (
+        !result ||
+        typeof result !== "object" ||
+        typeof (result as RemoteElement).path !== "string"
+      )
+        return null;
+      const remote = result as RemoteElement;
+      selectedStateKeyRef.current = JSON.stringify(remote);
+      setSelected(remote);
+      setStyleDrafts(remote.styles || {});
+      return remote;
+    };
+    const syncViewportPatches = async (viewportId: string) => {
+      const activePatches = await executeViewport(
+        viewportId,
+        "window.__fullForceEditBeta?.getPatches() || []",
+      );
+      if (Array.isArray(activePatches)) {
+        patchesRef.current = mergeViewportPatches(
+          patchesRef.current,
+          activePatches,
+          viewportId,
+        );
+      }
+    };
     const applyClassDraft = async (value: string) => {
       const normalized = normalizeClassNames(value);
       setClassDraft(normalized);
@@ -6124,6 +6910,11 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
     useEffect(() => {
       if (!ready) return;
       const onKeyDown = (event: KeyboardEvent) => {
+        if (
+          (event.key === "Escape" || event.code === "Escape") &&
+          freeTransformGestureActiveRef.current
+        )
+          return;
         if (
           (event.key === "Escape" || event.code === "Escape") &&
           mode === "edit" &&
@@ -6814,6 +7605,34 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
         scale,
       ],
     );
+
+    useEffect(() => {
+      const editable = (target: EventTarget | null) =>
+        !!(target as HTMLElement | null)?.closest?.(
+          'input,textarea,select,[contenteditable="true"]',
+        );
+      const down = (event: KeyboardEvent) => {
+        if (
+          event.key === "Alt" &&
+          !event.getModifierState?.("AltGraph") &&
+          !editable(event.target)
+        ) setAltTransformHeld(true);
+      };
+      const up = (event: KeyboardEvent) => {
+        if (event.key === "Alt") setAltTransformHeld(false);
+      };
+      const clear = () => setAltTransformHeld(false);
+      window.addEventListener("keydown", down, true);
+      window.addEventListener("keyup", up, true);
+      window.addEventListener("blur", clear);
+      document.addEventListener("visibilitychange", clear);
+      return () => {
+        window.removeEventListener("keydown", down, true);
+        window.removeEventListener("keyup", up, true);
+        window.removeEventListener("blur", clear);
+        document.removeEventListener("visibilitychange", clear);
+      };
+    }, []);
 
     useEffect(() => {
       const down = (event: KeyboardEvent) => {
@@ -7573,6 +8392,84 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                 scale={scale}
                                 boundaries={boundaries}
                                 fontFamilies={pageFonts.map((font) => font.family)}
+                                altHeld={altTransformHeld}
+                                onFreeTransformBegin={async (
+                                  operation,
+                                  horizontal,
+                                  vertical,
+                                ) => {
+                                  const result = await callViewport(
+                                    activeViewportId,
+                                    "beginFreeTransform",
+                                    operation,
+                                    horizontal,
+                                    vertical,
+                                    selected.path,
+                                    selected.freeTransform.generation,
+                                  );
+                                  return result && typeof result === "object"
+                                    ? (result as FreeTransformBeginResult)
+                                    : null;
+                                }}
+                                onFreeTransformPreview={async (
+                                  token,
+                                  generation,
+                                  path,
+                                  delta,
+                                ) => {
+                                  const result = await callViewport(
+                                    activeViewportId,
+                                    "previewFreeTransform",
+                                    token,
+                                    generation,
+                                    path,
+                                    delta,
+                                  );
+                                  return result && typeof result === "object"
+                                    ? (result as RemoteElement)
+                                    : null;
+                                }}
+                                onFreeTransformCommit={async (
+                                  token,
+                                  generation,
+                                  path,
+                                ) => {
+                                  const result = await callViewport(
+                                    activeViewportId,
+                                    "commitFreeTransform",
+                                    token,
+                                    generation,
+                                    path,
+                                  );
+                                  const remote = acceptRemoteElement(result);
+                                  await syncViewportPatches(activeViewportId);
+                                  return remote;
+                                }}
+                                onFreeTransformCancel={async (
+                                  token,
+                                  generation,
+                                  path,
+                                ) => {
+                                  await callViewport(
+                                    activeViewportId,
+                                    "cancelFreeTransform",
+                                    token,
+                                    generation,
+                                    path,
+                                  );
+                                }}
+                                onFreeTransformReset={async () => {
+                                  const result = await callViewport(
+                                    activeViewportId,
+                                    "resetFreeTransform",
+                                  );
+                                  const remote = acceptRemoteElement(result);
+                                  await syncViewportPatches(activeViewportId);
+                                  return remote;
+                                }}
+                                onFreeTransformActivity={(active) => {
+                                  freeTransformGestureActiveRef.current = active;
+                                }}
                                 onResize={handleElementDragStyle}
                                 onBoxChange={(property, value) =>
                                   handleElementDragStyle({ [property]: `${value}px` }, true)

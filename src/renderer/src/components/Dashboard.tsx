@@ -15,6 +15,7 @@ import {
   getFolderDisplayPath,
 } from '../utils/projectFolders'
 import TicketQueue, { useTicketStore } from './TicketQueue'
+import MultiCaptureDialog from './MultiCaptureDialog'
 import { toIntakeTicket, sameTicket, projectTicketRef } from '../../../shared/tickets'
 import { saveTicket } from '../services/ticketService'
 import './Dashboard.css'
@@ -46,6 +47,7 @@ interface FolderContextMenuState { x: number; y: number; folder: ProjectFolder }
 interface DashboardContextMenuState { x: number; y: number }
 interface FolderEditorState { mode: 'create' | 'rename'; name: string; folderId?: string; parentId?: string; projectId?: string }
 interface SelectionBox { left: number; top: number; width: number; height: number }
+interface MultiCaptureTarget { folderId?: string; path: string; ownerKey: string | null }
 
 const GRADIENTS = [
   'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
@@ -141,6 +143,8 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(null)
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null)
   const [dashboardContextMenu, setDashboardContextMenu] = useState<DashboardContextMenuState | null>(null)
+  const [newCaptureMenuOpen, setNewCaptureMenuOpen] = useState(false)
+  const [multiCaptureTarget, setMultiCaptureTarget] = useState<MultiCaptureTarget | null>(null)
   const [folderEditor, setFolderEditor] = useState<FolderEditorState | null>(null)
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null)
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null)
@@ -151,6 +155,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   const browserSurfaceRef = useRef<HTMLDivElement | null>(null)
   const selectionOriginRef = useRef<{ pointerId: number; clientX: number; clientY: number; additive: boolean } | null>(null)
   const selectionBaseRef = useRef<Set<string>>(new Set())
+  const multiCaptureReturnFocusRef = useRef<HTMLElement | null>(null)
 
   const ticketStore = useTicketStore()
   const mondayTickets = useMemo(() => (ticketStore?.records || []).map(record => toIntakeTicket(record.ticket)), [ticketStore])
@@ -163,7 +168,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
 
   // Close context menu on outside click
   useEffect(() => {
-    const handleClose = () => { setContextMenu(null); setProjectContextMenu(null); setFolderContextMenu(null); setDashboardContextMenu(null) }
+    const handleClose = () => { setContextMenu(null); setProjectContextMenu(null); setFolderContextMenu(null); setDashboardContextMenu(null); setNewCaptureMenuOpen(false) }
     window.addEventListener('click', handleClose)
     return () => window.removeEventListener('click', handleClose)
   }, [])
@@ -180,6 +185,33 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
 
   const reloadProjects = useCallback(() => { void window.electronAPI.getProjects().then(setProjects) }, [])
   const notifyProjectsChanged = () => window.dispatchEvent(new CustomEvent('qa_projects_updated'))
+
+  const openMultiCapture = (folderId?: string) => {
+    multiCaptureReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setMultiCaptureTarget({
+      folderId,
+      path: folderId ? getFolderDisplayPath(folders, folderId) : '',
+      ownerKey: localStorage.getItem('parity_account_owner_key'),
+    })
+    setNewCaptureMenuOpen(false)
+    setDashboardContextMenu(null)
+    setFolderContextMenu(null)
+  }
+
+  const closeMultiCapture = () => {
+    const returnFocus = multiCaptureReturnFocusRef.current
+    const destinationId = multiCaptureTarget?.folderId
+    setMultiCaptureTarget(null)
+    requestAnimationFrame(() => {
+      if (returnFocus?.isConnected) returnFocus.focus()
+      else if (destinationId) document.querySelector<HTMLElement>(`[data-folder-id="${destinationId}"] .dashboard-folder-more`)?.focus()
+      else document.querySelector<HTMLElement>('.new-capture-menu-trigger')?.focus()
+    })
+  }
+
+  const saveMultiCaptureProject = async (project: Project, expectedOwner: string | null) => {
+    await window.electronAPI.saveProject({ ...project, localOwnerKey: expectedOwner }, expectedOwner)
+  }
 
   useEffect(() => {
     const onProjectsUpdated = () => reloadProjects()
@@ -223,6 +255,9 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [deleteConfirmProject, setDeleteConfirmProject] = useState<Project | null>(null)
   const [permanentDeleteProject, setPermanentDeleteProject] = useState<Project | null>(null)
+  const [folderDeleteConfirm, setFolderDeleteConfirm] = useState<ProjectFolder | null>(null)
+  const [deletingFolder, setDeletingFolder] = useState(false)
+  const [folderDeleteError, setFolderDeleteError] = useState('')
 
   // Edit form state
   const [editName, setEditName] = useState('')
@@ -453,20 +488,25 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   }
 
   const deleteFolder = async (folder: ProjectFolder) => {
-    const destinationName = folder.parentId
-      ? folders.find((item) => item.id === folder.parentId)?.name || 'the parent folder'
-      : 'Home'
-    if (!window.confirm(`Delete “${folder.name}”? Its projects and subfolders will be moved to ${destinationName}.`)) return
-    const affected = projects.filter((project) => project.folderId === folder.id)
-    const updated = affected.map((project) => ({ ...project, folderId: folder.parentId || undefined }))
-    await Promise.all(updated.map((project) => saveScopedProject(project)))
-    notifyProjectsChanged()
-    setProjects((current) => current.map((project) => project.folderId === folder.id ? { ...project, folderId: folder.parentId || undefined } : project))
-    setFolders((current) => current
-      .filter((item) => item.id !== folder.id)
-      .map((item) => item.parentId === folder.id ? { ...item, parentId: folder.parentId || undefined } : item))
-    if (currentFolderId === folder.id) setCurrentFolderId(folder.parentId || null)
-    setFolderContextMenu(null)
+    setDeletingFolder(true)
+    setFolderDeleteError('')
+    try {
+      const affected = projects.filter((project) => project.folderId === folder.id)
+      const updated = affected.map((project) => ({ ...project, folderId: folder.parentId || undefined }))
+      await Promise.all(updated.map((project) => saveScopedProject(project)))
+      notifyProjectsChanged()
+      setProjects((current) => current.map((project) => project.folderId === folder.id ? { ...project, folderId: folder.parentId || undefined } : project))
+      setFolders((current) => current
+        .filter((item) => item.id !== folder.id)
+        .map((item) => item.parentId === folder.id ? { ...item, parentId: folder.parentId || undefined } : item))
+      if (currentFolderId === folder.id) setCurrentFolderId(folder.parentId || null)
+      setFolderDeleteConfirm(null)
+    } catch (cause) {
+      setFolderDeleteError(cause instanceof Error ? cause.message : 'The folder could not be deleted.')
+    } finally {
+      setDeletingFolder(false)
+      setFolderContextMenu(null)
+    }
   }
 
   const formatDate = (ts: number) => {
@@ -873,12 +913,30 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
               <img src={figmaIcon} alt="Figma" width="16" height="16" style={{ objectFit: 'contain' }} />
               <span>{figmaStatus.connected ? `Figma: ${figmaStatus.user?.handle || figmaStatus.user?.email || 'Connected'}` : 'Login to Figma'}</span>
             </button>
-            <button className="new-project-btn" onClick={() => onNewProject(currentFolderId || undefined)}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M8 3v10M3 8h10" />
-              </svg>
-              New Capture
-            </button>
+            <div className="new-capture-split" onClick={event => event.stopPropagation()}>
+              <button
+                type="button"
+                className="new-capture-menu-trigger"
+                aria-label="Show capture options"
+                aria-haspopup="menu"
+                aria-expanded={newCaptureMenuOpen}
+                onClick={() => setNewCaptureMenuOpen(open => !open)}
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m4 6 4 4 4-4" /></svg>
+              </button>
+              <button className="new-project-btn" onClick={() => onNewProject(currentFolderId || undefined)}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M8 3v10M3 8h10" />
+                </svg>
+                New Capture
+              </button>
+              {newCaptureMenuOpen && <div className="new-capture-dropdown" role="menu" aria-label="Capture options">
+                <button type="button" role="menuitem" onClick={() => openMultiCapture(currentFolderId || undefined)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><path d="M17 14v6m-3-3h6"/></svg>
+                  <span><strong>Multi-capture</strong><small>Add several website links</small></span>
+                </button>
+              </div>}
+            </div>
           </div>
         </div>
 
@@ -1124,6 +1182,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
               return <div
                 className={`dashboard-folder-tile ${dragOverFolderId === folder.id ? 'drag-over' : ''} ${draggingFolderId === folder.id ? 'dragging' : ''}`}
                 key={folder.id}
+                data-folder-id={folder.id}
                 data-selection-key={selectionKey}
                 data-selected={selectedBrowserItems.has(selectionKey) || undefined}
                 draggable
@@ -1442,9 +1501,12 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
           ? <button role="menuitem" onClick={() => { const id = getProjectTicketId(projectContextMenu.project); if (id) void toggleActiveTicket(id); setProjectContextMenu(null) }}>Set inactive</button>
           : <button role="menuitem" className="danger" onClick={() => { setDeleteConfirmProject(projectContextMenu.project); setProjectContextMenu(null) }}>Move to Trash</button>}
       </div>}
-      {folderContextMenu && <div className="project-context-menu" role="menu" aria-label={`Folder actions for ${folderContextMenu.folder.name}`} style={{ left: Math.min(folderContextMenu.x, window.innerWidth - 228), top: Math.min(folderContextMenu.y, window.innerHeight - 245) }} onClick={(event) => event.stopPropagation()}>
+      {folderContextMenu && <div className="project-context-menu" role="menu" aria-label={`Folder actions for ${folderContextMenu.folder.name}`} style={{ left: Math.min(folderContextMenu.x, window.innerWidth - 228), top: Math.min(folderContextMenu.y, window.innerHeight - 315) }} onClick={(event) => event.stopPropagation()}>
         <div className="project-context-title"><b>{folderContextMenu.folder.name}</b><small>Folder actions</small></div>
         <button role="menuitem" onClick={() => { setCurrentFolderId(folderContextMenu.folder.id); setFolderContextMenu(null) }}>Open folder</button>
+        <button role="menuitem" onClick={() => { onNewProject(folderContextMenu.folder.id); setFolderContextMenu(null) }}>New Capture</button>
+        <button role="menuitem" onClick={() => openMultiCapture(folderContextMenu.folder.id)}>New Multi-capture</button>
+        <div className="project-context-divider" />
         <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'rename', name: folderContextMenu.folder.name, folderId: folderContextMenu.folder.id }); setFolderContextMenu(null) }}>Rename folder</button>
         <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: folderContextMenu.folder.id }); setFolderContextMenu(null) }}>New subfolder</button>
         <div className="project-context-move"><button role="menuitem" aria-haspopup="menu">Move to folder <span aria-hidden="true">›</span></button><div className="project-context-submenu" role="menu">
@@ -1452,10 +1514,12 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
           {folders.filter((folder) => canMoveFolder(folders, folderContextMenu.folder.id, folder.id)).map((folder) => <button role="menuitem" key={folder.id} onClick={() => moveFolderToFolder(folderContextMenu.folder.id, folder.id)}><span>{folder.name}</span></button>)}
         </div></div>
         <div className="project-context-divider" />
-        <button role="menuitem" className="danger" onClick={() => void deleteFolder(folderContextMenu.folder)}>Delete folder</button>
+        <button role="menuitem" className="danger" onClick={() => { setFolderDeleteError(''); setFolderDeleteConfirm(folderContextMenu.folder); setFolderContextMenu(null) }}>Delete folder</button>
       </div>}
       {dashboardContextMenu && <div className="project-context-menu" role="menu" aria-label="Dashboard actions" style={{ left: dashboardContextMenu.x, top: dashboardContextMenu.y }} onClick={(event) => event.stopPropagation()}>
-        <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined }); setDashboardContextMenu(null) }}>New folder</button>
+        <button role="menuitem" onClick={() => { onNewProject(currentFolderId || undefined); setDashboardContextMenu(null) }}><span className="dashboard-context-action"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 5v14M5 12h14"/></svg>New Capture</span></button>
+        <button role="menuitem" onClick={() => openMultiCapture(currentFolderId || undefined)}><span className="dashboard-context-action"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><path d="M17 14v6m-3-3h6"/></svg>New Multi-capture</span></button>
+        <button role="menuitem" onClick={() => { setFolderEditor({ mode: 'create', name: '', parentId: currentFolderId || undefined }); setDashboardContextMenu(null) }}><span className="dashboard-context-action"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v6M9 14h6"/></svg>New Folder</span></button>
       </div>}
       {/* ── MOVE TO TRASH CONFIRMATION MODAL ───────────────────────── */}
       {editingProject && (
@@ -1603,6 +1667,36 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
       )}
 
       {/* ── MONDAY MANUAL API TOKEN FALLBACK MODAL ────────────────── */}
+      {folderDeleteConfirm && (() => {
+        const destinationName = folderDeleteConfirm.parentId
+          ? folders.find((item) => item.id === folderDeleteConfirm.parentId)?.name || 'the parent folder'
+          : 'Home'
+        const projectCount = projects.filter((project) => project.folderId === folderDeleteConfirm.id).length
+        const subfolderCount = folders.filter((folder) => folder.parentId === folderDeleteConfirm.id).length
+        return <div className="folder-delete-backdrop" onMouseDown={(event) => { if (!deletingFolder && event.target === event.currentTarget) setFolderDeleteConfirm(null) }}>
+          <div className="folder-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="folder-delete-title" aria-describedby="folder-delete-description" onKeyDown={(event) => { if (event.key === 'Escape' && !deletingFolder) setFolderDeleteConfirm(null) }}>
+            <div className="folder-delete-header">
+              <div className="folder-delete-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="m9 12 6 6m0-6-6 6" /></svg></div>
+              <div><h3 id="folder-delete-title">Delete folder?</h3><p>Its contents will stay available.</p></div>
+              <button className="folder-delete-close" aria-label="Close" disabled={deletingFolder} onClick={() => setFolderDeleteConfirm(null)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+            </div>
+            <div className="folder-delete-body">
+              <p id="folder-delete-description">Delete <strong>“{folderDeleteConfirm.name}”</strong>? Its projects and subfolders will be moved to <strong>{destinationName}</strong>.</p>
+              {(projectCount > 0 || subfolderCount > 0) && <div className="folder-delete-summary" aria-label="Items to move">
+                <span><b>{projectCount}</b> project{projectCount === 1 ? '' : 's'}</span>
+                <span><b>{subfolderCount}</b> subfolder{subfolderCount === 1 ? '' : 's'}</span>
+                <span className="folder-delete-destination"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>{destinationName}</span>
+              </div>}
+              {folderDeleteError && <div className="folder-delete-error" role="alert">{folderDeleteError}</div>}
+            </div>
+            <div className="folder-delete-actions">
+              <button autoFocus className="folder-delete-cancel" disabled={deletingFolder} onClick={() => setFolderDeleteConfirm(null)}>Cancel</button>
+              <button className="folder-delete-confirm" disabled={deletingFolder} onClick={() => void deleteFolder(folderDeleteConfirm)}>{deletingFolder ? 'Deleting…' : 'Delete folder'}</button>
+            </div>
+          </div>
+        </div>
+      })()}
+
       {folderEditor && <div className="folder-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFolderEditor(null) }}>
         <div className="folder-modal">
           <div className="folder-modal-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></div>
@@ -1616,6 +1710,17 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
           <div className="folder-modal-actions"><button onClick={() => setFolderEditor(null)}>Cancel</button><button className="primary" disabled={!folderEditor.name.trim()} onClick={() => void submitFolderEditor()}>{folderEditor.mode === 'rename' ? 'Save' : 'Create'}</button></div>
         </div>
       </div>}
+
+      {multiCaptureTarget && <MultiCaptureDialog
+        destinationId={multiCaptureTarget.folderId}
+        destinationPath={multiCaptureTarget.path}
+        destinationExists={!multiCaptureTarget.folderId || folders.some(folder => folder.id === multiCaptureTarget.folderId)}
+        existingProjects={projects}
+        ownerAtOpen={multiCaptureTarget.ownerKey}
+        onSaveProject={saveMultiCaptureProject}
+        onProjectsChanged={notifyProjectsChanged}
+        onClose={closeMultiCapture}
+      />}
 
 
     </div>

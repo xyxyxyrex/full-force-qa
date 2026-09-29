@@ -156,6 +156,15 @@ export interface InspectorDeclarationEdit {
   revision?: number
   draftId?: string
   phase?: 'preview' | 'commit' | 'cancel'
+  baseName?: string
+  baseValue?: string
+  baseImportant?: boolean
+  baseDisabled?: boolean
+  baseRuleKind?: InspectorRule['kind']
+  baseRuleStyleSheetId?: string
+  baseRuleSelector?: string
+  baseRuleStartLine?: number
+  baseRuleStartColumn?: number
 }
 
 export interface InspectorSelectorEdit {
@@ -165,6 +174,11 @@ export interface InspectorSelectorEdit {
   ruleId: string
   selector: string
   revision?: number
+  baseSelector?: string
+  baseRuleKind?: InspectorRule['kind']
+  baseRuleStyleSheetId?: string
+  baseRuleStartLine?: number
+  baseRuleStartColumn?: number
 }
 
 export interface InspectorDomEdit {

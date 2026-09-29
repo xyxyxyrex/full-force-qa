@@ -449,7 +449,8 @@ export default function App() {
   const scheduleActivityBarHide = () => {
     if (activityBarPinned) return
     if (activityHideTimerRef.current !== null) window.clearTimeout(activityHideTimerRef.current)
-    activityHideTimerRef.current = window.setTimeout(() => setActivityBarVisible(false), 900)
+    activityHideTimerRef.current = null
+    setActivityBarVisible(false)
   }
 
   const toggleActivityBarPin = () => {

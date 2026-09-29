@@ -815,6 +815,7 @@ export default function EditorWorkspace({
   const editorRef = useRef<Editor | null>(null);
   const onPersistHtmlRef = useRef(onPersistHtml);
   const devtoolsDropdownRef = useRef<HTMLDivElement>(null);
+  const browserEnginePickerRef = useRef<HTMLDivElement>(null);
   const hotkeysRef = useRef(hotkeys);
   const hotkeyCommandRef = useRef<(command: keyof AppHotkeys) => boolean>(() => false);
   const panHotkeyCodeRef = useRef("");
@@ -844,10 +845,26 @@ export default function EditorWorkspace({
   const [vpWidth, setVpWidth] = useState(1920);
   const [vpHeight, setVpHeight] = useState(1200);
   const [comparisonEngine, setComparisonEngine] = useState<ComparisonEngine | "chromium">("chromium");
+  const [browserEngineMenuOpen, setBrowserEngineMenuOpen] = useState(false);
   const [comparisonLiveScrollY, setComparisonLiveScrollY] = useState(0);
 
-  useEffect(() => { setComparisonEngine("chromium"); }, [workspaceTab, project?.id, sourceUrl]);
+  useEffect(() => { setComparisonEngine("chromium"); setBrowserEngineMenuOpen(false); }, [workspaceTab, project?.id, sourceUrl]);
   useEffect(() => window.electronAPI.onAccountChanged(() => setComparisonEngine("chromium")), []);
+  useEffect(() => {
+    if (!browserEngineMenuOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!browserEnginePickerRef.current?.contains(event.target as Node)) setBrowserEngineMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setBrowserEngineMenuOpen(false)
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [browserEngineMenuOpen]);
 
   // ── Multi-device Viewport Canvas State ─────────────────
   const [canvasViewMode, setCanvasViewMode] = useState<"single" | "multi">("single");
@@ -7635,23 +7652,36 @@ export default function EditorWorkspace({
               <div className="toolbar-divider" />
 
               {(workspaceTab === "editBeta" || workspaceTab === "live") && <div
-                className={`browser-engine-picker ${comparisonEngine !== "chromium" ? "is-comparing" : ""}`}
-                title={`Browser engine: ${comparisonEngine === "webkit" ? "WebKit" : comparisonEngine === "firefox" ? "Firefox" : "Chromium"}`}
+                ref={browserEnginePickerRef}
+                className={`browser-engine-picker ${comparisonEngine !== "chromium" ? "is-comparing" : ""} ${browserEngineMenuOpen ? "open" : ""}`}
               >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="3" y="4" width="18" height="15" rx="2" />
-                  <path d="M3 9h18M9 19v2m6-2v2M7 21h10" />
-                </svg>
-                <select
-                  className="browser-engine-select"
-                  aria-label="Browser engine"
-                  value={comparisonEngine}
-                  onChange={event => setComparisonEngine(event.target.value as ComparisonEngine | "chromium")}
+                <button
+                  type="button"
+                  className="browser-engine-trigger"
+                  title={comparisonEngine === "chromium" ? "Compare in Firefox or WebKit" : `Comparing in ${comparisonEngine === "webkit" ? "WebKit" : "Firefox"}`}
+                  aria-label="Choose comparison browser"
+                  aria-haspopup="menu"
+                  aria-expanded={browserEngineMenuOpen}
+                  onClick={() => setBrowserEngineMenuOpen(open => !open)}
                 >
-                  <option value="chromium">Chromium</option>
-                  <option value="firefox">Firefox</option>
-                  <option value="webkit">WebKit</option>
-                </select>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="15" rx="2" />
+                    <path d="M3 9h18M9 19v2m6-2v2M7 21h10" />
+                  </svg>
+                </button>
+                {browserEngineMenuOpen && <div className="browser-engine-menu" role="menu" aria-label="Comparison browser">
+                  <span className="browser-engine-menu-label">Test in browser</span>
+                  <button type="button" role="menuitemradio" aria-checked={comparisonEngine === "firefox"} className={comparisonEngine === "firefox" ? "active" : ""} onClick={() => { setComparisonEngine("firefox"); setBrowserEngineMenuOpen(false) }}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M7 15c2 2 6 2 8.5-.5 2-2 2-5 .5-7M8 7c-1 2-1 4 0 6" /></svg>
+                    <span>Firefox</span>
+                    {comparisonEngine === "firefox" && <svg className="browser-engine-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg>}
+                  </button>
+                  <button type="button" role="menuitemradio" aria-checked={comparisonEngine === "webkit"} className={comparisonEngine === "webkit" ? "active" : ""} onClick={() => { setComparisonEngine("webkit"); setBrowserEngineMenuOpen(false) }}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="m14.5 9.5-1.7 3.3-3.3 1.7 1.7-3.3 3.3-1.7Z" /></svg>
+                    <span>WebKit</span>
+                    {comparisonEngine === "webkit" && <svg className="browser-engine-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg>}
+                  </button>
+                </div>}
               </div>}
 
               {/* Custom dimension inputs with DevTools presets caret dropdown */}
@@ -10797,7 +10827,7 @@ export default function EditorWorkspace({
                   height="12"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#3FB950"
+                  stroke="currentColor"
                   strokeWidth="2"
                 >
                   <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -11005,7 +11035,7 @@ export default function EditorWorkspace({
                 )}
 
                 {/* ── IN-CANVAS 3-WAY SIDE-BY-SIDE / OVERLAY / DIFF ── */}
-                {!isLiveWorkspace && canvasFrame && (
+                {!isLiveWorkspace && workspaceTab !== "editBeta" && canvasFrame && (
                   <>
                     {/* LEFT PANEL: Standard Desktop Figma Live App / Reference PNG */}
                     {!figmaCardDismissed &&
@@ -11675,7 +11705,7 @@ export default function EditorWorkspace({
                         height="14"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#3FB950"
+                        stroke="currentColor"
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"

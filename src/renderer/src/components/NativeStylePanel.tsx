@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import SmoothColorPicker from './SmoothColorPicker'
-import { layoutModeFromDisplay, normalizeBoxModelValue } from '../utils/viewportLayoutPatches'
+import { layoutModeFromDisplay, normalizeBoxModelValue, normalizeNumericInputDraft } from '../utils/viewportLayoutPatches'
 
 /* ═══════════════════════════════════════════════════════════
    NativeStylePanel — Figma-style compact style inspector
@@ -324,6 +324,7 @@ function DimInput({ value, units, onChange, placeholder, compact }: {
   const { num, unit } = parseNumeric(value)
   const activeUnits = units || DIM_UNITS
   const resolvedUnit = unit === '-' ? 'px' : unit
+  const isZeroValue = num.trim() !== '' && Number(num) === 0
   const { step, precision } = stepForUnit(resolvedUnit)
   const scrub = useScrub({
     getValue: () => parseFloat(num) || 0, step, precision,
@@ -333,8 +334,10 @@ function DimInput({ value, units, onChange, placeholder, compact }: {
   return (
     <div style={{ display: 'flex', minWidth: 0 }}>
       <input ref={scrub.ref} type="text" value={num} placeholder={placeholder}
-        onChange={(e) => onChange(buildCssValue(e.target.value, resolvedUnit))}
+        onFocus={(e) => { if (isZeroValue) e.currentTarget.select() }}
+        onChange={(e) => onChange(buildCssValue(normalizeNumericInputDraft(e.target.value), resolvedUnit))}
         onMouseDown={scrub.onMouseDown}
+        onMouseUp={(e) => { if (e.button === 0 && isZeroValue) { e.preventDefault(); e.currentTarget.select() } }}
         style={{ ...inputBase, borderRight: 'none', borderRadius: '3px 0 0 3px', padding: compact ? '3px 4px' : '4px 6px', width: '100%' }}
       />
       <select value={unit === '-' ? '-' : unit}

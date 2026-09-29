@@ -1,8 +1,16 @@
-.browser-engine-picker{position:relative;display:grid;place-items:center;width:30px;height:30px;flex:none;border:1px solid #554760;border-radius:5px;background:#282332;color:#bdb1ca;box-sizing:border-box}
-.browser-engine-picker:hover,.browser-engine-picker:focus-within,.browser-engine-picker.is-comparing{background:#483457;color:#f2d8ff;border-color:#8b64a0}
-.browser-engine-picker.is-comparing::after{content:"";position:absolute;right:3px;top:3px;width:4px;height:4px;border-radius:50%;background:#d5a3e8;pointer-events:none}
-.browser-engine-select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
-.browser-engine-select:focus-visible{outline:2px solid #ba8ad2;outline-offset:2px}
+.browser-engine-picker{position:relative;width:30px;height:30px;flex:none;box-sizing:border-box;color:var(--text-muted,#bdb1ca)}
+.browser-engine-trigger{display:grid;width:30px;height:30px;place-items:center;padding:0;border:1px solid var(--border-color,#554760);border-radius:5px;background:var(--bg-card,#282332);color:inherit;cursor:pointer;transition:border-color .14s ease,background .14s ease,color .14s ease}
+.browser-engine-trigger:hover,.browser-engine-picker.open .browser-engine-trigger,.browser-engine-picker.is-comparing .browser-engine-trigger{border-color:var(--border-hover,#8b64a0);background:var(--accent-light,#483457);color:var(--text-primary,#f2d8ff)}
+.browser-engine-trigger:focus-visible{outline:2px solid var(--accent-color,#ba8ad2);outline-offset:2px}
+.browser-engine-picker.is-comparing::after{content:"";position:absolute;z-index:2;right:3px;top:3px;width:4px;height:4px;border-radius:50%;background:var(--accent-color,#d5a3e8);box-shadow:0 0 0 2px var(--bg-card,#282332);pointer-events:none}
+.browser-engine-menu{position:absolute;z-index:1000;top:calc(100% + 7px);left:0;width:154px;padding:5px;border:1px solid var(--border-color,#554760);border-radius:7px;background:var(--bg-elevated,#201b28);box-shadow:0 13px 34px #000a;color:var(--text-primary,#eee)}
+.browser-engine-menu::before{position:absolute;top:-5px;left:10px;width:8px;height:8px;content:"";border-top:1px solid var(--border-color,#554760);border-left:1px solid var(--border-color,#554760);background:var(--bg-elevated,#201b28);transform:rotate(45deg)}
+.browser-engine-menu-label{display:block;padding:4px 7px 6px;color:var(--text-muted,#91899b);font-size:8px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.browser-engine-menu>button{position:relative;display:grid;width:100%;grid-template-columns:17px 1fr 14px;align-items:center;gap:7px;padding:7px;border:0;border-radius:4px;background:transparent;color:var(--text-secondary,#c9c2d1);font:10px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;text-align:left;cursor:pointer}
+.browser-engine-menu>button:hover,.browser-engine-menu>button:focus-visible{outline:0;background:var(--bg-card-hover,#3b2c45);color:var(--text-primary,#fff)}
+.browser-engine-menu>button.active{background:var(--accent-light,#49344e);color:var(--accent-color,#d8a7ea)}
+.browser-engine-menu>button>svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.browser-engine-menu>button .browser-engine-check{width:13px;height:13px;justify-self:end;stroke-width:1.8}
 .live-browser-comparison-card{position:absolute;z-index:30;border:1px solid #4a4257;border-radius:7px;box-shadow:0 14px 38px #0008;background:#17141e;overflow:visible}
 .edit-beta-browser-comparison{z-index:14!important;overflow:visible!important}
 .browser-comparison-panel{position:relative;display:flex;flex-direction:column;width:100%;height:100%;box-sizing:border-box;background:#17141e;color:#e9e5ee;font-size:11px;border-radius:6px;overflow:visible}

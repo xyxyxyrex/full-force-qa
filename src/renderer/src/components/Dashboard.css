@@ -95,6 +95,21 @@
   transform: translateY(-1px);
 }
 
+.new-capture-split { position: relative; display: inline-flex; align-items: stretch; filter: drop-shadow(0 4px 14px rgba(0,0,0,.2)); }
+.new-capture-split .new-project-btn { border-radius: 0 8px 8px 0; box-shadow: none; }
+.new-capture-split .new-project-btn:hover { transform: none; box-shadow: none; }
+.new-capture-menu-trigger { width: 34px; display: grid; place-items: center; padding: 0; border: 0; border-right: 1px solid color-mix(in srgb, var(--accent-foreground) 24%, transparent); border-radius: 8px 0 0 8px; background: var(--accent-color); color: var(--accent-foreground); cursor: pointer; }
+.new-capture-menu-trigger:hover, .new-capture-menu-trigger[aria-expanded="true"] { background: var(--accent-hover); color: var(--accent-hover-foreground); }
+.new-capture-menu-trigger svg { width: 14px; height: 14px; transition: transform .15s ease; }
+.new-capture-menu-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.new-capture-dropdown { position: absolute; z-index: 10025; top: calc(100% + 7px); left: 0; width: 220px; padding: 5px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); box-shadow: 0 16px 42px rgba(0,0,0,.42); }
+.new-capture-dropdown > button { width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+.new-capture-dropdown > button:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.new-capture-dropdown svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--text-muted); }
+.new-capture-dropdown span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.new-capture-dropdown strong { font-size: 10px; }
+.new-capture-dropdown small { color: var(--text-muted); font-size: 8px; }
+
 /* Controls Bar (Search, Sort, View Toggle) */
 .dashboard-controls-bar {
   display: flex;
@@ -1883,6 +1898,8 @@
   .dashboard-header { flex-direction: column; }
   .dashboard-header-actions { width: 100%; justify-content: stretch; }
   .dashboard-header-actions > button { flex: 1; justify-content: center; }
+  .dashboard-header-actions > .new-capture-split { flex: 1; }
+  .new-capture-split .new-project-btn { flex: 1; justify-content: center; }
   .controls-right { display: grid; grid-template-columns: 1fr 1fr auto; }
   .dashboard-new-folder-btn, .sort-dropdown-wrap, .sort-select { width: 100%; }
   .project-list-table .list-header, .project-list-table .list-row { grid-template-columns: 32px minmax(120px, 1fr) auto; padding: 0 8px; column-gap: 8px; }
@@ -1937,4 +1954,72 @@
 .folder-modal-actions button { height: 31px; padding: 0 13px; border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; }
 .folder-modal-actions button.primary { background: var(--text-primary); color: var(--bg-app); border-color: var(--text-primary); }
 .folder-modal-actions button:disabled { opacity: .4; cursor: default; }
+
+.folder-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #000 62%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.folder-delete-dialog {
+  width: min(420px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--modal-bg);
+  color: var(--text-primary);
+  box-shadow: 0 24px 70px color-mix(in srgb, #000 55%, transparent);
+  animation: modalFadeIn .18s ease-out;
+}
+
+.folder-delete-header {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 11px;
+  padding: 16px 17px;
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-elevated) 72%, var(--modal-bg));
+}
+
+.folder-delete-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--brand-diff, #d85a30) 38%, var(--border-color));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--brand-diff, #d85a30) 12%, transparent);
+  color: var(--brand-diff, #d85a30);
+}
+
+.folder-delete-header h3 { margin: 0; font-size: 14px; line-height: 1.25; }
+.folder-delete-header p { margin: 3px 0 0; color: var(--text-muted); font-size: 10px; }
+.folder-delete-close { display: grid; width: 30px; height: 30px; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.folder-delete-close:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.folder-delete-close:disabled { opacity: .45; cursor: default; }
+
+.folder-delete-body { padding: 17px; }
+.folder-delete-body > p { margin: 0; color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.folder-delete-body strong { color: var(--text-primary); font-weight: 650; }
+.folder-delete-summary { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.folder-delete-summary > span { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-muted); font-size: 9px; }
+.folder-delete-summary b { color: var(--text-primary); }
+.folder-delete-summary .folder-delete-destination { color: var(--text-secondary); }
+.folder-delete-destination svg { color: var(--accent-color); }
+.folder-delete-error { margin-top: 12px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--brand-diff, #d85a30) 38%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--brand-diff, #d85a30) 9%, transparent); color: var(--brand-diff, #d85a30); font-size: 9px; line-height: 1.45; }
+
+.folder-delete-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 17px 16px; border-top: 1px solid var(--border-color); }
+.folder-delete-actions button { height: 32px; padding: 0 13px; border: 1px solid var(--border-color); border-radius: 6px; font: inherit; font-size: 10px; cursor: pointer; }
+.folder-delete-cancel { background: var(--bg-card); color: var(--text-secondary); }
+.folder-delete-cancel:hover { border-color: var(--border-hover); background: var(--bg-card-hover); color: var(--text-primary); }
+.folder-delete-confirm { border-color: color-mix(in srgb, var(--brand-diff, #d85a30) 45%, var(--border-color)) !important; background: color-mix(in srgb, var(--brand-diff, #d85a30) 17%, var(--bg-card)); color: var(--brand-diff, #d85a30); }
+.folder-delete-confirm:hover { background: color-mix(in srgb, var(--brand-diff, #d85a30) 25%, var(--bg-card)); }
+.folder-delete-actions button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+.folder-delete-actions button:disabled { opacity: .5; cursor: wait; }
 

@@ -19,6 +19,10 @@ export function normalizeBoxModelValue(rawValue: string, originalValue: string) 
   return `${raw}${originalUnit || "px"}`;
 }
 
+export function normalizeNumericInputDraft(rawValue: string) {
+  return rawValue.replace(/^(-?)0+(?=\d)/, "$1");
+}
+
 export function mergeViewportPatches<T extends ViewportPatch>(
   existing: T[],
   activePatches: T[],

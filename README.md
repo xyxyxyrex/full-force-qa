@@ -2,6 +2,8 @@
 
 Parity is an Electron desktop application for quality assurance engineers, web developers, and designers reviewing website implementations. It combines authenticated Chromium previews, direct visual editing, Figma comparison, SEO and grammar audits, automated visual findings, annotations, and expiring browser-based review links in one QA workspace.
 
+**v1.5.0 is Parity's first public release.** It is available as a Windows installer and receives desktop updates through GitHub Releases.
+
 ## Links
 
 - **Parity landing page, installer, and ephemeral review host**: [https://parity-gfx.pages.dev](https://parity-gfx.pages.dev)
@@ -18,7 +20,8 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 
 - **Project management**: Create or edit projects with staging, admin, Figma, Google Sheets, and Monday ticket references. Browse nested folders as a familiar grid, drag projects or folders between locations, rubber-band multi-select items for bulk moves or guarded deletion, pin important work, search and sort, switch between card and list views, and move projects through a recoverable trash workflow. Folder hierarchy and placement are included in account sync.
 - **Capture intake**: Add a project and all of its references immediately without waiting for Chromium capture, assign an optional display name, create it directly inside the current folder, or populate individual staging, Figma, and QA fields from Monday using compact inline pickers. Capture remains available when page content is needed.
-- **Monday.com integration**: OAuth 2.1 with PKCE identifies the current user, stores desktop credentials with Electron `safeStorage`, refreshes credentials automatically, and supports editable board and assignee sources. An encrypted personal API token remains available as an advanced fallback.
+- **Multi-capture**: Paste comma-, space-, newline-, CSV-, or spreadsheet-separated URLs, review and name each project, skip destination-folder duplicates, and save several projects at once without loading every website. New Capture and Multi-capture are available from the dashboard, folder menus, and the split creation button.
+- **Monday.com integration**: OAuth 2.1 with PKCE identifies the current user, stores desktop credentials with Electron `safeStorage`, refreshes credentials automatically, and supports editable board and assignee sources. An encrypted personal API token remains available as an advanced fallback. Permission, account, resource, network, and rate-limit failures are translated into actionable messages while cached tickets remain available.
 - **Shared ticket queue**: Fetch Monday tickets or enter Opsmosis and generic tickets manually. Filter by provider, source group/status and private QA status, review extracted resource links, and link multiple page projects to a ticket. Local pending changes and revision conflicts survive restarts.
 - **Independent Parity accounts**: Sign in with Google through Supabase Auth. Existing users can restore their Monday workspace with fresh Monday identity verification. Notes, settings, folders, projects and tickets stay private to the active account; disconnecting Monday does not sign out of Parity. See [account setup and restoration](docs/independent-accounts-and-tickets.md).
 - **Product feedback**: The title-bar button beside Settings accepts bug reports, feature ideas, and general feedback from signed-in users. Submissions are stored privately in Supabase; administrators can review and update them in the `public.parity_feedback` table. The form sends the report, account email, app version, platform, and selected workspace area, without attaching page content or screenshots.
@@ -56,8 +59,8 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
   - **Color & Font Inspector**: Scans page computed styles to detect used color palettes and loaded font families, with collapsible inventories and usage highlighting.
 - **Canvas & Inline Editing**:
   - **Interactive Selection**: Direct click-to-select element selection inside Chromium `<webview>` frames via `liveEditorBridge.ts`.
-  - **Free-Transform & Resize Handles**: Eight-point resize handles for dynamic element resizing.
-  - **Drag-to-Move**: Direct mouse dragging to update element CSS positioning.
+  - **Free Transform**: Hold `Alt` while using the eight selection handles to proportionally scale or stretch the rendered element without reflowing its original layout footprint. A compact HUD reports the active scale and one-step history supports undo, redo, and reset.
+  - **Move and Translate**: Normal dragging follows the parent layout. Hold `Alt` when dragging the Move control to translate the element freely while preserving its starting transform.
   - **Computed and Authored Dimensions**: Displays rendered border-box geometry together with editable authored CSS width and height rules.
   - **Interaction and Eyedropper Modes**: Switches between element editing, native website interaction, and hovered-color inspection with HEX copying.
 - **Responsive Editing**:

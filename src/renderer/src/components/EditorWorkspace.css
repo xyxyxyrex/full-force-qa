@@ -3066,8 +3066,10 @@ body.is-free-transforming * {
   gap: 8px;
   font-size: 11.5px;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--text-primary);
 }
+
+.bottom-sheet-title > svg { color: var(--accent-color); }
 
 .bottom-sheet-badge {
   font-size: 9px;
@@ -3305,23 +3307,23 @@ iframe.google-sheets-iframe,
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #1c1c1c;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #cccccc;
+  background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 500;
   padding: 6px 10px;
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 14px color-mix(in srgb, #000 32%, transparent);
   transition: all 0.15s ease;
   backdrop-filter: blur(8px);
 }
 
 .panel-dock-btn:hover {
-  background: #252525;
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.25);
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
   transform: scale(1.02);
 }
 
@@ -3341,8 +3343,11 @@ iframe.google-sheets-iframe,
   bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
-  border-bottom: 3px solid #3fb950;
+  border-bottom: 3px solid var(--accent-color);
+  color: var(--text-secondary);
 }
+
+.panel-dock-btn.dock-bottom svg { color: var(--accent-color); }
 
 .panel-dock-btn.dock-bottom:hover {
   transform: translateX(-50%) scale(1.02);

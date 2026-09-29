@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react'
 import { fetchMondayMetadataApi, loadMondayPreferences, saveMondayPreferences, type MondayMetadata, type MondaySyncPreferences } from '../utils/mondayApi'
 import { supabaseUrl, supabaseAnonKey } from '../../../shared/supabaseClient'
 import { refreshMondayTickets } from '../services/ticketService'
+import { friendlyMondayError } from '../../../shared/mondayErrors'
 
 export default function MondayIntegration() {
   const [connected, setConnected] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [token, setToken] = useState('')
   const [metadata, setMetadata] = useState<MondayMetadata | null>(null)
   const [preferences, setPreferences] = useState<MondaySyncPreferences>(() => loadMondayPreferences() || { boardIds: [], assignmentMode: 'me', userIds: [] })
   const config = { supabaseUrl, supabaseAnonKey }
-  const load = async () => { const status = await window.electronAPI.mondayStatus(); setConnected(status.connected); if (status.connected) setMetadata(await fetchMondayMetadataApi()) }
-  const run = async (fn: () => Promise<unknown>) => { setBusy(true); setError(''); try { await fn() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Monday connection failed.') } finally { setBusy(false) } }
+  const load = async () => { const status = await window.electronAPI.mondayStatus(); setConnected(status.connected); if (status.connected) setMetadata(await fetchMondayMetadataApi()); else if (status.error) throw new Error(status.error) }
+  const run = async (fn: () => Promise<unknown>) => { setBusy(true); setError(''); try { await fn() } catch (cause) { console.error('[Monday] Integration action failed.', cause); setError(friendlyMondayError(cause)) } finally { setBusy(false) } }
   useEffect(() => { void run(load) }, [])
   const connect = async (personal = false) => {
     const result = personal ? await window.electronAPI.mondaySetPersonalToken(token, config) : await window.electronAPI.mondayLogin(config)

@@ -20,7 +20,7 @@ it('retains board and assignee filtering, pagination, classified links and Monda
   expect(normalized.sourceStatus).toBe('Dev Complete')
   expect(normalized.progress.qaStatus).toBe('To review')
 })
-it('propagates provider failures instead of reporting an empty queue', async () => {
+it('reports provider failures with user-friendly guidance instead of an empty queue', async () => {
   vi.stubGlobal('window', { electronAPI: { mondayGraphQL: async () => { throw Error('Rate limited') } } })
-  await expect(fetchMondayTicketsApi({ boardIds: ['b1'], assignmentMode: 'all', userIds: [] })).rejects.toThrow('Rate limited')
+  await expect(fetchMondayTicketsApi({ boardIds: ['b1'], assignmentMode: 'all', userIds: [] })).rejects.toThrow('Monday is temporarily limiting requests')
 })

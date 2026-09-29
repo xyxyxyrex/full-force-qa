@@ -21,6 +21,13 @@ interface CachedTreeState {
   scrollTop: number
 }
 
+type NodeEditorState =
+  | { kind: 'attribute'; node: InspectorDomNode; name: string; value: string }
+  | { kind: 'remove-attribute'; node: InspectorDomNode; name: string }
+  | { kind: 'text'; node: InspectorDomNode; value: string }
+  | { kind: 'outer'; node: InspectorDomNode; value: string }
+  | { kind: 'delete'; node: InspectorDomNode }
+
 const treeStateCache = new Map<string, CachedTreeState>()
 
 function treeCacheKey(session: InspectorSessionSnapshot | null): string {
@@ -66,9 +73,14 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
   const [searchResult, setSearchResult] = useState<{ count: number; nodes: InspectorDomNode[]; searchId?: string; start: number }>({ count: 0, nodes: [], start: 0 })
   const [searchIndex, setSearchIndex] = useState(0)
   const [menu, setMenu] = useState<{ x: number; y: number; node: InspectorDomNode } | null>(null)
+  const [editor, setEditor] = useState<NodeEditorState | null>(null)
+  const [editorBusy, setEditorBusy] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    setEditor(null)
+    setEditorBusy(false)
+    setMenu(null)
     const cacheKey = treeCacheKey(session)
     const cached = cacheKey ? treeStateCache.get(cacheKey) : undefined
     if (cached) {
@@ -207,37 +219,80 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
     } catch (cause) { onError(cause instanceof Error ? cause.message : 'DOM search failed.') }
   }
 
-  const editNode = async (node: InspectorDomNode, kind: 'attribute' | 'remove-attribute' | 'text' | 'outer' | 'delete' | 'duplicate') => {
+  const openNodeEditor = async (node: InspectorDomNode, kind: NodeEditorState['kind']) => {
+    setMenu(null)
+    if (kind === 'attribute') {
+      const first = node.attributes[0]
+      setEditor({ kind, node, name: first?.name || '', value: first?.value || '' })
+      return
+    }
+    if (kind === 'remove-attribute') {
+      setEditor({ kind, node, name: node.attributes[0]?.name || '' })
+      return
+    }
+    if (kind === 'text') {
+      setEditor({ kind, node, value: node.nodeValue })
+      return
+    }
+    if (kind === 'delete') {
+      setEditor({ kind, node })
+      return
+    }
+    setEditorBusy(true)
     try {
-      if (kind === 'attribute') {
-        const name = window.prompt('Attribute name')?.trim(); if (!name) return
-        const before = node.attributes.find(attribute => attribute.name === name)?.value || ''
-        const value = window.prompt(`Value for ${name}`, before); if (value == null) return
+      const value = await window.electronAPI.inspectorOuterHtml(node.ref)
+      setEditor({ kind, node, value })
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : 'Unable to read outer HTML.')
+    } finally {
+      setEditorBusy(false)
+    }
+  }
+
+  const submitNodeEditor = async () => {
+    if (!editor || editorBusy) return
+    const node = editor.node
+    setEditorBusy(true)
+    try {
+      if (editor.kind === 'attribute') {
+        const name = editor.name.trim()
+        if (!name) throw new Error('Enter an attribute name.')
+        const value = editor.value
         const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'set-attribute', name, value })
         if (updated) onSelect(updated)
-      } else if (kind === 'remove-attribute') {
-        const name = window.prompt('Attribute to remove', node.attributes[0]?.name || '')?.trim(); if (!name) return
+      } else if (editor.kind === 'remove-attribute') {
+        const name = editor.name.trim()
+        if (!name) throw new Error('Choose an attribute to remove.')
         const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'remove-attribute', name })
         if (updated) onSelect(updated)
-      } else if (kind === 'text') {
-        const value = window.prompt('Text value', node.nodeValue); if (value == null) return
-        const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'set-node-value', value })
+      } else if (editor.kind === 'text') {
+        const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'set-node-value', value: editor.value })
         if (updated) onSelect(updated)
-      } else if (kind === 'outer') {
-        const before = await window.electronAPI.inspectorOuterHtml(node.ref)
-        const value = window.prompt('Edit outer HTML', before); if (value == null || value === before) return
-        const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'set-outer-html', value })
+      } else if (editor.kind === 'outer') {
+        const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'set-outer-html', value: editor.value })
         if (updated) onSelect(updated)
-        onRefresh()
-      } else if (kind === 'delete') {
-        if (!window.confirm(`Delete ${node.localName || node.nodeName}?`)) return
-        await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'remove-node' })
         onRefresh()
       } else {
-        const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'duplicate-node' })
-        if (updated) onSelect(updated); onRefresh()
+        await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'remove-node' })
+        onRefresh()
       }
-    } catch (cause) { onError(cause instanceof Error ? cause.message : 'Unable to edit DOM.') }
+      setEditor(null)
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : 'Unable to edit DOM.')
+    } finally {
+      setEditorBusy(false)
+    }
+  }
+
+  const duplicateNode = async (node: InspectorDomNode) => {
+    setMenu(null)
+    try {
+      const updated = await window.electronAPI.inspectorEditDom({ sessionId: node.ref.sessionId, generation: node.ref.generation, nodeId: node.ref.nodeId, kind: 'duplicate-node' })
+      if (updated) onSelect(updated)
+      onRefresh()
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : 'Unable to duplicate the node.')
+    }
   }
 
   const copy = async (kind: 'selector' | 'html', node: InspectorDomNode) => {
@@ -295,12 +350,32 @@ export default function InspectorLayers({ session, selected, error, onSelect, on
       <button onClick={() => { void window.electronAPI.inspectorScrollIntoView(menu.node.ref); setMenu(null) }}>Scroll into view</button>
       <button onClick={() => { void copy('selector', menu.node); setMenu(null) }}>Copy selector</button>
       <button onClick={() => { void copy('html', menu.node); setMenu(null) }}>Copy HTML</button>
-      {menu.node.nodeType === 1 && <button onClick={() => { void editNode(menu.node, 'attribute'); setMenu(null) }}>Edit attribute…</button>}
-      {menu.node.nodeType === 1 && menu.node.attributes.length > 0 && <button onClick={() => { void editNode(menu.node, 'remove-attribute'); setMenu(null) }}>Remove attribute…</button>}
-      {menu.node.nodeType === 3 && <button onClick={() => { void editNode(menu.node, 'text'); setMenu(null) }}>Edit text…</button>}
-      {menu.node.nodeType === 1 && <button onClick={() => { void editNode(menu.node, 'outer'); setMenu(null) }}>Edit outer HTML…</button>}
-      {menu.node.nodeType === 1 && <button onClick={() => { void editNode(menu.node, 'duplicate'); setMenu(null) }}>Duplicate node</button>}
-      {menu.node.nodeType !== 9 && <button className="danger" onClick={() => { void editNode(menu.node, 'delete'); setMenu(null) }}>Delete node</button>}
+      {menu.node.nodeType === 1 && <button onClick={() => void openNodeEditor(menu.node, 'attribute')}>Edit attribute…</button>}
+      {menu.node.nodeType === 1 && menu.node.attributes.length > 0 && <button onClick={() => void openNodeEditor(menu.node, 'remove-attribute')}>Remove attribute…</button>}
+      {menu.node.nodeType === 3 && <button onClick={() => void openNodeEditor(menu.node, 'text')}>Edit text…</button>}
+      {menu.node.nodeType === 1 && <button onClick={() => void openNodeEditor(menu.node, 'outer')}>Edit outer HTML…</button>}
+      {menu.node.nodeType === 1 && <button onClick={() => void duplicateNode(menu.node)}>Duplicate node</button>}
+      {menu.node.nodeType !== 9 && <button className="danger" onClick={() => void openNodeEditor(menu.node, 'delete')}>Delete node</button>}
+    </div>}
+    {editor && <div className="inspector-editor-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !editorBusy) setEditor(null) }}>
+      <form className="inspector-editor-dialog" role="dialog" aria-modal="true" onSubmit={event => { event.preventDefault(); void submitNodeEditor() }} onKeyDown={event => { if (event.key === 'Escape' && !editorBusy) { event.preventDefault(); setEditor(null) } }}>
+        <header>
+          <div><strong>{editor.kind === 'attribute' ? 'Edit attribute' : editor.kind === 'remove-attribute' ? 'Remove attribute' : editor.kind === 'text' ? 'Edit text' : editor.kind === 'outer' ? 'Edit outer HTML' : 'Delete node'}</strong><small>&lt;{editor.node.localName || editor.node.nodeName.toLowerCase()}&gt;</small></div>
+          <button type="button" onClick={() => setEditor(null)} disabled={editorBusy} aria-label="Close editor">×</button>
+        </header>
+        <div className="inspector-editor-body">
+          {editor.kind === 'attribute' && <><label><span>Name</span><input autoFocus value={editor.name} onChange={event => {
+            const name = event.target.value
+            const existing = editor.node.attributes.find(attribute => attribute.name === name)
+            setEditor({ ...editor, name, value: existing ? existing.value : editor.value })
+          }} placeholder="data-state" /></label><label><span>Value</span><input value={editor.value} onChange={event => setEditor({ ...editor, value: event.target.value })} placeholder="value" /></label></>}
+          {editor.kind === 'remove-attribute' && <label><span>Attribute</span><select autoFocus value={editor.name} onChange={event => setEditor({ ...editor, name: event.target.value })}>{editor.node.attributes.map(attribute => <option key={attribute.name} value={attribute.name}>{attribute.name}="{attribute.value}"</option>)}</select></label>}
+          {editor.kind === 'text' && <label><span>Text content</span><textarea autoFocus value={editor.value} onChange={event => setEditor({ ...editor, value: event.target.value })} /></label>}
+          {editor.kind === 'outer' && <label><span>HTML</span><textarea className="code" autoFocus value={editor.value} onChange={event => setEditor({ ...editor, value: event.target.value })} spellCheck={false} /></label>}
+          {editor.kind === 'delete' && <p>Delete this node and its contents? This can be undone from Edit history.</p>}
+        </div>
+        <footer><button type="button" onClick={() => setEditor(null)} disabled={editorBusy}>Cancel</button><button className={editor.kind === 'delete' ? 'danger' : 'primary'} type="submit" disabled={editorBusy}>{editorBusy ? 'Applying…' : editor.kind === 'remove-attribute' ? 'Remove' : editor.kind === 'delete' ? 'Delete' : 'Apply'}</button></footer>
+      </form>
     </div>}
   </div>
 }
