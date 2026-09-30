@@ -129,3 +129,36 @@ jobs:
             dist/latest.yml
           if-no-files-found: error
           retention-days: 30
+
+  release-linux:
+    name: Build and publish Linux packages
+    needs: release-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_EPHEMERAL_VIEWER_URL: ${{ secrets.VITE_EPHEMERAL_VIEWER_URL }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: npm ci
+      - run: python -m pip install -r python/requirements.txt
+      - name: Build AppImage and deb
+        run: npm run build:linux
+      - name: Upload to GitHub Release
+        run: |
+          version=$(node -p "require('./package.json').version")
+          gh release upload "$RELEASE_TAG" "dist/Parity-$version.AppImage" "dist/Parity-$version.deb" --clobber --repo "$GITHUB_REPOSITORY"

@@ -28,7 +28,8 @@
     "test:watch": "vitest",
     "build:visual-worker": "python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py",
     "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --publish never",
-    "release:win": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --win nsis --publish always"
+    "release:win": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --win nsis --publish always",
+    "build:linux": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --linux --publish never"
   },
   "dependencies": {
     "@fortune-sheet/react": "^1.0.4",
@@ -90,6 +91,17 @@
             "x64"
           ]
         }
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Development",
+      "maintainer": "Parity",
+      "synopsis": "Capture and compare implementation reviews",
+      "artifactName": "Parity-${version}.${ext}",
+      "target": [
+        "AppImage",
+        "deb"
       ]
     },
     "nsis": {
