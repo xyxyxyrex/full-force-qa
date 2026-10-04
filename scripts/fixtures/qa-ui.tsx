@@ -4,7 +4,7 @@ import '../../src/renderer/src/theme/themes.css'
 import AgentsPanel from '../../src/renderer/src/components/AgentsPanel'
 import DesignSlots from '../../src/renderer/src/components/DesignSlots'
 import QaApprovalCard from '../../src/renderer/src/components/QaApprovalCard'
-import QaConsole from '../../src/renderer/src/components/QaConsole'
+import QaChat from '../../src/renderer/src/components/QaChat'
 
 // Stand-in for the app's bridge to the main process, so the real components can be rendered and
 // driven without the rest of Parity.
@@ -43,7 +43,9 @@ let runListener: ((event: unknown) => void) | null = null
   qaRunActive: async () => false,
   onQaRunEvent: (callback: (event: unknown) => void) => { runListener = callback; return () => { runListener = null } },
   qaRunStart: async (options: unknown) => { calls.push(`run ${JSON.stringify(options)}`); return { started: true } },
-  qaRunStop: async () => false,
+  qaRunStop: async () => { calls.push('stop'); return true },
+  qaChatSend: async (text: string) => { calls.push(`chat ${text}`); return { started: true } },
+  qaChatReset: async () => { calls.push('chat-reset'); return true },
   qaCallTool: async (name: string, args: unknown) => { calls.push(`tool ${name} ${JSON.stringify(args)}`); return { text: name === 'get_context' ? '{ "project": { "name": "[Svenson] Alopecia" } }' : 'ok', isError: false, images: name === 'capture_live' ? [{ dataUrl: swatch('#223344'), caption: 'Overview desktop' }] : [] } },
 }
 
@@ -75,7 +77,7 @@ function Fixture() {
         thumbnails={{ desktop: swatch('#335577'), mobile: swatch('#553377') }} activeBreakpoint="desktop"
         onAddFiles={(files, target) => (window as any).__calls.push(`add ${files.length} ${target}`)} onRemove={(bp) => (window as any).__calls.push(`remove ${bp}`)} onMove={(bp, to) => (window as any).__calls.push(`move ${bp} ${to}`)} onScale={(bp, s) => (window as any).__calls.push(`scale ${bp} ${s}`)} /></div>}
       {view === 'approval' && <QaApprovalCard request={approval} onDecide={(approved, note) => (window as any).__calls.push(`decide ${approved} ${note ?? ''}`)} />}
-      {view === 'console' && <QaConsole open onClose={() => {}} />}
+      {view === 'chat' && <div style={{ width: 400, height: 640, border: '1px solid var(--border-color)' }}><QaChat onClose={() => (window as any).__calls.push('close')} /></div>}
     </main>
   )
 }

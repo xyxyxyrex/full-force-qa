@@ -60,7 +60,7 @@ export function createAnthropicProvider(config: AnthropicConfig): AgentProvider 
     async run(run: ProviderRun): Promise<ProviderResult> {
       const client = new Anthropic({ apiKey: config.apiKey, ...(config.baseURL ? { baseURL: config.baseURL } : {}) })
       const tools: Anthropic.Tool[] = toolSchemas(run.tools).map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.schema as Anthropic.Tool.InputSchema }))
-      const messages: Anthropic.MessageParam[] = [{ role: 'user', content: run.task }]
+      const messages: Anthropic.MessageParam[] = [...(run.history ?? []).map((turn): Anthropic.MessageParam => ({ role: turn.role, content: turn.text })), { role: 'user', content: run.task }]
       let lastText = ''
 
       for (let turn = 0; turn < run.maxTurns; turn++) {

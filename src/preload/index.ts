@@ -137,6 +137,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   qaAgentsModels: (id: string) => ipcRenderer.invoke('qa:agents:models', id),
   qaRunStart: (options?: unknown) => ipcRenderer.invoke('qa:run:start', options),
   qaRunStop: () => ipcRenderer.invoke('qa:run:stop'),
+  qaChatSend: (text: string, options?: unknown) => ipcRenderer.invoke('qa:chat:send', text, options),
+  qaChatReset: () => ipcRenderer.invoke('qa:chat:reset'),
   qaRunActive: () => ipcRenderer.invoke('qa:run:active'),
   onQaRunEvent: (callback: (event: import('../shared/qaAgent').QaRunEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: import('../shared/qaAgent').QaRunEvent) => callback(payload)

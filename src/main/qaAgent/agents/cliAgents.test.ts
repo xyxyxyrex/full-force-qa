@@ -164,3 +164,21 @@ describe.skipIf(process.platform === 'win32')('running agent CLIs', () => {
     expect(Date.now() - started).toBeLessThan(8000)
   })
 })
+
+describe.skipIf(process.platform === 'win32')('chat history for agent CLIs', () => {
+  it('puts the earlier chat in front of the new message as a transcript', async () => {
+    const fake = fakeCli({ lines: [JSON.stringify({ type: 'result', subtype: 'success', result: 'ok' })] })
+    const { run } = makeRun({ task: 'And on mobile?', history: [{ role: 'user', text: 'How big is the hero heading?' }, { role: 'assistant', text: 'It is 28px on desktop.' }] })
+    await provider(claudeCodeSpec, fake.binary).run(run)
+    const { stdin } = fake.record()
+    expect(stdin).toContain('Analyst: How big is the hero heading?')
+    expect(stdin).toContain('You: It is 28px on desktop.')
+    expect(stdin.endsWith("The analyst's new message:\nAnd on mobile?")).toBe(true)
+  })
+
+  it('leaves a first message untouched', async () => {
+    const fake = fakeCli({ lines: [JSON.stringify({ type: 'result', subtype: 'success', result: 'ok' })] })
+    await provider(claudeCodeSpec, fake.binary).run(makeRun({ task: 'Hello' }).run)
+    expect(fake.record().stdin).toBe('Hello')
+  })
+})

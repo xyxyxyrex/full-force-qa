@@ -1,7 +1,7 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
 import type { Breakpoint } from './designScale'
-import type { AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBridgeStatus, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaToolCallResult, ReportedContext } from './qaAgent'
+import type { AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBridgeStatus, QaChatSendOptions, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaToolCallResult, ReportedContext } from './qaAgent'
 import type { TrackerFormat } from './trackerFormat'
 import type {
   AuditCaptureContext,
@@ -456,6 +456,8 @@ export interface ElectronAPI extends InspectorApi {
   qaAgentsModels: (id: AgentId) => Promise<{ models: string[]; error?: string }>
   qaRunStart: (options?: QaRunStartOptions) => Promise<QaRunStartResult>
   qaRunStop: () => Promise<boolean>
+  qaChatSend: (text: string, options?: QaChatSendOptions) => Promise<QaRunStartResult>
+  qaChatReset: () => Promise<boolean>
   qaRunActive: () => Promise<boolean>
   onQaRunEvent: (callback: (event: QaRunEvent) => void) => () => void
   qaCliStatus: () => Promise<{ installed: boolean; path: string; onPath: boolean; platform: string } | null>

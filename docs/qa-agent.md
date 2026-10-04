@@ -6,8 +6,9 @@ An AI agent that does the first pass of visual QA: it compares the live staging 
 
 1. **Store the designs.** Open the project, open the Figma overlay panel and drop the Figma PNGs on the Desktop, Tablet and Mobile slots (or just drop several at once: each goes to its detected breakpoint). Parity works out the export scale (1x, 2x, 3x) from the file name or its width and shows it, so you can correct it.
 2. **Tracker format.** The standard tracker is built in: Page Link, Section, Screenshot, Remarks, Priority (QA/PM), Display, Status, Approval Screenshot(QA), Reason for Rejection, Screenshot and Remarks (Dev), Remarks (PM), Remarks (CRSM). The agent fills Page Link, Section, Remarks and Priority, Parity fills Screenshot with the evidence link, and the Dev, PM, CRSM and approval columns stay empty. Display is a dropdown (Desktop, Mobile, Tablet, Mobile & Tablet, Desktop and Mobile, Desktop and Tablet) and the agent picks where the issue appears; Parity rejects anything outside the list. Status is left empty because developers and the approval step set it, except "ENHANCEMENT (QA)" for suggestions. To use a different tracker, paste its header row and two or three example rows in Settings → AI Agents → Tracker format.
-3. **Pick an agent** (Settings → AI Agents) and open the QA console (`Ctrl+Shift+Q` or the console button in the top bar).
-4. **Run it:** `qa run`, or `qa run desktop mobile`, or `qa run --agent codex`.
+3. **Pick an agent** (Settings → AI Agents) and open the QA chat (`Ctrl+Shift+Q` or the chat button in the top bar). The chat opens on the right and takes the place of the inspector until you close it.
+4. **Talk to it or run a review.** Type a question ("how big is the hero heading on mobile?", "recheck the footer") and the agent answers using the live page and your designs. It remembers the conversation until you press *New chat*. `/review` runs the full review of every breakpoint that has a design; `/review desktop mobile --agent codex` narrows it. `/stop` (or Esc) stops the agent, `/agents` lists the agents, `/help` lists the commands.
+   The header shows token use: the total for this chat with input and output split, what the current message has used so far, and (on hover) the size of the conversation the agent is holding. Every request re-sends the conversation, so input tokens add up faster than the text on screen. If you set a token limit in Settings → AI Agents it applies to each message and each review. Some agent programs do not report usage; the meter then shows a dash.
 5. **Approve.** An approval card shows the drafted rows, the severity counts and the evidence pictures. *Approve & copy* puts the rows on your clipboard (and uploads the evidence pictures, if enabled); *Reject* sends your note back to the agent.
 6. **Paste into the tracker.**
 
@@ -61,7 +62,7 @@ Approving can upload each evidence picture (design crop beside live crop, the is
 npm test                              # unit tests, including the bridge with a real MCP client
 npm run test:qa-capture:electron      # real Electron captures of a fixture page
 npm run test:qa-flow:electron         # the main-process handshake: context, approval, clipboard, bridge
-npm run test:qa-ui:electron           # renders the settings panel, console, approval card and slots
+npm run test:qa-ui:electron           # renders the settings panel, chat, approval card and slots
 node scripts/test-qa-capture-electron.cjs --url <page> --width 1440 --bp desktop --out <dir>
                                       # capture any public page and write capture.png + capture.json
 ```

@@ -136,3 +136,17 @@ describe('trimCarriedImages', () => {
     expect(carriers[0].content[1].text).toContain('picture removed')
   })
 })
+
+describe('openai-compatible provider chat history', () => {
+  it('sends earlier chat turns after the system prompt and before the new message', async () => {
+    queue.push(reply({ content: 'Same on mobile.' }))
+    const { run } = makeRun({ task: 'And on mobile?', history: [{ role: 'user', text: 'How big is the hero heading?' }, { role: 'assistant', text: 'It is 28px on desktop.' }] })
+    await provider().run(run)
+    expect(requests[0].body.messages).toEqual([
+      { role: 'system', content: 'SYSTEM RUBRIC' },
+      { role: 'user', content: 'How big is the hero heading?' },
+      { role: 'assistant', content: 'It is 28px on desktop.' },
+      { role: 'user', content: 'And on mobile?' },
+    ])
+  })
+})

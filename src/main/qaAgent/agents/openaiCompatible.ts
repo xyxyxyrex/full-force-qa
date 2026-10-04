@@ -53,7 +53,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
     label: config.label,
     async run(run: ProviderRun): Promise<ProviderResult> {
       const tools = toolSchemas(run.tools).map((tool) => ({ type: 'function' as const, function: { name: tool.name, description: tool.description, parameters: tool.schema } }))
-      const messages: Message[] = [{ role: 'system', content: run.system }, { role: 'user', content: run.task }]
+      const messages: Message[] = [{ role: 'system', content: run.system }, ...(run.history ?? []).map((turn): Message => (turn.role === 'user' ? { role: 'user', content: turn.text } : { role: 'assistant', content: turn.text })), { role: 'user', content: run.task }]
       let lastText = ''
 
       for (let turn = 0; turn < run.maxTurns; turn++) {

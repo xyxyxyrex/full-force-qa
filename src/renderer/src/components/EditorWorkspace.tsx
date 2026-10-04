@@ -812,7 +812,8 @@ export default function EditorWorkspace({
   pendingCaptureUrl,
   onDismissPendingCapture,
   hotkeys = DEFAULT_HOTKEYS,
-}: Props & { onOpenSettings?: () => void }) {
+  rightDock,
+}: Props & { onOpenSettings?: () => void; rightDock?: React.ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -12146,7 +12147,11 @@ export default function EditorWorkspace({
             )}
         </div>
 
+        {/* The QA chat takes the inspector's place. The inspector below stays mounted (hidden) so GrapesJS keeps its containers. */}
+        {rightDock && <div className="qa-chat-dock">{rightDock}</div>}
+
         {rightPanelOpen &&
+          !rightDock &&
           workspaceTab !== "live" &&
           workspaceTab !== "editBeta" &&
           workspaceTab !== "automate" && (
@@ -12163,6 +12168,7 @@ export default function EditorWorkspace({
             <div
               className="editor-panel panel-right"
               style={{
+                display: rightDock ? "none" : undefined,
                 width:
                   workspaceTab === "audit"
                     ? Math.max(rightPanelWidth, 320)

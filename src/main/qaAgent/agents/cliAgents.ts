@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { summarize } from './common'
+import { summarize, withHistory } from './common'
 import { AgentError, type AgentEvent, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
 
 // Agent CLIs the person is already logged into (Claude Code, Codex, Gemini CLI), so their
@@ -214,7 +214,8 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
     id: spec.id,
     label: spec.label,
     needsBridge: true,
-    async run(run: ProviderRun): Promise<ProviderResult> {
+    async run(chat: ProviderRun): Promise<ProviderResult> {
+      const run = { ...chat, task: withHistory(chat.task, chat.history) }
       const bridge = options.getBridge()
       const dir = mkdtempSync(join(tmpdir(), 'parity-agent-'))
       try { chmodSync(dir, 0o700) } catch { /* not supported on this system */ }

@@ -167,6 +167,10 @@ export interface QaRunStartOptions {
 
 export type QaRunStartResult = { started: true } | { started: false; error: string }
 
+export interface QaChatSendOptions {
+  agent?: AgentId
+}
+
 export type QaRunEvent =
   | { type: 'status'; message: string }
   | { type: 'text'; text: string; delta?: boolean }
@@ -175,5 +179,5 @@ export type QaRunEvent =
   | { type: 'usage'; inputTokens: number; outputTokens: number }
   | { type: 'error'; message: string }
   | { type: 'done'; message: string }
-  | { type: 'started'; agent: string; label: string }
+  | { type: 'started'; agent: string; label: string; budgetTokens?: number }
   | { type: 'finished' }

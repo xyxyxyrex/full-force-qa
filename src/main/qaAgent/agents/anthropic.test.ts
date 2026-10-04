@@ -170,3 +170,17 @@ describe('trimOldImages', () => {
     expect(messages.map(imagesIn)).toEqual([0, 1])
   })
 })
+
+describe('anthropic provider chat history', () => {
+  it('sends earlier chat turns before the new message', async () => {
+    queue.push({ blocks: [{ type: 'text', text: 'Yes, the heading is 28px.' }], stop: 'end_turn' })
+    const { run } = makeRun({ task: 'And on mobile?', history: [{ role: 'user', text: 'How big is the hero heading?' }, { role: 'assistant', text: 'It is 28px on desktop.' }] })
+    const result = await provider().run(run)
+    expect(result.text).toBe('Yes, the heading is 28px.')
+    expect(requests[0].body.messages).toEqual([
+      { role: 'user', content: 'How big is the hero heading?' },
+      { role: 'assistant', content: 'It is 28px on desktop.' },
+      { role: 'user', content: 'And on mobile?' },
+    ])
+  })
+})

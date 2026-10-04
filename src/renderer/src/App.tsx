@@ -17,7 +17,7 @@ import './App.css'
 import type { AuditCaptureContext } from '../../shared/auditExport'
 import CommandPalette from './components/CommandPalette'
 import QaApprovalCard from './components/QaApprovalCard'
-import QaConsole from './components/QaConsole'
+import QaChat from './components/QaChat'
 import type { ApprovalRequest } from '../../shared/qaAgent'
 import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/registry'
 import { getPaletteNotes, setPaletteNotes, workspaceItems } from './palette/workspaceSearch'
@@ -70,10 +70,10 @@ export default function App() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
-  const [qaConsoleOpen, setQaConsoleOpen] = useState(false)
+  const [qaChatOpen, setQaChatOpen] = useState(false)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'q') { event.preventDefault(); setQaConsoleOpen((open) => !open) }
+      if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'q') { event.preventDefault(); setQaChatOpen((open) => !open) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -825,7 +825,7 @@ export default function App() {
       { id: 'app.capture', title: 'New project / capture website', group: 'Commands', run: () => handleNewProject() },
       { id: 'app.tab', title: 'New tab', group: 'Commands', run: handleNewTab },
       { id: 'app.settings', title: 'Open Settings', group: 'Commands', description: 'Account, integrations, shortcuts, appearance and directory', run: () => setSettingsOpen(true) },
-      { id: 'app.qa-console', title: 'QA agent: open the console', group: 'Commands', description: 'Review the open page against its Figma designs (Ctrl+Shift+Q)', run: () => setQaConsoleOpen(true) },
+      { id: 'app.qa-console', title: 'QA agent: open the chat', group: 'Commands', description: 'Ask the agent about the open page or review it against its Figma designs (Ctrl+Shift+Q)', run: () => setQaChatOpen(true) },
       { id: 'app.feedback', title: 'Send feedback or report a bug', group: 'Commands', description: 'Tell us about a problem or suggest a Parity feature', run: () => setFeedbackOpen(true) },
       ...(['account', 'general', 'hotkeys', 'appearance', 'integrations', 'agents'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
       ...THEME_LIST.map(theme => ({ id: `theme:${theme.id}`, title: `Theme: ${theme.name}`, description: theme.description, group: 'Commands' as const, run: () => { const next = { ...settings, theme: theme.id }; setSettings(next); saveSettings(next) } })),
@@ -922,11 +922,11 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={`app-qa-btn ${qaConsoleOpen ? 'active' : ''}`}
-            onClick={() => setQaConsoleOpen((open) => !open)}
-            title="QA console (Ctrl+Shift+Q)"
-            aria-label="QA console"
-            aria-pressed={qaConsoleOpen}
+            className={`app-qa-btn ${qaChatOpen ? 'active' : ''}`}
+            onClick={() => setQaChatOpen((open) => !open)}
+            title="QA agent chat (Ctrl+Shift+Q)"
+            aria-label="QA agent chat"
+            aria-pressed={qaChatOpen}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4" /><path d="M12 17h7" /><rect x="2.5" y="4" width="19" height="16" rx="2.5" /></svg>
           </button>
@@ -994,6 +994,7 @@ export default function App() {
                 onNavigateCapture={handleWorkspaceNavigate}
                 onCaptureNewProject={(url, folderId) => handleCaptureFromWorkspace(activeTab.id, url, folderId)}
                 onOpenExistingProject={handleOpenExistingFromWorkspace}
+                rightDock={qaChatOpen ? <QaChat onClose={() => setQaChatOpen(false)} /> : undefined}
                 pendingCaptureUrl={activeTab.pendingCaptureUrl}
                 onDismissPendingCapture={() => setTabs((current) => current.map((tab) => tab.id === activeTab.id && tab.pendingCaptureUrl ? { ...tab, pendingCaptureUrl: undefined } : tab))}
               />
@@ -1040,7 +1041,7 @@ export default function App() {
           applyTheme(newSettings.theme)
         }}
       />
-      <QaConsole open={qaConsoleOpen} onClose={() => setQaConsoleOpen(false)} />
+      {qaChatOpen && activeTab?.view !== 'editor' && <div className="qa-chat-float"><QaChat onClose={() => setQaChatOpen(false)} /></div>}
       {qaApproval && <QaApprovalCard
         request={qaApproval}
         onDecide={(approved, note) => {

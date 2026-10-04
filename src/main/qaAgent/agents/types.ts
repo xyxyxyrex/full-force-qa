@@ -13,9 +13,17 @@ export type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'done'; message: string }
 
+/** One earlier message of a chat. Only text is kept: pictures are fetched again with the tools. */
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
+
 export interface ProviderRun {
   system: string
   task: string
+  /** Earlier messages of this chat, oldest first. The task is the newest message. */
+  history?: ChatTurn[]
   /** The tool names this conversation may use. */
   tools: string[]
   maxTurns: number

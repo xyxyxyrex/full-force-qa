@@ -1,4 +1,4 @@
-/* Renders the QA screens (settings panel, console, approval card, design slots) in Electron with a
+/* Renders the QA screens (settings panel, chat, approval card, design slots) in Electron with a
  * stand-in for the app's main-process bridge, drives them, and saves screenshots to look at.
  *
  *   npm run test:qa-ui:electron */
@@ -68,31 +68,48 @@ async function smoke() {
   assert.ok((await run('window.__calls')).includes('decide false Row 3 is wrong'), 'rejecting sends the note')
   assert.equal(await run(`document.querySelector('.qa-approval-primary').disabled`), true, 'buttons lock after a decision')
 
-  // Console
-  await open('console')
-  const submit = async cmd => { await run(`(() => { const i = document.querySelector('.qa-console-input input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(cmd)}); i.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('.qa-console-input').requestSubmit() })()`); await sleep(250) }
-  await submit('help'); assert.match(await text('.qa-console-body'), /qa run \[desktop\]/)
-  await submit('agents'); assert.match(await text('.qa-console-body'), /claude-code\s+ready/); assert.match(await text('.qa-console-body'), /codex\s+not ready/)
-  await submit('context'); assert.match(await text('.qa-console-body'), /\[Svenson\] Alopecia/)
-  await submit('tool capture_live {"breakpoint":"desktop"}'); assert.equal(await run(`document.querySelectorAll('.qa-images img').length`), 1, 'tool pictures show in the transcript')
-  await submit('qa run tablet --agent codex'); assert.ok((await run('window.__calls')).includes('run {"agent":"codex","breakpoints":["tablet"]}'))
-  await submit('qa run --agent skynet'); assert.match(await text('.qa-console-body'), /Unknown agent "skynet"/)
-  await submit('frobnicate'); assert.match(await text('.qa-console-body'), /Unknown command "frobnicate"/)
-  // A streamed review: deltas join into one message, tool calls and results are listed, the run ends with a summary.
+  // Chat
+  await open('chat')
+  assert.equal(await run(`document.querySelectorAll('.qa-chat-suggestions button').length`), 3, 'an empty chat offers starting points')
+  assert.match(await text('.qa-chat-meter'), /tokens: —/, 'the meter says usage is not reported yet')
+  const send = async message => { await run(`(() => { const t = document.querySelector('.qa-chat-composer textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, ${JSON.stringify(message)}); t.dispatchEvent(new Event('input', { bubbles: true })) })()`); await sleep(80); await click('.qa-chat-send'); await sleep(250) }
+  await send('How big is the hero heading?')
+  assert.ok((await run('window.__calls')).includes('chat How big is the hero heading?'), 'a message goes to the agent')
+  assert.match(await text('.qa-chat-body'), /How big is the hero heading\?/, 'and shows as your bubble')
+  await send('/review tablet --agent codex'); assert.ok((await run('window.__calls')).includes('run {"agent":"codex","breakpoints":["tablet"]}'), '/review starts a review')
+  await send('/review --agent skynet'); assert.match(await text('.qa-chat-body'), /Unknown agent "skynet"/)
+  await send('/agents'); assert.match(await text('.qa-chat-body'), /claude-code\s+ready/); assert.match(await text('.qa-chat-body'), /codex\s+not ready/)
+  await send('/help'); assert.match(await text('.qa-chat-body'), /\/review \[desktop\]/)
+  // A streamed answer: deltas join into one message, tool calls become cards, tokens add up, the turn ends with a summary.
   for (const e of [
-    { type: 'started', agent: 'anthropic-api', label: 'Claude API (claude-opus-5-5)' }, { type: 'status', message: 'Reviewing desktop…' },
-    { type: 'text', text: 'Comparing the ', delta: true }, { type: 'text', text: 'hero section.', delta: true },
-    { type: 'tool', name: 'get_section', args: { section: 'S2' } }, { type: 'tool-result', name: 'get_section', isError: false, text: 'Section S2 "Basics"\nmore', images: 2 },
-    { type: 'tool-result', name: 'save_draft', isError: true, text: 'Colour is not in the tracker', images: 0 },
-    { type: 'usage', inputTokens: 1000, outputTokens: 50 }, { type: 'done', message: 'Copied 3 rows.' }, { type: 'finished' },
+    { type: 'started', agent: 'anthropic-api', label: 'Claude API (claude-opus-5-5)', budgetTokens: 10000 },
+    { type: 'text', text: 'The **hero** heading is ', delta: true }, { type: 'text', text: '`28px` tall.', delta: true },
+    { type: 'tool', name: 'get_section', args: { section: 'S2' } },
+    { type: 'usage', inputTokens: 1000, outputTokens: 200 },
   ]) await run(`window.__emit(${JSON.stringify(e)})`)
   await sleep(250)
-  const body = await text('.qa-console-body')
-  assert.match(body, /Comparing the hero section\./, 'streamed pieces join into one message')
-  assert.match(body, /▸ get_section \{"section":"S2"\}/); assert.match(body, /✓ Section S2 "Basics" \(2 pictures\)/); assert.match(body, /✗ Colour is not in the tracker/)
-  assert.match(body, /Copied 3 rows\.\n\(1,050 tokens\)/)
-  assert.equal(await run(`document.querySelector('.qa-console-running')`), null, 'the running marker clears when the review finishes')
-  await shot('console')
+  assert.match(await text('.qa-chat-agent'), /Claude API/); assert.match(await text('.qa-chat-running'), /Working/)
+  assert.equal(await run(`document.querySelector('.qa-chat-send').textContent.includes('Stop')`), true, 'while working the button stops the agent')
+  assert.equal(await run(`document.querySelectorAll('.qa-chat-tool.pending').length`), 1, 'a running tool shows as pending')
+  assert.match(await text('.qa-chat-meter'), /1\.2k tokens/); assert.match(await text('.qa-chat-meter'), /\+1\.2k now/)
+  for (const e of [
+    { type: 'tool-result', name: 'get_section', isError: false, text: 'Section S2 "Basics"\nmore', images: 2 },
+    { type: 'text', text: 'It is 28px; the design shows ≈32px.' },
+    { type: 'usage', inputTokens: 2000, outputTokens: 300 }, { type: 'finished' },
+  ]) await run(`window.__emit(${JSON.stringify(e)})`)
+  await sleep(250)
+  const chatBody = await text('.qa-chat-body')
+  assert.equal(await run(`document.querySelectorAll('.qa-chat-text strong').length`), 1, '**bold** is rendered'); assert.equal(await run(`document.querySelectorAll('.qa-chat-text code').length`), 1, '`code` is rendered')
+  assert.match(chatBody, /hero heading is 28px tall\./, 'streamed pieces join into one message')
+  assert.match(chatBody, /get_section/); assert.equal(await run(`document.querySelectorAll('.qa-chat-tool.ok').length`), 1, 'a finished tool shows as done')
+  assert.match(chatBody, /3,500 tokens · 3,000 in, 500 out · 2 requests/, 'each message ends with its token use')
+  assert.match(await text('.qa-chat-meter'), /3\.5k tokens/); assert.match(await text('.qa-chat-meter'), /3k in · 500 out/)
+  assert.equal(await run(`document.querySelector('.qa-chat-running')`), null, 'the working marker clears when the agent finishes')
+  await shot('chat')
+  await click('.qa-chat-actions button'); await sleep(250)
+  assert.ok((await run('window.__calls')).includes('chat-reset'), 'New chat tells the agent to forget')
+  assert.equal(await run(`document.querySelectorAll('.qa-chat-msg').length`), 0, 'and clears the transcript')
+  assert.match(await text('.qa-chat-meter'), /tokens: —/, 'and the counts')
 
   console.log('QA UI smoke passed')
   app.exit(0)

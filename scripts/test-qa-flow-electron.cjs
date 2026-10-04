@@ -79,8 +79,8 @@ async function smoke() {
   // 2. Tool calls over IPC: only from the app window.
   assert.deepEqual((await call(other, 'get_context')).isError, true, 'another window cannot call tools')
   const info = JSON.parse((await call(main, 'get_context')).text)
-  assert.equal(info.project.name, '[Svenson] Alopecia'); assert.equal(info.tracker, null)
-  assert.match(info.notes.join(' '), /tracker format is not set/)
+  assert.equal(info.project.name, '[Svenson] Alopecia'); assert.equal(info.tracker.columns[0], 'Page Link', 'the standard tracker applies until one is pasted'); assert.equal(info.tracker.screenshotColumn, 'Screenshot')
+  assert.equal(info.notes.some((note) => /tracker format is not set/.test(note)), false)
 
   console.log('  step 3');
   // 3. Tracker format: saved by the app window, validated, persisted.

@@ -107,7 +107,7 @@ The current link audit inventories destinations but does not make HTTP requests 
 An AI agent does the first pass of visual QA: it compares the live page with the Figma exports per breakpoint, drafts the differences as rows for the master tracker, and you approve them before anything is copied.
 
 - **Designs per breakpoint**: drop the Figma PNGs on the Desktop, Tablet and Mobile slots in the Figma overlay panel; the export scale (1x/2x/3x) is detected and can be corrected.
-- **QA console** (`Ctrl+Shift+Q`): `qa run`, `qa run desktop mobile --agent codex`, `agents`, `context`.
+- **QA chat** (`Ctrl+Shift+Q`): a chat panel on the right (in place of the inspector). Ask about the page, or `/review` for a full review; the header shows token use.
 - **Any model**: Claude Code, Codex or Gemini CLI on your own plan; Claude, OpenAI or Gemini API keys; or a local vision model (Ollama, LM Studio). Pick one in Settings → AI Agents.
 - **Approval first**: an approval card shows the rows and evidence pictures; approving copies the rows in the tracker's column order (and optionally uploads evidence pictures whose links go in the screenshot column).
 - **Local bridge and `parity` command**: the same tools over MCP and a terminal command, for other agents and scripts.
