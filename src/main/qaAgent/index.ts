@@ -8,6 +8,8 @@ import { isTrackerFormat, parseTrackerPaste, type TrackerFormat } from '../../sh
 import type { DesignStore } from '../designStore'
 import { captureLivePage } from './liveCapture'
 import { createRunStore } from './runStore'
+import { createBridgeServer, type BridgeLogEntry } from './bridge/httpServer'
+import { ensureToken, resetToken } from './bridge/token'
 import { callTool, type QaContext, type ToolResult } from './tools'
 
 // Electron wiring for the QA tools: the page the window reports, the approval handshake,
@@ -15,6 +17,8 @@ import { callTool, type QaContext, type ToolResult } from './tools'
 // tools.ts and do not import Electron.
 
 const APPROVAL_TIMEOUT_MS = 15 * 60 * 1000
+export const DEFAULT_BRIDGE_PORT = 29849
+const LOG_LIMIT = 50
 const clamp = (value: unknown, max: number) => (typeof value === 'string' ? value.slice(0, max) : '')
 
 interface Options {
@@ -153,6 +157,94 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     window.webContents.on('render-process-gone', release)
     window.on('closed', release)
   }
+
+  // ── Local bridge: off by default, on only when the person turns it on ───────────────
+  const configFile = () => join(root(), 'config.json')
+  const bridgeInfoFile = () => join(root(), 'bridge.json')
+  const tokenFile = () => join(root(), 'token')
+  const readConfig = (): { enabled: boolean; port: number } => {
+    try {
+      const value = JSON.parse(readFileSync(configFile(), 'utf8'))
+      const port = Number(value.port)
+      return { enabled: value.enabled === true, port: Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : DEFAULT_BRIDGE_PORT }
+    } catch { return { enabled: false, port: DEFAULT_BRIDGE_PORT } }
+  }
+  const writeConfig = (config: { enabled: boolean; port: number }) => {
+    mkdirSync(root(), { recursive: true })
+    writeFileSync(configFile(), JSON.stringify(config, null, 2), 'utf8')
+  }
+
+  const requestLog: BridgeLogEntry[] = []
+  let bridgeError = ''
+  let token = ''
+  const bridge = createBridgeServer({
+    getContext: () => context,
+    getToken: () => token,
+    onRequest: (entry) => {
+      requestLog.push(entry)
+      if (requestLog.length > LOG_LIMIT) requestLog.shift()
+      pushStatus()
+    },
+  })
+
+  const bridgeStatus = () => {
+    const config = readConfig()
+    const key = token || (existsSync(tokenFile()) ? ensureToken(tokenFile()) : '')
+    return {
+      enabled: config.enabled,
+      running: bridge.running(),
+      port: bridge.port() ?? config.port,
+      error: bridgeError,
+      keyHint: key ? `••••${key.slice(-4)}` : '',
+      mcpUrl: `http://127.0.0.1:${bridge.port() ?? config.port}/mcp`,
+      keyFile: tokenFile(),
+      lastRequestAt: requestLog.length ? requestLog[requestLog.length - 1].at : null,
+      recent: requestLog.slice(-20).reverse(),
+    }
+  }
+  const pushStatus = () => {
+    const window = options.getMainWindow()
+    if (window && !window.isDestroyed()) window.webContents.send('qa:bridge:status-changed', bridgeStatus())
+  }
+
+  async function startBridge(): Promise<void> {
+    bridgeError = ''
+    if (bridge.running()) return
+    token = ensureToken(tokenFile())
+    const { port } = readConfig()
+    try {
+      const actual = await bridge.start(port)
+      mkdirSync(root(), { recursive: true })
+      writeFileSync(bridgeInfoFile(), JSON.stringify({ port: actual, pid: process.pid }), 'utf8')
+    } catch (error: any) {
+      bridgeError = error?.code === 'EADDRINUSE' || error?.code === 'EACCES'
+        ? `Port ${port} is unavailable. Another program, or another Parity window, is using it.`
+        : `The bridge could not start: ${error?.message || 'unknown error'}`
+    }
+  }
+  async function stopBridge(): Promise<void> {
+    await bridge.stop()
+    rmSync(bridgeInfoFile(), { force: true })
+  }
+
+  ipcMain.handle('qa:bridge:status', (event) => (fromMainWindow(event) ? bridgeStatus() : null))
+  ipcMain.handle('qa:bridge:set-enabled', async (event, enabled: unknown) => {
+    if (!fromMainWindow(event)) return null
+    const config = readConfig()
+    writeConfig({ ...config, enabled: enabled === true })
+    if (enabled === true) await startBridge()
+    else { bridgeError = ''; await stopBridge() }
+    pushStatus()
+    return bridgeStatus()
+  })
+  ipcMain.handle('qa:bridge:reset-key', (event) => {
+    if (!fromMainWindow(event)) return null
+    token = resetToken(tokenFile())
+    pushStatus()
+    return bridgeStatus()
+  })
+  app.on('before-quit', () => { rmSync(bridgeInfoFile(), { force: true }) })
+  if (readConfig().enabled) void startBridge().then(pushStatus)
 
   if (!existsSync(root())) { try { mkdirSync(root(), { recursive: true }) } catch { /* created on first save */ } }
   return { context: () => context, attachMainWindow }

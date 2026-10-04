@@ -1,7 +1,7 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
 import type { Breakpoint } from './designScale'
-import type { ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaToolCallResult, ReportedContext } from './qaAgent'
+import type { ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBridgeStatus, QaToolCallResult, ReportedContext } from './qaAgent'
 import type { TrackerFormat } from './trackerFormat'
 import type {
   AuditCaptureContext,
@@ -449,6 +449,10 @@ export interface ElectronAPI extends InspectorApi {
   qaCallTool: (name: string, args?: unknown) => Promise<QaToolCallResult>
   qaApprovalDecision: (id: string, decision: ApprovalDecision) => Promise<boolean>
   onQaApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void
+  qaBridgeStatus: () => Promise<QaBridgeStatus | null>
+  qaBridgeSetEnabled: (enabled: boolean) => Promise<QaBridgeStatus | null>
+  qaBridgeResetKey: () => Promise<QaBridgeStatus | null>
+  onQaBridgeStatus: (callback: (status: QaBridgeStatus) => void) => () => void
   qaTrackerFormatGet: () => Promise<TrackerFormat | null>
   qaTrackerFormatSave: (text: string) => Promise<{ ok: true; format: TrackerFormat } | { ok: false; error: string }>
   qaTrackerFormatClear: () => Promise<boolean>

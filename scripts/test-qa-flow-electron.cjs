@@ -128,6 +128,30 @@ async function smoke() {
   assert.match(clipboard.readHTML(), /<table>/)
 
   console.log('  step 6');
+  console.log('  step bridge');
+  // The local bridge: off until the person turns it on, key stored on disk, same tools over HTTP.
+  assert.equal((await run(main, `qaTest.invoke('qa:bridge:status')`)).running, false, 'the bridge is off by default')
+  assert.equal(await run(other, `qaTest.invoke('qa:bridge:set-enabled', true)`), null, 'another window cannot turn the bridge on')
+  const on = await run(main, `qaTest.invoke('qa:bridge:set-enabled', true)`)
+  assert.equal(on.running, true, on.error); assert.match(on.keyHint, /^••••.{4}$/); assert.equal(on.port, 29849)
+  const key = fs.readFileSync(on.keyFile, 'utf8').trim()
+  assert.equal(key.length, 43, 'the key is stored in its file')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(path.dirname(on.keyFile), 'bridge.json'), 'utf8')).port, on.port, 'the port is published for the parity command')
+  const api = (suffix, init = {}) => fetch(`http://127.0.0.1:${on.port}${suffix}`, { ...init, headers: { ...(init.headers || {}) } })
+  assert.equal((await api('/api/status')).status, 401, 'no key, no access')
+  const status = await (await api('/api/status', { headers: { Authorization: 'Bearer ' + key } })).json()
+  assert.equal(status.projectOpen, true); assert.equal(status.project, '[Svenson] Alopecia')
+  const viaApi = await (await api('/api/tools/get_context', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: '{}' })).json()
+  assert.match(viaApi.text, /Svenson/); assert.equal(viaApi.isError, false)
+  const reset = await run(main, `qaTest.invoke('qa:bridge:reset-key')`)
+  assert.notEqual(fs.readFileSync(on.keyFile, 'utf8').trim(), key, 'a reset makes a new key')
+  assert.equal((await api('/api/status', { headers: { Authorization: 'Bearer ' + key } })).status, 401, 'the old key stops working')
+  assert.ok(reset.recent.length >= 3, 'requests are logged')
+  const off = await run(main, `qaTest.invoke('qa:bridge:set-enabled', false)`)
+  assert.equal(off.running, false)
+  await assert.rejects(api('/api/status'), undefined, 'nothing listens once the bridge is off')
+  assert.equal(fs.existsSync(path.join(path.dirname(on.keyFile), 'bridge.json')), false, 'the port file is removed')
+
   // 6. Decisions only count from the app window and only for the pending request; one request at a time.
   await run(main, `window.__hold = true; window.__approvals.length = 0`)
   // Called in-process: the window that would carry an IPC reply is about to be closed.

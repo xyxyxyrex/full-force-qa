@@ -130,6 +130,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('qa:approval-request', handler)
     return () => { ipcRenderer.removeListener('qa:approval-request', handler) }
   },
+  qaBridgeStatus: () => ipcRenderer.invoke('qa:bridge:status'),
+  qaBridgeSetEnabled: (enabled: boolean) => ipcRenderer.invoke('qa:bridge:set-enabled', enabled),
+  qaBridgeResetKey: () => ipcRenderer.invoke('qa:bridge:reset-key'),
+  onQaBridgeStatus: (callback: (status: import('../shared/qaAgent').QaBridgeStatus) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: import('../shared/qaAgent').QaBridgeStatus) => callback(status)
+    ipcRenderer.on('qa:bridge:status-changed', handler)
+    return () => { ipcRenderer.removeListener('qa:bridge:status-changed', handler) }
+  },
   qaTrackerFormatGet: () => ipcRenderer.invoke('qa:tracker-format:get'),
   qaTrackerFormatSave: (text: string) => ipcRenderer.invoke('qa:tracker-format:save', text),
   qaTrackerFormatClear: () => ipcRenderer.invoke('qa:tracker-format:clear'),

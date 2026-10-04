@@ -10,6 +10,7 @@
     "dev:viewer": "npm run build:viewer && wrangler pages dev",
     "deploy:viewer": "npm run build:viewer && wrangler pages deploy dist-viewer --project-name parity-gfx",
     "preview": "node scripts/electron-dev.js electron-vite preview",
+    "parity": "node resources/cli/parity.cjs",
     "test": "vitest run",
     "test:accounts:database": "node scripts/test-account-database.cjs",
     "test:accounts:electron": "node scripts/test-account-electron.cjs",
@@ -49,6 +50,9 @@
     "sharp": "^0.35.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.0",
+    "@modelcontextprotocol/node": "^2.1.1",
+    "@modelcontextprotocol/server": "^2.3.0",
     "@swc/core": "^1.10.0",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^18.3.12",
@@ -81,6 +85,13 @@
         "to": "visual-worker",
         "filter": [
           "visual-compare*"
+        ]
+      },
+      {
+        "from": "resources/cli",
+        "to": "cli",
+        "filter": [
+          "parity.cjs"
         ]
       }
     ],

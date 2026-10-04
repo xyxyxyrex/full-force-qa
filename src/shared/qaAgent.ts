@@ -91,3 +91,27 @@ export interface QaToolCallResult {
   isError: boolean
   images: Array<{ dataUrl: string; caption: string; file?: string }>
 }
+
+export interface BridgeRequestEntry {
+  at: number
+  method: string
+  path: string
+  status: number
+  ms: number
+  tool?: string
+}
+
+export interface QaBridgeStatus {
+  enabled: boolean
+  running: boolean
+  port: number
+  /** Why the bridge could not start, or empty. */
+  error: string
+  /** Last four characters of the key, never the key. */
+  keyHint: string
+  mcpUrl: string
+  /** Where the key is stored on this computer, for tools that read it from disk. */
+  keyFile: string
+  lastRequestAt: number | null
+  recent: BridgeRequestEntry[]
+}
