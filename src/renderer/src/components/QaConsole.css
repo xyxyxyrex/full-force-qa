@@ -1,0 +1,26 @@
+.qa-console{position:fixed;left:0;right:0;bottom:0;z-index:9000;height:min(360px,45vh);display:flex;flex-direction:column;border-top:1px solid var(--border-color);background:var(--bg-card);color:var(--text-primary);box-shadow:0 -10px 30px #0006;-webkit-app-region:no-drag}
+.qa-console[hidden]{display:none}
+.qa-console-bar{display:flex;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--border-color);background:var(--header-bg);font-size:12px}
+.qa-console-spacer{flex:1}
+.qa-console-running{display:inline-flex;align-items:center;gap:6px;color:#3fb97a}
+.qa-console-running span{width:8px;height:8px;border-radius:50%;background:currentColor;animation:qa-pulse 1.2s ease-in-out infinite}
+@keyframes qa-pulse{50%{opacity:.35}}
+.qa-console-bar button{min-width:24px;padding:3px 9px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-elevated);color:var(--text-primary);font:inherit;cursor:pointer}
+.qa-console-bar button:hover{border-color:var(--accent-color)}
+.qa-console-body{flex:1;overflow-y:auto;padding:8px 12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.qa-line pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
+.qa-line.input pre{color:var(--accent-color)}
+.qa-line.info pre{color:var(--text-secondary)}
+.qa-line.status pre{color:var(--text-muted)}
+.qa-line.tool pre{color:#7aa7e8}
+.qa-line.ok pre{color:#7bc99a}
+.qa-line.bad pre,.qa-line.error pre{color:#f2a5a5}
+.qa-line.done pre{color:var(--text-primary);font-weight:700;margin-top:4px}
+.qa-line.text{margin:6px 0}
+.qa-images{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.qa-images figure{margin:0}
+.qa-images img{display:block;max-height:140px;max-width:260px;border:1px solid var(--border-color);border-radius:4px}
+.qa-images figcaption{color:var(--text-muted);font-size:11px}
+.qa-console-input{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid var(--border-color);font:12px ui-monospace,monospace}
+.qa-console-input span{color:var(--accent-color)}
+.qa-console-input input{flex:1;border:0;outline:0;background:transparent;color:var(--text-primary);font:inherit}

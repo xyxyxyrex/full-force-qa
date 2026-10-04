@@ -79,7 +79,7 @@ export function createAnthropicProvider(config: AnthropicConfig): AgentProvider 
             },
             { signal: run.signal },
           )
-          stream.on('text', (delta) => run.emit({ type: 'text', text: delta }))
+          stream.on('text', (delta) => run.emit({ type: 'text', text: delta, delta: true }))
           message = await stream.finalMessage()
         } catch (error) {
           if (isAbortError(error) || run.signal.aborted) return { stopped: 'aborted', text: lastText }

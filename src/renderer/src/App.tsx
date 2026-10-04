@@ -17,6 +17,7 @@ import './App.css'
 import type { AuditCaptureContext } from '../../shared/auditExport'
 import CommandPalette from './components/CommandPalette'
 import QaApprovalCard from './components/QaApprovalCard'
+import QaConsole from './components/QaConsole'
 import type { ApprovalRequest } from '../../shared/qaAgent'
 import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/registry'
 import { getPaletteNotes, setPaletteNotes, workspaceItems } from './palette/workspaceSearch'
@@ -69,6 +70,14 @@ export default function App() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
+  const [qaConsoleOpen, setQaConsoleOpen] = useState(false)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'q') { event.preventDefault(); setQaConsoleOpen((open) => !open) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   // Rows an agent hands over wait here until the person approves or rejects them.
   const [qaApproval, setQaApproval] = useState<ApprovalRequest | null>(null)
   useEffect(() => window.electronAPI.onQaApprovalRequest(setQaApproval), [])
@@ -816,8 +825,9 @@ export default function App() {
       { id: 'app.capture', title: 'New project / capture website', group: 'Commands', run: () => handleNewProject() },
       { id: 'app.tab', title: 'New tab', group: 'Commands', run: handleNewTab },
       { id: 'app.settings', title: 'Open Settings', group: 'Commands', description: 'Account, integrations, shortcuts, appearance and directory', run: () => setSettingsOpen(true) },
+      { id: 'app.qa-console', title: 'QA agent: open the console', group: 'Commands', description: 'Review the open page against its Figma designs (Ctrl+Shift+Q)', run: () => setQaConsoleOpen(true) },
       { id: 'app.feedback', title: 'Send feedback or report a bug', group: 'Commands', description: 'Tell us about a problem or suggest a Parity feature', run: () => setFeedbackOpen(true) },
-      ...(['account', 'general', 'hotkeys', 'appearance', 'integrations'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
+      ...(['account', 'general', 'hotkeys', 'appearance', 'integrations', 'agents'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
       ...THEME_LIST.map(theme => ({ id: `theme:${theme.id}`, title: `Theme: ${theme.name}`, description: theme.description, group: 'Commands' as const, run: () => { const next = { ...settings, theme: theme.id }; setSettings(next); saveSettings(next) } })),
       ...tabs.map(tab => ({ id: `tab:${tab.id}`, title: tab.title, description: `Switch to ${tab.view} tab`, group: 'Tabs' as const, run: () => setActiveTabId(tab.id) })),
       ...(activeTab?.view === 'editor' ? [] : HOTKEY_DEFINITIONS.map(command => ({ id: `workspace:${command.key}`, title: command.label, description: command.description, shortcut: settings.hotkeys[command.key], group: 'Commands' as const, disabled: 'Open a captured project first', run: () => {} }))),
@@ -909,6 +919,16 @@ export default function App() {
               <path d="M5 17v2h14v-2" />
             </svg>
             {(updateStatus.state === 'available' || updateStatus.state === 'downloaded') && <span className="app-update-dot" />}
+          </button>
+          <button
+            type="button"
+            className={`app-qa-btn ${qaConsoleOpen ? 'active' : ''}`}
+            onClick={() => setQaConsoleOpen((open) => !open)}
+            title="QA console (Ctrl+Shift+Q)"
+            aria-label="QA console"
+            aria-pressed={qaConsoleOpen}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4" /><path d="M12 17h7" /><rect x="2.5" y="4" width="19" height="16" rx="2.5" /></svg>
           </button>
           <button
             type="button"
@@ -1020,6 +1040,7 @@ export default function App() {
           applyTheme(newSettings.theme)
         }}
       />
+      <QaConsole open={qaConsoleOpen} onClose={() => setQaConsoleOpen(false)} />
       {qaApproval && <QaApprovalCard
         request={qaApproval}
         onDecide={(approved, note) => {

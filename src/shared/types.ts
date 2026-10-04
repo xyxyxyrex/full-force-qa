@@ -1,7 +1,7 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
 import type { Breakpoint } from './designScale'
-import type { ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBridgeStatus, QaToolCallResult, ReportedContext } from './qaAgent'
+import type { AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBridgeStatus, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaToolCallResult, ReportedContext } from './qaAgent'
 import type { TrackerFormat } from './trackerFormat'
 import type {
   AuditCaptureContext,
@@ -449,6 +449,17 @@ export interface ElectronAPI extends InspectorApi {
   qaCallTool: (name: string, args?: unknown) => Promise<QaToolCallResult>
   qaApprovalDecision: (id: string, decision: ApprovalDecision) => Promise<boolean>
   onQaApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void
+  qaAgentsOverview: () => Promise<AgentsOverview | null>
+  qaAgentsSaveSettings: (patch: Partial<Omit<AgentSettings, 'models'>> & { models?: Partial<AgentSettings['models']> }) => Promise<AgentsOverview | null>
+  qaAgentsSetKey: (id: AgentId, key: string) => Promise<AgentsOverview | { error: string } | null>
+  qaAgentsClearKey: (id: AgentId) => Promise<AgentsOverview | null>
+  qaAgentsModels: (id: AgentId) => Promise<{ models: string[]; error?: string }>
+  qaRunStart: (options?: QaRunStartOptions) => Promise<QaRunStartResult>
+  qaRunStop: () => Promise<boolean>
+  qaRunActive: () => Promise<boolean>
+  onQaRunEvent: (callback: (event: QaRunEvent) => void) => () => void
+  qaCliStatus: () => Promise<{ installed: boolean; path: string; onPath: boolean; platform: string } | null>
+  qaCliInstall: () => Promise<{ installed: boolean; path: string; onPath: boolean; platform: string } | null>
   qaBridgeStatus: () => Promise<QaBridgeStatus | null>
   qaBridgeSetEnabled: (enabled: boolean) => Promise<QaBridgeStatus | null>
   qaBridgeResetKey: () => Promise<QaBridgeStatus | null>

@@ -28,6 +28,7 @@
     "test:automation:electron": "node scripts/test-automation-electron.cjs",
     "test:qa-capture:electron": "node scripts/test-qa-capture-electron.cjs",
     "test:qa-flow:electron": "node scripts/test-qa-flow-electron.cjs",
+    "test:qa-ui:electron": "node scripts/test-qa-ui-electron.cjs",
     "test:watch": "vitest",
     "build:visual-worker": "python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py",
     "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --publish never",

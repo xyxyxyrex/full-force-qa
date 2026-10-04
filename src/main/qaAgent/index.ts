@@ -1,13 +1,16 @@
-import { app, BrowserWindow, clipboard, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { app, BrowserWindow, clipboard, ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { readFile } from 'fs/promises'
-import { join } from 'path'
+import { homedir } from 'os'
+import { delimiter, dirname, join } from 'path'
 import { isBreakpoint } from '../../shared/designScale'
-import type { ApprovalDecision, ApprovalRequest, QaToolCallResult, ReportedContext } from '../../shared/qaAgent'
+import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaRunEvent, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
 import { isTrackerFormat, parseTrackerPaste, type TrackerFormat } from '../../shared/trackerFormat'
 import type { DesignStore } from '../designStore'
 import { captureLivePage } from './liveCapture'
+import { runQa } from './runner'
 import { createRunStore } from './runStore'
+import { createProvider, describeAgents, listModels, normalizeSettings } from './agents/registry'
 import { createBridgeServer, type BridgeLogEntry } from './bridge/httpServer'
 import { ensureToken, resetToken } from './bridge/token'
 import { callTool, type QaContext, type ToolResult } from './tools'
@@ -244,6 +247,128 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     return bridgeStatus()
   })
   app.on('before-quit', () => { rmSync(bridgeInfoFile(), { force: true }) })
+
+  // ── Agent choice, API keys and the review run ─────────────────────────────────────
+  const agentsFile = () => join(root(), 'agents.json')
+  const readAgentSettings = (): AgentSettings => {
+    try { return normalizeSettings(JSON.parse(readFileSync(agentsFile(), 'utf8'))) } catch { return normalizeSettings(null) }
+  }
+  const writeAgentSettings = (settings: AgentSettings) => {
+    mkdirSync(root(), { recursive: true })
+    writeFileSync(agentsFile(), JSON.stringify(settings, null, 2), 'utf8')
+  }
+  const keyFile = (id: AgentId) => join(root(), `key-${id}.bin`)
+  const getKey = (id: AgentId): string | null => {
+    try {
+      if (!existsSync(keyFile(id)) || !safeStorage.isEncryptionAvailable()) return null
+      return safeStorage.decryptString(readFileSync(keyFile(id))) || null
+    } catch { return null }
+  }
+  const keyStorage = (): AgentsOverview['keyStorage'] => {
+    if (!safeStorage.isEncryptionAvailable()) return 'unavailable'
+    try {
+      const backend = (safeStorage as unknown as { getSelectedStorageBackend?: () => string }).getSelectedStorageBackend?.()
+      if (backend === 'basic_text' || backend === 'unknown') return 'weak'
+    } catch { /* not Linux */ }
+    return 'secure'
+  }
+  const overview = async (): Promise<AgentsOverview> => {
+    const settings = readAgentSettings()
+    return { settings, agents: await describeAgents({ settings, getKey }), keyStorage: keyStorage() }
+  }
+
+  ipcMain.handle('qa:agents:overview', async (event) => (fromMainWindow(event) ? overview() : null))
+  ipcMain.handle('qa:agents:save-settings', async (event, patch: unknown) => {
+    if (!fromMainWindow(event)) return null
+    const current = readAgentSettings()
+    const incoming = (patch && typeof patch === 'object' ? patch : {}) as Partial<AgentSettings>
+    writeAgentSettings(normalizeSettings({ ...current, ...incoming, models: { ...current.models, ...(incoming.models || {}) } }))
+    return overview()
+  })
+  ipcMain.handle('qa:agents:set-key', async (event, id: unknown, key: unknown) => {
+    if (!fromMainWindow(event) || !isAgentId(id)) return null
+    if (typeof key !== 'string' || key.trim().length < 8 || key.length > 500) return { error: 'That does not look like an API key.' }
+    if (!safeStorage.isEncryptionAvailable()) return { error: 'This computer has no secure place to keep a key (no system keychain). The key was not saved.' }
+    mkdirSync(root(), { recursive: true })
+    writeFileSync(keyFile(id), safeStorage.encryptString(key.trim()), { mode: 0o600 })
+    try { chmodSync(keyFile(id), 0o600) } catch { /* not supported here */ }
+    return overview()
+  })
+  ipcMain.handle('qa:agents:clear-key', async (event, id: unknown) => {
+    if (!fromMainWindow(event) || !isAgentId(id)) return null
+    rmSync(keyFile(id), { force: true })
+    return overview()
+  })
+  ipcMain.handle('qa:agents:models', async (event, id: unknown) => {
+    if (!fromMainWindow(event) || !isAgentId(id)) return { models: [], error: 'Not allowed.' }
+    return listModels(id, { settings: readAgentSettings(), getKey })
+  })
+
+  // One review at a time. Agent CLIs reach the tools over the bridge, so it is started for the
+  // length of the run if the person has not turned it on.
+  let activeRun: AbortController | null = null
+  const sendRunEvent = (event: QaRunEvent) => {
+    const window = options.getMainWindow()
+    if (window && !window.isDestroyed()) window.webContents.send('qa:run:event', event)
+  }
+  ipcMain.handle('qa:run:start', async (event, startOptions: unknown): Promise<QaRunStartResult> => {
+    if (!fromMainWindow(event)) return { started: false, error: 'Not allowed.' }
+    if (activeRun) return { started: false, error: 'A review is already running. Stop it first.' }
+    const requested = (startOptions && typeof startOptions === 'object' ? startOptions : {}) as QaRunStartOptions
+    const settings = readAgentSettings()
+    const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
+    const breakpoints = Array.isArray(requested.breakpoints) ? requested.breakpoints.filter(isBreakpoint) : undefined
+    let provider
+    try { provider = createProvider(agent, { settings, getKey, getBridge: () => ({ mcpUrl: `http://127.0.0.1:${bridge.port()}/mcp`, token }) }) }
+    catch (error: any) { return { started: false, error: error?.message || 'That agent is not set up.' } }
+
+    const controller = new AbortController()
+    activeRun = controller
+    void (async () => {
+      let startedBridge = false
+      try {
+        if (provider.needsBridge && !bridge.running()) { await startBridge(); startedBridge = bridge.running(); pushStatus() }
+        if (provider.needsBridge && !bridge.running()) { sendRunEvent({ type: 'error', message: bridgeError || 'The local bridge could not start, so this agent cannot reach Parity\'s tools.' }); return }
+        sendRunEvent({ type: 'started', agent, label: provider.label })
+        await runQa({ context, provider }, { breakpoints, signal: controller.signal, emit: sendRunEvent, budgetTokens: settings.budgetTokens || undefined })
+      } catch (error: any) {
+        sendRunEvent({ type: 'error', message: error?.message || 'The review failed.' })
+      } finally {
+        if (startedBridge && !readConfig().enabled) { await stopBridge(); pushStatus() }
+        activeRun = null
+        sendRunEvent({ type: 'finished' })
+      }
+    })()
+    return { started: true }
+  })
+  ipcMain.handle('qa:run:stop', (event) => {
+    if (!fromMainWindow(event)) return false
+    activeRun?.abort()
+    return !!activeRun
+  })
+  ipcMain.handle('qa:run:active', (event) => (fromMainWindow(event) ? !!activeRun : false))
+
+  // ── The `parity` command ──────────────────────────────────────────────────────────
+  const cliScript = () => (app.isPackaged ? join(process.resourcesPath, 'cli', 'parity.cjs') : join(app.getAppPath(), 'resources', 'cli', 'parity.cjs'))
+  const launcherPath = () => (process.platform === 'win32' ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'Parity', 'bin', 'parity.cmd') : join(homedir(), '.local', 'bin', 'parity'))
+  const onPath = (folder: string) => (process.env.PATH || '').split(delimiter).some((entry) => entry && entry.replace(/[\\/]+$/, '') === folder.replace(/[\\/]+$/, ''))
+  ipcMain.handle('qa:cli:status', (event) => {
+    if (!fromMainWindow(event)) return null
+    const file = launcherPath()
+    return { installed: existsSync(file), path: file, onPath: onPath(dirname(file)), platform: process.platform }
+  })
+  ipcMain.handle('qa:cli:install', (event) => {
+    if (!fromMainWindow(event)) return null
+    const file = launcherPath()
+    const executable = process.env.APPIMAGE || process.execPath
+    mkdirSync(dirname(file), { recursive: true })
+    if (process.platform === 'win32') writeFileSync(file, `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${executable}" "${cliScript()}" %*\r\n`, 'utf8')
+    else {
+      writeFileSync(file, `#!/bin/sh\n# Installed by Parity. Runs Parity's built-in command line tool.\nELECTRON_RUN_AS_NODE=1 exec "${executable}" "${cliScript()}" "$@"\n`, { mode: 0o755 })
+      try { chmodSync(file, 0o755) } catch { /* not supported here */ }
+    }
+    return { installed: true, path: file, onPath: onPath(dirname(file)), platform: process.platform }
+  })
   if (readConfig().enabled) void startBridge().then(pushStatus)
 
   if (!existsSync(root())) { try { mkdirSync(root(), { recursive: true }) } catch { /* created on first save */ } }

@@ -115,3 +115,61 @@ export interface QaBridgeStatus {
   lastRequestAt: number | null
   recent: BridgeRequestEntry[]
 }
+
+// ── Agent choice and settings ─────────────────────────────────────────────────────────
+
+export const AGENT_IDS = ['claude-code', 'codex', 'gemini-cli', 'anthropic-api', 'openai-api', 'gemini-api', 'local'] as const
+export type AgentId = (typeof AGENT_IDS)[number]
+
+export const isAgentId = (value: unknown): value is AgentId => typeof value === 'string' && (AGENT_IDS as readonly string[]).includes(value)
+
+export type AgentEffort = 'low' | 'medium' | 'high'
+
+export interface AgentSettings {
+  defaultAgent: AgentId
+  /** Model per agent. Empty means the agent's own default (agent CLIs) or "choose one" (APIs). */
+  models: Record<AgentId, string>
+  effort: AgentEffort
+  /** Address of a local Chat Completions server such as Ollama or LM Studio. */
+  localBaseUrl: string
+  /** Stops a review after this many tokens. 0 means no limit. */
+  budgetTokens: number
+}
+
+export interface AgentInfo {
+  id: AgentId
+  label: string
+  kind: 'subscription' | 'api' | 'local'
+  /** Can be used right now. */
+  ready: boolean
+  /** One line for the person: version and sign-in, or what is missing. */
+  detail: string
+  model: string
+  needsKey: boolean
+  hasKey: boolean
+}
+
+export interface AgentsOverview {
+  settings: AgentSettings
+  agents: AgentInfo[]
+  /** How API keys are kept on this computer. */
+  keyStorage: 'secure' | 'weak' | 'unavailable'
+}
+
+export interface QaRunStartOptions {
+  agent?: AgentId
+  breakpoints?: Breakpoint[]
+}
+
+export type QaRunStartResult = { started: true } | { started: false; error: string }
+
+export type QaRunEvent =
+  | { type: 'status'; message: string }
+  | { type: 'text'; text: string; delta?: boolean }
+  | { type: 'tool'; name: string; args: unknown }
+  | { type: 'tool-result'; name: string; isError: boolean; text: string; images: number }
+  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | { type: 'error'; message: string }
+  | { type: 'done'; message: string }
+  | { type: 'started'; agent: string; label: string }
+  | { type: 'finished' }

@@ -130,6 +130,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('qa:approval-request', handler)
     return () => { ipcRenderer.removeListener('qa:approval-request', handler) }
   },
+  qaAgentsOverview: () => ipcRenderer.invoke('qa:agents:overview'),
+  qaAgentsSaveSettings: (patch: unknown) => ipcRenderer.invoke('qa:agents:save-settings', patch),
+  qaAgentsSetKey: (id: string, key: string) => ipcRenderer.invoke('qa:agents:set-key', id, key),
+  qaAgentsClearKey: (id: string) => ipcRenderer.invoke('qa:agents:clear-key', id),
+  qaAgentsModels: (id: string) => ipcRenderer.invoke('qa:agents:models', id),
+  qaRunStart: (options?: unknown) => ipcRenderer.invoke('qa:run:start', options),
+  qaRunStop: () => ipcRenderer.invoke('qa:run:stop'),
+  qaRunActive: () => ipcRenderer.invoke('qa:run:active'),
+  onQaRunEvent: (callback: (event: import('../shared/qaAgent').QaRunEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: import('../shared/qaAgent').QaRunEvent) => callback(payload)
+    ipcRenderer.on('qa:run:event', handler)
+    return () => { ipcRenderer.removeListener('qa:run:event', handler) }
+  },
+  qaCliStatus: () => ipcRenderer.invoke('qa:cli:status'),
+  qaCliInstall: () => ipcRenderer.invoke('qa:cli:install'),
   qaBridgeStatus: () => ipcRenderer.invoke('qa:bridge:status'),
   qaBridgeSetEnabled: (enabled: boolean) => ipcRenderer.invoke('qa:bridge:set-enabled', enabled),
   qaBridgeResetKey: () => ipcRenderer.invoke('qa:bridge:reset-key'),

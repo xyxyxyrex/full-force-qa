@@ -5,7 +5,8 @@ import type { ToolResult } from '../tools'
 
 export type AgentEvent =
   | { type: 'status'; message: string }
-  | { type: 'text'; text: string }
+  /** `delta` marks a small piece of a message that is still streaming, to be joined with the previous piece. */
+  | { type: 'text'; text: string; delta?: boolean }
   | { type: 'tool'; name: string; args: unknown }
   | { type: 'tool-result'; name: string; isError: boolean; text: string; images: number }
   | { type: 'usage'; inputTokens: number; outputTokens: number }

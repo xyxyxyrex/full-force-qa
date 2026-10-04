@@ -478,7 +478,8 @@ const finalizeRows = defineTool({
     const thumbnails = await Promise.all(evidenceFiles.map(async (item) => ({ rowIndex: item.rowIndex, caption: item.caption, thumbnail: `data:image/jpeg;base64,${(await thumbnailJpeg(item.data)).toString('base64')}` })))
     const decision = await context.approve({
       id: randomUUID(), runId: args.runId, projectName: reported.project.name, pageUrl: run.pageUrl,
-      columns: format.columns, rows: built.rows, severityCounts, evidence: thumbnails, warnings, uploadsEvidence: willUpload,
+      // The card shows what the agent wrote; the apostrophe that keeps a cell from being read as a formula is only for the clipboard.
+      columns: format.columns, rows: built.rows.map((row) => row.map((cell) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell))), severityCounts, evidence: thumbnails, warnings, uploadsEvidence: willUpload,
     })
     if (!decision.approved) {
       return { text: `The person did not approve these rows${decision.note ? `. Their note: ${decision.note}` : '.'} Nothing was copied or uploaded. Revise the rows and call finalize_rows again.` }

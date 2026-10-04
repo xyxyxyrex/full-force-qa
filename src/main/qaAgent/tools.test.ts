@@ -253,6 +253,7 @@ describe('finalize_rows', () => {
     const result = await call('finalize_rows', { runId, rows })
     expect(approvals).toHaveLength(1)
     expect(approvals[0]).toMatchObject({ runId, projectName: '[Svenson] Alopecia', columns: ['Page', 'Issue', 'Expected', 'Screenshot', 'Severity'], severityCounts: { High: 2, Low: 1 }, uploadsEvidence: false })
+    expect(approvals[0].rows[1][1]).toBe('- Button label differs') // shown as written, without the clipboard apostrophe
     expect(approvals[0].evidence).toHaveLength(1)
     expect(approvals[0].evidence[0].thumbnail).toMatch(/^data:image\/jpeg;base64,/)
     expect(result.text).toContain('did not approve')

@@ -4,6 +4,7 @@ import { THEME_LIST, saveSettings, DEFAULT_HOTKEYS, HOTKEY_DEFINITIONS } from '.
 import { findHotkeyConflicts, hotkeyFromEvent, isReservedHotkey, normalizeHotkey } from '../utils/hotkeys'
 import './SettingsModal.css'
 import AccountPanel from './AccountPanel'
+import AgentsPanel from './AgentsPanel'
 import MondayIntegration from './MondayIntegration'
 
 interface Props {
@@ -13,7 +14,7 @@ interface Props {
   onSave: (newSettings: AppSettings) => void
 }
 
-type TabType = 'account' | 'general' | 'hotkeys' | 'appearance' | 'integrations'
+type TabType = 'account' | 'general' | 'hotkeys' | 'appearance' | 'integrations' | 'agents'
 
 export default function SettingsModal({ isOpen, settings, onClose, onSave }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>('general')
@@ -34,7 +35,7 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
     const account = () => setActiveTab('account')
     const section = (event: Event) => {
       const value = (event as CustomEvent).detail
-      if (['account', 'general', 'hotkeys', 'appearance', 'integrations'].includes(value)) setActiveTab(value)
+      if (['account', 'general', 'hotkeys', 'appearance', 'integrations', 'agents'].includes(value)) setActiveTab(value)
     }
     window.addEventListener('parity:settings-section', section)
     const integrations = () => setActiveTab('integrations')
@@ -190,11 +191,22 @@ export default function SettingsModal({ isOpen, settings, onClose, onSave }: Pro
               </svg>
               <span>Integrations & Capture</span>
             </button>
+            <button
+              className={`settings-nav-btn ${activeTab === 'agents' ? 'active' : ''}`}
+              onClick={() => setActiveTab('agents')}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="4" y="8" width="16" height="11" rx="3" />
+                <path d="M12 8V4M9 13h.01M15 13h.01M9 17h6" />
+              </svg>
+              <span>AI Agents</span>
+            </button>
           </div>
 
           {/* Panel Content */}
           <div className="settings-content-panel">
             {activeTab === 'account' && <AccountPanel />}
+            {activeTab === 'agents' && <AgentsPanel />}
             {activeTab === 'general' && (
               <div className="settings-tab-section">
                 <div className="settings-section-heading">Snapshot Storage Directory</div>
