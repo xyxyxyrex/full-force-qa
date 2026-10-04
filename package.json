@@ -50,6 +50,7 @@
     "sharp": "^0.35.3"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@modelcontextprotocol/client": "^2.3.0",
     "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/server": "^2.3.0",

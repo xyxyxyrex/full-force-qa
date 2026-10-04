@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { statSync, writeFileSync } from 'fs'
 import { basename, extname, isAbsolute, join } from 'path'
+import sharp from 'sharp'
 import * as z from 'zod'
 import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
 import type { ApprovalRequest, ApprovalDecision, DesignPutOptions, DesignPutResponse, DesignSlotMeta, DesignSlots, ReportedContext } from '../../shared/qaAgent'
@@ -119,7 +120,6 @@ function suggestDesignRange(live: { top: number; bottom: number }, liveHeight: n
 }
 
 async function sizeOf(image: Buffer): Promise<{ width: number; height: number }> {
-  const sharp = (await import('sharp')).default
   const meta = await sharp(image).metadata()
   return { width: meta.width || 0, height: meta.height || 0 }
 }
