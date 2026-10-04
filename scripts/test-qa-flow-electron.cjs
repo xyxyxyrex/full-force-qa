@@ -10,7 +10,7 @@ async function driver() {
   const { build } = require('esbuild'), { spawn } = require('node:child_process')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parity-qa-flow-'))
   fs.symlinkSync(path.join(__dirname, '../node_modules'), path.join(dir, 'node_modules'), 'junction')
-  const common = { bundle: true, platform: 'node', format: 'cjs', external: ['electron', 'sharp'] }
+  const common = { bundle: true, platform: 'node', format: 'cjs', external: ['electron', 'sharp'], define: { __PARITY_SUPABASE_URL__: '""', __PARITY_SUPABASE_KEY__: '""' } }
   await build({ ...common, entryPoints: [path.join(__dirname, '../src/main/qaAgent/index.ts')], outfile: path.join(dir, 'qa.cjs') })
   await build({ ...common, entryPoints: [path.join(__dirname, '../src/main/designStore.ts')], outfile: path.join(dir, 'designs.cjs') })
   await build({ ...common, entryPoints: [path.join(__dirname, '../src/main/qaAgent/tools.ts')], outfile: path.join(dir, 'tools.cjs') })

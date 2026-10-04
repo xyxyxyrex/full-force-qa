@@ -35,6 +35,8 @@ async function smoke() {
   assert.match(await text('.agents-panel'), /Not found\. Install codex/, 'a missing CLI says how to fix it')
   assert.match(await text('.agents-chips'), /Screenshot/, 'the saved tracker columns are shown')
   assert.match(await text('.agents-kv'), /127\.0\.0\.1:29849\/mcp/, 'the bridge address is shown')
+  assert.match(await text('.agents-panel'), /Uploading needs your Parity account/, 'signed-out users are told uploads need an account')
+  assert.equal(await run(`document.querySelectorAll('.agents-group')[1].querySelector('select').value`), '90', 'the evidence lifetime defaults to 90 days')
   await run(`document.querySelectorAll('input[name=default-agent]')[4].click()`)
   await sleep(200)
   assert.ok((await run('window.__calls')).some(c => c === 'save {"defaultAgent":"openai-api"}'), 'choosing an agent saves it')

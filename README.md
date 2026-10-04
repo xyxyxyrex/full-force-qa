@@ -102,6 +102,18 @@ The current link audit inventories destinations but does not make HTTP requests 
   - Stores per-frame run counts by breakpoint; legacy history remains readable without its old score.
 - **Legacy compatibility**: Python/OpenCV source and packaging remain temporarily, but Automation has no runtime caller or fallback to them. See [foundation implementation report](AUTOMATION_FOUNDATION_REPORT.md) for checks and deferred work.
 
+### 5. QA Agent
+
+An AI agent does the first pass of visual QA: it compares the live page with the Figma exports per breakpoint, drafts the differences as rows for the master tracker, and you approve them before anything is copied.
+
+- **Designs per breakpoint**: drop the Figma PNGs on the Desktop, Tablet and Mobile slots in the Figma overlay panel; the export scale (1x/2x/3x) is detected and can be corrected.
+- **QA console** (`Ctrl+Shift+Q`): `qa run`, `qa run desktop mobile --agent codex`, `agents`, `context`.
+- **Any model**: Claude Code, Codex or Gemini CLI on your own plan; Claude, OpenAI or Gemini API keys; or a local vision model (Ollama, LM Studio). Pick one in Settings → AI Agents.
+- **Approval first**: an approval card shows the rows and evidence pictures; approving copies the rows in the tracker's column order (and optionally uploads evidence pictures whose links go in the screenshot column).
+- **Local bridge and `parity` command**: the same tools over MCP and a terminal command, for other agents and scripts.
+
+See [docs/qa-agent.md](docs/qa-agent.md) for setup, safety model, which agents have been verified, and tests.
+
 ### Annotate and Ephemeral Review Sharing
 
 Annotate is a cross-workspace action rather than a separate primary tab.
@@ -120,7 +132,7 @@ Annotate is a cross-workspace action rather than a separate primary tab.
 
 Ephemeral review URLs are link-accessible while valid. Anyone who receives a generated URL can open its review until it expires, so links should be shared only with intended reviewers. `VITE_EPHEMERAL_VIEWER_URL` selects the browser viewer host used when generating links.
 
-### 5. Utilities, Overlays, and System Features
+### 6. Utilities, Overlays, and System Features
 - **Viewport Simulator**: DevTools-style resolution presets (Desktop 1920x1200, Laptop, Tablet 1180x820 landscape, Mobile 430x932) with dynamic zoom controls (25% to 200%). Edit-facing viewport controls live in a hover-revealed island below the URL bar; its caret can pin the controls open, while Live retains the compact inline toolbar.
 - **Canvas Navigation**: Middle-mouse or Space-drag panning, zoom controls, canvas centering, and fit/reset behavior.
 - **Ruler System**:

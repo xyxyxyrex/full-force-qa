@@ -1,0 +1,74 @@
+# QA agent
+
+An AI agent that does the first pass of visual QA: it compares the live staging page with the Figma exports, one breakpoint and section at a time, drafts the differences as rows for the master tracker, and hands them to you. **You approve the rows in Parity before anything is copied or uploaded.**
+
+## The workflow
+
+1. **Store the designs.** Open the project, open the Figma overlay panel and drop the Figma PNGs on the Desktop, Tablet and Mobile slots (or just drop several at once: each goes to its detected breakpoint). Parity works out the export scale (1x, 2x, 3x) from the file name or its width and shows it, so you can correct it.
+2. **Set the tracker format once** (Settings → AI Agents → Tracker format): copy the tracker's header row and two or three example rows from the Google Sheet and paste them. Rows are written in that column order, and the agent copies the tone of your examples.
+3. **Pick an agent** (Settings → AI Agents) and open the QA console (`Ctrl+Shift+Q` or the console button in the top bar).
+4. **Run it:** `qa run`, or `qa run desktop mobile`, or `qa run --agent codex`.
+5. **Approve.** An approval card shows the drafted rows, the severity counts and the evidence pictures. *Approve & copy* puts the rows on your clipboard (and uploads the evidence pictures, if enabled); *Reject* sends your note back to the agent.
+6. **Paste into the tracker.**
+
+## How a review works
+
+- **Capture.** For each breakpoint Parity loads the page you have open in a hidden, offscreen window at the design's width (using your existing WordPress login), scrolls it so lazy images and reveal animations fire, hides fixed elements except where a visitor would see them, and stitches a full-page image. It also reads the real computed values of every styled element and splits the page into sections (S1, S2, …).
+- **Compare.** One fresh conversation per breakpoint. The agent looks at an overview (design left, live right, section boxes), matches sections to design areas, then looks at each section at full detail along with the live page's exact values (font, size, colour, spacing). Design sizes are estimates from the picture ("≈"); live values are exact.
+- **Draft.** The agent saves rows with `save_draft`; for several breakpoints a short text-only step merges them. Only then is `finalize_rows` called, which waits for you.
+
+The instructions every agent follows are in [`src/main/qaAgent/prompt.ts`](../src/main/qaAgent/prompt.ts) (also printed by `parity prompt`).
+
+## Agents
+
+| Agent | Uses | Status |
+|---|---|---|
+| Claude Code | your Claude plan | verified end to end against a real install |
+| Codex | your ChatGPT plan | built from OpenAI's documentation; **not yet run against a real install** |
+| Gemini CLI | your Gemini plan | built from Google's documentation; **not yet run against a real install** |
+| Claude API key | your Anthropic key | tested against a fake server speaking the real streaming format; not run with a live key |
+| OpenAI API key | your OpenAI key | tested against a fake Chat Completions server; not run with a live key |
+| Gemini API key | your Gemini key (through Gemini's OpenAI-compatible endpoint) | as above |
+| Local model | Ollama, LM Studio or any Chat Completions server | as above; the model must read pictures and use tools |
+
+Agent apps (Claude Code, Codex, Gemini CLI) run headless in a private temporary folder with **only Parity's tools** attached: no shell, no file access. Parity starts its local bridge just for that run if it is not already on. API keys are encrypted with the system keychain and never reach the app window.
+
+## Using it from a terminal or another agent
+
+Turn on **Settings → AI Agents → Local bridge**. It listens on `127.0.0.1` only, needs a key (stored in a file only you can read), and serves the same tools two ways:
+
+- **MCP** at `http://127.0.0.1:29849/mcp` for any MCP client. Send `Authorization: Bearer <key>`; the key file path is shown in settings.
+- **The `parity` command** (install it from settings, or run `npm run parity -- <command>` in development): `parity context`, `parity capture desktop`, `parity section <run> desktop S2 --design 900:1900`, `parity finalize <run> rows.json`, `parity prompt`, … Run `parity --help` for the list. Exit codes: 0 ok, 1 the tool reported an error, 2 bad usage, 3 the bridge is unreachable.
+
+An agent can only draft. `finalize_rows` always opens the approval card in Parity, whichever way it was called.
+
+## Safety model
+
+- **The bridge** answers only requests with the exact `127.0.0.1:<port>` Host header, refuses any request carrying an `Origin` header (so a web page cannot reach it, even by DNS rebinding), accepts only JSON POSTs to known paths, and requires the bearer key (compared in constant time). There is no lockout, because a lockout would let any web page lock you out.
+- **Page content is data.** The rubric tells agents to treat everything on the page as data, and the tools cannot browse, click or write. `capture_live` only loads the page open in Parity and refuses WordPress admin and login URLs.
+- **Spreadsheet formulas.** Any cell that starts with `=`, `+`, `-` or `@` is prefixed with an apostrophe before it is copied, so page text cannot inject a formula into the tracker. (The approval card shows the text without the apostrophe.)
+- **The approval gate** is in Parity's window, with a 15 minute timeout; closing the window counts as "not approved".
+
+## Evidence screenshots
+
+Approving can upload each evidence picture (design crop beside live crop, the issue boxed) and put its link in the tracker's screenshot column. Pictures are stored privately in Supabase and served only by the `qa-evidence` function by an unguessable id (128-bit random) until they expire (default 90 days; 7 to 365 in settings). There is no way to list or overwrite them. **Anyone who has a link can view that picture until it expires.** Uploading needs your Parity account; without it the rows are still copied and the screenshot cell is left empty.
+
+> **Deploying:** `supabase/migrations/20261004120000_create_qa_evidence.sql` and `supabase/functions/qa-evidence/` are deployed to production by `.github/workflows/deploy-supabase.yml` on any push to `main` that touches `supabase/**`. Run that workflow's dry-run first.
+
+## Tests
+
+```bash
+npm test                              # unit tests, including the bridge with a real MCP client
+npm run test:qa-capture:electron      # real Electron captures of a fixture page
+npm run test:qa-flow:electron         # the main-process handshake: context, approval, clipboard, bridge
+npm run test:qa-ui:electron           # renders the settings panel, console, approval card and slots
+node scripts/test-qa-capture-electron.cjs --url <page> --width 1440 --bp desktop --out <dir>
+                                      # capture any public page and write capture.png + capture.json
+```
+
+## Known limits
+
+- Section matching between design and live is made by the agent from the overview and can be wrong; `designTop`/`designBottom` let it correct itself, and anything uncertain should come back as "needs a human look" rather than a row.
+- Pages taller than 20,000px, or captures that take longer than a minute, are cut short with a warning.
+- Full-screen overlays (cookie dialogs) are hidden; carousels are compared on their first slide.
+- The Figma overlay itself still shows the single image you attached last; the per-breakpoint designs are stored alongside it for the agent.

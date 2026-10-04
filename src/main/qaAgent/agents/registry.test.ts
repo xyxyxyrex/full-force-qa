@@ -11,7 +11,7 @@ describe('normalizeSettings', () => {
   it('returns the defaults for missing or broken input', () => {
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_AGENT_SETTINGS)
     expect(normalizeSettings('nonsense')).toEqual(DEFAULT_AGENT_SETTINGS)
-    expect(normalizeSettings({ defaultAgent: 'skynet', effort: 'extreme', budgetTokens: -5, localBaseUrl: 'ftp://x', models: { codex: 42 } })).toEqual(DEFAULT_AGENT_SETTINGS)
+    expect(normalizeSettings({ defaultAgent: 'skynet', effort: 'extreme', budgetTokens: -5, localBaseUrl: 'ftp://x', evidenceDays: 45, models: { codex: 42 } })).toEqual(DEFAULT_AGENT_SETTINGS)
   })
 
   it('keeps valid values and cleans them', () => {
@@ -21,6 +21,12 @@ describe('normalizeSettings', () => {
     expect(settings.models.local).toBe('llava:13b')
     expect(settings.models['anthropic-api']).toBe(DEFAULT_AGENT_SETTINGS.models['anthropic-api'])
     expect('bogus' in settings.models).toBe(false)
+  })
+
+  it('keeps evidence settings to the offered lifetimes', () => {
+    expect(normalizeSettings({ evidenceUploads: false, evidenceDays: 30 })).toMatchObject({ evidenceUploads: false, evidenceDays: 30 })
+    expect(normalizeSettings({ evidenceUploads: 'no', evidenceDays: '365' })).toMatchObject({ evidenceUploads: true, evidenceDays: 365 })
+    expect(DEFAULT_AGENT_SETTINGS).toMatchObject({ evidenceUploads: true, evidenceDays: 90 })
   })
 
   it('caps absurd budgets and long model names', () => {

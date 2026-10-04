@@ -134,6 +134,10 @@ export interface AgentSettings {
   localBaseUrl: string
   /** Stops a review after this many tokens. 0 means no limit. */
   budgetTokens: number
+  /** Upload evidence images and put their links in the tracker's screenshot column. */
+  evidenceUploads: boolean
+  /** How long evidence links keep working. */
+  evidenceDays: number
 }
 
 export interface AgentInfo {

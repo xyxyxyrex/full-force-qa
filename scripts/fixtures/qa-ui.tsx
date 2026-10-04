@@ -18,13 +18,14 @@ const agents = [
   { id: 'gemini-api', label: 'Gemini API key', kind: 'api', ready: false, detail: 'Add your API key.', model: '', needsKey: true, hasKey: false },
   { id: 'local', label: 'Local model (Ollama, LM Studio)', kind: 'local', ready: false, detail: 'Choose a model that can read pictures and use tools.', model: '', needsKey: false, hasKey: false },
 ]
-const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0 }
+const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90 }
 const bridge = { enabled: true, running: true, port: 29849, error: '', keyHint: '••••a1b2', mcpUrl: 'http://127.0.0.1:29849/mcp', keyFile: '/home/user/.config/Parity/qa-agent/token', lastRequestAt: 1, recent: [{ at: Date.now(), method: 'POST', path: '/mcp', status: 200, ms: 12, tool: 'capture_live' }, { at: Date.now() - 4000, method: 'GET', path: '/api/status', status: 401, ms: 1 }] }
 const calls: string[] = []
 let runListener: ((event: unknown) => void) | null = null
 ;(window as any).__calls = calls
 ;(window as any).__emit = (event: unknown) => runListener?.(event)
 ;(window as any).electronAPI = {
+  accountStatus: async () => ({ signedIn: false, needsSetup: false }),
   qaAgentsOverview: async () => ({ settings, agents, keyStorage: 'secure' }),
   qaAgentsSaveSettings: async (patch: any) => { calls.push(`save ${JSON.stringify(patch)}`); return { settings, agents, keyStorage: 'secure' } },
   qaAgentsSetKey: async () => ({ settings, agents, keyStorage: 'secure' }),

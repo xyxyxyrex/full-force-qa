@@ -24,6 +24,7 @@ export default function AgentsPanel() {
   const [trackerText, setTrackerText] = useState('')
   const [trackerError, setTrackerError] = useState('')
   const [cli, setCli] = useState<CliStatus | null>(null)
+  const [signedIn, setSignedIn] = useState<boolean | null>(null)
   const [copied, setCopied] = useState('')
 
   const refresh = useCallback(async () => {
@@ -36,6 +37,7 @@ export default function AgentsPanel() {
     void window.electronAPI.qaBridgeStatus().then(setBridge)
     void window.electronAPI.qaTrackerFormatGet().then(setTracker)
     void window.electronAPI.qaCliStatus().then(setCli)
+    void window.electronAPI.accountStatus().then((status) => setSignedIn(status.signedIn)).catch(() => setSignedIn(null))
     return window.electronAPI.onQaBridgeStatus(setBridge)
   }, [refresh])
 
@@ -130,6 +132,25 @@ export default function AgentsPanel() {
             <input type="number" min={0} step={100000} defaultValue={settings.budgetTokens} onBlur={(event) => { const value = Math.max(0, Number(event.target.value) || 0); if (value !== settings.budgetTokens) void save({ budgetTokens: value }) }} />
           </label>
         </div>
+      </div>
+
+      <div className="agents-group">
+        <h4>Evidence screenshots</h4>
+        <p className="agents-muted">For each issue, Parity can upload a picture of the design next to the live page with the problem boxed, and put its link in the tracker's screenshot column. Anyone with a link can see that picture until it expires; nothing else is public.</p>
+        <label className="agents-switch">
+          <input type="checkbox" checked={settings.evidenceUploads} onChange={(event) => void save({ evidenceUploads: event.target.checked })} />
+          <span>Upload evidence pictures and add their links</span>
+        </label>
+        <div className="agents-row">
+          <label className="agents-field"><span>Links work for</span>
+            <select value={settings.evidenceDays} disabled={!settings.evidenceUploads} onChange={(event) => void save({ evidenceDays: Number(event.target.value) })}>
+              {[7, 30, 90, 180, 365].map((days) => <option key={days} value={days}>{days === 365 ? '1 year' : `${days} days`}</option>)}
+            </select>
+          </label>
+        </div>
+        {settings.evidenceUploads && signedIn === false && (
+          <p className="agents-warn">Uploading needs your Parity account. <button type="button" className="agents-link" onClick={() => window.dispatchEvent(new Event('parity:open-account'))}>Sign in</button>. Without it, rows are still copied and the screenshot column stays empty.</p>
+        )}
       </div>
 
       <div className="agents-group">

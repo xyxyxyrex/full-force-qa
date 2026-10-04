@@ -7,9 +7,11 @@ import { isBreakpoint } from '../../shared/designScale'
 import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaRunEvent, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
 import { isTrackerFormat, parseTrackerPaste, type TrackerFormat } from '../../shared/trackerFormat'
 import type { DesignStore } from '../designStore'
+import { createEvidenceUploader } from './evidenceUpload'
 import { captureLivePage } from './liveCapture'
 import { runQa } from './runner'
 import { createRunStore } from './runStore'
+import { accountAccessToken, accountAuthId, parityPublicConfig } from '../account'
 import { createProvider, describeAgents, listModels, normalizeSettings } from './agents/registry'
 import { createBridgeServer, type BridgeLogEntry } from './bridge/httpServer'
 import { ensureToken, resetToken } from './bridge/token'
@@ -105,6 +107,13 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     readLocalFile: (path) => readFile(path),
     approve: requestApproval,
     copyToClipboard: (text, html) => clipboard.write({ text, html }),
+    // The settings are read when an upload happens, so changing them takes effect straight away.
+    evidence: createEvidenceUploader({
+      settings: () => readAgentSettings(),
+      isSignedIn: () => !!accountAuthId(),
+      accessToken: accountAccessToken,
+      config: parityPublicConfig,
+    }),
   }
 
   // The renderer tells main which project and page are open. Only the app window may do so.

@@ -77,7 +77,8 @@ export async function restoreAccount(): Promise<void> {
   })()
   await restoring
 }
-export async function accountRequest(action: string, payload: Record<string, unknown> = {}): Promise<any> {
+/** A current access token for the signed-in account, refreshed when it is about to expire. */
+async function freshAccessToken(): Promise<{ accessToken: string; generation: number }> {
   const generation = epoch
   await restoreAccount()
   if (generation !== epoch) throw new Error('The active account changed.')
@@ -92,9 +93,15 @@ export async function accountRequest(action: string, payload: Record<string, unk
     await persist()
   }
   if (generation !== epoch) throw new Error('The active account changed.')
+  return { accessToken: session.access_token, generation }
+}
+export async function accountAccessToken(): Promise<string> { return (await freshAccessToken()).accessToken }
+export const parityPublicConfig = () => config()
+export async function accountRequest(action: string, payload: Record<string, unknown> = {}): Promise<any> {
+  const { accessToken, generation } = await freshAccessToken()
   const { url, key } = config()
   const response = await fetch(`${url.replace(/\/$/, '')}/functions/v1/parity-account-v2`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${session.access_token}` },
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ ...payload, action }), signal: AbortSignal.timeout(30000),
   })
   const result = await response.json() as any

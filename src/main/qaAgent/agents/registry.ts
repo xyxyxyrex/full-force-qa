@@ -28,7 +28,11 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   effort: 'medium',
   localBaseUrl: DEFAULT_LOCAL_URL,
   budgetTokens: 0,
+  evidenceUploads: true,
+  evidenceDays: 90,
 }
+
+export const EVIDENCE_DAY_OPTIONS = [7, 30, 90, 180, 365]
 
 /** Reads settings from untrusted storage, falling back to defaults field by field. */
 export function normalizeSettings(raw: unknown): AgentSettings {
@@ -55,6 +59,8 @@ export function normalizeSettings(raw: unknown): AgentSettings {
     effort,
     localBaseUrl,
     budgetTokens: Number.isFinite(budget) && budget >= 0 ? Math.min(Math.round(budget), 50_000_000) : 0,
+    evidenceUploads: source.evidenceUploads === false ? false : true,
+    evidenceDays: EVIDENCE_DAY_OPTIONS.includes(Number(source.evidenceDays)) ? Number(source.evidenceDays) : DEFAULT_AGENT_SETTINGS.evidenceDays,
   }
 }
 
