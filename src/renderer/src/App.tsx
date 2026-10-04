@@ -67,6 +67,18 @@ export default function App() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
+  // A file dropped anywhere but on a drop target must not open in the window.
+  useEffect(() => {
+    const swallowFileDrag = (event: DragEvent) => {
+      if (event.dataTransfer?.types?.includes('Files')) event.preventDefault()
+    }
+    window.addEventListener('dragover', swallowFileDrag)
+    window.addEventListener('drop', swallowFileDrag)
+    return () => {
+      window.removeEventListener('dragover', swallowFileDrag)
+      window.removeEventListener('drop', swallowFileDrag)
+    }
+  }, [])
   const [activityBarPinned, setActivityBarPinned] = useState(() => localStorage.getItem('parity_activity_bar_pinned') === 'true')
   const [activityBarVisible, setActivityBarVisible] = useState(true)
   const activityHideTimerRef = useRef<number | null>(null)

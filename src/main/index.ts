@@ -42,6 +42,9 @@ function configureParityIdentity(): void {
 
 configureParityIdentity()
 
+let designStore: ReturnType<typeof createDesignStore> | null = null
+const getDesignStore = () => (designStore ??= createDesignStore(join(app.getPath('userData'), 'designs')))
+
 protocol.registerSchemesAsPrivileged([
   { scheme: 'parity-note', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
 ])
@@ -52,7 +55,10 @@ import { captureUrl } from './capture'
 import { freezeSnapshot } from './snapshot'
 import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadWorkspaceAuditContext, loadWorkspaceHtml, saveProject, saveWorkspaceAuditContext, saveWorkspaceHtml, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
+import { createDesignStore } from './designStore'
+import { isBreakpoint } from '../shared/designScale'
 import { measureResponseBody, resourceSizeFromHeaders } from './resourceFileSize'
+import type { DesignPutOptions, DesignUpdateOptions } from '../shared/qaAgent'
 import type { Project, CaptureResult, FigmaConnectionStatus, MondayConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountBootstrap, ParityAccountState, ResourceFileSizeResult } from '../shared/types'
 import {
   checkForAppUpdates,
@@ -548,6 +554,18 @@ function createWindow(): void {
   // Intercept popup windows to ensure child windows inherit Chrome User-Agent for Google Sign-In
   mainWindow.webContents.setWindowOpenHandler(() => {
     return { action: 'allow' }
+  })
+
+  // The app window never navigates away from itself. Without this, an image dropped
+  // outside a drop target opens as file:///….png and the unsaved workspace is lost.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    try {
+      const next = new URL(url)
+      const current = new URL(mainWindow!.webContents.getURL())
+      if (`${next.origin}${next.pathname}` !== `${current.origin}${current.pathname}`) event.preventDefault()
+    } catch {
+      event.preventDefault()
+    }
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -1520,9 +1538,40 @@ function registerIpcHandlers(): void {
     try { await parityAccountRequest('save_project', { project: cloudProject(next) }) }
     catch (error) { console.warn('[Parity Account] Project queued for the next sync:', error) }
   })
+  // Figma exports per breakpoint (desktop/tablet/mobile), read by the QA agent as well.
+  const designKey = (value: unknown): string => {
+    if (typeof value !== 'string' || !value || value.length > 300) throw new Error('Open a project first.')
+    return value
+  }
+  ipcMain.handle('designs:list', async (_event, projectKey: string) => getDesignStore().listWithThumbnails(designKey(projectKey)))
+  ipcMain.handle('designs:put', async (_event, projectKey: string, bytes: Uint8Array, options?: DesignPutOptions) => {
+    try {
+      if (!(bytes instanceof Uint8Array)) return { success: false, error: 'No image data was received.' }
+      const target = options?.target
+      return await getDesignStore().put(designKey(projectKey), bytes, {
+        fileName: typeof options?.fileName === 'string' ? options.fileName.slice(0, 255) : undefined,
+        pagePath: typeof options?.pagePath === 'string' ? options.pagePath.slice(0, 500) : undefined,
+        target: target === 'auto' || isBreakpoint(target) ? target : 'auto',
+      })
+    } catch (error: any) { return { success: false, error: error?.message || 'The design could not be saved.' } }
+  })
+  ipcMain.handle('designs:update', (_event, projectKey: string, breakpoint: string, options: DesignUpdateOptions) => {
+    try {
+      if (!isBreakpoint(breakpoint)) return { success: false, error: 'Unknown breakpoint.' }
+      return getDesignStore().update(designKey(projectKey), breakpoint, { moveTo: options?.moveTo, scale: options?.scale })
+    } catch (error: any) { return { success: false, error: error?.message || 'The design could not be updated.' } }
+  })
+  ipcMain.handle('designs:remove', async (_event, projectKey: string, breakpoint: string) => {
+    if (!isBreakpoint(breakpoint)) return getDesignStore().list(designKey(projectKey))
+    getDesignStore().remove(designKey(projectKey), breakpoint)
+    return getDesignStore().listWithThumbnails(designKey(projectKey))
+  })
+
+
   ipcMain.handle('projects:delete', async (_event, id: string, expectedOwner?: string | null) => {
     if (expectedOwner !== undefined) assertAccountOwner(expectedOwner)
     deleteProject(id)
+    getDesignStore().removeProject(id)
     const ownerKey = getProjectOwner()
     if (!ownerKey) return
     writePendingProjectDeletes(ownerKey, [...readPendingProjectDeletes(ownerKey), id])

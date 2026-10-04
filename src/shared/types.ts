@@ -1,5 +1,7 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
+import type { Breakpoint } from './designScale'
+import type { DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse } from './qaAgent'
 import type {
   AuditCaptureContext,
   AuditExportProgress,
@@ -442,6 +444,10 @@ export interface ElectronAPI extends InspectorApi {
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project, ownerKey?: string | null) => Promise<void>
   deleteProject: (id: string, ownerKey?: string | null) => Promise<void>
+  designsList: (projectKey: string) => Promise<DesignListResult>
+  designsPut: (projectKey: string, bytes: Uint8Array, options?: DesignPutOptions) => Promise<DesignPutResponse>
+  designsUpdate: (projectKey: string, breakpoint: Breakpoint, options: DesignUpdateOptions) => Promise<DesignUpdateResponse>
+  designsRemove: (projectKey: string, breakpoint: Breakpoint) => Promise<DesignListResult>
   loadWorkspaceHtml: (tabId: string) => Promise<string | null>
   saveWorkspaceHtml: (tabId: string, html: string) => Promise<void>
   deleteWorkspaceHtml: (tabId: string) => Promise<void>

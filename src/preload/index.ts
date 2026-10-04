@@ -122,6 +122,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteProject(id: string, ownerKey?: string | null): Promise<void> {
     return ipcRenderer.invoke('projects:delete', id, ownerKey)
   },
+  designsList: (projectKey: string) => ipcRenderer.invoke('designs:list', projectKey),
+  designsPut: (projectKey: string, bytes: Uint8Array, options?: import('../shared/qaAgent').DesignPutOptions) => ipcRenderer.invoke('designs:put', projectKey, bytes, options),
+  designsUpdate: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint, options: import('../shared/qaAgent').DesignUpdateOptions) => ipcRenderer.invoke('designs:update', projectKey, breakpoint, options),
+  designsRemove: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint) => ipcRenderer.invoke('designs:remove', projectKey, breakpoint),
   loadWorkspaceHtml(tabId: string): Promise<string | null> {
     return ipcRenderer.invoke('workspace-html:load', tabId)
   },

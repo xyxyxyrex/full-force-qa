@@ -56,6 +56,9 @@ import {
   removeAnnotationFromSequences,
   unlinkAnnotation,
 } from "../../../shared/annotationSequences";
+import DesignSlots from "./DesignSlots";
+import type { Breakpoint } from "../../../shared/designScale";
+import type { DesignSlots as DesignSlotsState } from "../../../shared/qaAgent";
 import "./EditorWorkspace.css";
 
 const defaultQaSheetData: Sheet[] = [
@@ -2303,6 +2306,112 @@ export default function EditorWorkspace({
       }
     },
     [activeProjectId],
+  );
+
+  // ── Designs per breakpoint (stored by the main process for the QA agent) ──
+  const [designSlots, setDesignSlots] = useState<DesignSlotsState>({});
+  const [designThumbs, setDesignThumbs] = useState<Partial<Record<Breakpoint, string>>>({});
+  const [designBusy, setDesignBusy] = useState(false);
+  const [designError, setDesignError] = useState("");
+  const designProjectRef = useRef(activeProjectId);
+  designProjectRef.current = activeProjectId;
+
+  const pagePathForDesigns = useCallback(() => {
+    try {
+      return new URL(sourceUrl).pathname || "/";
+    } catch {
+      return undefined;
+    }
+  }, [sourceUrl]);
+
+  const refreshDesigns = useCallback(async (projectKey: string) => {
+    try {
+      const result = await window.electronAPI.designsList(projectKey);
+      if (designProjectRef.current !== projectKey) return;
+      setDesignSlots(result.slots);
+      setDesignThumbs(result.thumbnails);
+    } catch {
+      if (designProjectRef.current === projectKey) {
+        setDesignSlots({});
+        setDesignThumbs({});
+      }
+    }
+  }, []);
+
+  const addDesignFiles = useCallback(
+    async (files: Blob[], target: Breakpoint | "auto" = "auto") => {
+      const projectKey = activeProjectId;
+      setDesignBusy(true);
+      setDesignError("");
+      try {
+        for (const file of files) {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const result = await window.electronAPI.designsPut(projectKey, bytes, {
+            fileName: (file as File).name || undefined,
+            pagePath: pagePathForDesigns(),
+            target,
+          });
+          if (!result.success) setDesignError(result.error);
+        }
+      } catch (error: any) {
+        setDesignError(error?.message || "The design could not be saved.");
+      } finally {
+        await refreshDesigns(projectKey);
+        if (designProjectRef.current === projectKey) setDesignBusy(false);
+      }
+    },
+    [activeProjectId, pagePathForDesigns, refreshDesigns],
+  );
+
+  // Load the stored designs for the open project. A PNG that was attached before
+  // designs were stored per breakpoint is copied in once, so the agent can use it.
+  useEffect(() => {
+    let cancelled = false;
+    setDesignSlots({});
+    setDesignThumbs({});
+    setDesignError("");
+    (async () => {
+      try {
+        const result = await window.electronAPI.designsList(activeProjectId);
+        if (cancelled) return;
+        setDesignSlots(result.slots);
+        setDesignThumbs(result.thumbnails);
+        if (Object.keys(result.slots).length) return;
+        const legacy = localStorage.getItem(`qa_${activeProjectId}_uploaded_figma_png`);
+        if (!legacy || !legacy.startsWith("data:image/")) return;
+        const blob = await (await fetch(legacy)).blob();
+        if (!cancelled) await addDesignFiles([blob], "auto");
+      } catch {
+        // Designs are optional; the overlay keeps working without them.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId]);
+
+  const removeDesign = useCallback(
+    async (breakpoint: Breakpoint) => {
+      try {
+        const result = await window.electronAPI.designsRemove(activeProjectId, breakpoint);
+        setDesignSlots(result.slots);
+        setDesignThumbs(result.thumbnails);
+      } catch (error: any) {
+        setDesignError(error?.message || "The design could not be removed.");
+      }
+    },
+    [activeProjectId],
+  );
+
+  const updateDesign = useCallback(
+    async (breakpoint: Breakpoint, options: { moveTo?: Breakpoint; scale?: number }) => {
+      const result = await window.electronAPI.designsUpdate(activeProjectId, breakpoint, options);
+      if (!result.success) setDesignError(result.error);
+      else setDesignError("");
+      await refreshDesigns(activeProjectId);
+    },
+    [activeProjectId, refreshDesigns],
   );
 
   const setSnapshotImage = useCallback(
@@ -4891,6 +5000,7 @@ export default function EditorWorkspace({
             setOverlayPanelOpen(true);
           };
           reader.readAsDataURL(blob);
+          void addDesignFiles([blob], "auto");
           return;
         }
       }
@@ -4903,7 +5013,7 @@ export default function EditorWorkspace({
 
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [setOverlayImage, activeProjectId, project]);
+  }, [setOverlayImage, activeProjectId, project, addDesignFiles]);
 
   // Figma overlay file upload handler
   const handleOverlayFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -4921,6 +5031,7 @@ export default function EditorWorkspace({
       setOverlayPanelOpen(true);
     };
     reader.readAsDataURL(file);
+    void addDesignFiles([file], "auto");
     e.target.value = ""; // reset so same file can be re-uploaded
   };
 
@@ -8393,6 +8504,18 @@ export default function EditorWorkspace({
                         <span>+ Add Figma Link</span>
                       </button>
                     )}
+                    <div className="ruler-dd-divider" />
+                    <DesignSlots
+                      slots={designSlots}
+                      thumbnails={designThumbs}
+                      activeBreakpoint={activeAnnotationViewport.deviceType === "custom" ? null : activeAnnotationViewport.deviceType}
+                      busy={designBusy}
+                      error={designError}
+                      onAddFiles={(files, target) => void addDesignFiles(files, target)}
+                      onRemove={(breakpoint) => void removeDesign(breakpoint)}
+                      onMove={(breakpoint, to) => void updateDesign(breakpoint, { moveTo: to })}
+                      onScale={(breakpoint, scale) => void updateDesign(breakpoint, { scale })}
+                    />
                     <div className="ruler-dd-divider" />
                     {!overlayImage || overlayLabel !== "Figma Design" ? (
                       <>
@@ -12805,6 +12928,7 @@ export default function EditorWorkspace({
                         }
                       };
                       reader.readAsDataURL(file);
+                      void addDesignFiles([file], "auto");
                     }}
                   />
                 </label>
