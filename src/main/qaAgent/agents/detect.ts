@@ -25,8 +25,8 @@ function run(binary: string, args: string[], timeoutMs = 6000): Promise<{ code: 
 
 const firstLine = (text: string) => text.trim().split('\n')[0]?.trim().slice(0, 80) || ''
 
-export async function detectCli(id: 'claude-code' | 'codex' | 'gemini-cli', binary?: string): Promise<CliDetection> {
-  const exe = binary || (id === 'claude-code' ? 'claude' : id === 'codex' ? 'codex' : 'gemini')
+export async function detectCli(id: 'claude-code' | 'codex' | 'antigravity', binary?: string): Promise<CliDetection> {
+  const exe = binary || (id === 'claude-code' ? 'claude' : id === 'codex' ? 'codex' : 'agy')
   const version = await run(exe, ['--version'])
   if (version.missing) return { installed: false, version: '', signedIn: null, detail: `Not found. Install ${exe} and sign in, then refresh.` }
   const versionText = firstLine(version.stdout)
@@ -44,9 +44,15 @@ export async function detectCli(id: 'claude-code' | 'codex' | 'gemini-cli', bina
     const signedIn = status.code === 0
     return { installed: true, version: versionText, signedIn, detail: signedIn ? `${versionText} · signed in` : `${versionText} · not signed in. Run "codex login" once.` }
   }
-  // Gemini CLI has no status command; look for the files and variables it signs in with.
-  const hasKey = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)
-  const hasLogin = existsSync(join(homedir(), '.gemini', 'oauth_creds.json'))
-  const signedIn = hasKey || hasLogin ? true : null
-  return { installed: true, version: versionText, signedIn, detail: signedIn ? `${versionText} · signed in` : `${versionText} · sign-in status unknown. Run "gemini" once to sign in.` }
+  // Antigravity CLI has no status command; look for the file it keeps its sign-in in.
+  const signedIn = existsSync(join(homedir(), '.gemini', 'oauth_creds.json')) ? true : null
+  return { installed: true, version: versionText, signedIn, detail: signedIn ? `agy ${versionText} · signed in` : `agy ${versionText} · sign-in status unknown. Run "agy" once to sign in.` }
+}
+
+/** The models `agy models` lists, one "slug<TAB>Name" per line. Never throws. */
+export async function listAntigravityModels(binary?: string): Promise<{ models: string[]; error?: string }> {
+  const result = await run(binary || 'agy', ['models'], 20_000)
+  if (result.missing) return { models: [], error: 'agy was not found. Install Antigravity CLI first.' }
+  const models = result.stdout.split('\n').map((line) => line.split('\t')[0].trim()).filter((slug) => /^[a-z0-9][a-z0-9._-]*$/i.test(slug) && !/^fetching/i.test(slug))
+  return models.length ? { models } : { models: [], error: 'Could not list models. Is agy signed in? Run "agy" once in a terminal.' }
 }

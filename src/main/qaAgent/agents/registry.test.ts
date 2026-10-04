@@ -8,6 +8,14 @@ import type { AgentId } from '../../../shared/qaAgent'
 import { createProvider, DEFAULT_AGENT_SETTINGS, DEFAULT_LOCAL_URL, describeAgents, listModels, normalizeSettings } from './registry'
 
 describe('normalizeSettings', () => {
+  it('moves a saved choice of Gemini CLI over to Antigravity CLI and drops its model', () => {
+    const settings = normalizeSettings({ defaultAgent: 'gemini-cli', models: { 'gemini-cli': 'gemini-2.5-pro', 'openai-api': 'gpt-test' } })
+    expect(settings.defaultAgent).toBe('antigravity')
+    expect(settings.models.antigravity).toBe('')
+    expect(settings.models['openai-api']).toBe('gpt-test')
+    expect(Object.keys(settings.models)).not.toContain('gemini-cli')
+  })
+
   it('returns the defaults for missing or broken input', () => {
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_AGENT_SETTINGS)
     expect(normalizeSettings('nonsense')).toEqual(DEFAULT_AGENT_SETTINGS)
@@ -42,7 +50,7 @@ describe('createProvider', () => {
   it('builds each kind of backend', () => {
     expect(createProvider('claude-code', deps())).toMatchObject({ id: 'claude-code', needsBridge: true })
     expect(createProvider('codex', deps())).toMatchObject({ id: 'codex', needsBridge: true })
-    expect(createProvider('gemini-cli', deps())).toMatchObject({ id: 'gemini-cli', needsBridge: true })
+    expect(createProvider('antigravity', deps())).toMatchObject({ id: 'antigravity', needsBridge: true })
     expect(createProvider('anthropic-api', deps(DEFAULT_AGENT_SETTINGS, { 'anthropic-api': 'sk-x' }))).toMatchObject({ id: 'anthropic-api' })
     const settings = normalizeSettings({ models: { 'openai-api': 'gpt-test', 'gemini-api': 'gemini-test', local: 'llava' } })
     expect(createProvider('openai-api', deps(settings, { 'openai-api': 'sk-o' }))).toMatchObject({ id: 'openai-api', label: 'OpenAI' })
@@ -70,7 +78,7 @@ describe.skipIf(process.platform === 'win32')('describeAgents', () => {
     const settings = normalizeSettings({ models: { 'openai-api': 'gpt-test' } })
     const agents = await describeAgents({ settings, getKey: (id) => (id === 'openai-api' ? 'sk' : null), cliPath: (id) => (id === 'claude-code' ? claude : join(dir, 'missing')) })
     const byId = Object.fromEntries(agents.map((a) => [a.id, a]))
-    expect(agents.map((a) => a.id)).toEqual(['claude-code', 'codex', 'gemini-cli', 'anthropic-api', 'openai-api', 'gemini-api', 'local'])
+    expect(agents.map((a) => a.id)).toEqual(['claude-code', 'codex', 'antigravity', 'anthropic-api', 'openai-api', 'gemini-api', 'local'])
     expect(byId['claude-code']).toMatchObject({ kind: 'subscription', ready: true })
     expect(byId.codex).toMatchObject({ ready: false, detail: expect.stringContaining('Not found') })
     expect(byId['anthropic-api']).toMatchObject({ kind: 'api', ready: false, needsKey: true, hasKey: false, detail: 'Add your API key.' })

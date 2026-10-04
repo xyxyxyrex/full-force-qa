@@ -26,13 +26,24 @@ The instructions every agent follows are in [`src/main/qaAgent/prompt.ts`](../sr
 |---|---|---|
 | Claude Code | your Claude plan | verified end to end against a real install |
 | Codex | your ChatGPT plan | built from OpenAI's documentation; **not yet run against a real install** |
-| Gemini CLI | your Gemini plan | built from Google's documentation; **not yet run against a real install** |
+| Antigravity CLI (`agy`) | your Google plan | verified against agy 1.2.16: tool calls through the bridge, streamed text, token usage, and refusal of shell, web search and file reads (see below). Replaces Gemini CLI |
 | Claude API key | your Anthropic key | tested against a fake server speaking the real streaming format; not run with a live key |
 | OpenAI API key | your OpenAI key | tested against a fake Chat Completions server; not run with a live key |
 | Gemini API key | your Gemini key (through Gemini's OpenAI-compatible endpoint) | as above |
 | Local model | Ollama, LM Studio or any Chat Completions server | as above; the model must read pictures and use tools |
 
-Agent apps (Claude Code, Codex, Gemini CLI) run headless in a private temporary folder with **only Parity's tools** attached: no shell, no file access. Parity starts its local bridge just for that run if it is not already on. API keys are encrypted with the system keychain and never reach the app window.
+Agent apps (Claude Code, Codex, Antigravity CLI) run headless in a private temporary folder with **only Parity's tools** attached: no shell, no file access. Parity starts its local bridge just for that run if it is not already on. API keys are encrypted with the system keychain and never reach the app window.
+
+### How Antigravity CLI is kept to Parity's tools
+
+`agy` reads its settings and MCP servers from `~/.gemini`, refuses every tool that is not allowed in its `settings.json` when run headless, and lets some tools (web search) run without any permission. So for each run Parity:
+
+1. makes a private temporary home folder and links in only your sign-in files (`oauth_creds.json`, `google_accounts.json`, `installation_id`). **Your own `~/.gemini` settings, rules, MCP servers and conversations are never read or changed**;
+2. gives that home its own `settings.json` that allows only Parity's MCP tools (and reading agy's description files for them), and its own MCP server entry holding the bridge key (agy does not expand variables in headers, so the key sits in that folder until the run ends);
+3. installs a `PreToolUse` hook that **denies every tool call except Parity's own** (shell, web search, browser, file reads and writes, sub-agents, scheduling, image generation). A hook that fails blocks the call, and if a tool ever runs without the hook having run, Parity stops the run;
+4. sends the instructions and the question over stdin, never on the command line.
+
+The agent's attempts to use a refused tool come back to it as an error, and it carries on. Choose the model with Settings → AI Agents → Antigravity CLI → *List models* (`agy models`). The Windows path (`USERPROFILE`, copied instead of linked login files) is untested.
 
 ## Using it from a terminal or another agent
 

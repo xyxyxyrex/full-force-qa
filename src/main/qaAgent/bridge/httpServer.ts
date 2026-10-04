@@ -6,7 +6,7 @@ import { checkRequest, MAX_BODY_BYTES } from './guards'
 import { QA_RUBRIC } from '../prompt'
 import { createQaMcpHandler } from './mcp'
 
-// The local bridge: `/mcp` for MCP clients (Claude Code, Codex, Gemini CLI, …) and
+// The local bridge: `/mcp` for MCP clients (Claude Code, Codex, Antigravity CLI, …) and
 // `/api/...` for the `parity` command. Both call the same tool registry.
 
 export interface BridgeLogEntry {

@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { detectCli } from './detect'
+import { detectCli, listAntigravityModels } from './detect'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'parity-detect-')) })
@@ -36,19 +36,20 @@ describe.skipIf(process.platform === 'win32')('detectCli', () => {
     expect(await detectCli('codex', out)).toMatchObject({ installed: true, signedIn: false, detail: expect.stringContaining('codex login') })
   })
 
-  it('cannot tell for Gemini CLI unless it finds a key or login', async () => {
-    const gemini = fake(`console.log('0.4.1')`)
-    const saved = { a: process.env.GEMINI_API_KEY, b: process.env.GOOGLE_API_KEY }
-    delete process.env.GEMINI_API_KEY; delete process.env.GOOGLE_API_KEY
-    try {
-      const result = await detectCli('gemini-cli', gemini)
-      expect(result.installed).toBe(true)
-      expect([true, null]).toContain(result.signedIn) // true only when this computer already has a Gemini login file
-      process.env.GEMINI_API_KEY = 'x'
-      expect((await detectCli('gemini-cli', gemini)).signedIn).toBe(true)
-    } finally {
-      if (saved.a === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = saved.a
-      if (saved.b === undefined) delete process.env.GOOGLE_API_KEY; else process.env.GOOGLE_API_KEY = saved.b
-    }
+  it('reads Antigravity CLI\'s version and says when sign-in cannot be told', async () => {
+    const agy = fake(`console.log('1.2.16')`)
+    const result = await detectCli('antigravity', agy)
+    expect(result).toMatchObject({ installed: true, version: '1.2.16' })
+    expect([true, null]).toContain(result.signedIn) // true only when this computer already has an agy login file
+    expect(result.detail).toContain('1.2.16')
+    expect(await detectCli('antigravity', join(dir, 'missing'))).toMatchObject({ installed: false, detail: expect.stringContaining('Not found') })
+  })
+
+  it('lists the models agy offers', async () => {
+    const agy = fake(`console.log('Fetching available models...'); console.log('gemini-3.8-flash-high\\tGemini 3.8 Flash (High)'); console.log('claude-sonnet-4-6\\tClaude Sonnet 4.6 (Thinking)')`)
+    expect(await listAntigravityModels(agy)).toEqual({ models: ['gemini-3.8-flash-high', 'claude-sonnet-4-6'] })
+    expect(await listAntigravityModels(join(dir, 'missing'))).toMatchObject({ models: [], error: expect.stringContaining('not found') })
+    const empty = fake(`console.log('Fetching available models...')`)
+    expect((await listAntigravityModels(empty)).error).toMatch(/Could not list models/)
   })
 })

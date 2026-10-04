@@ -1,15 +1,15 @@
 import { spawn } from 'child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { summarize, withHistory } from './common'
 import { AgentError, type AgentEvent, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
 
-// Agent CLIs the person is already logged into (Claude Code, Codex, Gemini CLI), so their
+// Agent CLIs the person is already logged into (Claude Code, Codex, Antigravity CLI), so their
 // subscription pays for the review. Each one runs headless in a private temporary folder with
 // only Parity's tools attached over the local bridge. The bridge key never goes on a command
-// line; it travels in the process environment (or, for Gemini CLI, which cannot read headers
-// from the environment, in a settings file that exists only for the length of the run).
+// line; it travels in the process environment (or, for Antigravity CLI, which cannot read headers
+// from the environment, in a config file that exists only for the length of the run).
 
 export interface BridgeAccess {
   mcpUrl: string
@@ -20,6 +20,10 @@ export interface CliInvocation {
   args: string[]
   env: Record<string, string>
   stdin: string
+  /** Working folder for the process; defaults to the run's private folder. */
+  cwd?: string
+  /** A file the agent's safety hook appends to on every tool call. If a tool ran and it is missing, the hook is not working and the run is stopped. */
+  guardLog?: string
 }
 
 interface ParseState {
@@ -27,6 +31,13 @@ interface ParseState {
   failed: string
   /** The last "result" line seen, if the CLI prints one. */
   finished: boolean
+  /** Set when the run broke a safety rule; the run is stopped and this is shown. */
+  violation: string
+  /** Tool steps that have ended; used to check the safety hook ran. */
+  toolsFinished: number
+  usageSeen: boolean
+  streamedSteps: Set<number>
+  denied: string[]
 }
 
 export interface CliSpec {
@@ -34,7 +45,7 @@ export interface CliSpec {
   label: string
   binary: string
   /** Builds the command for one conversation. `dir` is a private working folder. */
-  invoke(input: { run: ProviderRun; bridge: BridgeAccess; dir: string; model?: string }): CliInvocation
+  invoke(input: { run: ProviderRun; bridge: BridgeAccess; dir: string; model?: string; homeDir?: string }): CliInvocation
   /** Turns one line of the CLI's output into events. */
   parse(line: string, emit: (event: AgentEvent) => void, state: ParseState): void
 }
@@ -161,41 +172,127 @@ export const codexSpec: CliSpec = {
   },
 }
 
-// ── Gemini CLI ──────────────────────────────────────────────────────────────────────
-// As with Codex, built from the published documentation and not yet run against a real install.
+// ── Antigravity CLI (agy) ───────────────────────────────────────────────────────────
+// Replaces Gemini CLI. Checked against agy 1.2.16 (`agy --help`, its documentation and live
+// runs). Three facts shape this adapter:
+//  - Headless runs refuse every tool that is not allowed in settings.json, and a refusal ends
+//    the turn with no answer. Parity must therefore grant its own tools there.
+//  - It reads its settings and MCP servers from ~/.gemini and cannot be pointed elsewhere. The
+//    person's own files are never edited: the run gets a private HOME with only the sign-in
+//    files linked in, its own settings (allow only Parity's tools) and its own MCP server.
+//  - Some tools (web search) need no permission, so a PreToolUse hook denies everything except
+//    Parity's tools. A hook that fails, fails closed; if it never runs the run is stopped.
 
-export const geminiCliSpec: CliSpec = {
-  id: 'gemini-cli',
-  label: 'Gemini CLI',
-  binary: 'gemini',
-  invoke({ run, bridge, dir, model }) {
-    mkdirSync(join(dir, '.gemini'), { recursive: true })
-    // Gemini CLI does not read header values from the environment, so the key sits in this
-    // settings file, which is private to the user and deleted when the run ends.
-    writePrivate(join(dir, '.gemini', 'settings.json'), JSON.stringify({
-      mcpServers: { parity: { httpUrl: bridge.mcpUrl, headers: { Authorization: `Bearer ${bridge.token}` }, trust: true, includeTools: run.tools, timeout: 300000 } },
+const AGY_LOGIN_FILES = ['oauth_creds.json', 'google_accounts.json', 'installation_id']
+const AGY_PERMISSION_FREE = ['finish', 'wait', 'wait_5_seconds']
+
+const shellQuote = (value: string) => (process.platform === 'win32' ? `"${value}"` : `'${value.replace(/'/g, `'\\''`)}'`)
+
+/** The script agy runs before every tool call. Plain Node, so Electron's own Node can run it. */
+export function agyGuardScript(config: { server: string; tools: string[]; mcpDir: string; log: string }): string {
+  return `const fs = require('fs'), path = require('path')
+const CONFIG = ${JSON.stringify({ ...config, free: AGY_PERMISSION_FREE })}
+let raw = ''
+process.stdin.on('data', (chunk) => { raw += chunk })
+process.stdin.on('end', () => {
+  let call = {}
+  try { call = JSON.parse(raw).toolCall || {} } catch (error) { /* an unreadable call is denied below */ }
+  const name = String(call.name || '')
+  const args = call.args || {}
+  let allowed = false
+  if (name === 'call_mcp_tool') allowed = args.ServerName === CONFIG.server && CONFIG.tools.includes(args.ToolName)
+  else if (name === 'view_file') {
+    // agy describes MCP tools in small files it reads itself; nothing else may be read.
+    try { const real = fs.realpathSync(String(args.AbsolutePath || '')); allowed = real.startsWith(CONFIG.mcpDir + path.sep) && real.endsWith('.json') } catch (error) { allowed = false }
+  } else allowed = CONFIG.free.includes(name)
+  try { fs.appendFileSync(CONFIG.log, name + ' ' + (allowed ? 'allow' : 'deny') + '\\n') } catch (error) { /* the run checks for this file */ }
+  process.stdout.write(JSON.stringify(allowed ? { decision: 'ask' } : { decision: 'deny', reason: 'Parity only lets this agent use its own QA tools.' }))
+})
+`
+}
+
+function linkLoginFiles(realHome: string, homeDir: string): void {
+  mkdirSync(join(homeDir, '.gemini'), { recursive: true })
+  for (const file of AGY_LOGIN_FILES) {
+    const source = join(realHome, '.gemini', file)
+    if (!existsSync(source)) continue
+    const target = join(homeDir, '.gemini', file)
+    try { symlinkSync(source, target) } catch { try { copyFileSync(source, target); chmodSync(target, 0o600) } catch { /* sign-in then fails with agy's own message */ } }
+  }
+}
+
+const agyToolName = (info: any): string => (info?.name === 'call_mcp_tool' ? String(info.parameters?.ToolName ?? 'tool') : String(info?.name ?? 'tool'))
+// agy reads the description of each MCP tool from a file before first using it; that is plumbing, not something to show.
+const isAgySchemaRead = (info: any): boolean => info?.name === 'view_file' && /[\\/]antigravity-cli[\\/]mcp[\\/]/.test(String(info.parameters?.AbsolutePath ?? ''))
+
+export const antigravitySpec: CliSpec = {
+  id: 'antigravity',
+  label: 'Antigravity CLI',
+  binary: 'agy',
+  invoke({ run, bridge, dir, model, homeDir: realHome = homedir() }) {
+    const root = realpathSync(dir)
+    const home = join(root, 'home')
+    const work = join(root, 'work')
+    const mcpDir = join(home, '.gemini', 'antigravity-cli', 'mcp')
+    const log = join(root, 'guard.log')
+    mkdirSync(join(home, '.gemini', 'config'), { recursive: true })
+    mkdirSync(join(home, '.gemini', 'antigravity-cli'), { recursive: true })
+    mkdirSync(join(work, '.agents'), { recursive: true })
+    linkLoginFiles(realHome, home)
+
+    // agy does not expand variables in headers, so the key is written here, in a private folder that is deleted when the run ends.
+    writePrivate(join(home, '.gemini', 'config', 'mcp_config.json'), JSON.stringify({ mcpServers: { parity: { serverUrl: bridge.mcpUrl, headers: { Authorization: `Bearer ${bridge.token}` } } } }))
+    writePrivate(join(home, '.gemini', 'antigravity-cli', 'settings.json'), JSON.stringify({
+      trustedWorkspaces: [work],
+      permissions: { allow: [...run.tools.map((tool) => `mcp(parity/${tool})`), `read_file(${mcpDir}/)`] },
     }))
+    const guard = join(work, '.agents', 'guard.cjs')
+    writePrivate(guard, agyGuardScript({ server: 'parity', tools: run.tools, mcpDir, log }))
+    const runner = process.platform === 'win32' ? `set ELECTRON_RUN_AS_NODE=1&& ${shellQuote(process.execPath)} ${shellQuote(guard)}` : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(process.execPath)} ${shellQuote(guard)}`
+    writePrivate(join(work, '.agents', 'hooks.json'), JSON.stringify({ 'parity-guard': { PreToolUse: [{ matcher: '*', hooks: [{ command: runner, timeout: 10 }] }] } }))
+
     return {
-      args: ['--output-format', 'stream-json', '--approval-mode', 'default', '--allowed-mcp-server-names', 'parity', ...(model ? ['--model', model] : []), '--prompt', ' '],
-      env: {},
-      stdin: `${run.system}\n\n# Task\n${run.task}`,
+      args: ['--input-format', 'stream-json', '--output-format', 'stream-json', '--print-timeout', '0', ...(model ? ['--model', model] : []), '-p='],
+      env: { HOME: home, USERPROFILE: home },
+      cwd: work,
+      guardLog: log,
+      // agy has no system prompt flag, so the instructions lead the message. Stdin keeps the text off the command line.
+      stdin: `${JSON.stringify({ event: 'user', message: { content: `${run.system}\n\n# Task\n${run.task}` } })}\n`,
     }
   },
   parse(line, emit, state) {
     const event = tryJson(line)
     if (!event) return
-    if (event.type === 'message' && event.role === 'assistant' && typeof event.content === 'string' && event.content) {
-      state.text = event.content
-      emit({ type: 'text', text: event.content })
-    } else if (event.type === 'tool_use') {
-      emit({ type: 'tool', name: String(event.tool_name ?? 'tool').replace(/^mcp_parity_/, ''), args: event.parameters })
-    } else if (event.type === 'tool_result') {
-      emit({ type: 'tool-result', name: 'tool', isError: event.status === 'error', text: summarize(String(event.output ?? '')), images: 0 })
-    } else if (event.type === 'result') {
+    if (event.event === 'step_update') {
+      const step = event.step_update ?? {}
+      if (step.step_type === 'agent_response') {
+        const text = typeof step.text_delta === 'string' ? step.text_delta : ''
+        if (step.state === 'ACTIVE' && text) { state.streamedSteps.add(step.step_index); emit({ type: 'text', text, delta: true }) }
+        else if (step.state === 'DONE') {
+          if (text && !state.streamedSteps.has(step.step_index)) emit({ type: 'text', text: text.trim() })
+          // Usage is per model call here; the final result repeats the running total.
+          if (step.usage) { state.usageSeen = true; emit({ type: 'usage', inputTokens: (Number(step.usage.input_tokens) || 0) + (Number(step.usage.cache_read_tokens) || 0), outputTokens: Number(step.usage.output_tokens) || 0 }) }
+        }
+      } else if (step.step_type === 'tool') {
+        const info = step.tool_info
+        if (isAgySchemaRead(info)) { if (step.state !== 'ACTIVE') state.toolsFinished++; return }
+        if (step.state === 'ACTIVE') emit({ type: 'tool', name: agyToolName(info), args: info?.name === 'call_mcp_tool' ? info.parameters?.Arguments : info?.parameters })
+        else {
+          state.toolsFinished++
+          const failed = step.state === 'ERROR' || !!info?.error
+          emit({ type: 'tool-result', name: agyToolName(info), isError: failed, text: summarize(String(failed ? info?.error?.message ?? 'The tool failed.' : info?.output ?? 'done')), images: 0 })
+        }
+      }
+    } else if (event.event === 'result') {
+      const result = event.result ?? {}
       state.finished = true
-      const stats = event.stats
-      if (stats) emit({ type: 'usage', inputTokens: Number(stats.input_tokens ?? stats.input) || 0, outputTokens: Number(stats.output_tokens ?? stats.output) || 0 })
-      if (event.status === 'error') state.failed = String(event.error?.message ?? 'Gemini CLI reported an error.')
+      if (!state.usageSeen && result.usage) emit({ type: 'usage', inputTokens: (Number(result.usage.input_tokens) || 0) + (Number(result.usage.cache_read_tokens) || 0), outputTokens: Number(result.usage.output_tokens) || 0 })
+      const response = typeof result.response === 'string' ? result.response.trim() : ''
+      if (response) state.text = response
+      state.denied = Array.isArray(result.denied_actions) ? result.denied_actions.map((d: any) => String(d?.display_name ?? d?.action ?? 'a tool')) : []
+      if (result.status === 'ERROR') state.failed = String(result.error || 'Antigravity CLI reported an error.')
+      else if (result.status !== 'SUCCESS') state.failed = `Antigravity CLI ended with status ${String(result.status)}${result.error ? `: ${result.error}` : '.'}`
+      else if (!response && state.denied.length) state.failed = `The agent tried to use ${[...new Set(state.denied)].join(', ')}, which Parity does not allow, and stopped before answering. Ask again, or use another agent.`
     }
   },
 }
@@ -207,6 +304,8 @@ export interface CliProviderOptions {
   binary?: string
   model?: string
   getBridge: () => BridgeAccess
+  /** Where the person's own home folder is, for tests. */
+  homeDir?: string
 }
 
 export function createCliProvider(spec: CliSpec, options: CliProviderOptions): AgentProvider {
@@ -219,14 +318,14 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
       const bridge = options.getBridge()
       const dir = mkdtempSync(join(tmpdir(), 'parity-agent-'))
       try { chmodSync(dir, 0o700) } catch { /* not supported on this system */ }
-      const state: ParseState = { text: '', failed: '', finished: false }
+      const state: ParseState = { text: '', failed: '', finished: false, violation: '', toolsFinished: 0, usageSeen: false, streamedSteps: new Set(), denied: [] }
       try {
-        const invocation = spec.invoke({ run, bridge, dir, model: options.model })
+        const invocation = spec.invoke({ run, bridge, dir, model: options.model, homeDir: options.homeDir })
         const emit = (event: AgentEvent) => run.emit(event)
         const outcome = await new Promise<{ code: number | null; aborted: boolean; timedOut: boolean; stderr: string }>((resolve, reject) => {
           const childEnv: NodeJS.ProcessEnv = { ...process.env, ...invocation.env }
           delete childEnv.ELECTRON_RUN_AS_NODE // set by some launchers; the agent CLIs must not inherit it
-          const child = spawn(options.binary || spec.binary, invocation.args, { cwd: dir, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+          const child = spawn(options.binary || spec.binary, invocation.args, { cwd: invocation.cwd ?? dir, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
           let stderr = ''
           let buffer = ''
           let aborted = false
@@ -238,7 +337,14 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
           const onAbort = () => { aborted = true; stop() }
           run.signal.addEventListener('abort', onAbort, { once: true })
           const limit = setTimeout(() => { timedOut = true; stop() }, CONVERSATION_LIMIT_MS)
-          const handleLine = (line: string) => { try { spec.parse(line, emit, state) } catch { /* a line we cannot read is skipped */ } }
+          const handleLine = (line: string) => {
+            try { spec.parse(line, emit, state) } catch { /* a line we cannot read is skipped */ }
+            // A tool ran, so the safety hook must have run before it. If not, the agent is not being held to its allowed tools.
+            if (invocation.guardLog && state.toolsFinished > 0 && !state.violation && !existsSync(invocation.guardLog)) {
+              state.violation = `${spec.label} used a tool without Parity's safety check running, so the run was stopped.`
+              stop()
+            }
+          }
           child.stdout.setEncoding('utf8')
           child.stdout.on('data', (chunk: string) => {
             buffer += chunk
@@ -260,6 +366,7 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
           child.stdin.end(invocation.stdin)
         })
 
+        if (state.violation) throw new AgentError(state.violation)
         if (outcome.aborted) return { stopped: 'aborted', text: state.text }
         if (outcome.timedOut) throw new AgentError(`${spec.label} did not finish within 45 minutes and was stopped.`)
         if (state.failed) throw new AgentError(redact(`${spec.label}: ${state.failed}`, bridge.token))

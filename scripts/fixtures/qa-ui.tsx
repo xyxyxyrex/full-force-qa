@@ -12,7 +12,7 @@ const swatch = (color: string) => `data:image/svg+xml;utf8,${encodeURIComponent(
 const agents = [
   { id: 'claude-code', label: 'Claude Code (your Claude plan)', kind: 'subscription', ready: true, detail: '2.1.284 (Claude Code) · signed in (claude.ai)', model: '', needsKey: false, hasKey: false },
   { id: 'codex', label: 'Codex (your ChatGPT plan)', kind: 'subscription', ready: false, detail: 'Not found. Install codex and sign in, then refresh.', model: '', needsKey: false, hasKey: false },
-  { id: 'gemini-cli', label: 'Gemini CLI (your Gemini plan)', kind: 'subscription', ready: false, detail: 'Not found. Install gemini and sign in, then refresh.', model: '', needsKey: false, hasKey: false },
+  { id: 'antigravity', label: 'Antigravity CLI (your Google plan)', kind: 'subscription', ready: false, detail: 'Not found. Install agy and sign in, then refresh.', model: '', needsKey: false, hasKey: false },
   { id: 'anthropic-api', label: 'Claude API key', kind: 'api', ready: false, detail: 'Add your API key.', model: 'claude-opus-5-5', needsKey: true, hasKey: false },
   { id: 'openai-api', label: 'OpenAI API key', kind: 'api', ready: true, detail: 'gpt-test', model: 'gpt-test', needsKey: true, hasKey: true },
   { id: 'gemini-api', label: 'Gemini API key', kind: 'api', ready: false, detail: 'Add your API key.', model: '', needsKey: true, hasKey: false },

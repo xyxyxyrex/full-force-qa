@@ -118,7 +118,7 @@ export interface QaBridgeStatus {
 
 // ── Agent choice and settings ─────────────────────────────────────────────────────────
 
-export const AGENT_IDS = ['claude-code', 'codex', 'gemini-cli', 'anthropic-api', 'openai-api', 'gemini-api', 'local'] as const
+export const AGENT_IDS = ['claude-code', 'codex', 'antigravity', 'anthropic-api', 'openai-api', 'gemini-api', 'local'] as const
 export type AgentId = (typeof AGENT_IDS)[number]
 
 export const isAgentId = (value: unknown): value is AgentId => typeof value === 'string' && (AGENT_IDS as readonly string[]).includes(value)

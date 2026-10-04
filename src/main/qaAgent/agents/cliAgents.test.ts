@@ -1,8 +1,9 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { claudeCodeSpec, codexSpec, createCliProvider, geminiCliSpec, type CliSpec } from './cliAgents'
+import { agyGuardScript, antigravitySpec, claudeCodeSpec, codexSpec, createCliProvider, type CliSpec } from './cliAgents'
 import type { AgentEvent, ProviderRun } from './types'
 
 const TOKEN = 'FAKEKEY'.repeat(6) + 'abc'
@@ -12,7 +13,7 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'parity-cli-agents-')) })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 /** A stand-in agent CLI: records how it was started, then prints the given lines and exits. */
-function fakeCli(options: { lines?: string[]; stderr?: string; exitCode?: number; hangMs?: number }): { binary: string; record: () => any } {
+function fakeCli(options: { lines?: string[]; stderr?: string; exitCode?: number; hangMs?: number; touchGuard?: boolean }): { binary: string; record: () => any } {
   const binary = join(dir, 'fake-agent')
   const recordFile = join(dir, 'record.json')
   writeFileSync(binary, `#!/usr/bin/env node
@@ -22,8 +23,13 @@ process.stdin.on('data', (c) => { stdin += c })
 process.stdin.on('end', () => {
   const cwd = process.cwd()
   const read = (f) => { try { return fs.readFileSync(path.join(cwd, f), 'utf8') } catch { return null } }
+  const readAbs = (f) => { try { return fs.readFileSync(f, 'utf8') } catch { return null } }
   fs.writeFileSync(${JSON.stringify(recordFile)}, JSON.stringify({ argv: process.argv.slice(2), cwd, stdin, env: { PARITY_BRIDGE_KEY: process.env.PARITY_BRIDGE_KEY || null, ELECTRON_RUN_AS_NODE: process.env.ELECTRON_RUN_AS_NODE ?? null },
-    mcp: read('mcp.json'), system: read('system.md'), gemini: read('.gemini/settings.json'), dirMode: fs.statSync(cwd).mode & 0o777 }))
+    mcp: read('mcp.json'), system: read('system.md'), dirMode: fs.statSync(cwd).mode & 0o777,
+    home: process.env.HOME || null, hooks: read('.agents/hooks.json'),
+    agyMcp: readAbs(path.join(process.env.HOME || '/nonexistent', '.gemini/config/mcp_config.json')), agySettings: readAbs(path.join(process.env.HOME || '/nonexistent', '.gemini/antigravity-cli/settings.json')),
+    homeFiles: (() => { try { return fs.readdirSync(path.join(process.env.HOME, '.gemini')).sort() } catch { return [] } })() }))
+  if (${JSON.stringify(options.touchGuard ?? false)}) fs.writeFileSync(path.join(path.dirname(cwd), 'guard.log'), 'call_mcp_tool allow\\n')
   const out = ${JSON.stringify(options.lines ?? [])}
   for (const line of out) process.stdout.write(line + '\\n')
   if (${JSON.stringify(options.stderr ?? '')}) process.stderr.write(${JSON.stringify(options.stderr ?? '')})
@@ -40,7 +46,7 @@ const makeRun = (over: Partial<ProviderRun> = {}) => {
   const run: ProviderRun = { system: 'SYSTEM RUBRIC', task: 'Run id: abc. Check desktop.', tools: ['get_context', 'capture_live', 'save_draft'], maxTurns: 20, signal: controller.signal, call: async () => ({ text: '' }), emit: (e) => events.push(e), ...over }
   return { run, events, controller }
 }
-const provider = (spec: CliSpec, binary: string, model?: string) => createCliProvider(spec, { binary, model, getBridge: () => BRIDGE })
+const provider = (spec: CliSpec, binary: string, model?: string, homeDir?: string) => createCliProvider(spec, { binary, model, homeDir, getBridge: () => BRIDGE })
 
 describe.skipIf(process.platform === 'win32')('Claude Code adapter', () => {
   const lines = [
@@ -114,25 +120,150 @@ describe.skipIf(process.platform === 'win32')('Codex adapter', () => {
   })
 })
 
-describe.skipIf(process.platform === 'win32')('Gemini CLI adapter', () => {
-  it('writes a private settings file with the server and key for the run only', async () => {
-    const cli = fakeCli({ lines: [
-      JSON.stringify({ type: 'message', role: 'assistant', content: 'Working on it.' }),
-      JSON.stringify({ type: 'tool_use', tool_name: 'mcp_parity_capture_live', parameters: { breakpoint: 'desktop' } }),
-      JSON.stringify({ type: 'tool_result', status: 'success', output: 'captured' }),
-      JSON.stringify({ type: 'result', status: 'success', stats: { input_tokens: 300, output_tokens: 20 } }),
-    ] })
-    const { run, events } = makeRun()
-    const result = await provider(geminiCliSpec, cli.binary).run(run)
-    expect(result).toEqual({ stopped: 'finished', text: 'Working on it.' })
+const agyStep = (step: Record<string, unknown>) => JSON.stringify({ event: 'step_update', step_update: { conversation_id: 'c1', ...step } })
+const agyResult = (result: Record<string, unknown>) => JSON.stringify({ event: 'result', result: { conversation_id: 'c1', status: 'SUCCESS', ...result } })
+const SCHEMA_READ = { name: 'view_file', parameters: { AbsolutePath: '/home/u/.gemini/antigravity-cli/mcp/parity/capture_live.json' } }
+
+describe.skipIf(process.platform === 'win32')('Antigravity CLI adapter', () => {
+  const lines = [
+    JSON.stringify({ event: 'init', conversation_id: 'c1', init: { cwd: '/x', tools: ['call_mcp_tool'], permission_mode: 'request-review' } }),
+    agyStep({ step_index: 0, state: 'DONE', step_type: 'user_input' }),
+    agyStep({ step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'Capturing.\n', usage: { input_tokens: 12000, output_tokens: 300, thinking_tokens: 200, cache_read_tokens: 100, total_tokens: 12300 } }),
+    agyStep({ step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'view_file', tool_info: SCHEMA_READ }),
+    agyStep({ step_index: 2, state: 'DONE', step_type: 'tool', tool_name: 'view_file', tool_info: SCHEMA_READ }),
+    agyStep({ step_index: 3, state: 'ACTIVE', step_type: 'tool', tool_name: 'call_mcp_tool', tool_info: { name: 'call_mcp_tool', parameters: { ServerName: 'parity', ToolName: 'capture_live', Arguments: { breakpoint: 'desktop' } } } }),
+    agyStep({ step_index: 3, state: 'DONE', step_type: 'tool', tool_name: 'call_mcp_tool', tool_info: { name: 'call_mcp_tool', parameters: { ServerName: 'parity', ToolName: 'capture_live', Arguments: { breakpoint: 'desktop' } }, output: 'Run abc captured' } }),
+    agyStep({ step_index: 4, state: 'DONE', step_type: 'agent_response', text_delta: 'Saved the draft.\n', usage: { input_tokens: 13000, output_tokens: 100, thinking_tokens: 40, cache_read_tokens: 0, total_tokens: 13100 } }),
+    agyResult({ response: 'Saved the draft.\n', usage: { input_tokens: 25000, output_tokens: 400, cache_read_tokens: 100, total_tokens: 25400 } }),
+  ]
+
+  it('runs in a private home with only Parity\'s tools allowed, and keeps the key off the command line', async () => {
+    const realHome = join(dir, 'realhome')
+    mkdirSync(join(realHome, '.gemini'), { recursive: true })
+    writeFileSync(join(realHome, '.gemini', 'oauth_creds.json'), '{"refresh_token":"r"}')
+    writeFileSync(join(realHome, '.gemini', 'mcp-should-not-be-copied.json'), '{}')
+    const cli = fakeCli({ lines, touchGuard: true })
+    const { run, events } = makeRun({ system: 'SYSTEM RUBRIC', task: 'Run id: abc. Check desktop.' })
+    const result = await provider(antigravitySpec, cli.binary, 'gemini-3.8-flash-high', realHome).run(run)
+    expect(result).toEqual({ stopped: 'finished', text: 'Saved the draft.' })
+
     const rec = cli.record()
     expect(JSON.stringify(rec.argv)).not.toContain(TOKEN)
-    expect(rec.argv).toEqual(expect.arrayContaining(['--output-format', 'stream-json', '--allowed-mcp-server-names', 'parity']))
-    const settings = JSON.parse(rec.gemini)
-    expect(settings.mcpServers.parity).toMatchObject({ httpUrl: BRIDGE.mcpUrl, headers: { Authorization: `Bearer ${TOKEN}` }, trust: true, includeTools: ['get_context', 'capture_live', 'save_draft'] })
+    expect(rec.argv).toEqual(['--input-format', 'stream-json', '--output-format', 'stream-json', '--print-timeout', '0', '--model', 'gemini-3.8-flash-high', '-p='])
+    // The prompt goes over stdin as one stream-json user message: instructions first, then the task.
+    const message = JSON.parse(rec.stdin.trim())
+    expect(message.event).toBe('user')
+    expect(message.message.content).toBe('SYSTEM RUBRIC\n\n# Task\nRun id: abc. Check desktop.')
+    // A private HOME: not the person's own, only the sign-in file linked, Parity's server and rules inside.
+    expect(rec.home).not.toBe(realHome)
+    expect(rec.homeFiles).toEqual(['antigravity-cli', 'config', 'oauth_creds.json'])
+    expect(JSON.parse(rec.agyMcp).mcpServers.parity).toEqual({ serverUrl: BRIDGE.mcpUrl, headers: { Authorization: `Bearer ${TOKEN}` } })
+    const settings = JSON.parse(rec.agySettings)
+    expect(settings.trustedWorkspaces).toEqual([rec.cwd])
+    expect(settings.permissions.allow).toEqual(['mcp(parity/get_context)', 'mcp(parity/capture_live)', 'mcp(parity/save_draft)', `read_file(${rec.home}/.gemini/antigravity-cli/mcp/)`])
+    const hooks = JSON.parse(rec.hooks)
+    expect(hooks['parity-guard'].PreToolUse[0]).toMatchObject({ matcher: '*', hooks: [{ command: expect.stringContaining('guard.cjs'), timeout: 10 }] })
     expect(existsSync(rec.cwd)).toBe(false)
+    expect(existsSync(rec.home)).toBe(false)
+
+    expect(events).toContainEqual({ type: 'text', text: 'Capturing.' })
     expect(events).toContainEqual({ type: 'tool', name: 'capture_live', args: { breakpoint: 'desktop' } })
-    expect(events).toContainEqual({ type: 'usage', inputTokens: 300, outputTokens: 20 })
+    expect(events).toContainEqual({ type: 'tool-result', name: 'capture_live', isError: false, text: 'Run abc captured', images: 0 })
+    expect(events.filter((e) => e.type === 'tool' || e.type === 'tool-result').every((e) => (e as { name: string }).name !== 'view_file')).toBe(true)
+    // Usage is counted once per model call (the result repeats the running total).
+    expect(events.filter((e) => e.type === 'usage')).toEqual([{ type: 'usage', inputTokens: 12100, outputTokens: 300 }, { type: 'usage', inputTokens: 13000, outputTokens: 100 }])
+  })
+
+  it('does not copy the person\'s settings, rules or other agy files into the run', async () => {
+    const realHome = join(dir, 'realhome2')
+    mkdirSync(join(realHome, '.gemini', 'antigravity-cli'), { recursive: true })
+    writeFileSync(join(realHome, '.gemini', 'antigravity-cli', 'settings.json'), JSON.stringify({ permissions: { allow: ['command(*)'] } }))
+    const cli = fakeCli({ lines, touchGuard: true })
+    await provider(antigravitySpec, cli.binary, undefined, realHome).run(makeRun().run)
+    expect(JSON.stringify(JSON.parse(cli.record().agySettings))).not.toContain('command(')
+  })
+
+  it('shows streamed text once, and falls back to the final usage when no step reports any', async () => {
+    const cli = fakeCli({ touchGuard: true, lines: [
+      agyStep({ step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Hel' }),
+      agyStep({ step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'lo' }),
+      agyStep({ step_index: 1, state: 'DONE', step_type: 'agent_response', text_delta: 'Hello' }),
+      agyResult({ response: 'Hello', usage: { input_tokens: 500, output_tokens: 20, cache_read_tokens: 0, total_tokens: 520 } }),
+    ] })
+    const { run, events } = makeRun()
+    expect((await provider(antigravitySpec, cli.binary).run(run)).text).toBe('Hello')
+    expect(events.filter((e) => e.type === 'text')).toEqual([{ type: 'text', text: 'Hel', delta: true }, { type: 'text', text: 'lo', delta: true }])
+    expect(events.filter((e) => e.type === 'usage')).toEqual([{ type: 'usage', inputTokens: 500, outputTokens: 20 }])
+  })
+
+  it('says which tool was refused when the agent stops without answering', async () => {
+    const cli = fakeCli({ touchGuard: true, lines: [
+      agyStep({ step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'ls' } } }),
+      agyStep({ step_index: 2, state: 'ERROR', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'ls' }, error: { type: 'TOOL_ERROR', message: 'tool call denied by pre-tool hook' } } }),
+      agyResult({ response: '', denied_actions: [{ action: 'command', display_name: 'RunCommand' }] }),
+    ] })
+    const { run, events } = makeRun()
+    const error = await provider(antigravitySpec, cli.binary).run(run).catch((e) => e)
+    expect(error.message).toMatch(/tried to use RunCommand, which Parity does not allow/)
+    expect(events).toContainEqual({ type: 'tool-result', name: 'run_command', isError: true, text: 'tool call denied by pre-tool hook', images: 0 })
+  })
+
+  it('reports an error status from agy', async () => {
+    const cli = fakeCli({ touchGuard: true, lines: [agyResult({ status: 'ERROR', response: '', error: 'quota exceeded' })] })
+    const error = await provider(antigravitySpec, cli.binary).run(makeRun().run).catch((e) => e)
+    expect(error.message).toBe('Antigravity CLI: quota exceeded')
+  })
+
+  it('stops the run when a tool ran but the safety hook never did', async () => {
+    const cli = fakeCli({ hangMs: 20_000, lines: [
+      agyStep({ step_index: 3, state: 'ACTIVE', step_type: 'tool', tool_name: 'search_web', tool_info: { name: 'search_web', parameters: { query: 'x' } } }),
+      agyStep({ step_index: 3, state: 'DONE', step_type: 'tool', tool_name: 'search_web', tool_info: { name: 'search_web', parameters: { query: 'x' }, output: 'results' } }),
+    ] })
+    const started = Date.now()
+    const error = await provider(antigravitySpec, cli.binary).run(makeRun().run).catch((e) => e)
+    expect(error.message).toMatch(/without Parity's safety check running/)
+    expect(Date.now() - started).toBeLessThan(8000)
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('Antigravity safety hook', () => {
+  const decide = (call: unknown, extra: { mcpDir?: string } = {}) => {
+    const log = join(dir, 'guard.log')
+    const script = join(dir, 'guard.cjs')
+    const mcpDir = extra.mcpDir ?? join(dir, 'home', '.gemini', 'antigravity-cli', 'mcp')
+    writeFileSync(script, agyGuardScript({ server: 'parity', tools: ['get_context', 'capture_live'], mcpDir, log }))
+    const out = spawnSync(process.execPath, [script], { input: JSON.stringify({ toolCall: call }), encoding: 'utf8' })
+    return { output: JSON.parse(out.stdout), logged: existsSync(log) ? readFileSync(log, 'utf8') : '' }
+  }
+  const denied = { decision: 'deny', reason: expect.stringContaining('only lets this agent use its own QA tools') }
+
+  it('lets only Parity\'s own tools through and writes to its log every time', () => {
+    expect(decide({ name: 'call_mcp_tool', args: { ServerName: 'parity', ToolName: 'capture_live' } }).output).toEqual({ decision: 'ask' })
+    expect(decide({ name: 'call_mcp_tool', args: { ServerName: 'parity', ToolName: 'finalize_rows' } }).output).toEqual(denied)
+    expect(decide({ name: 'call_mcp_tool', args: { ServerName: 'other', ToolName: 'capture_live' } }).output).toEqual(denied)
+    for (const name of ['run_command', 'search_web', 'read_url_content', 'write_to_file', 'open_browser_url', 'schedule', 'invoke_subagent', 'generate_image']) expect(decide({ name, args: {} }).output).toEqual(denied)
+    expect(decide({ name: 'finish', args: {} }).output).toEqual({ decision: 'ask' })
+    expect(readFileSync(join(dir, 'guard.log'), 'utf8')).toContain('call_mcp_tool allow')
+    expect(readFileSync(join(dir, 'guard.log'), 'utf8')).toContain('search_web deny')
+  })
+
+  it('lets agy read only the tool description files in its own MCP folder', () => {
+    const mcpDir = join(dir, 'home', '.gemini', 'antigravity-cli', 'mcp')
+    mkdirSync(join(mcpDir, 'parity'), { recursive: true })
+    writeFileSync(join(mcpDir, 'parity', 'capture_live.json'), '{}')
+    writeFileSync(join(mcpDir, 'parity', 'notes.txt'), 'x')
+    writeFileSync(join(dir, 'secret.json'), '{}')
+    expect(decide({ name: 'view_file', args: { AbsolutePath: join(mcpDir, 'parity', 'capture_live.json') } }).output).toEqual({ decision: 'ask' })
+    expect(decide({ name: 'view_file', args: { AbsolutePath: join(mcpDir, 'parity', 'notes.txt') } }).output).toEqual(denied)
+    expect(decide({ name: 'view_file', args: { AbsolutePath: join(dir, 'secret.json') } }).output).toEqual(denied)
+    expect(decide({ name: 'view_file', args: { AbsolutePath: join(mcpDir, '..', '..', '..', 'secret.json') } }).output).toEqual(denied)
+    expect(decide({ name: 'view_file', args: { AbsolutePath: join(mcpDir, 'missing.json') } }).output).toEqual(denied)
+  })
+
+  it('denies a call it cannot read', () => {
+    const script = join(dir, 'guard2.cjs')
+    writeFileSync(script, agyGuardScript({ server: 'parity', tools: [], mcpDir: dir, log: join(dir, 'guard2.log') }))
+    expect(JSON.parse(spawnSync(process.execPath, [script], { input: 'not json', encoding: 'utf8' }).stdout)).toEqual(denied)
   })
 })
 
@@ -143,8 +274,8 @@ describe.skipIf(process.platform === 'win32')('running agent CLIs', () => {
 
   it('reports a non-zero exit with the agent\'s error, without leaking the key', async () => {
     const cli = fakeCli({ lines: ['noise'], stderr: `auth failed for ${TOKEN}\nplease sign in`, exitCode: 2 })
-    const error = await provider(geminiCliSpec, cli.binary).run(makeRun().run).catch((e) => e)
-    expect(error.message).toContain('Gemini CLI stopped with an error')
+    const error = await provider(claudeCodeSpec, cli.binary).run(makeRun().run).catch((e) => e)
+    expect(error.message).toContain('Claude Code stopped with an error')
     expect(error.message).toContain('please sign in')
     expect(error.message).not.toContain(TOKEN)
     expect(error.message).toContain('[key]')

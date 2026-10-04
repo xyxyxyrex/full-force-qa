@@ -108,7 +108,7 @@ export default function AgentsPanel() {
                     onBlur={(event) => { if (event.target.value.trim() !== settings.models[agent.id]) void save({ models: { [agent.id]: event.target.value } }) }} />
                   <datalist id={`models-${agent.id}`}>{(list?.list || []).map((name) => <option key={name} value={name} />)}</datalist>
                 </label>
-                {agent.kind !== 'subscription' && (
+                {(agent.kind !== 'subscription' || agent.id === 'antigravity') && (
                   <button type="button" className="agents-button" onClick={() => void guard('models', async () => { const result = await window.electronAPI.qaAgentsModels(agent.id); setModels({ ...models, [agent.id]: { list: result.models, error: result.error } }) })}>List models</button>
                 )}
               </div>

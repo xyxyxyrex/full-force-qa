@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { AGENT_IDS, isAgentId, type AgentEffort, type AgentId, type AgentInfo, type AgentSettings } from '../../../shared/qaAgent'
 import { ANTHROPIC_DEFAULT_MODEL, createAnthropicProvider } from './anthropic'
-import { claudeCodeSpec, codexSpec, createCliProvider, geminiCliSpec, type BridgeAccess } from './cliAgents'
-import { detectCli } from './detect'
+import { antigravitySpec, claudeCodeSpec, codexSpec, createCliProvider, type BridgeAccess } from './cliAgents'
+import { detectCli, listAntigravityModels } from './detect'
 import { createOpenAiCompatibleProvider } from './openaiCompatible'
 import { AgentError, type AgentProvider } from './types'
 
@@ -13,18 +13,18 @@ export const DEFAULT_LOCAL_URL = 'http://localhost:11434/v1'
 export const AGENT_LABELS: Record<AgentId, string> = {
   'claude-code': 'Claude Code (your Claude plan)',
   codex: 'Codex (your ChatGPT plan)',
-  'gemini-cli': 'Gemini CLI (your Gemini plan)',
+  antigravity: 'Antigravity CLI (your Google plan)',
   'anthropic-api': 'Claude API key',
   'openai-api': 'OpenAI API key',
   'gemini-api': 'Gemini API key',
   local: 'Local model (Ollama, LM Studio)',
 }
-const KIND: Record<AgentId, AgentInfo['kind']> = { 'claude-code': 'subscription', codex: 'subscription', 'gemini-cli': 'subscription', 'anthropic-api': 'api', 'openai-api': 'api', 'gemini-api': 'api', local: 'local' }
+const KIND: Record<AgentId, AgentInfo['kind']> = { 'claude-code': 'subscription', codex: 'subscription', antigravity: 'subscription', 'anthropic-api': 'api', 'openai-api': 'api', 'gemini-api': 'api', local: 'local' }
 const KEYED: AgentId[] = ['anthropic-api', 'openai-api', 'gemini-api']
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   defaultAgent: 'claude-code',
-  models: { 'claude-code': '', codex: '', 'gemini-cli': '', 'anthropic-api': ANTHROPIC_DEFAULT_MODEL, 'openai-api': '', 'gemini-api': '', local: '' },
+  models: { 'claude-code': '', codex: '', antigravity: '', 'anthropic-api': ANTHROPIC_DEFAULT_MODEL, 'openai-api': '', 'gemini-api': '', local: '' },
   effort: 'medium',
   localBaseUrl: DEFAULT_LOCAL_URL,
   budgetTokens: 0,
@@ -54,7 +54,8 @@ export function normalizeSettings(raw: unknown): AgentSettings {
     } catch { /* keep the default */ }
   }
   return {
-    defaultAgent: isAgentId(source.defaultAgent) ? source.defaultAgent : DEFAULT_AGENT_SETTINGS.defaultAgent,
+    // Gemini CLI was replaced by Antigravity CLI; a saved choice of it moves over.
+    defaultAgent: source.defaultAgent === 'gemini-cli' ? 'antigravity' : isAgentId(source.defaultAgent) ? source.defaultAgent : DEFAULT_AGENT_SETTINGS.defaultAgent,
     models,
     effort,
     localBaseUrl,
@@ -74,7 +75,7 @@ export interface RegistryDeps {
 
 export async function describeAgents(deps: Pick<RegistryDeps, 'settings' | 'getKey' | 'cliPath'>): Promise<AgentInfo[]> {
   const { settings } = deps
-  const cliIds = ['claude-code', 'codex', 'gemini-cli'] as const
+  const cliIds = ['claude-code', 'codex', 'antigravity'] as const
   const detections = await Promise.all(cliIds.map((id) => detectCli(id, deps.cliPath?.(id))))
   return AGENT_IDS.map((id): AgentInfo => {
     const base = { id, label: AGENT_LABELS[id], kind: KIND[id], model: settings.models[id], needsKey: KEYED.includes(id), hasKey: KEYED.includes(id) ? !!deps.getKey(id) : false }
@@ -95,7 +96,7 @@ export function createProvider(id: AgentId, deps: RegistryDeps): AgentProvider {
   switch (id) {
     case 'claude-code': return createCliProvider(claudeCodeSpec, { binary: deps.cliPath?.(id), model: model || undefined, getBridge: deps.getBridge })
     case 'codex': return createCliProvider(codexSpec, { binary: deps.cliPath?.(id), model: model || undefined, getBridge: deps.getBridge })
-    case 'gemini-cli': return createCliProvider(geminiCliSpec, { binary: deps.cliPath?.(id), model: model || undefined, getBridge: deps.getBridge })
+    case 'antigravity': return createCliProvider(antigravitySpec, { binary: deps.cliPath?.(id), model: model || undefined, getBridge: deps.getBridge })
     case 'anthropic-api': {
       const apiKey = deps.getKey(id)
       if (!apiKey) throw new AgentError('Add your Claude API key in Settings → AI Agents.')
@@ -115,8 +116,9 @@ export function createProvider(id: AgentId, deps: RegistryDeps): AgentProvider {
 }
 
 /** The models an API or local server offers, for the picker. Never throws. */
-export async function listModels(id: AgentId, deps: Pick<RegistryDeps, 'settings' | 'getKey'>, overrides: { anthropicBaseURL?: string } = {}): Promise<{ models: string[]; error?: string }> {
+export async function listModels(id: AgentId, deps: Pick<RegistryDeps, 'settings' | 'getKey' | 'cliPath'>, overrides: { anthropicBaseURL?: string } = {}): Promise<{ models: string[]; error?: string }> {
   try {
+    if (id === 'antigravity') return await listAntigravityModels(deps.cliPath?.(id))
     if (id === 'anthropic-api') {
       const apiKey = deps.getKey(id)
       if (!apiKey) return { models: [], error: 'Add your API key first.' }
