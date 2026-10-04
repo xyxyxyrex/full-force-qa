@@ -61,4 +61,11 @@ describe('formatSectionNodes', () => {
     expect(result.omitted).toBe(1)
     expect(result.lines.join('\n')).not.toContain('#1 div')
   })
+
+  it('keeps element ids from the full capture when limited to a range', () => {
+    const result = formatSectionNodes(nodes, 'S3', 80, { top: 250, bottom: 400 })
+    expect(result.lines).toHaveLength(1)
+    expect(result.lines[0].startsWith('#0 h2 "second"')).toBe(true)
+    expect(result.total).toBe(1)
+  })
 })

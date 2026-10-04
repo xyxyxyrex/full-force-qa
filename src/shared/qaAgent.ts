@@ -46,3 +46,41 @@ export interface DesignUpdateOptions {
 }
 
 export type DesignUpdateResponse = { success: true; slots: DesignSlots } | { success: false; error: string }
+
+/** What the open Parity window reports about itself, so tools know which page to look at. */
+export interface ReportedContext {
+  projectKey: string
+  project: { id: string; name: string; stagingUrl: string }
+  pageUrl: string
+  workspaceTab: string
+  breakpoint: Breakpoint | null
+  viewport: { width: number; height: number }
+  reportedAt: number
+}
+
+export interface ApprovalEvidence {
+  rowIndex: number
+  /** Small JPEG data URL shown on the approval card. */
+  thumbnail: string
+  caption: string
+}
+
+/** Rows an agent wants to hand over; the person sees them and approves or rejects. */
+export interface ApprovalRequest {
+  id: string
+  runId: string
+  projectName: string
+  pageUrl: string
+  columns: string[]
+  rows: string[][]
+  severityCounts: Record<string, number>
+  evidence: ApprovalEvidence[]
+  warnings: string[]
+  /** Whether images will be uploaded and linked, or only the rows copied. */
+  uploadsEvidence: boolean
+}
+
+export interface ApprovalDecision {
+  approved: boolean
+  note?: string
+}

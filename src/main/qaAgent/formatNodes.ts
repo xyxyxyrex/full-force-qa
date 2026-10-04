@@ -78,11 +78,20 @@ export interface NodeLines {
   omitted: number
 }
 
-/** Lines for one section, text and images first, in reading order, capped. */
-export function formatSectionNodes(nodes: LiveNode[], sectionId: string, max = 80): NodeLines {
+/**
+ * Lines for one section, text and images first, in reading order, capped. Element ids
+ * (#n) are positions in the full capture, so they stay the same from call to call.
+ * `range` limits the list to elements whose middle falls inside it (one part of a tall section).
+ */
+export function formatSectionNodes(nodes: LiveNode[], sectionId: string, max = 80, range?: { top: number; bottom: number }): NodeLines {
   const picked = nodes
     .map((node, index) => ({ node, index }))
     .filter((item) => item.node.sectionId === sectionId)
+    .filter((item) => {
+      if (!range) return true
+      const middle = item.node.rect.y + item.node.rect.height / 2
+      return middle >= range.top && middle < range.bottom
+    })
   const rank = (node: LiveNode) => (node.text || node.tag === 'img' ? 0 : 1)
   const ordered = [...picked].sort((a, b) => rank(a.node) - rank(b.node) || a.node.rect.y - b.node.rect.y || a.node.rect.x - b.node.rect.x)
   const shown = ordered.slice(0, max).sort((a, b) => a.node.rect.y - b.node.rect.y || a.node.rect.x - b.node.rect.x)

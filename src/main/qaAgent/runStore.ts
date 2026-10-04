@@ -129,6 +129,19 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       return drafts
     },
 
+    /** Remembers which design range was compared with a section, so evidence can be cut later. */
+    saveSectionRange(id: string, breakpoint: Breakpoint, section: string, range: { designTop: number; designBottom: number } | null): void {
+      const file = join(dir(id), 'sectionMap.json')
+      let map: Record<string, Record<string, { designTop: number; designBottom: number } | null>> = {}
+      try { map = JSON.parse(readFileSync(file, 'utf8')) } catch { /* first entry */ }
+      map[breakpoint] = { ...(map[breakpoint] || {}), [section]: range }
+      atomicWrite(file, JSON.stringify(map))
+    },
+
+    readSectionRanges(id: string, breakpoint: Breakpoint): Record<string, { designTop: number; designBottom: number } | null> {
+      try { return (JSON.parse(readFileSync(join(dir(id), 'sectionMap.json'), 'utf8')) as Record<string, Record<string, { designTop: number; designBottom: number } | null>>)[breakpoint] || {} } catch { return {} }
+    },
+
     /** Folder for files written when rows are finalized (rows.tsv, evidence images). */
     outputDir(id: string): string {
       const folder = join(dir(id), 'output')

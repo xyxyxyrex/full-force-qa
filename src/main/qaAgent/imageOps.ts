@@ -110,3 +110,82 @@ export async function exceedsEdgeLimit(image: Buffer): Promise<boolean> {
   const meta = await sharp(image).metadata()
   return Math.max(meta.width || 0, meta.height || 0) > MAX_EDGE
 }
+
+export interface EvidenceInput {
+  design: Buffer | null
+  live: Buffer
+  /** Boxes in CSS px on each page; either may be missing. */
+  designRect?: Rect
+  liveRect?: Rect
+  header: { design: string; live: string }
+  caption: string
+}
+
+const EVIDENCE_PADDING = 48
+const EVIDENCE_MAX_HEIGHT = 900
+const EVIDENCE_MAX_WIDTH = 2400
+const EVIDENCE_GAP = 16
+
+interface Cut {
+  image: Buffer
+  width: number
+  height: number
+  box: Rect | null
+}
+
+async function cutAround(source: Buffer, rect: Rect | undefined): Promise<Cut | null> {
+  const meta = await sharp(source).metadata()
+  const sourceWidth = meta.width || 0
+  const sourceHeight = meta.height || 0
+  if (!rect) return null
+  const left = Math.max(0, Math.round(rect.x) - EVIDENCE_PADDING)
+  const top = Math.max(0, Math.round(rect.y) - EVIDENCE_PADDING)
+  const right = Math.min(sourceWidth, Math.round(rect.x + rect.width) + EVIDENCE_PADDING)
+  const bottom = Math.min(sourceHeight, Math.round(rect.y + rect.height) + EVIDENCE_PADDING)
+  if (right - left < 1 || bottom - top < 1) return null
+  const image = await sharp(source).extract({ left, top, width: right - left, height: bottom - top }).png().toBuffer()
+  return { image, width: right - left, height: bottom - top, box: { x: Math.round(rect.x) - left, y: Math.round(rect.y) - top, width: Math.round(rect.width), height: Math.round(rect.height) } }
+}
+
+/** Design and live crops side by side with the issue boxed in red, as WebP. */
+export async function renderEvidence(input: EvidenceInput): Promise<Buffer> {
+  const [design, live] = await Promise.all([
+    input.design && input.designRect ? cutAround(input.design, input.designRect) : Promise.resolve(null),
+    cutAround(input.live, input.liveRect ?? { x: 0, y: 0, width: Math.min(1200, (await sharp(input.live).metadata()).width || 1200), height: 700 }),
+  ])
+  const cuts = [design, live].filter((cut): cut is Cut => !!cut)
+  if (!cuts.length) throw new Error('The evidence area is outside the page.')
+  const tallest = Math.max(...cuts.map((cut) => cut.height))
+  const totalWidth = cuts.reduce((sum, cut) => sum + cut.width, 0) + EVIDENCE_GAP * (cuts.length - 1)
+  const scale = Math.min(1, EVIDENCE_MAX_HEIGHT / tallest, EVIDENCE_MAX_WIDTH / totalWidth)
+  const titleHeight = 22
+  const captionHeight = input.caption ? 26 : 0
+
+  const pieces: Array<{ cut: Cut; label: string }> = []
+  if (design) pieces.push({ cut: design, label: input.header.design })
+  if (live) pieces.push({ cut: live, label: input.header.live })
+  const layers: OverlayOptions[] = []
+  const marks: string[] = []
+  let x = 0
+  for (const { cut, label } of pieces) {
+    const width = Math.max(1, Math.round(cut.width * scale))
+    const height = Math.max(1, Math.round(cut.height * scale))
+    layers.push({ input: await sharp(cut.image).resize({ width, height }).png().toBuffer(), left: x, top: titleHeight })
+    if (cut.box) {
+      marks.push(`<rect x="${x + cut.box.x * scale}" y="${titleHeight + cut.box.y * scale}" width="${Math.max(2, cut.box.width * scale)}" height="${Math.max(2, cut.box.height * scale)}" fill="none" stroke="#ff2d2d" stroke-width="3"/>`)
+    }
+    marks.push(`<text x="${x + 4}" y="15" font-family="sans-serif" font-size="12" font-weight="bold" fill="#ffffff">${escapeXml(label)}</text>`)
+    x += width + EVIDENCE_GAP
+  }
+  const canvasWidth = Math.max(1, x - EVIDENCE_GAP)
+  const bodyHeight = Math.max(...pieces.map(({ cut }) => Math.round(cut.height * scale)))
+  const canvasHeight = titleHeight + bodyHeight + captionHeight
+  if (input.caption) marks.push(`<text x="4" y="${titleHeight + bodyHeight + 18}" font-family="sans-serif" font-size="13" fill="#ffffff">${escapeXml(input.caption.slice(0, Math.floor(canvasWidth / 7)))}</text>`)
+  layers.push({ input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">${marks.join('')}</svg>`), left: 0, top: 0 })
+  return sharp({ create: { width: canvasWidth, height: canvasHeight, channels: 3, background: '#1c1c1c' } }).composite(layers).webp({ quality: 90, smartSubsample: true }).toBuffer()
+}
+
+/** A small JPEG for the approval card. */
+export async function thumbnailJpeg(image: Buffer, width = 360): Promise<Buffer> {
+  return sharp(image).resize({ width, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer()
+}

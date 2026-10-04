@@ -80,3 +80,31 @@ describe('renderOverview', () => {
     }
   })
 })
+
+describe('renderEvidence', () => {
+  it('puts the boxed design and live areas side by side as WebP within the size limits', async () => {
+    const { renderEvidence } = await import('./imageOps')
+    const out = await renderEvidence({
+      design: await bands(1440, 1200), live: await bands(1440, 1200),
+      designRect: { x: 100, y: 450, width: 300, height: 100 }, liveRect: { x: 120, y: 470, width: 300, height: 100 },
+      header: { design: 'Design · Desktop 1440', live: 'Live · 1440' }, caption: 'Heading is smaller than the design',
+    })
+    const meta = await sharp(out).metadata()
+    expect(meta.format).toBe('webp')
+    expect(meta.width!).toBeLessThanOrEqual(2400)
+    expect(meta.height!).toBeLessThanOrEqual(900 + 22 + 26)
+    // Design crop starts 48px before the box, so its left edge sits at x=48; the box is drawn red there.
+    const { data, info } = await sharp(out).raw().toBuffer({ resolveWithObject: true })
+    const at = (x: number, y: number) => { const o = (y * info.width + x) * info.channels; return [data[o], data[o + 1], data[o + 2]] }
+    const strokeIsRed = [46, 47, 48, 49, 50].some((x) => { const [r, g, b] = at(x, 22 + 48 + 50); return r > 200 && g < 90 && b < 90 })
+    expect(strokeIsRed).toBe(true)
+  })
+
+  it('works with the live page only and rejects an area outside the page', async () => {
+    const { renderEvidence } = await import('./imageOps')
+    const live = await bands(400, 1200)
+    const out = await renderEvidence({ design: null, live, liveRect: { x: 10, y: 10, width: 100, height: 50 }, header: { design: '', live: 'Live' }, caption: '' })
+    expect((await sharp(out).metadata()).format).toBe('webp')
+    await expect(renderEvidence({ design: null, live, liveRect: { x: 5000, y: 5000, width: 10, height: 10 }, header: { design: '', live: 'Live' }, caption: '' })).rejects.toThrow(/outside/)
+  })
+})
