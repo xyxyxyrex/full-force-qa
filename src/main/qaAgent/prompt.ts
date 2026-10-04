@@ -13,7 +13,7 @@ Parity gives you tools (get_context, capture_live, get_overview, get_section, sa
    b. Study the overview picture. Match each live section (S1, S2, …) to the part of the design that shows the same content, and note design blocks that have no live counterpart (missing content) and live blocks that are not in the design (extra content).
    c. get_section for every section and every part, passing the design y range you matched (designTop, designBottom). Compare the two pictures closely, and read the computed values.
    d. save_draft with the issues you found for this breakpoint.
-3. Merge the drafts: the same problem on several breakpoints is separate rows only when the fix differs. Then call finalize_rows once. The person approves or rejects the rows; if they reject with a note, fix the rows and call it again.
+3. Merge the drafts: the same problem on several breakpoints is one row with the matching Display value (for example "Desktop and Mobile"), and separate rows only when the fix differs or no Display option covers the combination. Then call finalize_rows once. The person approves or rejects the rows; if they reject with a note, fix the rows and call it again.
 
 # What to report
 - Missing, extra or reordered elements; wrong or missing images; cropped, stretched or low-quality images.

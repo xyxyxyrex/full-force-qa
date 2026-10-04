@@ -7,6 +7,8 @@ export interface TrackerFormat {
   columns: string[]
   /** A few real rows, so the agent can match the team's wording. */
   examples: string[][]
+  /** Columns that are dropdowns in the sheet, with their exact options. */
+  choices?: Record<string, string[]>
 }
 
 export type IssueRow = Record<string, string>
@@ -58,12 +60,14 @@ export function parseTrackerPaste(text: string): ParseResult {
     return count === 1 ? base : `${base} (${count})`
   })
   const examples = rows.slice(1, 1 + MAX_EXAMPLES).map((r) => columns.map((_, i) => r[i] ?? ''))
-  return { ok: true, format: { version: 1, columns, examples } }
+  // Pasting the standard tracker's own header keeps its dropdown options.
+  const isStandard = columns.length === STANDARD_TRACKER.columns.length && columns.every((name, i) => name === STANDARD_TRACKER.columns[i])
+  return { ok: true, format: { version: 1, columns, examples, ...(isStandard ? { choices: STANDARD_TRACKER.choices } : {}) } }
 }
 
 export function isTrackerFormat(value: unknown): value is TrackerFormat {
   const v = value as TrackerFormat
-  return !!v && v.version === 1 && Array.isArray(v.columns) && v.columns.length >= 2 && v.columns.every((c) => typeof c === 'string') && Array.isArray(v.examples) && v.examples.every((r) => Array.isArray(r))
+  return !!v && v.version === 1 && Array.isArray(v.columns) && v.columns.length >= 2 && v.columns.every((c) => typeof c === 'string') && Array.isArray(v.examples) && v.examples.every((r) => Array.isArray(r)) && (v.choices === undefined || (typeof v.choices === 'object' && v.choices !== null && Object.values(v.choices).every((o) => Array.isArray(o) && o.every((x) => typeof x === 'string'))))
 }
 
 const SCREENSHOT_HEADER = /screenshot|screen shot|image|evidence|sleekshot|capture|proof|attachment|link/i
@@ -85,6 +89,21 @@ export const STANDARD_TRACKER: TrackerFormat = {
     'Reason for Rejection (if applicable)', 'Screenshot and Remarks (Dev)', 'Remarks (PM)', 'Remarks (CRSM)',
   ],
   examples: [],
+  choices: {
+    Display: ['Desktop', 'Mobile', 'Tablet', 'Mobile & Tablet', 'Desktop and Mobile', 'Desktop and Tablet'],
+    Status: ['IN PROGRESS (DEV)', 'COMPLETED (DEV)', 'REJECTED (QA)', 'APPROVED (QA)', 'INVALID (DEV)', 'ENHANCEMENT (QA)', 'PM CLARIFICATION'],
+  },
+}
+
+// "Mobile and tablet", "tablet & Mobile" and "Mobile & Tablet" are the same choice.
+const choiceKey = (text: string) => [...new Set(text.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').split(' ').filter((word) => word && word !== 'and'))].sort().join(' ')
+const withoutParentheses = (text: string) => text.replace(/\([^)]*\)/g, ' ')
+
+/** The dropdown option a cell means, or null when it is not one of them. */
+export function matchChoice(options: string[], value: string): string | null {
+  const wanted = choiceKey(value)
+  if (!wanted) return null
+  return options.find((option) => choiceKey(option) === wanted) ?? options.find((option) => choiceKey(withoutParentheses(option)) === wanted) ?? null
 }
 
 /** What to write in each column, guessed from its header, so the agent fills only QA's columns. */
@@ -93,7 +112,10 @@ export function trackerColumnGuide(format: TrackerFormat): Record<string, string
   const guide: Record<string, string> = {}
   format.columns.forEach((name, index) => {
     const shared = new Set(format.examples.map((row) => (row[index] ?? '').trim()).filter(Boolean))
-    if (OTHER_PEOPLE_HEADER.test(name)) guide[name] = 'Leave empty. Developers, PMs and the QA approval step fill this in later.'
+    const options = format.choices?.[name]
+    if (options && /^status$/i.test(name)) guide[name] = 'Leave empty: developers and the approval step set it. Only for a suggestion that is not a mismatch with the design, use "ENHANCEMENT (QA)". Allowed values: ' + options.join(' | ')
+    else if (options) guide[name] = `Where the issue appears. Exactly one of: ${options.join(' | ')}. The same problem on several breakpoints is one row with the matching combination.`
+    else if (OTHER_PEOPLE_HEADER.test(name)) guide[name] = 'Leave empty. Developers, PMs and the QA approval step fill this in later.'
     else if (name === shot) guide[name] = 'Leave empty. Parity fills it with the evidence link.'
     else if (/^page\b.*(link|url)|^url$|^link$/i.test(name)) guide[name] = 'The URL of the page that was checked (openPage.url from get_context).'
     else if (/^section$/i.test(name)) guide[name] = 'The page section and element, for example "Basics section, H2". Add the breakpoint here if there is no better column.'
@@ -131,7 +153,13 @@ export function buildRows(format: TrackerFormat, issues: IssueRow[]): RowsResult
     for (const [key, value] of Object.entries(issue || {})) {
       const column = byLowerName.get(key.trim().toLowerCase())
       if (!column) return { ok: false, error: `Row ${index + 1} uses a column that is not in the tracker: "${key}". The columns are: ${format.columns.join(', ')}.` }
-      cells[column] = cleanCell(value)
+      const text = cleanCell(value)
+      const options = format.choices?.[column]
+      if (options && text.trim()) {
+        const choice = matchChoice(options, text)
+        if (!choice) return { ok: false, error: `Row ${index + 1}: "${text}" is not an option for ${column}. Use exactly one of: ${options.join(' | ')}.` }
+        cells[column] = choice
+      } else cells[column] = text
     }
     const row = format.columns.map((name) => neutralizeFormula(cells[name] ?? ''))
     if (row.every((cell) => cell === '')) warnings.push(`Row ${index + 1} is empty.`)

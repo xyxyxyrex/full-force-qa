@@ -137,12 +137,31 @@ describe('standard tracker', () => {
     expect(guide['Priority (QA/PM)']).toMatch(/High, Medium or Low/)
     for (const name of ['Approval Screenshot(QA)', 'Reason for Rejection (if applicable)', 'Screenshot and Remarks (Dev)', 'Remarks (PM)']) expect(guide[name]).toMatch(/Leave empty/)
     expect(guide['Screenshot']).toMatch(/evidence link/)
-    expect(guide['Status']).toMatch(/Leave empty/)
+    expect(guide['Status']).toMatch(/Leave empty.*ENHANCEMENT \(QA\)/)
+    expect(guide['Display']).toMatch(/Desktop and Tablet/)
   })
 
-  it('copies a Status that every example row shares', () => {
-    const examples = [['', '', '', '', '', '', 'Open', '', '', '', '', ''], ['', '', '', '', '', '', 'Open', '', '', '', '', '']]
-    expect(trackerColumnGuide({ ...STANDARD_TRACKER, examples })['Status']).toBe('Use "Open", as in the example rows.')
+  it('keeps the dropdown options when the standard header is pasted', () => {
+    const parsed = parseTrackerPaste(pasted)
+    expect(parsed.ok && parsed.format.choices).toEqual(STANDARD_TRACKER.choices)
+  })
+
+  it('accepts a dropdown value in any wording or order and writes the exact option', () => {
+    const row = (Display: string, Status = '') => buildRows(STANDARD_TRACKER, [{ Remarks: 'x', Display, Status }])
+    const cells = (r: ReturnType<typeof row>) => (r.ok ? [r.rows[0][5], r.rows[0][6]] : r.error)
+    expect(cells(row('desktop'))).toEqual(['Desktop', ''])
+    expect(cells(row('tablet and mobile'))).toEqual(['Mobile & Tablet', ''])
+    expect(cells(row('Mobile & Desktop'))).toEqual(['Desktop and Mobile', ''])
+    expect(cells(row('Tablet, Desktop'))).toEqual(['Desktop and Tablet', ''])
+    expect(cells(row('Desktop', 'enhancement'))).toEqual(['Desktop', 'ENHANCEMENT (QA)'])
+    expect(cells(row('Desktop', 'pm clarification'))).toEqual(['Desktop', 'PM CLARIFICATION'])
+  })
+
+  it('rejects values that are not in the dropdown and says what is allowed', () => {
+    const all = buildRows(STANDARD_TRACKER, [{ Remarks: 'x', Display: 'Desktop, Tablet and Mobile' }])
+    expect(!all.ok && all.error).toMatch(/not an option for Display.*Desktop and Tablet/)
+    const status = buildRows(STANDARD_TRACKER, [{ Remarks: 'x', Status: 'Open' }])
+    expect(!status.ok && status.error).toMatch(/not an option for Status/)
   })
 
   it('builds a row with the right cells filled', () => {
