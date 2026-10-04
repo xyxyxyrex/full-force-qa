@@ -3231,6 +3231,41 @@ export default function EditorWorkspace({
   const customStyleRef = useRef<HTMLStyleElement | null>(null);
 
   const [liveUrl, setLiveUrl] = useState<string>(sourceUrl || "");
+
+  // ── Tell the main process which project and page are open, for the QA agent ──
+  useEffect(() => {
+    let last = "";
+    const report = () => {
+      const pageUrl =
+        (workspaceTab === "live" ? liveUrl : editBetaRef.current?.getCurrentUrl()) ||
+        sourceUrl;
+      let name = project?.name || "";
+      if (!name) {
+        try { name = new URL(sourceUrl).hostname; } catch { name = activeProjectId; }
+      }
+      const payload = {
+        projectKey: activeProjectId,
+        project: { id: project?.id || "", name, stagingUrl: project?.stagingUrl || sourceUrl },
+        pageUrl,
+        workspaceTab,
+        breakpoint: activeAnnotationViewport.deviceType === "custom" ? null : activeAnnotationViewport.deviceType,
+        viewport: { width: activeAnnotationViewport.width, height: activeAnnotationViewport.height },
+        reportedAt: 0,
+      };
+      const fingerprint = JSON.stringify([payload.projectKey, payload.pageUrl, payload.workspaceTab, payload.breakpoint, payload.viewport, name]);
+      if (fingerprint === last) return;
+      last = fingerprint;
+      window.electronAPI.qaReportContext(payload);
+    };
+    const first = window.setTimeout(report, 250);
+    // The page can change from inside the workspace (link clicks), so check now and then.
+    const poll = window.setInterval(report, 2000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(poll);
+    };
+  }, [activeProjectId, activeAnnotationViewport, liveUrl, project, sourceUrl, workspaceTab]);
+  useEffect(() => () => window.electronAPI.qaReportContext(null), []);
   const [auditUrl, setAuditUrl] = useState<string>(sourceUrl || "");
   const [auditNavigationPending, setAuditNavigationPending] = useState(false);
   const [auditNavigationError, setAuditNavigationError] = useState("");

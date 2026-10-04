@@ -122,6 +122,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteProject(id: string, ownerKey?: string | null): Promise<void> {
     return ipcRenderer.invoke('projects:delete', id, ownerKey)
   },
+  qaReportContext: (context: import('../shared/qaAgent').ReportedContext | null) => ipcRenderer.send('qa:report-context', context),
+  qaCallTool: (name: string, args?: unknown) => ipcRenderer.invoke('qa:call-tool', name, args),
+  qaApprovalDecision: (id: string, decision: import('../shared/qaAgent').ApprovalDecision) => ipcRenderer.invoke('qa:approval-decision', id, decision),
+  onQaApprovalRequest: (callback: (request: import('../shared/qaAgent').ApprovalRequest) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/qaAgent').ApprovalRequest) => callback(request)
+    ipcRenderer.on('qa:approval-request', handler)
+    return () => { ipcRenderer.removeListener('qa:approval-request', handler) }
+  },
+  qaTrackerFormatGet: () => ipcRenderer.invoke('qa:tracker-format:get'),
+  qaTrackerFormatSave: (text: string) => ipcRenderer.invoke('qa:tracker-format:save', text),
+  qaTrackerFormatClear: () => ipcRenderer.invoke('qa:tracker-format:clear'),
   designsList: (projectKey: string) => ipcRenderer.invoke('designs:list', projectKey),
   designsPut: (projectKey: string, bytes: Uint8Array, options?: import('../shared/qaAgent').DesignPutOptions) => ipcRenderer.invoke('designs:put', projectKey, bytes, options),
   designsUpdate: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint, options: import('../shared/qaAgent').DesignUpdateOptions) => ipcRenderer.invoke('designs:update', projectKey, breakpoint, options),

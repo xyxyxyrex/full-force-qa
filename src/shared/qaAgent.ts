@@ -84,3 +84,10 @@ export interface ApprovalDecision {
   approved: boolean
   note?: string
 }
+
+/** A tool result as the app window receives it: images as data URLs. */
+export interface QaToolCallResult {
+  text: string
+  isError: boolean
+  images: Array<{ dataUrl: string; caption: string; file?: string }>
+}

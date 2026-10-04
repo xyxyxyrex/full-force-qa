@@ -43,6 +43,7 @@ function configureParityIdentity(): void {
 configureParityIdentity()
 
 let designStore: ReturnType<typeof createDesignStore> | null = null
+let qaAgent: ReturnType<typeof registerQaAgent> | null = null
 const getDesignStore = () => (designStore ??= createDesignStore(join(app.getPath('userData'), 'designs')))
 
 protocol.registerSchemesAsPrivileged([
@@ -56,6 +57,7 @@ import { freezeSnapshot } from './snapshot'
 import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadWorkspaceAuditContext, loadWorkspaceHtml, saveProject, saveWorkspaceAuditContext, saveWorkspaceHtml, setProjectOwner } from './store'
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
 import { createDesignStore } from './designStore'
+import { registerQaAgent } from './qaAgent'
 import { isBreakpoint } from '../shared/designScale'
 import { measureResponseBody, resourceSizeFromHeaders } from './resourceFileSize'
 import type { DesignPutOptions, DesignUpdateOptions } from '../shared/qaAgent'
@@ -555,6 +557,8 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler(() => {
     return { action: 'allow' }
   })
+
+  qaAgent?.attachMainWindow(mainWindow)
 
   // The app window never navigates away from itself. Without this, an image dropped
   // outside a drop target opens as file:///….png and the unsaved workspace is lost.
@@ -1630,6 +1634,7 @@ app.whenReady().then(async () => {
   registerTicketHandlers()
   registerAuditExportHandlers()
   registerComparisonHandlers()
+  qaAgent = registerQaAgent({ getMainWindow: () => mainWindow, getDesignStore })
   createWindow()
   initializeAppUpdater(() => mainWindow)
 })

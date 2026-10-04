@@ -16,6 +16,8 @@ import './theme/themes.css'
 import './App.css'
 import type { AuditCaptureContext } from '../../shared/auditExport'
 import CommandPalette from './components/CommandPalette'
+import QaApprovalCard from './components/QaApprovalCard'
+import type { ApprovalRequest } from '../../shared/qaAgent'
 import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/registry'
 import { getPaletteNotes, setPaletteNotes, workspaceItems } from './palette/workspaceSearch'
 import { HOTKEY_DEFINITIONS, THEME_LIST, saveSettings } from './theme/themeSystem'
@@ -67,6 +69,9 @@ export default function App() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
+  // Rows an agent hands over wait here until the person approves or rejects them.
+  const [qaApproval, setQaApproval] = useState<ApprovalRequest | null>(null)
+  useEffect(() => window.electronAPI.onQaApprovalRequest(setQaApproval), [])
   // A file dropped anywhere but on a drop target must not open in the window.
   useEffect(() => {
     const swallowFileDrag = (event: DragEvent) => {
@@ -1015,6 +1020,14 @@ export default function App() {
           applyTheme(newSettings.theme)
         }}
       />
+      {qaApproval && <QaApprovalCard
+        request={qaApproval}
+        onDecide={(approved, note) => {
+          const id = qaApproval.id
+          setQaApproval(null)
+          void window.electronAPI.qaApprovalDecision(id, { approved, note })
+        }}
+      />}
       {feedbackOpen && <FeedbackModal
         initialArea={feedbackArea}
         onClose={() => setFeedbackOpen(false)}

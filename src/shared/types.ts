@@ -1,7 +1,8 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
 import type { Breakpoint } from './designScale'
-import type { DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse } from './qaAgent'
+import type { ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaToolCallResult, ReportedContext } from './qaAgent'
+import type { TrackerFormat } from './trackerFormat'
 import type {
   AuditCaptureContext,
   AuditExportProgress,
@@ -444,6 +445,13 @@ export interface ElectronAPI extends InspectorApi {
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project, ownerKey?: string | null) => Promise<void>
   deleteProject: (id: string, ownerKey?: string | null) => Promise<void>
+  qaReportContext: (context: ReportedContext | null) => void
+  qaCallTool: (name: string, args?: unknown) => Promise<QaToolCallResult>
+  qaApprovalDecision: (id: string, decision: ApprovalDecision) => Promise<boolean>
+  onQaApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void
+  qaTrackerFormatGet: () => Promise<TrackerFormat | null>
+  qaTrackerFormatSave: (text: string) => Promise<{ ok: true; format: TrackerFormat } | { ok: false; error: string }>
+  qaTrackerFormatClear: () => Promise<boolean>
   designsList: (projectKey: string) => Promise<DesignListResult>
   designsPut: (projectKey: string, bytes: Uint8Array, options?: DesignPutOptions) => Promise<DesignPutResponse>
   designsUpdate: (projectKey: string, breakpoint: Breakpoint, options: DesignUpdateOptions) => Promise<DesignUpdateResponse>
