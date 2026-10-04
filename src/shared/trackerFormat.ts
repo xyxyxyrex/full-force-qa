@@ -67,11 +67,41 @@ export function isTrackerFormat(value: unknown): value is TrackerFormat {
 }
 
 const SCREENSHOT_HEADER = /screenshot|screen shot|image|evidence|sleekshot|capture|proof|attachment|link/i
+// Columns other people fill in: the developer's reply and the QA approval after a fix.
+const OTHER_PEOPLE_HEADER = /\((dev|pm|crsm)\)|approval|rejection/i
 
 /** The column that holds the screenshot link, guessed from its header. */
 export function screenshotColumn(format: TrackerFormat): string | null {
-  const strong = format.columns.find((name) => /screenshot|screen shot|sleekshot|evidence/i.test(name))
-  return strong ?? format.columns.find((name) => SCREENSHOT_HEADER.test(name)) ?? null
+  const mine = format.columns.filter((name) => !OTHER_PEOPLE_HEADER.test(name))
+  const strong = mine.find((name) => /screenshot|screen shot|sleekshot|evidence/i.test(name))
+  return strong ?? mine.find((name) => SCREENSHOT_HEADER.test(name) && !/^page\b/i.test(name)) ?? null
+}
+
+/** The tracker every project uses, so nobody has to paste it. Pasting one in Settings replaces it. */
+export const STANDARD_TRACKER: TrackerFormat = {
+  version: 1,
+  columns: [
+    'Page Link', 'Section', 'Screenshot', 'Remarks', 'Priority (QA/PM)', 'Display', 'Status', 'Approval Screenshot(QA)',
+    'Reason for Rejection (if applicable)', 'Screenshot and Remarks (Dev)', 'Remarks (PM)', 'Remarks (CRSM)',
+  ],
+  examples: [],
+}
+
+/** What to write in each column, guessed from its header, so the agent fills only QA's columns. */
+export function trackerColumnGuide(format: TrackerFormat): Record<string, string> {
+  const shot = screenshotColumn(format)
+  const guide: Record<string, string> = {}
+  format.columns.forEach((name, index) => {
+    const shared = new Set(format.examples.map((row) => (row[index] ?? '').trim()).filter(Boolean))
+    if (OTHER_PEOPLE_HEADER.test(name)) guide[name] = 'Leave empty. Developers, PMs and the QA approval step fill this in later.'
+    else if (name === shot) guide[name] = 'Leave empty. Parity fills it with the evidence link.'
+    else if (/^page\b.*(link|url)|^url$|^link$/i.test(name)) guide[name] = 'The URL of the page that was checked (openPage.url from get_context).'
+    else if (/^section$/i.test(name)) guide[name] = 'The page section and element, for example "Basics section, H2". Add the breakpoint here if there is no better column.'
+    else if (/severity|priority|impact/i.test(name)) guide[name] = 'High, Medium or Low (or the values the example rows use).'
+    else if (/^(remarks|issue|description|finding|comment)s?$/i.test(name)) guide[name] = 'The issue: breakpoint, what is different, what the design shows and what the live page shows. One issue per row.'
+    else if (/^(display|status)$/i.test(name)) guide[name] = shared.size === 1 ? `Use "${[...shared][0]}", as in the example rows.` : 'Leave empty unless the example rows show a value to use.'
+  })
+  return guide
 }
 
 /**

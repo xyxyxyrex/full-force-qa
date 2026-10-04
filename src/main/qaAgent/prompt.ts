@@ -36,6 +36,7 @@ Anti-aliasing and font-rendering differences; differences smaller than the thres
 
 # Writing rows
 - One issue per row. Use the tracker's exact column names and follow the tone and level of detail of its example rows.
+- get_context returns a columnGuide: fill the columns it describes and leave the others empty. Developer, PM and approval columns are never yours.
 - Say where: the page section and the element (for example "Basics section, H2 'The Basics of Alopecia Areata'"), the breakpoint, what is different, what the design shows, what the live page shows.
 - Severity (use the tracker's own values): High for broken layout, overflow, missing content or a wrong call to action; Medium for a clear visual mismatch; Low for minor differences.
 - Leave the screenshot column empty: Parity fills it with a link. Give each row evidence: the breakpoint, the section, and the issue area as design and live boxes in CSS px, so Parity can crop and mark it.

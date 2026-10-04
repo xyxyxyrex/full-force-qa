@@ -5,7 +5,7 @@ An AI agent that does the first pass of visual QA: it compares the live staging 
 ## The workflow
 
 1. **Store the designs.** Open the project, open the Figma overlay panel and drop the Figma PNGs on the Desktop, Tablet and Mobile slots (or just drop several at once: each goes to its detected breakpoint). Parity works out the export scale (1x, 2x, 3x) from the file name or its width and shows it, so you can correct it.
-2. **Set the tracker format once** (Settings → AI Agents → Tracker format): copy the tracker's header row and two or three example rows from the Google Sheet and paste them. Rows are written in that column order, and the agent copies the tone of your examples.
+2. **Tracker format.** The standard tracker is built in: Page Link, Section, Screenshot, Remarks, Priority (QA/PM), Display, Status, Approval Screenshot(QA), Reason for Rejection, Screenshot and Remarks (Dev), Remarks (PM), Remarks (CRSM). The agent fills Page Link, Section, Remarks and Priority, Parity fills Screenshot with the evidence link, and the Dev, PM, CRSM and approval columns stay empty. Display and Status are left empty unless your example rows show a value. To use a different tracker, paste its header row and two or three example rows in Settings → AI Agents → Tracker format.
 3. **Pick an agent** (Settings → AI Agents) and open the QA console (`Ctrl+Shift+Q` or the console button in the top bar).
 4. **Run it:** `qa run`, or `qa run desktop mobile`, or `qa run --agent codex`.
 5. **Approve.** An approval card shows the drafted rows, the severity counts and the evidence pictures. *Approve & copy* puts the rows on your clipboard (and uploads the evidence pictures, if enabled); *Reject* sends your note back to the agent.

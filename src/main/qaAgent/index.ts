@@ -5,7 +5,7 @@ import { homedir } from 'os'
 import { delimiter, dirname, join } from 'path'
 import { isBreakpoint } from '../../shared/designScale'
 import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaRunEvent, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
-import { isTrackerFormat, parseTrackerPaste, type TrackerFormat } from '../../shared/trackerFormat'
+import { isTrackerFormat, parseTrackerPaste, STANDARD_TRACKER, type TrackerFormat } from '../../shared/trackerFormat'
 import type { DesignStore } from '../designStore'
 import { createEvidenceUploader } from './evidenceUpload'
 import { captureLivePage } from './liveCapture'
@@ -53,11 +53,12 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     return !!window && !window.isDestroyed() && event.senderFrame === window.webContents.mainFrame
   }
 
-  function readTrackerFormat(): TrackerFormat | null {
+  // The standard tracker applies until the person pastes their own.
+  function readTrackerFormat(): TrackerFormat {
     try {
       const parsed = JSON.parse(readFileSync(trackerFile(), 'utf8'))
-      return isTrackerFormat(parsed) ? parsed : null
-    } catch { return null }
+      return isTrackerFormat(parsed) ? parsed : STANDARD_TRACKER
+    } catch { return STANDARD_TRACKER }
   }
 
   function writeTrackerFormat(format: TrackerFormat): void {

@@ -464,7 +464,7 @@ export interface ElectronAPI extends InspectorApi {
   qaBridgeSetEnabled: (enabled: boolean) => Promise<QaBridgeStatus | null>
   qaBridgeResetKey: () => Promise<QaBridgeStatus | null>
   onQaBridgeStatus: (callback: (status: QaBridgeStatus) => void) => () => void
-  qaTrackerFormatGet: () => Promise<TrackerFormat | null>
+  qaTrackerFormatGet: () => Promise<TrackerFormat>
   qaTrackerFormatSave: (text: string) => Promise<{ ok: true; format: TrackerFormat } | { ok: false; error: string }>
   qaTrackerFormatClear: () => Promise<boolean>
   designsList: (projectKey: string) => Promise<DesignListResult>

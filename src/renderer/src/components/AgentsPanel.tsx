@@ -155,7 +155,7 @@ export default function AgentsPanel() {
 
       <div className="agents-group">
         <h4>Tracker format</h4>
-        <p className="agents-muted">Copy the tracker's header row and two or three example rows straight from the Google Sheet and paste them here. Parity writes rows in the same column order and the agent copies the tone of your examples.</p>
+        <p className="agents-muted">Parity uses the standard tracker (Page Link, Section, Screenshot, Remarks, Priority and the rest) until you paste a different one. To change it, copy the header row and two or three example rows from the Google Sheet and paste them here. The agent fills only QA's columns and copies the tone of your examples.</p>
         {tracker && <div className="agents-chips" aria-label="Current tracker columns">{tracker.columns.map((name) => <span key={name}>{name}</span>)}</div>}
         <textarea rows={4} spellCheck={false} placeholder={'Page\tIssue\tExpected\tScreenshot\tSeverity\nHome\tHeading too small\t32px\thttps://…\tHigh'} value={trackerText} onChange={(event) => { setTrackerText(event.target.value); setTrackerError('') }} />
         {trackerError && <p className="agents-warn">{trackerError}</p>}
@@ -164,7 +164,7 @@ export default function AgentsPanel() {
             const result = await window.electronAPI.qaTrackerFormatSave(trackerText)
             if (result.ok) { setTracker(result.format); setTrackerText('') } else setTrackerError(result.error)
           })}>Save tracker format</button>
-          {tracker && <button type="button" className="agents-link" onClick={() => void guard('tracker', async () => { await window.electronAPI.qaTrackerFormatClear(); setTracker(null) })}>Clear</button>}
+          {tracker && <button type="button" className="agents-link" onClick={() => void guard('tracker', async () => { await window.electronAPI.qaTrackerFormatClear(); setTracker(await window.electronAPI.qaTrackerFormatGet()) })}>Use the standard tracker</button>}
         </div>
       </div>
 

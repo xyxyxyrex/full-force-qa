@@ -5,7 +5,7 @@ import sharp from 'sharp'
 import * as z from 'zod'
 import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
 import type { ApprovalRequest, ApprovalDecision, DesignPutOptions, DesignPutResponse, DesignSlotMeta, DesignSlots, ReportedContext } from '../../shared/qaAgent'
-import { buildHtml, buildRows, buildTsv, screenshotColumn, type TrackerFormat } from '../../shared/trackerFormat'
+import { buildHtml, buildRows, buildTsv, screenshotColumn, trackerColumnGuide, type TrackerFormat } from '../../shared/trackerFormat'
 import { planChunks } from './chunks'
 import { formatSectionNodes } from './formatNodes'
 import { cropJpeg, placeholderJpeg, renderEvidence, renderOverview, thumbnailJpeg, type Rect } from './imageOps'
@@ -155,7 +155,7 @@ const getContext = defineTool({
       project: reported ? { name: reported.project.name, stagingUrl: reported.project.stagingUrl } : null,
       openPage: reported ? { url: reported.pageUrl, workspace: reported.workspaceTab, breakpointInView: reported.breakpoint, viewport: reported.viewport } : null,
       designs: { desktop: describeSlot(slots.desktop), tablet: describeSlot(slots.tablet), mobile: describeSlot(slots.mobile) },
-      tracker: format ? { columns: format.columns, screenshotColumn: screenshotColumn(format), exampleRows: format.examples } : null,
+      tracker: format ? { columns: format.columns, screenshotColumn: screenshotColumn(format), columnGuide: trackerColumnGuide(format), exampleRows: format.examples } : null,
       evidenceUploads: evidenceReason ? { available: false, reason: evidenceReason } : { available: true },
       latestRun: latest ? { runId: latest.id, page: latest.pageUrl } : null,
       notes,

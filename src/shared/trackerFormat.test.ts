@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildHtml, buildRows, buildTsv, neutralizeFormula, parseTrackerPaste, parseTsv, screenshotColumn, type TrackerFormat } from './trackerFormat'
+import { buildHtml, buildRows, buildTsv, neutralizeFormula, parseTrackerPaste, parseTsv, screenshotColumn, STANDARD_TRACKER, trackerColumnGuide, type TrackerFormat } from './trackerFormat'
 
 const format: TrackerFormat = {
   version: 1,
@@ -114,5 +114,39 @@ describe('buildHtml', () => {
   it('escapes markup, keeps line breaks and links URLs', () => {
     const html = buildHtml([['<b>x</b> & y', 'see https://x.test/a?b=1\nnext']])
     expect(html).toBe('<table><tr><td>&lt;b&gt;x&lt;/b&gt; &amp; y</td><td>see <a href="https://x.test/a?b=1">https://x.test/a?b=1</a><br>next</td></tr></table>')
+  })
+})
+
+describe('standard tracker', () => {
+  const pasted = 'Page Link\tSection\tScreenshot\tRemarks\t"Priority\n(QA/PM)"\tDisplay\tStatus\tApproval Screenshot(QA)\t"Reason for Rejection\n(if applicable)"\t"Screenshot and Remarks \n(Dev)"\t"Remarks \n(PM)"\tRemarks (CRSM)'
+
+  it('matches the header copied from the sheet, line breaks included', () => {
+    const parsed = parseTrackerPaste(pasted)
+    expect(parsed.ok && parsed.format.columns).toEqual(STANDARD_TRACKER.columns)
+  })
+
+  it('picks the QA screenshot column, not the developer or approval ones', () => {
+    expect(screenshotColumn(STANDARD_TRACKER)).toBe('Screenshot')
+    expect(screenshotColumn({ ...STANDARD_TRACKER, columns: [...STANDARD_TRACKER.columns].reverse() })).toBe('Screenshot')
+  })
+
+  it('tells the agent to fill only QA columns', () => {
+    const guide = trackerColumnGuide(STANDARD_TRACKER)
+    expect(guide['Page Link']).toMatch(/URL of the page/)
+    expect(guide['Remarks']).toMatch(/issue/i)
+    expect(guide['Priority (QA/PM)']).toMatch(/High, Medium or Low/)
+    for (const name of ['Approval Screenshot(QA)', 'Reason for Rejection (if applicable)', 'Screenshot and Remarks (Dev)', 'Remarks (PM)']) expect(guide[name]).toMatch(/Leave empty/)
+    expect(guide['Screenshot']).toMatch(/evidence link/)
+    expect(guide['Status']).toMatch(/Leave empty/)
+  })
+
+  it('copies a Status that every example row shares', () => {
+    const examples = [['', '', '', '', '', '', 'Open', '', '', '', '', ''], ['', '', '', '', '', '', 'Open', '', '', '', '', '']]
+    expect(trackerColumnGuide({ ...STANDARD_TRACKER, examples })['Status']).toBe('Use "Open", as in the example rows.')
+  })
+
+  it('builds a row with the right cells filled', () => {
+    const built = buildRows(STANDARD_TRACKER, [{ 'Page Link': 'https://x.test/a', Section: 'Hero, H1', Remarks: 'Desktop: font-size 28px, design ≈32px', 'Priority (QA/PM)': 'Medium' }])
+    expect(built.ok && built.rows[0]).toEqual(['https://x.test/a', 'Hero, H1', '', 'Desktop: font-size 28px, design ≈32px', 'Medium', '', '', '', '', '', '', ''])
   })
 })
