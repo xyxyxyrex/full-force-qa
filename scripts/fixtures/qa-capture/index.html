@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QA capture fixture</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; background: #ffffff; color: #111; }
+  #sticky-header { position: sticky; top: 0; height: 80px; background: #cc0000; color: #fff; padding: 24px; z-index: 5; }
+  #fixed-nav { position: fixed; top: 100px; right: 0; width: 60px; height: 60px; background: #0000ff; z-index: 6; }
+  #fixed-widget { position: fixed; bottom: 10px; left: 10px; width: 80px; height: 40px; background: #00aa00; z-index: 6; }
+  #popup { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); z-index: 9; }
+  .hero { height: 100vh; background: #223344; color: #fff; padding: 40px; }
+  section { padding: 40px; min-height: 420px; }
+  section h2 { font-size: 32px; margin: 0 0 16px; padding: 0 0 8px; }
+  .fixed-bg { background: #336699 fixed; background-attachment: fixed; min-height: 700px; color: #fff; }
+  [data-aos] { opacity: 0; transform: translateY(40px); transition: opacity .6s, transform .6s; }
+  [data-aos].aos-animate { opacity: 1; transform: none; }
+  #aos-block { background: #ff9900; height: 200px; }
+  #spinner { width: 40px; height: 40px; background: #555; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #wide { width: 1700px; height: 10px; background: #ddd; }
+  #growth { height: 300px; background: #00ffff; }
+  img { display: block; }
+</style>
+</head>
+<body>
+<div id="sticky-header">Sticky header</div>
+<div id="fixed-nav"></div>
+<div id="fixed-widget"></div>
+<div id="popup"></div>
+<main>
+  <section class="hero"><h2>Hero heading</h2><p id="env">env</p><div id="spinner"></div></section>
+  <section id="s-aos"><h2>Reveal section</h2><div id="aos-block" data-aos="fade-up">AOS content</div></section>
+  <section class="fixed-bg" id="s-fixed"><h2>Fixed background section</h2></section>
+  <section id="s-images"><h2>Images section</h2>
+    <img id="lazy" alt="lazy" width="400" height="200" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-src="/lazy.png">
+    <img id="broken" alt="broken" width="100" height="50" src="/missing.png">
+  </section>
+  <section id="s-wide"><h2>Overflow section</h2><div id="wide"></div></section>
+  <section id="s-end"><h2>Closing section</h2><p>Last section.</p></section>
+</main>
+<script>
+  document.getElementById('env').textContent = navigator.userAgent + ' | hover:' + matchMedia('(hover: none)').matches + ' | w:' + innerWidth;
+  // Grow the page once while it is being captured screen by screen (after preparation).
+  let grown = false;
+  addEventListener('scroll', () => {
+    if (grown || !window.__qaCapture || typeof window.__qaCapture.scan !== 'function' || document.documentElement.scrollTop < 700) return;
+    grown = true;
+    const div = document.createElement('div');
+    div.id = 'growth';
+    document.getElementById('s-wide').after(div);
+  });
+</script>
+</body>
+</html>
