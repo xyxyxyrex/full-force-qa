@@ -270,6 +270,15 @@ describe.skipIf(process.platform === 'win32')('Antigravity safety hook', () => {
     writeFileSync(join(brain, 'notes.txt'), 'x')
     const view = (path: string) => decide({ name: 'view_file', args: { AbsolutePath: path } }).output
     expect(view(join(brain, '.system_generated', 'steps', '4', 'output.txt'))).toEqual({ decision: 'ask' })
+    // The pictures a tool returns are saved as media files for the model to look at.
+    writeFileSync(join(brain, '.system_generated', 'steps', '4', 'media_0.jpg'), 'jpeg')
+    writeFileSync(join(brain, '.system_generated', 'steps', '4', 'media_12.webp'), 'webp')
+    writeFileSync(join(brain, '.system_generated', 'steps', '4', 'media_0.sh'), 'x')
+    writeFileSync(join(brain, '.system_generated', 'steps', '4', 'media_x.jpg'), 'x')
+    expect(view(join(brain, '.system_generated', 'steps', '4', 'media_0.jpg'))).toEqual({ decision: 'ask' })
+    expect(view(join(brain, '.system_generated', 'steps', '4', 'media_12.webp'))).toEqual({ decision: 'ask' })
+    expect(view(join(brain, '.system_generated', 'steps', '4', 'media_0.sh'))).toEqual(denied)
+    expect(view(join(brain, '.system_generated', 'steps', '4', 'media_x.jpg'))).toEqual(denied)
     expect(view(join(brain, '.system_generated', 'steps', '4', 'other.txt'))).toEqual(denied)
     expect(view(join(brain, '.system_generated', 'logs', 'transcript_full.jsonl'))).toEqual(denied)
     expect(view(join(brain, 'notes.txt'))).toEqual(denied)

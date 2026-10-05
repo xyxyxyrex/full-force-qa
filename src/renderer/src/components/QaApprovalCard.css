@@ -54,3 +54,7 @@
 .qa-lightbox img{max-width:96vw;max-height:88vh;object-fit:contain;border-radius:6px;background:#1c1c1c}
 .qa-lightbox span{color:#ddd;font-size:12px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.qa-finding-page{display:flex;align-items:baseline;gap:10px;padding:6px 2px 0;position:sticky;top:0;z-index:1;background:var(--bg-card);border-bottom:1px solid var(--border-color)}
+.qa-finding-page strong{font-size:13px}
+.qa-finding-page small{color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

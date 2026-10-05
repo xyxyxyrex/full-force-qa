@@ -71,6 +71,12 @@ export default function App() {
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
   const [qaChatOpen, setQaChatOpen] = useState(false)
+  // Other screens (the Multi-capture dialog) open the chat when they start a review.
+  useEffect(() => {
+    const open = () => setQaChatOpen(true)
+    window.addEventListener('parity:open-qa-chat', open)
+    return () => window.removeEventListener('parity:open-qa-chat', open)
+  }, [])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'q') { event.preventDefault(); setQaChatOpen((open) => !open) }

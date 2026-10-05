@@ -76,6 +76,18 @@ const approval = {
   uploadsEvidence: false,
 }
 
+const batchApproval = {
+  ...approval, id: 'a2', projectName: '2 pages',
+  rows: [
+    approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Hero', Remarks: 'h1 title should be 2 lines', 'Priority (QA/PM)': 'Medium', Display: 'Desktop' }),
+    approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Footer', Remarks: 'font size should be 13px', 'Priority (QA/PM)': 'Low', Display: 'Mobile' }),
+    approvalRow({ 'Page Link': 'https://svenson.test/contact/', Section: 'Contact form', Remarks: 'button should be round', 'Priority (QA/PM)': 'Low', Display: 'Desktop and Tablet' }),
+  ],
+  severityCounts: { Medium: 1, Low: 2 },
+  evidence: [{ rowIndex: 0, thumbnail: evidencePicture('Heading'), caption: 'Hero · desktop' }, { rowIndex: 2, thumbnail: evidencePicture('Button'), caption: 'Contact form · desktop' }],
+  rowPages: [{ name: 'Alopecia', url: 'https://svenson.test/alopecia-page/' }, { name: 'Alopecia', url: 'https://svenson.test/alopecia-page/' }, { name: 'Contact', url: 'https://svenson.test/contact/' }],
+}
+
 function Fixture() {
   const [view, setView] = useState(new URLSearchParams(location.search).get('view') || 'agents')
   ;(window as any).__setView = setView
@@ -89,6 +101,7 @@ function Fixture() {
         }}
         thumbnails={{ desktop: swatch('#335577'), mobile: swatch('#553377') }} activeBreakpoint="desktop"
         onAddFiles={(files, target) => (window as any).__calls.push(`add ${files.length} ${target}`)} onRemove={(bp) => (window as any).__calls.push(`remove ${bp}`)} onMove={(bp, to) => (window as any).__calls.push(`move ${bp} ${to}`)} onScale={(bp, s) => (window as any).__calls.push(`scale ${bp} ${s}`)} /></div>}
+      {view === 'approval-batch' && <QaApprovalCard request={batchApproval} onDecide={(approved, note) => (window as any).__calls.push(`decide ${approved} ${note ?? ''}`)} />}
       {view === 'approval' && <QaApprovalCard request={approval} onDecide={(approved, note) => (window as any).__calls.push(`decide ${approved} ${note ?? ''}`)} />}
       {view === 'chat' && <div style={{ width: 400, height: 640, border: '1px solid var(--border-color)' }}><QaChat onClose={() => (window as any).__calls.push('close')} /></div>}
     </main>

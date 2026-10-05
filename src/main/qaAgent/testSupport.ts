@@ -57,9 +57,11 @@ export function createFakeContext(root: string, over: Partial<QaContext> = {}): 
   let tick = 1_800_000_000_000
   const parsed = parseTrackerPaste(TRACKER_PASTE)
   if (!parsed.ok) throw new Error('fixture tracker')
+  let target: ReportedContext | null = null
   const context: QaContext = {
     now: () => ++tick,
-    reportedContext: () => reportedContext(),
+    reportedContext: () => target ?? reportedContext(),
+    setTarget: (next) => { target = next },
     designs: {
       list: (key) => designs.list(key),
       put: (key, bytes, options) => designs.put(key, bytes, options),

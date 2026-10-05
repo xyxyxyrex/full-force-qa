@@ -46,6 +46,11 @@ export interface EvidenceUploader {
 export interface QaContext {
   now(): number
   reportedContext(): ReportedContext | null
+  /**
+   * Makes `reportedContext()` answer with this page until set to null. A batch review uses it so that agents
+   * reaching the tools over the bridge (agent CLIs) also see the page being reviewed, not the one that happens to be open.
+   */
+  setTarget?(target: ReportedContext | null): void
   designs: {
     list(projectKey: string): DesignSlots
     put(projectKey: string, bytes: Uint8Array, options: DesignPutOptions): Promise<DesignPutResponse>
@@ -413,6 +418,7 @@ const saveDraft = defineTool({
 const SEVERITY_HEADER = /severity|priority|impact/i
 // Wide enough to read the design and live pictures side by side on the approval card.
 const APPROVAL_PREVIEW_WIDTH = 1100
+const BATCH_PREVIEW_WIDTH = 640
 
 async function renderRowEvidence(context: QaContext, runId: string, row: z.infer<typeof rowSchema>, index: number): Promise<{ data: Buffer; caption: string } | null> {
   const evidence = row.evidence
@@ -435,6 +441,97 @@ async function renderRowEvidence(context: QaContext, runId: string, row: z.infer
   return data ? { data, caption } : null
 }
 
+export type DraftRow = z.infer<typeof rowSchema>
+
+export interface HandOverEntry {
+  /** The run whose captures this row's evidence is cut from. */
+  runId: string
+  row: DraftRow
+  /** The page the row is about, when rows from several pages are handed over together. */
+  page?: { name: string; url: string }
+}
+
+export interface HandOverInput {
+  projectName: string
+  pageUrl: string
+  /** The run whose folder receives the evidence pictures and the copy of the rows. */
+  outputRunId: string
+  entries: HandOverEntry[]
+  uploadEvidence?: boolean
+  /** More than the default when a batch of pages is handed over at once. */
+  maxRows?: number
+}
+
+/** Shows the rows for approval; on approval uploads the evidence, copies the rows and saves a copy. */
+export async function handOverRows(context: QaContext, input: HandOverInput): Promise<ToolResult> {
+  const format = context.trackerFormat()
+  if (!format) return fail('The tracker format is not set. In Parity: Settings → AI Agents → paste the tracker header row and a few example rows.')
+  const built = buildRows(format, input.entries.map((entry) => entry.row.cells), input.maxRows ? { maxRows: input.maxRows } : undefined)
+  if (!built.ok) return fail(built.error)
+
+  const output = context.runs.outputDir(input.outputRunId)
+  const stamp = String(context.now())
+  const evidenceFiles: Array<{ rowIndex: number; data: Buffer; caption: string; file: string }> = []
+  for (const [index, entry] of input.entries.entries()) {
+    const rendered = await renderRowEvidence(context, entry.runId, entry.row, index)
+    if (!rendered) continue
+    const file = join(output, `evidence-${stamp}-row-${String(index + 1).padStart(2, '0')}.webp`)
+    writeFileSync(file, rendered.data)
+    evidenceFiles.push({ rowIndex: index, data: rendered.data, caption: rendered.caption, file })
+  }
+
+  const wantsUpload = input.uploadEvidence !== false && evidenceFiles.length > 0
+  const uploadProblem = !wantsUpload ? null : context.evidence ? context.evidence.unavailableReason() : 'Evidence uploads are not set up yet.'
+  const shotColumn = screenshotColumn(format)
+  const willUpload = wantsUpload && !uploadProblem && !!shotColumn
+  const warnings = [...built.warnings]
+  if (wantsUpload && uploadProblem) warnings.push(`Evidence images were not uploaded: ${uploadProblem} The screenshot column is left empty.`)
+  if (wantsUpload && !uploadProblem && !shotColumn) warnings.push('Evidence images were not uploaded because no screenshot column was found in the tracker header.')
+
+  const severityColumn = format.columns.find((name) => SEVERITY_HEADER.test(name))
+  const severityIndex = severityColumn ? format.columns.indexOf(severityColumn) : -1
+  const severityCounts: Record<string, number> = {}
+  if (severityIndex >= 0) for (const row of built.rows) { const key = row[severityIndex].trim() || '(blank)'; severityCounts[key] = (severityCounts[key] || 0) + 1 }
+
+  // A big batch is previewed smaller, so the card does not need tens of megabytes of pictures.
+  const previewWidth = input.entries.length > 40 ? BATCH_PREVIEW_WIDTH : APPROVAL_PREVIEW_WIDTH
+  const thumbnails = await Promise.all(evidenceFiles.map(async (item) => ({ rowIndex: item.rowIndex, caption: item.caption, thumbnail: `data:image/jpeg;base64,${(await thumbnailJpeg(item.data, previewWidth)).toString('base64')}` })))
+  const pages = input.entries.map((entry) => entry.page)
+  const decision = await context.approve({
+    id: randomUUID(), runId: input.outputRunId, projectName: input.projectName, pageUrl: input.pageUrl,
+    // The card shows what the agent wrote; the apostrophe that keeps a cell from being read as a formula is only for the clipboard.
+    columns: format.columns, rows: built.rows.map((row) => row.map((cell) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell))), severityCounts, evidence: thumbnails, warnings, uploadsEvidence: willUpload,
+    ...(pages.some(Boolean) ? { rowPages: pages.map((page) => page ?? { name: input.projectName, url: input.pageUrl }) } : {}),
+  })
+  if (!decision.approved) {
+    return { text: `The person did not approve these rows${decision.note ? `. Their note: ${decision.note}` : '.'} Nothing was copied or uploaded. Revise the rows and call finalize_rows again.` }
+  }
+
+  const rows = built.rows.map((row) => [...row])
+  const outcome: string[] = []
+  if (willUpload && shotColumn) {
+    const column = format.columns.indexOf(shotColumn)
+    const results = await context.evidence!.upload(evidenceFiles.map((item) => ({ name: basename(item.file), data: item.data, contentType: 'image/webp', label: item.caption })))
+    let uploaded = 0
+    results.forEach((result, i) => {
+      if (result.url) { rows[evidenceFiles[i].rowIndex][column] = result.url; uploaded++ }
+      else outcome.push(`Row ${evidenceFiles[i].rowIndex + 1}: evidence not uploaded (${result.error || 'unknown error'}).`)
+    })
+    outcome.unshift(`Uploaded ${uploaded} of ${evidenceFiles.length} evidence image(s) and put their links in "${shotColumn}".`)
+  } else if (evidenceFiles.length) {
+    const reason = input.uploadEvidence === false ? 'Uploads were turned off for this run.' : uploadProblem ?? 'No screenshot column was found in the tracker header.'
+    outcome.push(`Evidence images were not uploaded: ${reason} They were saved on this computer: ${output}`)
+  }
+
+  const tsv = buildTsv(rows)
+  context.copyToClipboard(tsv, buildHtml(rows))
+  const tsvPath = join(output, `rows-${stamp}.tsv`)
+  writeFileSync(tsvPath, tsv, 'utf8')
+  return {
+    text: [`Approved. Copied ${rows.length} row(s) to the clipboard in tracker column order; paste them into the sheet.`, ...outcome, ...warnings.filter((w) => !w.startsWith('Evidence images were not uploaded')), `A copy of the rows is saved at ${tsvPath}.`].join('\n'),
+  }
+}
+
 const finalizeRows = defineTool({
   name: 'finalize_rows',
   title: 'Hand over the rows',
@@ -451,68 +548,10 @@ const finalizeRows = defineTool({
     if (typeof reported === 'string') return fail(reported)
     const run = loadRun(context, args.runId, reported)
     if (!run.ok) return fail(run.error)
-    const format = context.trackerFormat()
-    if (!format) return fail('The tracker format is not set. In Parity: Settings → AI Agents → paste the tracker header row and a few example rows.')
-    const built = buildRows(format, args.rows.map((row) => row.cells))
-    if (!built.ok) return fail(built.error)
-
-    const output = context.runs.outputDir(args.runId)
-    const stamp = String(context.now())
-    const evidenceFiles: Array<{ rowIndex: number; data: Buffer; caption: string; file: string }> = []
-    for (const [index, row] of args.rows.entries()) {
-      const rendered = await renderRowEvidence(context, args.runId, row, index)
-      if (!rendered) continue
-      const file = join(output, `evidence-${stamp}-row-${String(index + 1).padStart(2, '0')}.webp`)
-      writeFileSync(file, rendered.data)
-      evidenceFiles.push({ rowIndex: index, data: rendered.data, caption: rendered.caption, file })
-    }
-
-    const wantsUpload = args.uploadEvidence !== false && evidenceFiles.length > 0
-    const uploadProblem = !wantsUpload ? null : context.evidence ? context.evidence.unavailableReason() : 'Evidence uploads are not set up yet.'
-    const shotColumn = screenshotColumn(format)
-    const willUpload = wantsUpload && !uploadProblem && !!shotColumn
-    const warnings = [...built.warnings]
-    if (wantsUpload && uploadProblem) warnings.push(`Evidence images were not uploaded: ${uploadProblem} The screenshot column is left empty.`)
-    if (wantsUpload && !uploadProblem && !shotColumn) warnings.push('Evidence images were not uploaded because no screenshot column was found in the tracker header.')
-
-    const severityColumn = format.columns.find((name) => SEVERITY_HEADER.test(name))
-    const severityIndex = severityColumn ? format.columns.indexOf(severityColumn) : -1
-    const severityCounts: Record<string, number> = {}
-    if (severityIndex >= 0) for (const row of built.rows) { const key = row[severityIndex].trim() || '(blank)'; severityCounts[key] = (severityCounts[key] || 0) + 1 }
-
-    const thumbnails = await Promise.all(evidenceFiles.map(async (item) => ({ rowIndex: item.rowIndex, caption: item.caption, thumbnail: `data:image/jpeg;base64,${(await thumbnailJpeg(item.data, APPROVAL_PREVIEW_WIDTH)).toString('base64')}` })))
-    const decision = await context.approve({
-      id: randomUUID(), runId: args.runId, projectName: reported.project.name, pageUrl: run.pageUrl,
-      // The card shows what the agent wrote; the apostrophe that keeps a cell from being read as a formula is only for the clipboard.
-      columns: format.columns, rows: built.rows.map((row) => row.map((cell) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell))), severityCounts, evidence: thumbnails, warnings, uploadsEvidence: willUpload,
+    return handOverRows(context, {
+      projectName: reported.project.name, pageUrl: run.pageUrl, outputRunId: args.runId,
+      entries: args.rows.map((row) => ({ runId: args.runId, row })), uploadEvidence: args.uploadEvidence,
     })
-    if (!decision.approved) {
-      return { text: `The person did not approve these rows${decision.note ? `. Their note: ${decision.note}` : '.'} Nothing was copied or uploaded. Revise the rows and call finalize_rows again.` }
-    }
-
-    const rows = built.rows.map((row) => [...row])
-    const outcome: string[] = []
-    if (willUpload && shotColumn) {
-      const column = format.columns.indexOf(shotColumn)
-      const results = await context.evidence!.upload(evidenceFiles.map((item) => ({ name: basename(item.file), data: item.data, contentType: 'image/webp', label: item.caption })))
-      let uploaded = 0
-      results.forEach((result, i) => {
-        if (result.url) { rows[evidenceFiles[i].rowIndex][column] = result.url; uploaded++ }
-        else outcome.push(`Row ${evidenceFiles[i].rowIndex + 1}: evidence not uploaded (${result.error || 'unknown error'}).`)
-      })
-      outcome.unshift(`Uploaded ${uploaded} of ${evidenceFiles.length} evidence image(s) and put their links in "${shotColumn}".`)
-    } else if (evidenceFiles.length) {
-      const reason = args.uploadEvidence === false ? 'Uploads were turned off for this run.' : uploadProblem ?? 'No screenshot column was found in the tracker header.'
-      outcome.push(`Evidence images were not uploaded: ${reason} They were saved on this computer: ${output}`)
-    }
-
-    const tsv = buildTsv(rows)
-    context.copyToClipboard(tsv, buildHtml(rows))
-    const tsvPath = join(output, `rows-${stamp}.tsv`)
-    writeFileSync(tsvPath, tsv, 'utf8')
-    return {
-      text: [`Approved. Copied ${rows.length} row(s) to the clipboard in tracker column order; paste them into the sheet.`, ...outcome, ...warnings.filter((w) => !w.startsWith('Evidence images were not uploaded')), `A copy of the rows is saved at ${tsvPath}.`].join('\n'),
-    }
   },
 })
 

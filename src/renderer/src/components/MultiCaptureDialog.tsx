@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent } from 'react'
 import type { Project } from '../../../shared/types'
+import type { Breakpoint } from '../../../shared/designScale'
+import { QA_BATCH_MAX_PAGES } from '../../../shared/qaAgent'
 import {
   deriveMultiCaptureName,
   findMultiCaptureDuplicate,
@@ -38,6 +40,8 @@ export default function MultiCaptureDialog({
   const [saving, setSaving] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [message, setMessage] = useState('')
+  const [reviewOn, setReviewOn] = useState<Record<Breakpoint, boolean>>({ desktop: true, tablet: false, mobile: true })
+  const [starting, setStarting] = useState(false)
   const [summary, setSummary] = useState<{ added: number; skipped: number; failed: number; stopped: number } | null>(null)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const stopRef = useRef(false)
@@ -98,10 +102,11 @@ export default function MultiCaptureDialog({
     appendParsed(text, rowId)
   }
 
-  const saveRows = async () => {
-    if (saving || invalidCount || !addableCount) return
-    if (!destinationExists) { setMessage('The destination folder no longer exists. Close this dialog and choose another location.'); return }
-    if (localStorage.getItem('parity_account_owner_key') !== ownerAtOpen) { setMessage('The active account changed. Close this dialog and try again.'); return }
+  /** Adds the ready rows as projects. Resolves false if it did not go through (stopped, folder gone, account changed). */
+  const saveRows = async (): Promise<boolean> => {
+    if (saving || invalidCount || !addableCount) return false
+    if (!destinationExists) { setMessage('The destination folder no longer exists. Close this dialog and choose another location.'); return false }
+    if (localStorage.getItem('parity_account_owner_key') !== ownerAtOpen) { setMessage('The active account changed. Close this dialog and try again.'); return false }
 
     const eligible = assessed.filter(item => item.normalizedUrl && (!skipDuplicates || !item.duplicate) && item.row.status !== 'saved')
     const skippedIds = new Set(skipDuplicates ? assessed.filter(item => item.duplicate && item.row.status !== 'saved').map(item => item.row.id) : [])
@@ -156,6 +161,31 @@ export default function MultiCaptureDialog({
     setSummary({ added: previouslyAdded + added, skipped: skippedIds.size, failed, stopped: stopRef.current ? Math.max(0, eligible.length - added - failed) : 0 })
     setSaving(false)
     setStopping(false)
+    return !stopRef.current
+  }
+
+  // Every valid link in the list is a page to review, whether it was just saved, saved earlier or was a duplicate of a project that already exists.
+  const reviewPages = nonEmpty.filter(item => item.normalizedUrl && !item.error).map(item => ({ url: item.normalizedUrl!, name: item.row.name.trim() || deriveMultiCaptureName(item.normalizedUrl!), projectId: item.row.projectId }))
+  const chosenBreakpoints = (Object.keys(reviewOn) as Breakpoint[]).filter(breakpoint => reviewOn[breakpoint])
+  const tooManyPages = reviewPages.length > QA_BATCH_MAX_PAGES
+  const canReview = !saving && !starting && invalidCount === 0 && reviewPages.length > 0 && !tooManyPages && chosenBreakpoints.length > 0
+
+  // Saves the new links as projects (as the primary button does), then has the QA agent review every page on its own.
+  const saveAndReview = async () => {
+    if (!canReview) return
+    setStarting(true)
+    setMessage('')
+    try {
+      if (addableCount > 0 && !(await saveRows())) return
+      const result = await window.electronAPI.qaBatchStart({ pages: reviewPages, breakpoints: chosenBreakpoints })
+      if (!result.started) { setMessage(result.error); return }
+      window.dispatchEvent(new Event('parity:open-qa-chat'))
+      onClose()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The review could not be started.')
+    } finally {
+      setStarting(false)
+    }
   }
 
   const stopAdding = () => {
@@ -203,6 +233,12 @@ export default function MultiCaptureDialog({
 
       <button type="button" className="multi-capture-add-row" onClick={() => { addBlankRow(); setSummary(null) }} disabled={saving}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>Add URL</button>
 
+      <div className="multi-capture-review">
+        <span className="multi-capture-review-label">QA agent</span>
+        {(['desktop', 'tablet', 'mobile'] as Breakpoint[]).map(breakpoint => <label key={breakpoint}><input type="checkbox" checked={reviewOn[breakpoint]} onChange={event => setReviewOn(current => ({ ...current, [breakpoint]: event.target.checked }))} disabled={saving || starting} />{breakpoint[0].toUpperCase() + breakpoint.slice(1)}</label>)}
+        <small>Reviews each page by itself, with no design, on every ticked size: {reviewPages.length * chosenBreakpoints.length} review{reviewPages.length * chosenBreakpoints.length === 1 ? '' : 's'} ({reviewPages.length} page{reviewPages.length === 1 ? '' : 's'} × {chosenBreakpoints.length} size{chosenBreakpoints.length === 1 ? '' : 's'}). {tooManyPages ? `Review at most ${QA_BATCH_MAX_PAGES} pages at once.` : 'Each review can use hundreds of thousands of tokens (about 500,000 on a small test page with a subscription agent), so a long list can use up a plan. Set a token limit in Settings → AI Agents.'}</small>
+      </div>
+
       <footer className="multi-capture-footer">
         <div className="multi-capture-summary">
           <label><input type="checkbox" checked={skipDuplicates} onChange={event => { setSkipDuplicates(event.target.checked); setRows(current => current.map(row => row.status === 'skipped' ? { ...row, status: 'idle' } : row)); setSummary(null) }} disabled={saving} /> Skip duplicates</label>
@@ -213,6 +249,8 @@ export default function MultiCaptureDialog({
         <div className="multi-capture-actions">
           {saving ? <button type="button" className="multi-capture-secondary" onClick={stopAdding} disabled={stopping}>{stopping ? 'Stopping…' : 'Stop adding'}</button> : <button type="button" className="multi-capture-secondary" onClick={onClose}>{summary && addableCount === 0 ? 'Done' : 'Cancel'}</button>}
           {(!summary || addableCount > 0 || saving) && <button type="button" className="multi-capture-primary" onClick={() => void saveRows()} disabled={saving || invalidCount > 0 || addableCount === 0 || !destinationExists}>{saving ? 'Adding…' : summary?.failed ? `Retry ${summary.failed} failed` : summary?.stopped ? `Resume ${addableCount}` : `Add ${addableCount} project${addableCount === 1 ? '' : 's'}`}</button>}
+        
+          <button type="button" className="multi-capture-review-button" onClick={() => void saveAndReview()} disabled={!canReview || !destinationExists}>{starting ? 'Starting…' : addableCount > 0 ? 'Save & review with QA agent' : 'Review with QA agent'}</button>
         </div>
       </footer>
     </div>

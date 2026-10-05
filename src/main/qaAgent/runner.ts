@@ -1,6 +1,7 @@
 import type { Breakpoint } from '../../shared/designScale'
 import { BREAKPOINTS } from '../../shared/designScale'
 import { designKeyOf, pageIdOf } from '../../shared/designKey'
+import { runQaBatch } from './batch'
 import { QA_RUBRIC } from './prompt'
 import type { AgentEvent, AgentProvider, ProviderResult } from './agents/types'
 import { callTool, type QaContext, type ToolResult } from './tools'
@@ -20,6 +21,8 @@ export interface RunOptions {
   emit(event: AgentEvent): void
   /** Stops the run once this many tokens (input + output) were used. 0 or undefined means no limit. */
   budgetTokens?: number
+  /** Review the page on its own, ignoring any stored designs. Also what happens when the page has none. */
+  standalone?: boolean
 }
 
 export interface RunSummary {
@@ -61,6 +64,11 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
 
   const slots = context.designs.list(designKeyOf(reported.projectKey, reported.pageUrl))
   const stored = BREAKPOINTS.filter((bp) => slots[bp])
+  // No Figma design (or asked to ignore it): the agent reviews the live page on its own.
+  if (options.standalone || !stored.length) {
+    if (!options.standalone) emit({ type: 'status', message: `No designs are stored for this page (${pageIdOf(reported.pageUrl) ?? reported.pageUrl}), so the agent reviews the page on its own.` })
+    return runQaBatch(deps, { pages: [{ url: reported.pageUrl, name: reported.project.name, projectId: reported.projectKey }], breakpoints: options.breakpoints, signal, emit, budgetTokens: options.budgetTokens })
+  }
   const breakpoints = options.breakpoints?.length ? options.breakpoints : stored
   if (!breakpoints.length) return finish('nothing-to-do', `No design images are stored for this page (${pageIdOf(reported.pageUrl) ?? reported.pageUrl}). Add the Figma PNGs for it in the Figma overlay panel, then run again.`)
   summary.breakpoints = breakpoints

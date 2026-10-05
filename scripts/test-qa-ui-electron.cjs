@@ -85,6 +85,14 @@ async function smoke() {
   assert.ok((await run('window.__calls')).includes('decide false Finding 3 is wrong'), 'rejecting sends the note')
   assert.equal(await run(`document.querySelector('.qa-approval-primary').disabled`), true, 'buttons lock after a decision')
 
+  // Approval card for a batch of pages: findings grouped under a heading per page.
+  await open('approval-batch')
+  assert.match(await text('.qa-approval h2'), /Copy 3 findings from 2 pages for the tracker/)
+  assert.equal(await run(`document.querySelectorAll('.qa-finding-page').length`), 2, 'one heading per page')
+  assert.match(await text('.qa-finding-page'), /Alopecia/); assert.match(await text('.qa-finding-page'), /2 findings/)
+  assert.equal(await run(`[...document.querySelectorAll('.qa-findings > li')].map(li => li.className).join(',')`), 'qa-finding-page,qa-finding,qa-finding,qa-finding-page,qa-finding', 'a heading starts each page\'s findings')
+  await shot('approval-batch')
+
   // Chat
   await open('chat')
   assert.equal(await run(`document.querySelectorAll('.qa-chat-suggestions button').length`), 3, 'an empty chat offers starting points')
@@ -108,7 +116,8 @@ async function smoke() {
   await send('/review tablet --agent codex'); assert.ok((await run('window.__calls')).includes('run {"agent":"codex","breakpoints":["tablet"]}'), '/review starts a review')
   await send('/review --agent skynet'); assert.match(await text('.qa-chat-body'), /Unknown agent "skynet"/)
   await send('/agents'); assert.match(await text('.qa-chat-body'), /claude-code\s+ready/); assert.match(await text('.qa-chat-body'), /codex\s+not ready/)
-  await send('/help'); assert.match(await text('.qa-chat-body'), /\/review \[desktop\]/)
+  await send('/help'); assert.match(await text('.qa-chat-body'), /\/review \[desktop\]/); assert.match(await text('.qa-chat-body'), /--no-design/)
+  await send('/review mobile --no-design'); assert.ok((await run('window.__calls')).includes('run {"breakpoints":["mobile"],"standalone":true}'), '--no-design reviews the page on its own')
   // A streamed answer: deltas join into one message, tool calls become cards, tokens add up, the turn ends with a summary.
   for (const e of [
     { type: 'started', agent: 'anthropic-api', label: 'Claude API (claude-opus-5-5)', budgetTokens: 10000 },

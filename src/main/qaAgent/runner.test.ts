@@ -34,16 +34,45 @@ const start = (p: AgentProvider, over: Partial<Parameters<typeof runQa>[1]> = {}
 }
 
 describe('runQa preconditions', () => {
-  it('needs an open project, a tracker format and designs', async () => {
+  it('needs an open project and a tracker format', async () => {
     const { provider: p, calls } = provider(() => finished())
     fake.context.reportedContext = () => null
     expect((await start(p).promise)).toMatchObject({ stopped: 'failed', message: expect.stringContaining('No project is open') })
     fake.context.reportedContext = () => reportedContext()
     fake.context.trackerFormat = () => null
     expect((await start(p).promise)).toMatchObject({ stopped: 'failed', message: expect.stringContaining('tracker format') })
-    fake.context.trackerFormat = createFakeContext(root).context.trackerFormat
-    expect((await start(p).promise)).toMatchObject({ stopped: 'nothing-to-do', message: expect.stringContaining('No design images') })
     expect(calls.runs).toHaveLength(0)
+  })
+})
+
+describe('runQa without a design', () => {
+  it('reviews the open page on its own, on every breakpoint, when no design is stored for it', async () => {
+    const { provider: p, calls } = provider(async (run) => {
+      const runId = runIdOf(run.task)
+      const bp = /Review the (\w+) breakpoint/.exec(run.task)![1]
+      await run.call('capture_live', { breakpoint: bp, runId })
+      await run.call('save_draft', { runId, breakpoint: bp, rows: [rowFor('Heading is cut off')] })
+      return finished()
+    })
+    const { promise, events } = start(p)
+    const summary = await promise
+    expect(calls.runs).toHaveLength(3)
+    expect(calls.runs.every((run) => run.system.includes('There is no design for this page'))).toBe(true)
+    expect(events.some((e) => e.type === 'status' && /No designs are stored for this page/.test(e.message) && /reviews the page on its own/.test(e.message))).toBe(true)
+    expect(summary.stopped).toBe('completed')
+    expect(fake.approvals).toHaveLength(1)
+  })
+
+  it('does so even when designs are stored, if asked to', async () => {
+    await addDesigns('desktop')
+    const { provider: p, calls } = provider(async (run) => {
+      const runId = runIdOf(run.task)
+      await run.call('save_draft', { runId, breakpoint: 'desktop', rows: [] })
+      return finished()
+    })
+    await start(p, { standalone: true, breakpoints: ['desktop'] }).promise
+    expect(calls.runs).toHaveLength(1)
+    expect(calls.runs[0].system).toContain('There is no design for this page')
   })
 })
 

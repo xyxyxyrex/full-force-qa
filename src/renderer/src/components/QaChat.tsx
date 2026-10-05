@@ -14,7 +14,7 @@ const SUGGESTIONS = [
 ]
 
 const HELP = [
-  '/review [desktop] [tablet] [mobile]   run a full review and hand the rows over for approval',
+  '/review [desktop] [tablet] [mobile] [--no-design]   review the open page and hand the rows over for approval.\n                                         With no design stored for the page (or --no-design) the agent judges the page on its own.',
   '/stop                                 stop what the agent is doing',
   '/new                                  start a new chat (clears what the agent remembers)',
   '/agents                               which agents are ready',
@@ -179,16 +179,18 @@ export default function QaChat({ onClose }: Props) {
 
   const startReview = async (words: string[]) => {
     let agent: AgentId | undefined
+    let standalone = false
     const breakpoints: Breakpoint[] = []
     for (let i = 0; i < words.length; i++) {
-      if (words[i] === '--agent') {
+      if (words[i] === '--no-design') standalone = true
+      else if (words[i] === '--agent') {
         const value = words[++i]
         if (!isAgentId(value)) throw new Error(`Unknown agent "${value || ''}". Type /agents to see the ids.`)
         agent = value
       } else if (isBreakpoint(words[i])) breakpoints.push(words[i] as Breakpoint)
       else throw new Error(`Unknown option "${words[i]}". Breakpoints are: ${BREAKPOINTS.join(', ')}.`)
     }
-    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined })
+    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}) })
     if (!result.started) throw new Error(result.error)
   }
 

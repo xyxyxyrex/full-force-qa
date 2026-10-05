@@ -202,12 +202,12 @@ process.stdin.on('end', () => {
   let allowed = false
   if (name === 'call_mcp_tool') allowed = args.ServerName === CONFIG.server && CONFIG.tools.includes(args.ToolName)
   else if (name === 'view_file') {
-    // agy describes MCP tools in small files it reads itself, and saves a large tool result to a file it then asks
-    // the model to read. Those two kinds of file, inside this run's private home, are all that may be read.
+    // agy describes MCP tools in small files it reads itself, and saves a large tool result, and every picture a
+    // tool returns, to files it then asks the model to open. Those files, inside this run's private home, are all that may be read.
     try {
       const real = fs.realpathSync(String(args.AbsolutePath || ''))
       const description = real.startsWith(CONFIG.mcpDir + path.sep) && real.endsWith('.json')
-      const savedResult = real.startsWith(CONFIG.brainDir + path.sep) && /[\\\\/]\\.system_generated[\\\\/]steps[\\\\/]\\d+[\\\\/]output\\.txt$/.test(real)
+      const savedResult = real.startsWith(CONFIG.brainDir + path.sep) && /[\\\\/]\\.system_generated[\\\\/]steps[\\\\/]\\d+[\\\\/](output\\.txt|media_\\d+\\.(jpe?g|png|webp))$/.test(real)
       allowed = description || savedResult
     } catch (error) { allowed = false }
   } else allowed = CONFIG.free.includes(name)

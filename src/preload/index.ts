@@ -137,6 +137,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   qaAgentsModels: (id: string) => ipcRenderer.invoke('qa:agents:models', id),
   qaRunStart: (options?: unknown) => ipcRenderer.invoke('qa:run:start', options),
   qaRunStop: () => ipcRenderer.invoke('qa:run:stop'),
+  qaBatchStart: (options: unknown) => ipcRenderer.invoke('qa:batch:start', options),
   qaChatSend: (text: string, options?: unknown) => ipcRenderer.invoke('qa:chat:send', text, options),
   qaChatReset: () => ipcRenderer.invoke('qa:chat:reset'),
   designsImage: (projectKey: string, breakpoint: string) => ipcRenderer.invoke('designs:image', projectKey, breakpoint),

@@ -5,12 +5,13 @@ import { homedir } from 'os'
 import { delimiter, dirname, join } from 'path'
 import { isBreakpoint } from '../../shared/designScale'
 import { designKeyOf, pageIdOf } from '../../shared/designKey'
-import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaChatSendOptions, type QaRunEvent, type QaTarget, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
+import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaBatchStartOptions, type QaChatSendOptions, type QaRunEvent, type QaTarget, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
 import { isTrackerFormat, parseTrackerPaste, STANDARD_TRACKER, type TrackerFormat } from '../../shared/trackerFormat'
 import type { DesignStore } from '../designStore'
 import { createEvidenceUploader } from './evidenceUpload'
 import { captureLivePage } from './liveCapture'
 import { runChatTurn } from './chat'
+import { isReviewablePageUrl, MAX_BATCH_PAGES, runQaBatch, type BatchPage } from './batch'
 import { runQa } from './runner'
 import { createRunStore } from './runStore'
 import { accountAccessToken, accountAuthId, parityPublicConfig } from '../account'
@@ -54,6 +55,8 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   try { sweepStaleAgentFolders() } catch { /* best effort */ }
 
   let reported: ReportedContext | null = null
+  // While a batch review runs, the page it is on, so tools called over the bridge see it too.
+  let batchTarget: ReportedContext | null = null
   let pendingApproval: { id: string; resolve: (decision: ApprovalDecision) => void; timer: NodeJS.Timeout } | null = null
 
   const fromMainWindow = (event: IpcMainEvent | IpcMainInvokeEvent) => {
@@ -101,7 +104,8 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
 
   const context: QaContext = {
     now: () => Date.now(),
-    reportedContext: () => reported,
+    reportedContext: () => batchTarget ?? reported,
+    setTarget: (target) => { batchTarget = target },
     designs: {
       list: (projectKey) => options.getDesignStore().list(projectKey),
       put: (projectKey, bytes, putOptions) => options.getDesignStore().put(projectKey, bytes, putOptions),
@@ -153,13 +157,14 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   // What the chat shows as the review target: the same page and designs the agent's tools will use.
   let targetThumbs: { signature: string; thumbnails: QaTarget['thumbnails'] } | null = null
   ipcMain.handle('qa:target:get', async (event): Promise<QaTarget | null> => {
-    if (!fromMainWindow(event) || !reported) return null
-    const key = designKeyOf(reported.projectKey, reported.pageUrl)
+    const current = batchTarget ?? reported
+    if (!fromMainWindow(event) || !current) return null
+    const key = designKeyOf(current.projectKey, current.pageUrl)
     const slots = options.getDesignStore().list(key)
     // Thumbnails are only made again when the stored designs change.
     const signature = `${key}|${Object.values(slots).map((slot) => slot?.sha256).join(',')}`
     if (targetThumbs?.signature !== signature) targetThumbs = { signature, thumbnails: (await options.getDesignStore().listWithThumbnails(key)).thumbnails }
-    return { projectName: reported.project.name, pageUrl: reported.pageUrl, pageId: pageIdOf(reported.pageUrl) ?? reported.pageUrl, slots, thumbnails: targetThumbs.thumbnails }
+    return { projectName: current.project.name, pageUrl: current.pageUrl, pageId: pageIdOf(current.pageUrl) ?? current.pageUrl, slots, thumbnails: targetThumbs.thumbnails }
   })
 
   ipcMain.handle('qa:approval-decision', (event, id: unknown, decision: unknown) => {
@@ -376,7 +381,30 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
     const breakpoints = Array.isArray(requested.breakpoints) ? requested.breakpoints.filter(isBreakpoint) : undefined
     return launch(agent, settings, async (provider, signal) => {
-      await runQa({ context, provider }, { breakpoints, signal, emit: sendRunEvent, budgetTokens: settings.budgetTokens || undefined })
+      await runQa({ context, provider }, { breakpoints, signal, emit: sendRunEvent, budgetTokens: settings.budgetTokens || undefined, standalone: requested.standalone === true })
+    })
+  })
+
+  // Several pages from a list the person pasted (the Multi-capture dialog), reviewed one after another
+  // with no design, and handed over for one approval. The list is checked here: only http(s) pages, no
+  // WordPress admin or login pages, and no more than a batch can hold.
+  ipcMain.handle('qa:batch:start', async (event, startOptions: unknown): Promise<QaRunStartResult> => {
+    if (!fromMainWindow(event)) return { started: false, error: 'Not allowed.' }
+    const requested = (startOptions && typeof startOptions === 'object' ? startOptions : {}) as Partial<QaBatchStartOptions>
+    const pages: BatchPage[] = []
+    const seen = new Set<string>()
+    for (const raw of Array.isArray(requested.pages) ? requested.pages.slice(0, MAX_BATCH_PAGES * 2) : []) {
+      const url = clamp(raw?.url, 2000)
+      if (!isReviewablePageUrl(url) || seen.has(url)) continue
+      seen.add(url)
+      pages.push({ url, name: clamp(raw?.name, 200) || url, projectId: clamp(raw?.projectId, 300) || undefined })
+    }
+    if (!pages.length) return { started: false, error: 'There are no pages to review. Check that the links start with https:// and are not WordPress admin or login pages.' }
+    const settings = readAgentSettings()
+    const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
+    const breakpoints = Array.isArray(requested.breakpoints) ? requested.breakpoints.filter(isBreakpoint) : undefined
+    return launch(agent, settings, async (provider, signal) => {
+      await runQaBatch({ context, provider }, { pages: pages.slice(0, MAX_BATCH_PAGES), breakpoints, signal, emit: sendRunEvent, budgetTokens: settings.budgetTokens || undefined })
     })
   })
 

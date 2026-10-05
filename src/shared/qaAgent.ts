@@ -78,6 +78,8 @@ export interface ApprovalRequest {
   warnings: string[]
   /** Whether images will be uploaded and linked, or only the rows copied. */
   uploadsEvidence: boolean
+  /** The page each row is about, set when rows from several pages are handed over together. */
+  rowPages?: Array<{ name: string; url: string }>
 }
 
 export interface ApprovalDecision {
@@ -163,6 +165,24 @@ export interface AgentsOverview {
 export interface QaRunStartOptions {
   agent?: AgentId
   breakpoints?: Breakpoint[]
+  /** Review the page on its own, without comparing it to a design. */
+  standalone?: boolean
+}
+
+/** How many pages one batch review covers. */
+export const QA_BATCH_MAX_PAGES = 50
+
+/** A page to review in a batch, from a list the person pasted. */
+export interface QaBatchPage {
+  url: string
+  name: string
+  projectId?: string
+}
+
+export interface QaBatchStartOptions {
+  pages: QaBatchPage[]
+  breakpoints?: Breakpoint[]
+  agent?: AgentId
 }
 
 export type QaRunStartResult = { started: true } | { started: false; error: string }

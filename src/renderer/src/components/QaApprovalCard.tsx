@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { ApprovalRequest } from '../../../shared/qaAgent'
 import { rowView, type TrackerFormat } from '../../../shared/trackerFormat'
 import './QaApprovalCard.css'
@@ -37,6 +37,8 @@ export default function QaApprovalCard({ request, onDecide }: Props) {
   const evidence = useMemo(() => new Map(request.evidence.map((item) => [item.rowIndex, item])), [request.evidence])
   const severities = Object.entries(request.severityCounts)
   const rowCount = request.rows.length
+  // Findings from several pages are shown under a heading per page.
+  const pageCount = new Set((request.rowPages ?? []).map((page) => page.url)).size
   let page = request.pageUrl
   try { page = new URL(request.pageUrl).pathname || request.pageUrl } catch { /* show as given */ }
 
@@ -46,8 +48,8 @@ export default function QaApprovalCard({ request, onDecide }: Props) {
         <header>
           <div>
             <span className="qa-approval-eyebrow">QA agent · {request.projectName}</span>
-            <h2 id="qa-approval-title">Copy {rowCount} finding{rowCount === 1 ? '' : 's'} for the tracker?</h2>
-            <small>{page}</small>
+            <h2 id="qa-approval-title">Copy {rowCount} finding{rowCount === 1 ? '' : 's'}{pageCount > 1 ? ` from ${pageCount} pages` : ''} for the tracker?</h2>
+            <small>{pageCount > 1 ? 'Several pages, grouped below' : page}</small>
           </div>
           <div className="qa-approval-view" role="group" aria-label="View">
             <button type="button" className={!sheet ? 'active' : ''} aria-pressed={!sheet} onClick={() => setSheet(false)}>Findings</button>
@@ -75,8 +77,17 @@ export default function QaApprovalCard({ request, onDecide }: Props) {
           <ol className="qa-findings">
             {views.map((view, index) => {
               const shot = evidence.get(index)
+              const page = request.rowPages?.[index]
+              const startsPage = pageCount > 1 && !!page && page.url !== request.rowPages?.[index - 1]?.url
               return (
-                <li key={index} className="qa-finding">
+                <Fragment key={index}>
+                {startsPage && page && (
+                  <li className="qa-finding-page" aria-label={`Page ${page.name}`}>
+                    <strong>{page.name}</strong>
+                    <small title={page.url}>{shortLink(page.url)} · {request.rowPages!.filter((other) => other.url === page.url).length} finding{request.rowPages!.filter((other) => other.url === page.url).length === 1 ? '' : 's'}</small>
+                  </li>
+                )}
+                <li className="qa-finding">
                   <div className="qa-finding-head">
                     <span className="qa-finding-number">{index + 1}</span>
                     <strong className="qa-finding-title">{view.title || `Finding ${index + 1}`}</strong>
@@ -94,6 +105,7 @@ export default function QaApprovalCard({ request, onDecide }: Props) {
                     </figure>
                   ) : <p className="qa-finding-noshot">No picture for this finding.</p>}
                 </li>
+                </Fragment>
               )
             })}
           </ol>

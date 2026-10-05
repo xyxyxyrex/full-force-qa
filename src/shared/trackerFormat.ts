@@ -207,9 +207,10 @@ const CELL_LIMITS = [
 export type RowsResult = { ok: true; rows: string[][]; warnings: string[] } | { ok: false; error: string }
 
 /** Maps issue objects (keyed by column name) to cell arrays in column order. */
-export function buildRows(format: TrackerFormat, issues: IssueRow[]): RowsResult {
+export function buildRows(format: TrackerFormat, issues: IssueRow[], options: { maxRows?: number } = {}): RowsResult {
+  const maxRows = options.maxRows ?? MAX_ROWS
   if (!Array.isArray(issues) || !issues.length) return { ok: false, error: 'There are no rows to copy.' }
-  if (issues.length > MAX_ROWS) return { ok: false, error: `At most ${MAX_ROWS} rows can be copied at once.` }
+  if (issues.length > maxRows) return { ok: false, error: `At most ${maxRows} rows can be copied at once.` }
   const byLowerName = new Map(format.columns.map((name) => [name.toLowerCase(), name]))
   const warnings: string[] = []
   const rows: string[][] = []

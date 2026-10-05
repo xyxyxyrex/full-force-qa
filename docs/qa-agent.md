@@ -13,6 +13,18 @@ An AI agent that does the first pass of visual QA: it compares the live staging 
 5. **Approve.** An approval card shows the drafted rows, the severity counts and the evidence pictures. *Approve & copy* puts the rows on your clipboard (and uploads the evidence pictures, if enabled); *Reject* sends your note back to the agent.
 6. **Paste into the tracker.**
 
+## Reviewing with no Figma design
+
+A page does not need a design. With none stored for the page, `/review` has the agent judge the live page **on its own**: broken or stretched images, typos and placeholder text, overflow, overlapping or clipped content, uneven gaps and unequal cards, headings or buttons that are inconsistent with each other, text too small or low-contrast, and content that breaks at a breakpoint. It reports only what is clearly wrong and never invents a design to compare with. Findings are written in the same short wording (`/review --no-design` does this even when designs are stored).
+
+**Many pages at once (Multi-capture).** In the dashboard's Multi-capture dialog, paste the links and press **Save & review with QA agent** (or **Review with QA agent** when they are already saved). Tick the screen sizes to cover (Desktop and Mobile by default; Tablet is optional because every size is a full review of the page). Parity:
+
+1. saves any new links as projects, as before;
+2. opens the QA chat and reviews the pages one after another, each on every ticked size, with no design (up to 50 pages at once);
+3. puts every finding in one approval card, grouped by page, with each finding's picture. One *Approve & copy* puts all the rows on the clipboard, with each row's Page Link filled in.
+
+Display is set by Parity from the size a finding was seen at, never left to the model. The same finding on two sizes becomes one row with the matching combined value (for example "Desktop and Mobile"); a finding on all three sizes stays as three rows, because the sheet has no value for it. The page list comes from you, so the agent can only ever capture the pages you pasted (WordPress admin and login pages are refused). **Cost.** Every page is reviewed on every ticked size, and each review is a long conversation with many pictures. Measured with Antigravity CLI on a small three-section test page, one desktop review used about 500,000 tokens (roughly three minutes); real pages with more sections use more, and every request carries the agent app's own fixed overhead (about 12,000 tokens). A list of 20 pages on two sizes is 40 such reviews, so use a token limit in Settings → AI Agents (it covers the whole batch; if it is reached, what was found so far is handed over for approval) and start with a few pages. An API key is billed per token instead of drawing on a plan.
+
 ## How a review works
 
 - **Capture.** For each breakpoint Parity loads the page you have open in a hidden, offscreen window at the design's width (using your existing WordPress login), scrolls it so lazy images and reveal animations fire, hides fixed elements except where a visitor would see them, and stitches a full-page image. It also reads the real computed values of every styled element and splits the page into sections (S1, S2, …).
