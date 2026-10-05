@@ -124,7 +124,7 @@ async function smoke() {
   assert.match(await text('.qa-history-detail'), /replace watermarked image/); assert.match(await text('.qa-history-detail'), /Drafted by the agent/); assert.match(await text('.qa-history-detail'), /h1 title should be 2 lines/)
   assert.equal(await run(`document.querySelectorAll('.qa-history-detail .qa-finding.excluded').length`), 1, 'a finding left out at the time is marked')
   assert.match(await text('.qa-finding-evidence-link'), /parity-gfx\.pages\.dev\/\?evidence=/, 'the link that went in the sheet is shown')
-  await until(`window.__calls.filter(c => c.startsWith('picture ')).length >= 3`)
+  await until(`window.__calls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 draft functional-desktop-0')`)
   const pictureCalls = (await run('window.__calls')).filter(c => c.startsWith('picture '))
   assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 handover evidence-1791174398615-row-01.webp'), 'hand-over pictures load')
   assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 draft tablet-0'), 'drafted findings get their pictures made')
