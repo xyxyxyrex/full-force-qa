@@ -16,6 +16,9 @@ import './theme/themes.css'
 import './App.css'
 import type { AuditCaptureContext } from '../../shared/auditExport'
 import CommandPalette from './components/CommandPalette'
+import QaApprovalCard from './components/QaApprovalCard'
+import QaChat from './components/QaChat'
+import type { ApprovalRequest } from '../../shared/qaAgent'
 import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/registry'
 import { getPaletteNotes, setPaletteNotes, workspaceItems } from './palette/workspaceSearch'
 import { HOTKEY_DEFINITIONS, THEME_LIST, saveSettings } from './theme/themeSystem'
@@ -67,6 +70,35 @@ export default function App() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
+  const [qaChatOpen, setQaChatOpen] = useState(false)
+  // Other screens (the Multi-capture dialog) open the chat when they start a review.
+  useEffect(() => {
+    const open = () => setQaChatOpen(true)
+    window.addEventListener('parity:open-qa-chat', open)
+    return () => window.removeEventListener('parity:open-qa-chat', open)
+  }, [])
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'q') { event.preventDefault(); setQaChatOpen((open) => !open) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  // Rows an agent hands over wait here until the person approves or rejects them.
+  const [qaApproval, setQaApproval] = useState<ApprovalRequest | null>(null)
+  useEffect(() => window.electronAPI.onQaApprovalRequest(setQaApproval), [])
+  // A file dropped anywhere but on a drop target must not open in the window.
+  useEffect(() => {
+    const swallowFileDrag = (event: DragEvent) => {
+      if (event.dataTransfer?.types?.includes('Files')) event.preventDefault()
+    }
+    window.addEventListener('dragover', swallowFileDrag)
+    window.addEventListener('drop', swallowFileDrag)
+    return () => {
+      window.removeEventListener('dragover', swallowFileDrag)
+      window.removeEventListener('drop', swallowFileDrag)
+    }
+  }, [])
   const [activityBarPinned, setActivityBarPinned] = useState(() => localStorage.getItem('parity_activity_bar_pinned') === 'true')
   const [activityBarVisible, setActivityBarVisible] = useState(true)
   const activityHideTimerRef = useRef<number | null>(null)
@@ -799,8 +831,9 @@ export default function App() {
       { id: 'app.capture', title: 'New project / capture website', group: 'Commands', run: () => handleNewProject() },
       { id: 'app.tab', title: 'New tab', group: 'Commands', run: handleNewTab },
       { id: 'app.settings', title: 'Open Settings', group: 'Commands', description: 'Account, integrations, shortcuts, appearance and directory', run: () => setSettingsOpen(true) },
+      { id: 'app.qa-console', title: 'QA agent: open the chat', group: 'Commands', description: 'Ask the agent about the open page or review it against its Figma designs (Ctrl+Shift+Q)', run: () => setQaChatOpen(true) },
       { id: 'app.feedback', title: 'Send feedback or report a bug', group: 'Commands', description: 'Tell us about a problem or suggest a Parity feature', run: () => setFeedbackOpen(true) },
-      ...(['account', 'general', 'hotkeys', 'appearance', 'integrations'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
+      ...(['account', 'general', 'hotkeys', 'appearance', 'integrations', 'agents'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
       ...THEME_LIST.map(theme => ({ id: `theme:${theme.id}`, title: `Theme: ${theme.name}`, description: theme.description, group: 'Commands' as const, run: () => { const next = { ...settings, theme: theme.id }; setSettings(next); saveSettings(next) } })),
       ...tabs.map(tab => ({ id: `tab:${tab.id}`, title: tab.title, description: `Switch to ${tab.view} tab`, group: 'Tabs' as const, run: () => setActiveTabId(tab.id) })),
       ...(activeTab?.view === 'editor' ? [] : HOTKEY_DEFINITIONS.map(command => ({ id: `workspace:${command.key}`, title: command.label, description: command.description, shortcut: settings.hotkeys[command.key], group: 'Commands' as const, disabled: 'Open a captured project first', run: () => {} }))),
@@ -895,6 +928,16 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={`app-qa-btn ${qaChatOpen ? 'active' : ''}`}
+            onClick={() => setQaChatOpen((open) => !open)}
+            title="QA agent chat (Ctrl+Shift+Q)"
+            aria-label="QA agent chat"
+            aria-pressed={qaChatOpen}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4" /><path d="M12 17h7" /><rect x="2.5" y="4" width="19" height="16" rx="2.5" /></svg>
+          </button>
+          <button
+            type="button"
             className={`app-feedback-btn ${feedbackOpen ? 'active' : ''}`}
             onClick={() => setFeedbackOpen(true)}
             title="Feedback & report a bug"
@@ -957,6 +1000,7 @@ export default function App() {
                 onNavigateCapture={handleWorkspaceNavigate}
                 onCaptureNewProject={(url, folderId) => handleCaptureFromWorkspace(activeTab.id, url, folderId)}
                 onOpenExistingProject={handleOpenExistingFromWorkspace}
+                rightDock={qaChatOpen ? <QaChat onClose={() => setQaChatOpen(false)} /> : undefined}
                 pendingCaptureUrl={activeTab.pendingCaptureUrl}
                 onDismissPendingCapture={() => setTabs((current) => current.map((tab) => tab.id === activeTab.id && tab.pendingCaptureUrl ? { ...tab, pendingCaptureUrl: undefined } : tab))}
               />
@@ -1003,6 +1047,15 @@ export default function App() {
           applyTheme(newSettings.theme)
         }}
       />
+      {qaChatOpen && activeTab?.view !== 'editor' && <div className="qa-chat-float"><QaChat onClose={() => setQaChatOpen(false)} /></div>}
+      {qaApproval && <QaApprovalCard
+        request={qaApproval}
+        onDecide={(approved, note) => {
+          const id = qaApproval.id
+          setQaApproval(null)
+          void window.electronAPI.qaApprovalDecision(id, { approved, note })
+        }}
+      />}
       {feedbackOpen && <FeedbackModal
         initialArea={feedbackArea}
         onClose={() => setFeedbackOpen(false)}

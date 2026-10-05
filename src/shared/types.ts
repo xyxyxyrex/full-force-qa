@@ -1,5 +1,8 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
+import type { Breakpoint } from './designScale'
+import type { AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBatchStartOptions, QaBridgeStatus, QaChatSendOptions, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaTarget, QaToolCallResult, ReportedContext } from './qaAgent'
+import type { TrackerFormat } from './trackerFormat'
 import type {
   AuditCaptureContext,
   AuditExportProgress,
@@ -442,6 +445,37 @@ export interface ElectronAPI extends InspectorApi {
   getProjects: () => Promise<Project[]>
   saveProject: (project: Project, ownerKey?: string | null) => Promise<void>
   deleteProject: (id: string, ownerKey?: string | null) => Promise<void>
+  qaReportContext: (context: ReportedContext | null) => void
+  qaCallTool: (name: string, args?: unknown) => Promise<QaToolCallResult>
+  qaApprovalDecision: (id: string, decision: ApprovalDecision) => Promise<boolean>
+  onQaApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void
+  qaAgentsOverview: () => Promise<AgentsOverview | null>
+  qaAgentsSaveSettings: (patch: Partial<Omit<AgentSettings, 'models'>> & { models?: Partial<AgentSettings['models']> }) => Promise<AgentsOverview | null>
+  qaAgentsSetKey: (id: AgentId, key: string) => Promise<AgentsOverview | { error: string } | null>
+  qaAgentsClearKey: (id: AgentId) => Promise<AgentsOverview | null>
+  qaAgentsModels: (id: AgentId) => Promise<{ models: string[]; error?: string }>
+  qaRunStart: (options?: QaRunStartOptions) => Promise<QaRunStartResult>
+  qaRunStop: () => Promise<boolean>
+  qaBatchStart: (options: QaBatchStartOptions) => Promise<QaRunStartResult>
+  qaChatSend: (text: string, options?: QaChatSendOptions) => Promise<QaRunStartResult>
+  qaChatReset: () => Promise<boolean>
+  designsImage: (projectKey: string, breakpoint: string) => Promise<string | null>
+  qaTarget: () => Promise<QaTarget | null>
+  qaRunActive: () => Promise<boolean>
+  onQaRunEvent: (callback: (event: QaRunEvent) => void) => () => void
+  qaCliStatus: () => Promise<{ installed: boolean; path: string; onPath: boolean; platform: string } | null>
+  qaCliInstall: () => Promise<{ installed: boolean; path: string; onPath: boolean; platform: string } | null>
+  qaBridgeStatus: () => Promise<QaBridgeStatus | null>
+  qaBridgeSetEnabled: (enabled: boolean) => Promise<QaBridgeStatus | null>
+  qaBridgeResetKey: () => Promise<QaBridgeStatus | null>
+  onQaBridgeStatus: (callback: (status: QaBridgeStatus) => void) => () => void
+  qaTrackerFormatGet: () => Promise<TrackerFormat>
+  qaTrackerFormatSave: (text: string) => Promise<{ ok: true; format: TrackerFormat } | { ok: false; error: string }>
+  qaTrackerFormatClear: () => Promise<boolean>
+  designsList: (projectKey: string) => Promise<DesignListResult>
+  designsPut: (projectKey: string, bytes: Uint8Array, options?: DesignPutOptions) => Promise<DesignPutResponse>
+  designsUpdate: (projectKey: string, breakpoint: Breakpoint, options: DesignUpdateOptions) => Promise<DesignUpdateResponse>
+  designsRemove: (projectKey: string, breakpoint: Breakpoint) => Promise<DesignListResult>
   loadWorkspaceHtml: (tabId: string) => Promise<string | null>
   saveWorkspaceHtml: (tabId: string, html: string) => Promise<void>
   deleteWorkspaceHtml: (tabId: string) => Promise<void>

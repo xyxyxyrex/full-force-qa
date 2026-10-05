@@ -122,6 +122,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteProject(id: string, ownerKey?: string | null): Promise<void> {
     return ipcRenderer.invoke('projects:delete', id, ownerKey)
   },
+  qaReportContext: (context: import('../shared/qaAgent').ReportedContext | null) => ipcRenderer.send('qa:report-context', context),
+  qaCallTool: (name: string, args?: unknown) => ipcRenderer.invoke('qa:call-tool', name, args),
+  qaApprovalDecision: (id: string, decision: import('../shared/qaAgent').ApprovalDecision) => ipcRenderer.invoke('qa:approval-decision', id, decision),
+  onQaApprovalRequest: (callback: (request: import('../shared/qaAgent').ApprovalRequest) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/qaAgent').ApprovalRequest) => callback(request)
+    ipcRenderer.on('qa:approval-request', handler)
+    return () => { ipcRenderer.removeListener('qa:approval-request', handler) }
+  },
+  qaAgentsOverview: () => ipcRenderer.invoke('qa:agents:overview'),
+  qaAgentsSaveSettings: (patch: unknown) => ipcRenderer.invoke('qa:agents:save-settings', patch),
+  qaAgentsSetKey: (id: string, key: string) => ipcRenderer.invoke('qa:agents:set-key', id, key),
+  qaAgentsClearKey: (id: string) => ipcRenderer.invoke('qa:agents:clear-key', id),
+  qaAgentsModels: (id: string) => ipcRenderer.invoke('qa:agents:models', id),
+  qaRunStart: (options?: unknown) => ipcRenderer.invoke('qa:run:start', options),
+  qaRunStop: () => ipcRenderer.invoke('qa:run:stop'),
+  qaBatchStart: (options: unknown) => ipcRenderer.invoke('qa:batch:start', options),
+  qaChatSend: (text: string, options?: unknown) => ipcRenderer.invoke('qa:chat:send', text, options),
+  qaChatReset: () => ipcRenderer.invoke('qa:chat:reset'),
+  designsImage: (projectKey: string, breakpoint: string) => ipcRenderer.invoke('designs:image', projectKey, breakpoint),
+  qaTarget: () => ipcRenderer.invoke('qa:target:get'),
+  qaRunActive: () => ipcRenderer.invoke('qa:run:active'),
+  onQaRunEvent: (callback: (event: import('../shared/qaAgent').QaRunEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: import('../shared/qaAgent').QaRunEvent) => callback(payload)
+    ipcRenderer.on('qa:run:event', handler)
+    return () => { ipcRenderer.removeListener('qa:run:event', handler) }
+  },
+  qaCliStatus: () => ipcRenderer.invoke('qa:cli:status'),
+  qaCliInstall: () => ipcRenderer.invoke('qa:cli:install'),
+  qaBridgeStatus: () => ipcRenderer.invoke('qa:bridge:status'),
+  qaBridgeSetEnabled: (enabled: boolean) => ipcRenderer.invoke('qa:bridge:set-enabled', enabled),
+  qaBridgeResetKey: () => ipcRenderer.invoke('qa:bridge:reset-key'),
+  onQaBridgeStatus: (callback: (status: import('../shared/qaAgent').QaBridgeStatus) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: import('../shared/qaAgent').QaBridgeStatus) => callback(status)
+    ipcRenderer.on('qa:bridge:status-changed', handler)
+    return () => { ipcRenderer.removeListener('qa:bridge:status-changed', handler) }
+  },
+  qaTrackerFormatGet: () => ipcRenderer.invoke('qa:tracker-format:get'),
+  qaTrackerFormatSave: (text: string) => ipcRenderer.invoke('qa:tracker-format:save', text),
+  qaTrackerFormatClear: () => ipcRenderer.invoke('qa:tracker-format:clear'),
+  designsList: (projectKey: string) => ipcRenderer.invoke('designs:list', projectKey),
+  designsPut: (projectKey: string, bytes: Uint8Array, options?: import('../shared/qaAgent').DesignPutOptions) => ipcRenderer.invoke('designs:put', projectKey, bytes, options),
+  designsUpdate: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint, options: import('../shared/qaAgent').DesignUpdateOptions) => ipcRenderer.invoke('designs:update', projectKey, breakpoint, options),
+  designsRemove: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint) => ipcRenderer.invoke('designs:remove', projectKey, breakpoint),
   loadWorkspaceHtml(tabId: string): Promise<string | null> {
     return ipcRenderer.invoke('workspace-html:load', tabId)
   },

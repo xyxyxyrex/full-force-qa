@@ -155,6 +155,7 @@ button, input, select, textarea, a, .clickable, .no-drag {
 .app-tab-close,
 .app-new-tab-btn,
 .app-update-btn,
+.app-qa-btn,
 .app-feedback-btn,
 .app-settings-btn {
   -webkit-app-region: no-drag;
@@ -166,6 +167,7 @@ button, input, select, textarea, a, .clickable, .no-drag {
 }
 
 .app-update-btn,
+.app-qa-btn,
 .app-feedback-btn,
 .app-settings-btn {
   position: absolute;
@@ -182,11 +184,13 @@ button, input, select, textarea, a, .clickable, .no-drag {
   transition: color .15s ease, border-color .15s ease, background .15s ease;
 }
 
+.app-qa-btn { right: 246px; }
 .app-update-btn { right: 212px; }
 .app-feedback-btn { right: 178px; }
 .app-settings-btn { right: 144px; }
 
 .app-update-btn svg,
+.app-qa-btn svg,
 .app-feedback-btn svg,
 .app-settings-btn svg {
   width: 16px;
@@ -200,6 +204,9 @@ button, input, select, textarea, a, .clickable, .no-drag {
 
 .app-update-btn:hover:not(:disabled),
 .app-update-btn:focus-visible,
+.app-qa-btn:hover,
+.app-qa-btn:focus-visible,
+.app-qa-btn.active,
 .app-feedback-btn:hover,
 .app-feedback-btn:focus-visible,
 .app-feedback-btn.active,

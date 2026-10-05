@@ -59,8 +59,46 @@ async function smoke() {
     await until("document.querySelector('.multi-capture-summary strong')?.textContent.includes('4 added')")
     assert.equal(await js("window.__dashboardTest.savedProjects.length"), 4)
     assert.equal(await js("window.__dashboardTest.savedProjects.find(project=>project.stagingUrl==='https://four.test/').name"), 'Fourth page')
-    await js("document.querySelector('.multi-capture-secondary').click()")
+
+    // Review the pasted pages with the QA agent: every valid link, only the ticked sizes, then the chat opens.
+    assert.equal(await js("document.querySelector('.multi-capture-review-button').textContent"), 'Review with QA agent')
+    assert.match(await js("document.querySelector('.multi-capture-review').textContent"), /with no design/)
+    // Desktop and Mobile are ticked, Tablet is not (each size costs a full review); the cost is shown.
+    assert.deepEqual(await js("[...document.querySelectorAll('.multi-capture-review input[type=checkbox]')].map(box => box.checked)"), [true, false, true])
+    assert.match(await js("document.querySelector('.multi-capture-review small').textContent"), /8 reviews \(4 pages × 2 sizes\)/)
+    assert.match(await js("document.querySelector('.multi-capture-review small').textContent"), /hundreds of thousands of tokens/)
+    await js("document.querySelector('.multi-capture-review-button').click()")
     await until("!document.querySelector('.multi-capture-dialog')")
+    const batch = await js("window.__dashboardTest.batchCalls")
+    assert.equal(batch.length, 1)
+    assert.deepEqual(batch[0].breakpoints, ['desktop', 'mobile'])
+    assert.deepEqual(batch[0].pages.map(page => page.url), ['https://one.test/path', 'https://two.test/', 'https://three.test/', 'https://four.test/'])
+    assert.equal(batch[0].pages.find(page => page.url === 'https://four.test/').name, 'Fourth page')
+    assert.equal(await js("window.__dashboardTest.chatOpened"), 1)
+
+    // New links are saved as projects first, then reviewed; a refusal is shown and keeps the dialog open.
+    await js("document.querySelector('.new-capture-menu-trigger').click()")
+    await until("!!document.querySelector('[role=menu][aria-label=\"Capture options\"]')")
+    await js("document.querySelector('[role=menu][aria-label=\"Capture options\"] button').click()")
+    await until("!!document.querySelector('.multi-capture-dialog')")
+    await js("(() => { const input=document.getElementById('multi-capture-paste'); const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set; setter.call(input,'five.test'); input.dispatchEvent(new Event('input',{bubbles:true})); })()")
+    await js("document.querySelector('.multi-capture-paste-row button').click()")
+    await until("document.querySelectorAll('.multi-capture-row').length === 1")
+    assert.equal(await js("document.querySelector('.multi-capture-review-button').textContent"), 'Save & review with QA agent')
+    await js("window.__dashboardTest.batchResult = { started: false, error: 'The agent is busy. Stop it first.' }")
+    await js("document.querySelector('.multi-capture-review-button').click()")
+    await until("document.querySelector('.multi-capture-message')?.textContent.includes('The agent is busy')")
+    assert.equal(await js("window.__dashboardTest.savedProjects.some(project => project.stagingUrl === 'https://five.test/')"), true, 'the link was saved before the review was refused')
+    assert.equal(await js("!!document.querySelector('.multi-capture-dialog')"), true, 'the dialog stays open when the review cannot start')
+    assert.equal(await js("window.__dashboardTest.chatOpened"), 1)
+    await js("window.__dashboardTest.batchResult = { started: true }")
+    await js("document.querySelectorAll('.multi-capture-review input[type=checkbox]')[1].click()") // add Tablet
+    await js("document.querySelector('.multi-capture-review-button').click()")
+    await until("!document.querySelector('.multi-capture-dialog')")
+    const second = await js("window.__dashboardTest.batchCalls")
+    assert.deepEqual(second[2].pages.map(page => page.url), ['https://five.test/'])
+    assert.deepEqual(second[2].breakpoints, ['desktop', 'tablet', 'mobile'])
+    assert.equal(await js("window.__dashboardTest.chatOpened"), 2)
 
     // Blank dashboard space offers all creation actions.
     await js("document.querySelector('.active-project-dropzone').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:700,clientY:700}))")

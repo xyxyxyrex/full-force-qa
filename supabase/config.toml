@@ -30,3 +30,13 @@ verify_jwt = false
 [functions.parity-account-v2]
 # The handler verifies Supabase access tokens with auth.getUser().
 verify_jwt = false
+
+[storage.buckets.qa-evidence]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["image/webp", "image/png", "image/jpeg"]
+
+[functions.qa-evidence]
+# Uploads are authenticated by the handler with auth.getUser(); downloads are public by design,
+# protected by an unguessable id and an expiry, like a screenshot-sharing link.
+verify_jwt = false
