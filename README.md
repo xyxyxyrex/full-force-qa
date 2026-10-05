@@ -2,7 +2,7 @@
 
 Parity is an Electron desktop application for quality assurance engineers, web developers, and designers reviewing website implementations. It combines authenticated Chromium previews, direct visual editing, Figma comparison, SEO and grammar audits, automated visual findings, annotations, and expiring browser-based review links in one QA workspace.
 
-**v1.5.0 was Parity's first public release. v1.5.1 adds the approval-gated QA agent, local CLI/MCP bridge, per-page design references, and batch Multi-capture reviews.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
+**v1.5.0 was Parity's first public release. v1.5.2 includes the approval-gated QA agent and fixes the Antigravity safety-hook launcher on Windows.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
 
 ## Links
 
