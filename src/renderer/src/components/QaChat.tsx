@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BREAKPOINTS, isBreakpoint, type Breakpoint } from '../../../shared/designScale'
-import { isAgentId, type AgentId } from '../../../shared/qaAgent'
+import { isAgentId, type AgentId, type QaTarget } from '../../../shared/qaAgent'
 import { formatTokens, qaChat, tokenTotal, useQaChat, type ChatMessage } from './qaChatStore'
 import './QaChat.css'
 
@@ -112,6 +112,48 @@ export function TokenMeter() {
   )
 }
 
+const BREAKPOINT_LABEL: Record<Breakpoint, string> = { desktop: 'Desktop', tablet: 'Tablet', mobile: 'Mobile' }
+
+/** The page the agent will review and the designs stored for that page, so there is never a doubt about what it is looking at. */
+export function ReviewTarget() {
+  const [target, setTarget] = useState<QaTarget | null | undefined>(undefined)
+  const running = useQaChat().running
+  useEffect(() => {
+    let alive = true
+    const load = () => { void window.electronAPI.qaTarget().then((next) => { if (alive) setTarget(next) }).catch(() => { if (alive) setTarget(null) }) }
+    load()
+    const timer = window.setInterval(load, 2500)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [running])
+  if (target === undefined) return null
+  if (!target) return <div className="qa-target"><p className="qa-target-none">No page is open. Open a project page and its designs show here.</p></div>
+  const missing = BREAKPOINTS.filter((bp) => !target.slots[bp])
+  return (
+    <div className="qa-target" aria-label="What a review will use">
+      <div className="qa-target-page"><span>Page</span><code title={target.pageUrl}>{target.pageId}</code></div>
+      <div className="qa-target-designs">
+        {BREAKPOINTS.map((bp) => {
+          const slot = target.slots[bp]
+          return slot ? (
+            <figure key={bp} className="qa-target-design" title={`${BREAKPOINT_LABEL[bp]} design: ${slot.fileName ?? 'unnamed'} (${slot.frameWidth}px wide frame, ${slot.scale}x export)`}>
+              {target.thumbnails[bp] ? <img src={target.thumbnails[bp]} alt={`${BREAKPOINT_LABEL[bp]} design`} /> : <span className="qa-target-noimg" />}
+              <figcaption><b>{BREAKPOINT_LABEL[bp]}</b> {slot.frameWidth}px<small>{slot.fileName ?? 'unnamed'}</small></figcaption>
+            </figure>
+          ) : (
+            <div key={bp} className="qa-target-design missing" title={`No ${BREAKPOINT_LABEL[bp]} design for this page`}>
+              <span className="qa-target-noimg" />
+              <figcaption><b>{BREAKPOINT_LABEL[bp]}</b><small>no design</small></figcaption>
+            </div>
+          )
+        })}
+      </div>
+      {missing.length === BREAKPOINTS.length
+        ? <p className="qa-target-warn">No designs for this page yet. Add the Figma PNGs in the Figma overlay panel; designs are kept per page.</p>
+        : missing.length > 0 && <p className="qa-target-note">No {missing.map((bp) => BREAKPOINT_LABEL[bp].toLowerCase()).join(' or ')} design for this page, so {missing.length === 1 ? 'that breakpoint is' : 'those breakpoints are'} skipped in a review.</p>}
+    </div>
+  )
+}
+
 interface Props { onClose: () => void }
 
 export default function QaChat({ onClose }: Props) {
@@ -130,7 +172,7 @@ export default function QaChat({ onClose }: Props) {
     const el = field.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+    el.style.height = `${Math.min(el.scrollHeight + 2, 160)}px`
   }, [input])
 
   const running = chat.running || busy
@@ -202,6 +244,7 @@ export default function QaChat({ onClose }: Props) {
         </div>
       </header>
       <div className="qa-chat-metabar"><TokenMeter /></div>
+      <ReviewTarget />
 
       <div
         className="qa-chat-body" ref={scroller}

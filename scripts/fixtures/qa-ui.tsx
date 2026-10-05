@@ -20,6 +20,14 @@ const agents = [
 ]
 const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90 }
 const bridge = { enabled: true, running: true, port: 29849, error: '', keyHint: '••••a1b2', mcpUrl: 'http://127.0.0.1:29849/mcp', keyFile: '/home/user/.config/Parity/qa-agent/token', lastRequestAt: 1, recent: [{ at: Date.now(), method: 'POST', path: '/mcp', status: 200, ms: 12, tool: 'capture_live' }, { at: Date.now() - 4000, method: 'GET', path: '/api/status', status: 401, ms: 1 }] }
+const slot = (breakpoint: string, fileName: string, frameWidth: number, scale: number) => ({ breakpoint, fileName, pixelWidth: frameWidth * scale, pixelHeight: 6000, scale, frameWidth, frameHeight: 3000, detection: 'dimensions', confidence: 'high', sha256: fileName, addedAt: 1 })
+const alopeciaTarget = {
+  projectName: '[Svenson] Alopecia', pageUrl: 'https://svenson.test/alopecia-page/', pageId: '/alopecia-page',
+  slots: { desktop: slot('desktop', 'alopecia-desktop@2x.png', 1440, 2), mobile: slot('mobile', 'alopecia-mobile@2x.png', 390, 2) },
+  thumbnails: { desktop: swatch('#335577'), mobile: swatch('#553377') },
+}
+;(window as any).__target = alopeciaTarget
+;(window as any).__targets = { alopecia: alopeciaTarget, contact: { projectName: '[Svenson] Alopecia', pageUrl: 'https://svenson.test/contact/', pageId: '/contact', slots: {}, thumbnails: {} } }
 const calls: string[] = []
 let runListener: ((event: unknown) => void) | null = null
 ;(window as any).__calls = calls
@@ -40,6 +48,7 @@ let runListener: ((event: unknown) => void) | null = null
   qaTrackerFormatClear: async () => true,
   qaCliStatus: async () => ({ installed: false, path: '/home/user/.local/bin/parity', onPath: false, platform: 'linux' }),
   qaCliInstall: async () => ({ installed: true, path: '/home/user/.local/bin/parity', onPath: true, platform: 'linux' }),
+  qaTarget: async () => (window as any).__target ?? null,
   qaRunActive: async () => false,
   onQaRunEvent: (callback: (event: unknown) => void) => { runListener = callback; return () => { runListener = null } },
   qaRunStart: async (options: unknown) => { calls.push(`run ${JSON.stringify(options)}`); return { started: true } },

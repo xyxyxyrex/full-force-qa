@@ -4,7 +4,8 @@ import { readFile } from 'fs/promises'
 import { homedir } from 'os'
 import { delimiter, dirname, join } from 'path'
 import { isBreakpoint } from '../../shared/designScale'
-import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaChatSendOptions, type QaRunEvent, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
+import { designKeyOf, pageIdOf } from '../../shared/designKey'
+import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaChatSendOptions, type QaRunEvent, type QaTarget, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
 import { isTrackerFormat, parseTrackerPaste, STANDARD_TRACKER, type TrackerFormat } from '../../shared/trackerFormat'
 import type { DesignStore } from '../designStore'
 import { createEvidenceUploader } from './evidenceUpload'
@@ -143,6 +144,18 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     if (!fromMainWindow(event)) return { text: 'Not allowed.', isError: true, images: [] }
     if (typeof name !== 'string') return { text: 'A tool name is required.', isError: true, images: [] }
     return toRendererResult(await callTool(name, args, context))
+  })
+
+  // What the chat shows as the review target: the same page and designs the agent's tools will use.
+  let targetThumbs: { signature: string; thumbnails: QaTarget['thumbnails'] } | null = null
+  ipcMain.handle('qa:target:get', async (event): Promise<QaTarget | null> => {
+    if (!fromMainWindow(event) || !reported) return null
+    const key = designKeyOf(reported.projectKey, reported.pageUrl)
+    const slots = options.getDesignStore().list(key)
+    // Thumbnails are only made again when the stored designs change.
+    const signature = `${key}|${Object.values(slots).map((slot) => slot?.sha256).join(',')}`
+    if (targetThumbs?.signature !== signature) targetThumbs = { signature, thumbnails: (await options.getDesignStore().listWithThumbnails(key)).thumbnails }
+    return { projectName: reported.project.name, pageUrl: reported.pageUrl, pageId: pageIdOf(reported.pageUrl) ?? reported.pageUrl, slots, thumbnails: targetThumbs.thumbnails }
   })
 
   ipcMain.handle('qa:approval-decision', (event, id: unknown, decision: unknown) => {

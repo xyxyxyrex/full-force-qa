@@ -3,6 +3,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import sharp from 'sharp'
 import { createDesignStore } from '../designStore'
+import { designKeyOf } from '../../shared/designKey'
 import { parseTrackerPaste } from '../../shared/trackerFormat'
 import type { ApprovalDecision, ApprovalRequest, ReportedContext } from '../../shared/qaAgent'
 import type { LiveCaptureOptions, LiveCaptureResult } from './liveCapture'
@@ -36,6 +37,9 @@ export const reportedContext = (over: Partial<ReportedContext> = {}): ReportedCo
   projectKey: 'proj-1', project: { id: 'proj-1', name: '[Svenson] Alopecia', stagingUrl: 'https://svenson.test/' },
   pageUrl: 'https://svenson.test/alopecia-page/', workspaceTab: 'editBeta', breakpoint: 'desktop', viewport: { width: 1920, height: 1200 }, reportedAt: 1, ...over,
 })
+
+/** Where the designs of the fixture page are kept. */
+export const PAGE_DESIGN_KEY = designKeyOf('proj-1', 'https://svenson.test/alopecia-page/')
 
 export interface FakeContext {
   context: QaContext

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentEvent, AgentProvider, ProviderResult, ProviderRun } from './agents/types'
 import { QA_RUBRIC } from './prompt'
 import { runQa } from './runner'
-import { bands, createFakeContext, reportedContext, type FakeContext } from './testSupport'
+import { bands, createFakeContext, PAGE_DESIGN_KEY, reportedContext, type FakeContext } from './testSupport'
 
 let root: string
 let fake: FakeContext
@@ -14,7 +14,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 const addDesigns = async (...bps: Array<'desktop' | 'tablet' | 'mobile'>) => {
   const widths = { desktop: 2880, tablet: 1668, mobile: 780 }
-  for (const bp of bps) await fake.designs.put('proj-1', await bands(widths[bp], 4000), { target: bp })
+  for (const bp of bps) await fake.designs.put(PAGE_DESIGN_KEY, await bands(widths[bp], 4000), { target: bp })
 }
 const rowFor = (issue: string) => ({ cells: { Page: 'Home', Issue: issue, Severity: 'High' } })
 const runIdOf = (task: string) => /Run id: (\S+)\./.exec(task)![1]

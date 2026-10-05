@@ -135,3 +135,64 @@ describe('designStore misc', () => {
     expect(dir).not.toContain('/')
   })
 })
+
+describe('designs per page', () => {
+  const about = 'proj-1#/about'
+  const contact = 'proj-1#/contact'
+
+  it('keeps each page\'s designs apart', async () => {
+    await store.put(about, await png(1440, 300), { fileName: 'about.png', pagePath: '/about' })
+    await store.put(contact, await png(1440, 300, '#aa0000'), { fileName: 'contact.png', pagePath: '/contact' })
+    expect(store.list(about).desktop?.fileName).toBe('about.png')
+    expect(store.list(contact).desktop?.fileName).toBe('contact.png')
+    // Replacing one page's design leaves the other alone.
+    await store.put(about, await png(1440, 320, '#00aa00'), { fileName: 'about-v2.png', pagePath: '/about' })
+    expect(store.list(about).desktop?.fileName).toBe('about-v2.png')
+    expect(store.list(contact).desktop?.fileName).toBe('contact.png')
+    expect(store.list('proj-1#/pricing')).toEqual({})
+  })
+
+  it('removes every page of a project, and no other project', async () => {
+    await store.put(about, await png(1440, 300), {})
+    await store.put(contact, await png(1440, 300, '#aa0000'), {})
+    await store.put('proj-1', await png(1440, 300, '#00aa00'), {})
+    await store.put('proj-2#/about', await png(1440, 300, '#0000aa'), {})
+    store.removeProject('proj-1')
+    expect(store.list(about)).toEqual({})
+    expect(store.list(contact)).toEqual({})
+    expect(store.list('proj-1')).toEqual({})
+    expect(store.list('proj-2#/about').desktop).toBeDefined()
+  })
+
+  describe('designs saved before pages had their own set', () => {
+    it('move to the page they were added for, once', async () => {
+      await store.put('proj-1', await png(1440, 300), { fileName: 'old.png', pagePath: '/about/' })
+      expect(store.list(contact)).toEqual({}) // another page does not get them
+      expect(store.list('proj-1').desktop?.fileName).toBe('old.png')
+      expect(store.list(about).desktop?.fileName).toBe('old.png') // trailing slash does not matter
+      expect(store.list('proj-1')).toEqual({}) // moved, not copied
+      expect(store.list(contact)).toEqual({})
+      expect((await store.normalizedPath(about, 'desktop'))).toBeTruthy()
+    })
+
+    it('stay put unless every one of them is known to be for that page', async () => {
+      await store.put('proj-1', await png(1440, 300), { fileName: 'untagged.png' })
+      expect(store.list(about)).toEqual({})
+      expect(store.list('proj-1').desktop).toBeDefined()
+      // One tagged for this page next to one of unknown origin: leave both.
+      await store.put('proj-1', await png(780, 300, '#aa0000'), { fileName: 'm.png', pagePath: '/about' })
+      expect(store.list(about).mobile).toBeUndefined()
+      // Tagged for two different pages: leave them too.
+      await store.put('proj-1', await png(1440, 300, '#00aa00'), { fileName: 'd.png', pagePath: '/contact' })
+      expect(store.list(about)).toEqual({})
+      expect(store.list(contact)).toEqual({})
+    })
+
+    it('never overwrite designs the page already has', async () => {
+      await store.put(about, await png(1440, 300), { fileName: 'new.png', pagePath: '/about' })
+      await store.put('proj-1', await png(1440, 300, '#aa0000'), { fileName: 'old.png', pagePath: '/about' })
+      expect(store.list(about).desktop?.fileName).toBe('new.png')
+      expect(store.list('proj-1').desktop?.fileName).toBe('old.png')
+    })
+  })
+})

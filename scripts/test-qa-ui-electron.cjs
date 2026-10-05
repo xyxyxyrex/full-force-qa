@@ -88,6 +88,18 @@ async function smoke() {
   // Chat
   await open('chat')
   assert.equal(await run(`document.querySelectorAll('.qa-chat-suggestions button').length`), 3, 'an empty chat offers starting points')
+  // The review target: which page, and which designs are stored for it.
+  assert.match(await text('.qa-target-page'), /\/alopecia-page/, 'the open page is shown')
+  assert.equal(await run(`document.querySelectorAll('.qa-target-design:not(.missing) img').length`), 2, 'the stored designs are shown')
+  assert.match(await text('.qa-target-designs'), /alopecia-desktop@2x\.png/, 'with their file names')
+  assert.match(await text('.qa-target-designs'), /Tablet\s*no design/, 'a missing breakpoint says so')
+  assert.match(await text('.qa-target-note'), /No tablet design for this page/)
+  await shot('chat-target')
+  await run(`window.__target = window.__targets.contact`); await sleep(3200)
+  assert.match(await text('.qa-target-page'), /\/contact/, 'changing the page changes the target')
+  assert.equal(await run(`document.querySelectorAll('.qa-target-design:not(.missing) img').length`), 0, 'and the designs are that page\'s, not the previous one\'s')
+  assert.match(await text('.qa-target-warn'), /No designs for this page yet/)
+  await run(`window.__target = window.__targets.alopecia`); await sleep(3200)
   assert.match(await text('.qa-chat-meter'), /tokens: —/, 'the meter says usage is not reported yet')
   const send = async message => { await run(`(() => { const t = document.querySelector('.qa-chat-composer textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, ${JSON.stringify(message)}); t.dispatchEvent(new Event('input', { bubbles: true })) })()`); await sleep(80); await click('.qa-chat-send'); await sleep(250) }
   await send('How big is the hero heading?')

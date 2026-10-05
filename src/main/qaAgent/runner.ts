@@ -1,5 +1,6 @@
 import type { Breakpoint } from '../../shared/designScale'
 import { BREAKPOINTS } from '../../shared/designScale'
+import { designKeyOf, pageIdOf } from '../../shared/designKey'
 import { QA_RUBRIC } from './prompt'
 import type { AgentEvent, AgentProvider, ProviderResult } from './agents/types'
 import { callTool, type QaContext, type ToolResult } from './tools'
@@ -58,17 +59,18 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
   const format = context.trackerFormat()
   if (!format) return finish('failed', 'The tracker format is not set. In Settings → AI Agents, paste the tracker\'s header row and a few example rows.')
 
-  const slots = context.designs.list(reported.projectKey)
+  const slots = context.designs.list(designKeyOf(reported.projectKey, reported.pageUrl))
   const stored = BREAKPOINTS.filter((bp) => slots[bp])
   const breakpoints = options.breakpoints?.length ? options.breakpoints : stored
-  if (!breakpoints.length) return finish('nothing-to-do', 'No design images are stored for this project. Add the Figma PNGs in the Figma overlay panel, then run again.')
+  if (!breakpoints.length) return finish('nothing-to-do', `No design images are stored for this page (${pageIdOf(reported.pageUrl) ?? reported.pageUrl}). Add the Figma PNGs for it in the Figma overlay panel, then run again.`)
   summary.breakpoints = breakpoints
   const missing = breakpoints.filter((bp) => !slots[bp])
   if (missing.length) emit({ type: 'status', message: `No design is stored for ${missing.join(', ')}; ${missing.length === 1 ? 'that breakpoint' : 'those breakpoints'} will be captured without a comparison.` })
 
   const run = context.runs.create({ projectKey: reported.projectKey, projectName: reported.project.name, pageUrl: reported.pageUrl })
   summary.runId = run.id
-  emit({ type: 'status', message: `Run ${run.id} started on ${reported.pageUrl} (${breakpoints.join(', ')}).` })
+  const designList = breakpoints.map((bp) => (slots[bp] ? `${bp}: ${slots[bp]!.fileName ?? 'design'} (${slots[bp]!.frameWidth}px)` : `${bp}: no design`)).join(', ')
+  emit({ type: 'status', message: `Run ${run.id} started on ${reported.pageUrl}. Designs for this page: ${designList}.` })
 
   let tokens = 0
   let overBudget = false

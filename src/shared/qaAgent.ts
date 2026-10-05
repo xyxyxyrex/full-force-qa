@@ -167,6 +167,16 @@ export interface QaRunStartOptions {
 
 export type QaRunStartResult = { started: true } | { started: false; error: string }
 
+/** What a review would use right now: the open page and the designs stored for that page. */
+export interface QaTarget {
+  projectName: string
+  pageUrl: string
+  /** The page's path (and query), the same identity its designs are stored under. */
+  pageId: string
+  slots: DesignSlots
+  thumbnails: Partial<Record<Breakpoint, string>>
+}
+
 export interface QaChatSendOptions {
   agent?: AgentId
 }

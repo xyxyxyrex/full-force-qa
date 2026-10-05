@@ -9,6 +9,8 @@ const SCALE_OPTIONS = [1, 1.5, 2, 3, 4]
 interface Props {
   slots: DesignSlotsState
   thumbnails: Partial<Record<Breakpoint, string>>
+  /** The page these designs are for (its path), shown so it is clear what is loaded. */
+  pageLabel?: string
   activeBreakpoint?: Breakpoint | null
   busy?: boolean
   error?: string
@@ -25,7 +27,7 @@ function sizeLabel(slot: DesignSlotMeta): string {
 }
 
 /** Figma exports per breakpoint, stored by Parity so the QA agent can read them. */
-export default function DesignSlots({ slots, thumbnails, activeBreakpoint, busy, error, onAddFiles, onRemove, onMove, onScale }: Props) {
+export default function DesignSlots({ slots, thumbnails, pageLabel, activeBreakpoint, busy, error, onAddFiles, onRemove, onMove, onScale }: Props) {
   const inputs = useRef<Partial<Record<Breakpoint, HTMLInputElement | null>>>({})
   const [dragOver, setDragOver] = useState<Breakpoint | null>(null)
 
@@ -41,6 +43,7 @@ export default function DesignSlots({ slots, thumbnails, activeBreakpoint, busy,
         <span>Designs for QA agent</span>
         {busy && <small>Saving…</small>}
       </div>
+      {pageLabel && <div className="design-slots-page" title="Designs are kept per page. Change the page and the designs change with it.">For page <code>{pageLabel}</code></div>}
       <div className="design-slots-grid">
         {BREAKPOINTS.map((breakpoint) => {
           const slot = slots[breakpoint]
@@ -84,6 +87,7 @@ export default function DesignSlots({ slots, thumbnails, activeBreakpoint, busy,
               />
               {slot ? (
                 <>
+                  {slot.fileName && <div className="design-slot-file" title={slot.fileName}>{slot.fileName}</div>}
                   <div className={`design-slot-size ${slot.confidence === 'low' ? 'low' : ''}`} title={`${slot.pixelWidth}×${slot.pixelHeight} px file`}>
                     {sizeLabel(slot)}{slot.confidence === 'low' ? ' · check scale' : ''}
                   </div>

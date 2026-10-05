@@ -6,6 +6,7 @@ import * as z from 'zod'
 import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
 import type { ApprovalRequest, ApprovalDecision, DesignPutOptions, DesignPutResponse, DesignSlotMeta, DesignSlots, ReportedContext } from '../../shared/qaAgent'
 import { buildHtml, buildRows, buildTsv, screenshotColumn, trackerColumnGuide, type TrackerFormat } from '../../shared/trackerFormat'
+import { designKeyOf, pageIdOf } from '../../shared/designKey'
 import { planChunks } from './chunks'
 import { formatSectionNodes } from './formatNodes'
 import { cropJpeg, placeholderJpeg, renderEvidence, renderOverview, thumbnailJpeg, type Rect } from './imageOps'
@@ -96,6 +97,9 @@ export function pagePathOf(url: string): string | undefined {
   try { return new URL(url).pathname || '/' } catch { return undefined }
 }
 
+/** Designs belong to one page of a project; this is where the open page's designs are kept. */
+const designsKey = (reported: ReportedContext) => designKeyOf(reported.projectKey, reported.pageUrl)
+
 const describeSlot = (slot: DesignSlotMeta | undefined) =>
   slot ? { frameWidth: slot.frameWidth, frameHeight: slot.frameHeight, exportScale: slot.scale, pixelSize: `${slot.pixelWidth}x${slot.pixelHeight}`, file: slot.fileName ?? null, forPage: slot.pagePath ?? null, confidence: slot.confidence } : null
 
@@ -136,17 +140,13 @@ const getContext = defineTool({
   async run(_args, context) {
     const reported = context.reportedContext()
     const format = context.trackerFormat()
-    const slots = reported ? context.designs.list(reported.projectKey) : {}
+    const slots = reported ? context.designs.list(designsKey(reported)) : {}
     const latest = reported ? context.runs.latest(reported.projectKey) : null
     const notes: string[] = []
     if (!reported) notes.push('No project is open in Parity.')
     else {
-      const page = pagePathOf(reported.pageUrl)
-      for (const bp of BREAKPOINTS) {
-        const slot = slots[bp]
-        if (slot?.pagePath && page && slot.pagePath !== page) notes.push(`The ${bp} design was added for ${slot.pagePath} but the open page is ${page}. Check it is the right design.`)
-      }
-      if (!BREAKPOINTS.some((bp) => slots[bp])) notes.push('No designs are stored. Add the Figma PNGs in the Figma overlay panel, or call set_design.')
+      // Designs are kept per page, so these are the open page's own; there is nothing to mismatch.
+      if (!BREAKPOINTS.some((bp) => slots[bp])) notes.push(`No designs are stored for the open page (${pageIdOf(reported.pageUrl) ?? reported.pageUrl}). Add the Figma PNGs for this page in the Figma overlay panel, or call set_design.`)
     }
     if (!format) notes.push('The tracker format is not set. In Parity: Settings → AI Agents → paste the tracker header row and a few example rows.')
     const evidenceReason = context.evidence ? context.evidence.unavailableReason() : 'Evidence uploads are not set up.'
@@ -154,6 +154,7 @@ const getContext = defineTool({
       bridgeVersion: BRIDGE_VERSION,
       project: reported ? { name: reported.project.name, stagingUrl: reported.project.stagingUrl } : null,
       openPage: reported ? { url: reported.pageUrl, workspace: reported.workspaceTab, breakpointInView: reported.breakpoint, viewport: reported.viewport } : null,
+      designsAreFor: reported ? (pageIdOf(reported.pageUrl) ?? reported.pageUrl) : null,
       designs: { desktop: describeSlot(slots.desktop), tablet: describeSlot(slots.tablet), mobile: describeSlot(slots.mobile) },
       tracker: format ? { columns: format.columns, screenshotColumn: screenshotColumn(format), columnGuide: trackerColumnGuide(format), exampleRows: format.examples } : null,
       evidenceUploads: evidenceReason ? { available: false, reason: evidenceReason } : { available: true },
@@ -188,7 +189,7 @@ const setDesign = defineTool({
     } catch {
       return fail('That file could not be read.')
     }
-    const result = await context.designs.put(reported.projectKey, bytes, { fileName: basename(args.path), pagePath: pagePathOf(reported.pageUrl), target: args.breakpoint ?? 'auto' })
+    const result = await context.designs.put(designsKey(reported), bytes, { fileName: basename(args.path), pagePath: pageIdOf(reported.pageUrl) ?? undefined, target: args.breakpoint ?? 'auto' })
     if (!result.success) return fail(result.error)
     const slot = result.slots[result.assigned]
     return { text: `${result.unchanged ? 'Already stored' : 'Stored'} as the ${result.assigned} design: ${slot?.frameWidth}px wide frame, export scale ${slot?.scale}x${slot?.confidence === 'low' ? ' (the scale is a guess; check it in Parity)' : ''}.` }
@@ -239,7 +240,9 @@ const captureLive = defineTool({
     }
 
     const existing = context.runs.readLive(runId, args.breakpoint)
-    const slot = context.designs.list(reported.projectKey)[args.breakpoint]
+    // A run stays on the page it started on, and so do the designs it compares with.
+    const designPageKey = designKeyOf(reported.projectKey, pageUrl)
+    const slot = context.designs.list(designPageKey)[args.breakpoint]
     const width = slot?.frameWidth ?? DEFAULT_WIDTH[args.breakpoint]
     const lines: string[] = []
 
@@ -250,7 +253,7 @@ const captureLive = defineTool({
       } catch (error: any) {
         return fail(`The page could not be captured: ${error?.message || 'unknown error'}`)
       }
-      const designPng = slot ? await context.designs.readNormalized(reported.projectKey, args.breakpoint) : null
+      const designPng = slot ? await context.designs.readNormalized(designPageKey, args.breakpoint) : null
       context.runs.saveCapture(runId, args.breakpoint, capture, slot && designPng ? { png: designPng, meta: slot } : null)
     } else {
       lines.push('This breakpoint was already captured in this run; showing it again (use refresh to capture anew).')

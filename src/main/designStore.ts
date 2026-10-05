@@ -1,8 +1,9 @@
 import { createHash } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import sharp from 'sharp'
 import { BREAKPOINTS, detectDesignScale, isBreakpoint, type Breakpoint } from '../shared/designScale'
+import { DESIGN_KEY_SEPARATOR, projectOfDesignKey } from '../shared/designKey'
 import type {
   DesignListResult,
   DesignPutOptions,
@@ -21,6 +22,8 @@ const SCALES = new Set([1, 1.5, 2, 3, 4])
 
 interface StoreMeta {
   version: 1
+  /** The key this folder was made for, so a project's pages can be found again. */
+  key?: string
   slots: DesignSlots
 }
 
@@ -35,6 +38,8 @@ function hasImageSignature(bytes: Buffer): boolean {
   const webp = bytes.length > 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
   return png || jpeg || webp
 }
+
+const trimSlash = (path: string) => path.replace(/\/+$/, '') || '/'
 
 function writeAtomic(file: string, data: string | Buffer): void {
   const temporary = `${file}.tmp`
@@ -69,17 +74,44 @@ export function createDesignStore(root: string) {
 
   function writeMeta(projectKey: string, meta: StoreMeta): void {
     mkdirSync(directory(projectKey), { recursive: true })
-    writeAtomic(metaFile(projectKey), JSON.stringify(meta, null, 2))
+    writeAtomic(metaFile(projectKey), JSON.stringify({ ...meta, key: projectKey }, null, 2))
+  }
+
+  /**
+   * Designs saved before pages had their own set live under the project alone. They move to the
+   * page they were added for (never to another page), the first time that page is looked at.
+   */
+  function adoptLegacy(key: string): void {
+    const index = key.indexOf(DESIGN_KEY_SEPARATOR)
+    if (index < 0) return
+    const pageId = key.slice(index + 1)
+    const legacyKey = projectOfDesignKey(key)
+    if (Object.keys(readMeta(key).slots).length) return
+    const legacy = readMeta(legacyKey).slots
+    // Only when every old design is known to be for this page; one of unknown origin could land on the wrong page.
+    const all = Object.values(legacy).filter((slot): slot is NonNullable<typeof slot> => !!slot)
+    if (!all.length) return
+    const pagePath = trimSlash(pageId.split('?')[0])
+    if (!all.every((slot) => slot.pagePath && trimSlash(slot.pagePath) === pagePath)) return
+    try {
+      mkdirSync(root, { recursive: true })
+      rmSync(directory(key), { recursive: true, force: true })
+      renameSync(directory(legacyKey), directory(key))
+      const moved = readMeta(key)
+      writeMeta(key, moved)
+    } catch { /* the page simply starts with no designs; the legacy ones stay where they were */ }
   }
 
   const dropNormalized = (projectKey: string, breakpoint: Breakpoint) => rmSync(normalizedFile(projectKey, breakpoint), { force: true })
 
   return {
     list(projectKey: string): DesignSlots {
+      adoptLegacy(projectKey)
       return readMeta(projectKey).slots
     },
 
     async listWithThumbnails(projectKey: string): Promise<DesignListResult> {
+      adoptLegacy(projectKey)
       const slots = readMeta(projectKey).slots
       const thumbnails: DesignListResult['thumbnails'] = {}
       for (const breakpoint of BREAKPOINTS) {
@@ -102,6 +134,7 @@ export function createDesignStore(root: string) {
         if (!hasImageSignature(bytes)) return { success: false, error: 'That file is not a PNG, JPEG or WebP image.' }
 
         const sha256 = createHash('sha256').update(bytes).digest('hex')
+        adoptLegacy(projectKey)
         const meta = readMeta(projectKey)
         const existing = BREAKPOINTS.find((breakpoint) => meta.slots[breakpoint]?.sha256 === sha256)
         const wanted = options.target && options.target !== 'auto' ? options.target : undefined
@@ -196,8 +229,17 @@ export function createDesignStore(root: string) {
       return meta.slots
     },
 
+    /** Removes every design of a project: its own folder and one per page. */
     removeProject(projectKey: string): void {
       rmSync(directory(projectKey), { recursive: true, force: true })
+      let names: string[] = []
+      try { names = readdirSync(root) } catch { return }
+      for (const name of names) {
+        try {
+          const meta = JSON.parse(readFileSync(join(root, name, 'meta.json'), 'utf8')) as StoreMeta
+          if (typeof meta.key === 'string' && projectOfDesignKey(meta.key) === projectKey) rmSync(join(root, name), { recursive: true, force: true })
+        } catch { /* not a design folder */ }
+      }
     },
 
     /** Original export, used for evidence and for the QA agent. */

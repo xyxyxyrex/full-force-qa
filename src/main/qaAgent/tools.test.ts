@@ -5,6 +5,7 @@ import sharp from 'sharp'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createDesignStore } from '../designStore'
 import type { ApprovalDecision, ApprovalRequest, ReportedContext } from '../../shared/qaAgent'
+import { designKeyOf } from '../../shared/designKey'
 import { parseTrackerPaste, parseTsv, type TrackerFormat } from '../../shared/trackerFormat'
 import type { LiveCaptureOptions, LiveCaptureResult, LiveNode } from './liveCapture'
 import { createRunStore } from './runStore'
@@ -78,7 +79,9 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 const call = (name: string, args: unknown = {}): Promise<ToolResult> => callTool(name, args, context)
 const runIdOf = (result: ToolResult) => /Run (\S+) ·/.exec(result.text)![1]
-const addDesign = async (bp: 'desktop' | 'tablet' | 'mobile' = 'desktop', width = 2880, height = 6000) => designStore.put('proj-1', await bands(width, height), { target: bp })
+// Designs are kept per page; this is the page the fixture has open.
+const PAGE_KEY = designKeyOf('proj-1', reported().pageUrl)
+const addDesign = async (bp: 'desktop' | 'tablet' | 'mobile' = 'desktop', width = 2880, height = 6000) => designStore.put(PAGE_KEY, await bands(width, height), { target: bp })
 
 describe('tool registry', () => {
   it('lists the tools and marks only the ones with side effects', () => {
@@ -109,15 +112,35 @@ describe('get_context', () => {
     expect(info.notes.join(' ')).toMatch(/tracker format is not set/)
   })
 
-  it('reports designs, the tracker and warns when a design is for another page', async () => {
-    await designStore.put('proj-1', await bands(1440, 3000), { target: 'desktop', pagePath: '/other-page/' })
+  it('reports the open page\'s designs and the tracker', async () => {
+    await designStore.put(PAGE_KEY, await bands(1440, 3000), { target: 'desktop', fileName: 'home.png', pagePath: '/alopecia-page' })
     const info = JSON.parse((await call('get_context')).text)
     expect(info.project).toEqual({ name: '[Svenson] Alopecia', stagingUrl: 'https://svenson.test/' })
-    expect(info.designs.desktop).toMatchObject({ frameWidth: 1440, exportScale: 1, forPage: '/other-page/' })
+    expect(info.designsAreFor).toBe('/alopecia-page')
+    expect(info.designs.desktop).toMatchObject({ frameWidth: 1440, exportScale: 1, file: 'home.png', forPage: '/alopecia-page' })
     expect(info.designs.tablet).toBeNull()
     expect(info.tracker).toMatchObject({ columns: ['Page', 'Issue', 'Expected', 'Screenshot', 'Severity'], screenshotColumn: 'Screenshot' })
     expect(info.evidenceUploads.available).toBe(false)
-    expect(info.notes.join(' ')).toContain('/other-page/')
+    expect(info.notes.join(' ')).not.toMatch(/No designs are stored/)
+  })
+
+  it('uses the designs of whichever page is open, and says when that page has none', async () => {
+    await addDesign('desktop')
+    const first = JSON.parse((await call('get_context')).text)
+    expect(first.designs.desktop).not.toBeNull()
+
+    currentContext = reported({ pageUrl: 'https://svenson.test/contact/' })
+    const second = JSON.parse((await call('get_context')).text)
+    expect(second.designsAreFor).toBe('/contact')
+    expect(second.designs.desktop).toBeNull()
+    expect(second.notes.join(' ')).toMatch(/No designs are stored for the open page \(\/contact\)/)
+
+    // A design added now belongs to the contact page only.
+    await designStore.put(designKeyOf('proj-1', 'https://svenson.test/contact/'), await bands(1440, 3000), { target: 'desktop', fileName: 'contact.png' })
+    expect(JSON.parse((await call('get_context')).text).designs.desktop.file).toBe('contact.png')
+    currentContext = reported()
+    // Back on the first page: its own design (a 2x export), not the contact page's.
+    expect(JSON.parse((await call('get_context')).text).designs.desktop).toMatchObject({ exportScale: 2, file: null })
   })
 })
 
@@ -333,7 +356,8 @@ describe('set_design', () => {
     writeFileSync(file, await bands(780, 3000))
     const result = await call('set_design', { path: file })
     expect(result.text).toContain('Stored as the mobile design: 390px wide frame, export scale 2x')
-    expect(designStore.list('proj-1').mobile?.fileName).toBe('home-mobile@2x.png')
+    expect(designStore.list(PAGE_KEY).mobile?.fileName).toBe('home-mobile@2x.png')
+    expect(designStore.list(PAGE_KEY).mobile?.pagePath).toBe('/alopecia-page')
     expect((await call('set_design', { path: file })).text).toContain('Already stored')
   })
 

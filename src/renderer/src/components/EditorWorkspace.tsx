@@ -57,6 +57,7 @@ import {
   unlinkAnnotation,
 } from "../../../shared/annotationSequences";
 import DesignSlots from "./DesignSlots";
+import { designKeyOf, pageIdOf } from "../../../shared/designKey";
 import type { Breakpoint } from "../../../shared/designScale";
 import type { DesignSlots as DesignSlotsState } from "../../../shared/qaAgent";
 import "./EditorWorkspace.css";
@@ -2314,16 +2315,13 @@ export default function EditorWorkspace({
   const [designThumbs, setDesignThumbs] = useState<Partial<Record<Breakpoint, string>>>({});
   const [designBusy, setDesignBusy] = useState(false);
   const [designError, setDesignError] = useState("");
-  const designProjectRef = useRef(activeProjectId);
-  designProjectRef.current = activeProjectId;
+  // Designs belong to a page of the project, so they follow the page that is open now, not the one the project started on.
+  const [designPageUrl, setDesignPageUrl] = useState<string>(sourceUrl || "");
+  const designKey = designKeyOf(activeProjectId, designPageUrl || sourceUrl);
+  const designPageId = pageIdOf(designPageUrl || sourceUrl) || "";
+  const designProjectRef = useRef(designKey);
+  designProjectRef.current = designKey;
 
-  const pagePathForDesigns = useCallback(() => {
-    try {
-      return new URL(sourceUrl).pathname || "/";
-    } catch {
-      return undefined;
-    }
-  }, [sourceUrl]);
 
   const refreshDesigns = useCallback(async (projectKey: string) => {
     try {
@@ -2341,7 +2339,10 @@ export default function EditorWorkspace({
 
   const addDesignFiles = useCallback(
     async (files: Blob[], target: Breakpoint | "auto" = "auto") => {
-      const projectKey = activeProjectId;
+      // Ask the page now rather than trust the last poll: the URL may have just changed.
+      const pageUrlNow = (workspaceTab === "live" ? designPageUrl : editBetaRef.current?.getCurrentUrl?.()) || designPageUrl || sourceUrl;
+      const projectKey = designKeyOf(activeProjectId, pageUrlNow);
+      if (pageUrlNow !== designPageUrl) setDesignPageUrl(pageUrlNow);
       setDesignBusy(true);
       setDesignError("");
       try {
@@ -2349,7 +2350,7 @@ export default function EditorWorkspace({
           const bytes = new Uint8Array(await file.arrayBuffer());
           const result = await window.electronAPI.designsPut(projectKey, bytes, {
             fileName: (file as File).name || undefined,
-            pagePath: pagePathForDesigns(),
+            pagePath: pageIdOf(pageUrlNow) || undefined,
             target,
           });
           if (!result.success) setDesignError(result.error);
@@ -2361,7 +2362,7 @@ export default function EditorWorkspace({
         if (designProjectRef.current === projectKey) setDesignBusy(false);
       }
     },
-    [activeProjectId, pagePathForDesigns, refreshDesigns],
+    [activeProjectId, designPageUrl, sourceUrl, workspaceTab, refreshDesigns],
   );
 
   // Load the stored designs for the open project. A PNG that was attached before
@@ -2373,11 +2374,13 @@ export default function EditorWorkspace({
     setDesignError("");
     (async () => {
       try {
-        const result = await window.electronAPI.designsList(activeProjectId);
+        const result = await window.electronAPI.designsList(designKey);
         if (cancelled) return;
         setDesignSlots(result.slots);
         setDesignThumbs(result.thumbnails);
         if (Object.keys(result.slots).length) return;
+        // The overlay PNG attached before designs were stored belongs to the project's own page only.
+        if (pageIdOf(sourceUrl) !== pageIdOf(designPageUrl || sourceUrl)) return;
         const legacy = localStorage.getItem(`qa_${activeProjectId}_uploaded_figma_png`);
         if (!legacy || !legacy.startsWith("data:image/")) return;
         const blob = await (await fetch(legacy)).blob();
@@ -2390,29 +2393,29 @@ export default function EditorWorkspace({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId]);
+  }, [designKey]);
 
   const removeDesign = useCallback(
     async (breakpoint: Breakpoint) => {
       try {
-        const result = await window.electronAPI.designsRemove(activeProjectId, breakpoint);
+        const result = await window.electronAPI.designsRemove(designKey, breakpoint);
         setDesignSlots(result.slots);
         setDesignThumbs(result.thumbnails);
       } catch (error: any) {
         setDesignError(error?.message || "The design could not be removed.");
       }
     },
-    [activeProjectId],
+    [designKey],
   );
 
   const updateDesign = useCallback(
     async (breakpoint: Breakpoint, options: { moveTo?: Breakpoint; scale?: number }) => {
-      const result = await window.electronAPI.designsUpdate(activeProjectId, breakpoint, options);
+      const result = await window.electronAPI.designsUpdate(designKey, breakpoint, options);
       if (!result.success) setDesignError(result.error);
       else setDesignError("");
-      await refreshDesigns(activeProjectId);
+      await refreshDesigns(designKey);
     },
-    [activeProjectId, refreshDesigns],
+    [designKey, refreshDesigns],
   );
 
   const setSnapshotImage = useCallback(
@@ -3253,6 +3256,7 @@ export default function EditorWorkspace({
         viewport: { width: activeAnnotationViewport.width, height: activeAnnotationViewport.height },
         reportedAt: 0,
       };
+      setDesignPageUrl(pageUrl);
       const fingerprint = JSON.stringify([payload.projectKey, payload.pageUrl, payload.workspaceTab, payload.breakpoint, payload.viewport, name]);
       if (fingerprint === last) return;
       last = fingerprint;
@@ -8544,6 +8548,7 @@ export default function EditorWorkspace({
                     <DesignSlots
                       slots={designSlots}
                       thumbnails={designThumbs}
+                      pageLabel={designPageId}
                       activeBreakpoint={activeAnnotationViewport.deviceType === "custom" ? null : activeAnnotationViewport.deviceType}
                       busy={designBusy}
                       error={designError}
