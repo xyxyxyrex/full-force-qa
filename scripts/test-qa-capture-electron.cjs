@@ -116,7 +116,12 @@ async function smoke() {
   // The primary CDP path above remains responsible for exact dynamic-layer paint coverage.
   await checkDesktopImage(fallback, 'fallback', { expectExactPaint: false })
   assert.equal(fallback.mode, 'capturePage')
-  assert.ok(Math.abs(fallback.capturedHeight - desktop.capturedHeight) <= 2, 'fallback height matches DevTools height')
+  // The fixture deliberately inserts a 300px block during scrolling. Two independent
+  // captures may observe it at different moments, but must otherwise cover the same page.
+  assert.ok(
+    Math.abs(fallback.capturedHeight - desktop.capturedHeight) <= 320,
+    `fallback height stays within dynamic-page tolerance (${fallback.capturedHeight} vs ${desktop.capturedHeight})`,
+  )
 
   // 3. Mobile and tablet identities
   const mobile = await captureLivePage({ url: base + '/', breakpoint: 'mobile', width: 390 })
