@@ -16,7 +16,8 @@ const SUGGESTIONS = [
 const HELP = [
   '/review [desktop] [tablet] [mobile] [--no-design]   review the open page and hand the rows over for approval.\n                                         With no design stored for the page (or --no-design) the agent judges the page on its own.',
   '/stop                                 stop what the agent is doing',
-  '/new                                  start a new chat (clears what the agent remembers)',
+  '/new                                  start a new chat (the current one is kept in History)',
+  '/history                              past chats and past reviews, with their screenshots',
   '/agents                               which agents are ready',
   '/help                                 show this list',
   'Anything else is sent to the agent as a message.',
@@ -205,6 +206,7 @@ export default function QaChat({ onClose }: Props) {
     setBusy(true)
     try {
       if (head === '/help') { qaChat.addUserMessage(text); qaChat.addStatus(HELP) }
+      else if (head === '/history') window.dispatchEvent(new CustomEvent('parity:open-qa-history', { detail: { tab: rest[0] === 'chats' ? 'chats' : 'reviews' } }))
       else if (head === '/new') {
         if (chat.running) throw new Error('Stop the agent first.')
         await window.electronAPI.qaChatReset()
@@ -221,7 +223,7 @@ export default function QaChat({ onClose }: Props) {
         await startReview(rest)
       } else {
         qaChat.addUserMessage(text)
-        const result = await window.electronAPI.qaChatSend(text)
+        const result = await window.electronAPI.qaChatSend(text, { chatId: qaChat.getState().chatId ?? undefined })
         if (!result.started) throw new Error(result.error)
       }
     } catch (cause) {
@@ -241,6 +243,7 @@ export default function QaChat({ onClose }: Props) {
           {chat.running && <span className="qa-chat-running" role="status"><span /> Working</span>}
         </div>
         <div className="qa-chat-actions">
+          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('parity:open-qa-history', { detail: { tab: 'chats' } }))} title="Past chats and reviews">History</button>
           <button type="button" onClick={() => void submit('/new')} disabled={chat.running} title="New chat">New chat</button>
           <button type="button" onClick={onClose} aria-label="Close the QA chat" title="Close (Ctrl+Shift+Q)">×</button>
         </div>

@@ -94,7 +94,7 @@ describe('runQa with one breakpoint', () => {
     expect(run.system).toContain('only the desktop breakpoint')
     expect(run.tools).toEqual(['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft'])
     expect(fake.approvals).toHaveLength(1)
-    expect(fake.clipboard[0].text).toBe('Home\tHeading is smaller than the design\t\t\tHigh')
+    expect(fake.clipboard[0].text).toBe('Home\tHeading is smaller than the design\t\t\t')
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 

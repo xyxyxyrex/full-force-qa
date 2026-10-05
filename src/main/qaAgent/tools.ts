@@ -4,8 +4,8 @@ import { basename, extname, isAbsolute, join } from 'path'
 import sharp from 'sharp'
 import * as z from 'zod'
 import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
-import type { ApprovalRequest, ApprovalDecision, DesignPutOptions, DesignPutResponse, DesignSlotMeta, DesignSlots, ReportedContext } from '../../shared/qaAgent'
-import { buildHtml, buildRows, buildTsv, screenshotColumn, trackerColumnGuide, type TrackerFormat } from '../../shared/trackerFormat'
+import type { ApprovalRequest, ApprovalDecision, DesignPutOptions, DesignPutResponse, DesignSlotMeta, DesignSlots, ReportedContext, QaHandOverRecord } from '../../shared/qaAgent'
+import { buildHtml, buildRows, buildTsv, rowView, screenshotColumn, trackerColumnGuide, type TrackerFormat } from '../../shared/trackerFormat'
 import { designKeyOf, pageIdOf } from '../../shared/designKey'
 import { planChunks } from './chunks'
 import { formatSectionNodes } from './formatNodes'
@@ -420,12 +420,13 @@ const SEVERITY_HEADER = /severity|priority|impact/i
 const APPROVAL_PREVIEW_WIDTH = 1100
 const BATCH_PREVIEW_WIDTH = 640
 
-async function renderRowEvidence(context: QaContext, runId: string, row: z.infer<typeof rowSchema>, index: number): Promise<{ data: Buffer; caption: string } | null> {
+/** The evidence picture for a drafted row: the design and live crops with the issue boxed. Also used by Past reviews. */
+export async function renderRowEvidence(runs: RunStore, runId: string, row: z.infer<typeof rowSchema>, index: number): Promise<{ data: Buffer; caption: string } | null> {
   const evidence = row.evidence
   if (!evidence) return null
-  const live = context.runs.readLive(runId, evidence.breakpoint)
+  const live = runs.readLive(runId, evidence.breakpoint)
   if (!live) return null
-  const design = context.runs.readDesign(runId, evidence.breakpoint)
+  const design = runs.readDesign(runId, evidence.breakpoint)
   let liveRect: Rect | undefined = evidence.live
   if (!liveRect && evidence.section) {
     const section = live.record.sections.find((s) => s.id === evidence.section)
@@ -451,6 +452,14 @@ export interface HandOverEntry {
   page?: { name: string; url: string }
 }
 
+/** What an evidence picture is about, shown on the viewer page: the section, the finding and where it shows. */
+export function evidenceLabel(format: TrackerFormat, row: string[], fallback: string): string {
+  const view = rowView(format, row)
+  const where = view.badges.find((badge) => badge.kind === 'display')?.value
+  const text = [view.title, view.body && view.body !== view.title ? view.body : ''].filter(Boolean).join(': ')
+  return ((text ? `${text}${where ? ` (${where})` : ''}` : fallback) || fallback).replace(/\s+/g, ' ').trim().slice(0, 200)
+}
+
 export interface HandOverInput {
   projectName: string
   pageUrl: string
@@ -473,7 +482,7 @@ export async function handOverRows(context: QaContext, input: HandOverInput): Pr
   const stamp = String(context.now())
   const evidenceFiles: Array<{ rowIndex: number; data: Buffer; caption: string; file: string }> = []
   for (const [index, entry] of input.entries.entries()) {
-    const rendered = await renderRowEvidence(context, entry.runId, entry.row, index)
+    const rendered = await renderRowEvidence(context.runs, entry.runId, entry.row, index)
     if (!rendered) continue
     const file = join(output, `evidence-${stamp}-row-${String(index + 1).padStart(2, '0')}.webp`)
     writeFileSync(file, rendered.data)
@@ -491,34 +500,62 @@ export async function handOverRows(context: QaContext, input: HandOverInput): Pr
   const severityColumn = format.columns.find((name) => SEVERITY_HEADER.test(name))
   const severityIndex = severityColumn ? format.columns.indexOf(severityColumn) : -1
   const severityCounts: Record<string, number> = {}
-  if (severityIndex >= 0) for (const row of built.rows) { const key = row[severityIndex].trim() || '(blank)'; severityCounts[key] = (severityCounts[key] || 0) + 1 }
+  if (severityIndex >= 0) for (const row of built.rows) { const key = row[severityIndex].trim(); if (key) severityCounts[key] = (severityCounts[key] || 0) + 1 }
 
   // A big batch is previewed smaller, so the card does not need tens of megabytes of pictures.
   const previewWidth = input.entries.length > 40 ? BATCH_PREVIEW_WIDTH : APPROVAL_PREVIEW_WIDTH
   const thumbnails = await Promise.all(evidenceFiles.map(async (item) => ({ rowIndex: item.rowIndex, caption: item.caption, thumbnail: `data:image/jpeg;base64,${(await thumbnailJpeg(item.data, previewWidth)).toString('base64')}` })))
   const pages = input.entries.map((entry) => entry.page)
+  const shownRows = built.rows.map((row) => row.map((cell) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell)))
+  // Every hand-over is kept in the run, whatever the decision, so it can be looked at again later.
+  const record: QaHandOverRecord = {
+    version: 1, stamp, createdAt: context.now(), status: 'pending', projectName: input.projectName, pageUrl: input.pageUrl,
+    columns: format.columns, rows: shownRows, evidence: evidenceFiles.map((item) => ({ rowIndex: item.rowIndex, file: basename(item.file), caption: item.caption })),
+    ...(pages.some(Boolean) ? { rowPages: pages.map((page) => page ?? { name: input.projectName, url: input.pageUrl }) } : {}),
+  }
+  const saveRecord = () => { try { writeFileSync(join(output, `handover-${stamp}.json`), JSON.stringify(record, null, 2), 'utf8') } catch { /* history is a convenience; the hand-over goes on */ } }
+  saveRecord()
   const decision = await context.approve({
     id: randomUUID(), runId: input.outputRunId, projectName: input.projectName, pageUrl: input.pageUrl,
     // The card shows what the agent wrote; the apostrophe that keeps a cell from being read as a formula is only for the clipboard.
-    columns: format.columns, rows: built.rows.map((row) => row.map((cell) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell))), severityCounts, evidence: thumbnails, warnings, uploadsEvidence: willUpload,
+    columns: format.columns, rows: shownRows, severityCounts, evidence: thumbnails, warnings, uploadsEvidence: willUpload,
     ...(pages.some(Boolean) ? { rowPages: pages.map((page) => page ?? { name: input.projectName, url: input.pageUrl }) } : {}),
   })
+  record.decidedAt = context.now()
+  record.note = decision.note
   if (!decision.approved) {
+    record.status = 'rejected'
+    saveRecord()
     return { text: `The person did not approve these rows${decision.note ? `. Their note: ${decision.note}` : '.'} Nothing was copied or uploaded. Revise the rows and call finalize_rows again.` }
   }
 
-  const rows = built.rows.map((row) => [...row])
+  // Rows the person left out are neither copied nor uploaded.
+  const excluded = [...new Set((decision.excludedRows ?? []).filter((index) => Number.isInteger(index) && index >= 0 && index < built.rows.length))].sort((a, b) => a - b)
+  const keptIndexes = built.rows.map((_, index) => index).filter((index) => !excluded.includes(index))
+  record.status = 'approved'
+  record.excludedRows = excluded
+  if (!keptIndexes.length) {
+    record.copiedRows = 0
+    saveRecord()
+    return { text: 'The person approved but left out every row, so nothing was copied or uploaded.' }
+  }
+  const position = new Map(keptIndexes.map((original, index) => [original, index]))
+  const rows = keptIndexes.map((index) => [...built.rows[index]])
+  const keptEvidence = evidenceFiles.filter((item) => position.has(item.rowIndex))
   const outcome: string[] = []
-  if (willUpload && shotColumn) {
+  if (excluded.length) outcome.push(`The person left out ${excluded.length} row(s): ${excluded.map((index) => index + 1).join(', ')}.`)
+  if (willUpload && shotColumn && keptEvidence.length) {
     const column = format.columns.indexOf(shotColumn)
-    const results = await context.evidence!.upload(evidenceFiles.map((item) => ({ name: basename(item.file), data: item.data, contentType: 'image/webp', label: item.caption })))
+    const results = await context.evidence!.upload(keptEvidence.map((item) => ({ name: basename(item.file), data: item.data, contentType: 'image/webp', label: evidenceLabel(format, built.rows[item.rowIndex], item.caption) })))
     let uploaded = 0
+    record.links = {}
     results.forEach((result, i) => {
-      if (result.url) { rows[evidenceFiles[i].rowIndex][column] = result.url; uploaded++ }
-      else outcome.push(`Row ${evidenceFiles[i].rowIndex + 1}: evidence not uploaded (${result.error || 'unknown error'}).`)
+      const original = keptEvidence[i].rowIndex
+      if (result.url) { rows[position.get(original)!][column] = result.url; record.links![String(original)] = result.url; uploaded++ }
+      else outcome.push(`Row ${original + 1}: evidence not uploaded (${result.error || 'unknown error'}).`)
     })
-    outcome.unshift(`Uploaded ${uploaded} of ${evidenceFiles.length} evidence image(s) and put their links in "${shotColumn}".`)
-  } else if (evidenceFiles.length) {
+    outcome.unshift(`Uploaded ${uploaded} of ${keptEvidence.length} evidence image(s) and put their links in "${shotColumn}".`)
+  } else if (keptEvidence.length) {
     const reason = input.uploadEvidence === false ? 'Uploads were turned off for this run.' : uploadProblem ?? 'No screenshot column was found in the tracker header.'
     outcome.push(`Evidence images were not uploaded: ${reason} They were saved on this computer: ${output}`)
   }
@@ -527,6 +564,8 @@ export async function handOverRows(context: QaContext, input: HandOverInput): Pr
   context.copyToClipboard(tsv, buildHtml(rows))
   const tsvPath = join(output, `rows-${stamp}.tsv`)
   writeFileSync(tsvPath, tsv, 'utf8')
+  record.copiedRows = rows.length
+  saveRecord()
   return {
     text: [`Approved. Copied ${rows.length} row(s) to the clipboard in tracker column order; paste them into the sheet.`, ...outcome, ...warnings.filter((w) => !w.startsWith('Evidence images were not uploaded')), `A copy of the rows is saved at ${tsvPath}.`].join('\n'),
   }

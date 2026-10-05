@@ -117,15 +117,21 @@ async function smoke() {
   assert.match(rejected.text, /did not approve/); assert.match(rejected.text, /Heading size matches the design/)
   assert.equal(clipboard.readText(), 'untouched', 'rejected rows are not copied')
   const request = (await run(main, 'window.__approvals'))[0]
-  assert.equal(request.rows.length, 2); assert.equal(request.evidence.length, 1); assert.deepEqual(request.severityCounts, { High: 1, Low: 1 })
+  assert.equal(request.rows.length, 2); assert.equal(request.evidence.length, 1); assert.deepEqual(request.severityCounts, {}, 'priority is never filled, so there are no counts')
 
   await run(main, `window.__decision = { approved: true }`)
   const approved = await call(main, 'finalize_rows', { runId, rows })
   assert.equal(approved.isError, false, approved.text); assert.match(approved.text, /Copied 2 row\(s\)/)
   const copied = clipboard.readText()
-  assert.equal(copied.split('\n')[0], 'Alopecia\tHeading is smaller than the design\t32px\t\tHigh', 'rows are copied in tracker column order')
-  assert.equal(copied.split('\n')[1], "Alopecia\t'- Button label differs\t\t\tLow", 'formula-looking cells are neutralised')
+  assert.equal(copied.split('\n')[0], 'Alopecia\tHeading is smaller than the design\t32px\t\t', 'rows are copied in tracker column order, without the agent\'s priority')
+  assert.equal(copied.split('\n')[1], "Alopecia\t'- Button label differs\t\t\t", 'formula-looking cells are neutralised')
   assert.match(clipboard.readHTML(), /<table>/)
+  // Leaving a row out, through the real decision channel; indexes that do not exist are ignored.
+  await run(main, `window.__decision = { approved: true, excludedRows: [0, 99, -1, 'x'] }`)
+  const leftOut = await call(main, 'finalize_rows', { runId, rows })
+  assert.match(leftOut.text, /Copied 1 row\(s\)/); assert.match(leftOut.text, /left out 1 row\(s\): 1\./)
+  assert.equal(clipboard.readText(), "Alopecia\t'- Button label differs\t\t\t", 'only the kept row is copied')
+  await run(main, `window.__decision = { approved: true }`)
 
   console.log('  step 6');
   console.log('  step bridge');

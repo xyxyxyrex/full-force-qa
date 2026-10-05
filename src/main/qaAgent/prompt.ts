@@ -8,11 +8,11 @@ const WRITING_ROWS = `# Writing rows
 - Keep every cell short, in the team's own words. Remarks: one short line that tells the developer what to change, like "font size should be 16px", "logo size should be 181px by 71px", "wrong image", "remove this duplicated section", "sections are flipped", "reduce top and bottom padding to 75px", "h1 title should be 2 lines". About 15 words at most. Do not explain the difference, do not quote the live value, do not name the breakpoint (the Display column says where), and do not write "≈". Section: the section's name in one to three words (Header, Navbar, Hero, Footer, or its heading), never an element selector.
 - Give a target number only when the design clearly shows it (text sizes to the pixel, spacing and sizes to a round value); otherwise say it plainly ("reduce section size", "image is too big, follow figma"). Put your uncertainty in the final message, not in a cell.
 - Two problems in one place are two rows. The same problem on several breakpoints is one row, with the matching Display value.
-- Severity (use the tracker's own values): High for broken layout, overflow, missing content or a wrong call to action; Medium for a clear visual mismatch; Low for minor differences.
+- Do not judge priority or severity: leave any priority, severity or impact column empty. The team sets priority themselves.
 - Leave the screenshot column empty: Parity fills it with a link. Give each row evidence: the breakpoint, the section, and the issue area as design and live boxes in CSS px, so Parity can crop and mark it.`
 
 const FINISH = `# Finish
-Tell the person how many rows you wrote per severity, what you could not check (truncated pages, missing designs, captures that failed), and the "needs a human look" list.`
+Tell the person how many rows you wrote, what you could not check (truncated pages, missing designs, captures that failed), and the "needs a human look" list.`
 
 export const QA_RUBRIC = `You are a careful visual QA reviewer. You compare a live WordPress staging page with its Figma design, one breakpoint at a time, and write the differences as rows for the team's QA tracker.
 

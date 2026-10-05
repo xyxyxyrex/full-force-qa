@@ -85,6 +85,78 @@ export interface ApprovalRequest {
 export interface ApprovalDecision {
   approved: boolean
   note?: string
+  /** Rows (by index) the person left out: they are neither copied nor uploaded. */
+  excludedRows?: number[]
+}
+
+/** A QA run as Past reviews lists it. */
+export interface QaRunListItem {
+  id: string
+  projectName: string
+  pageUrl: string
+  createdAt: number
+  pinned: boolean
+  /** Breakpoints that were captured. */
+  breakpoints: Breakpoint[]
+  /** Findings the agent drafted (before any hand-over). */
+  drafted: number
+  handovers: Array<{ stamp: string; status: QaHandOverRecord['status']; rows: number; copied?: number }>
+}
+
+export interface QaRunDetail {
+  run: QaRunListItem
+  /** Newest first. */
+  handovers: QaHandOverRecord[]
+  /** The agent's drafts per breakpoint, as rows in the tracker's column order. */
+  drafts: Array<{ breakpoint: Breakpoint; rows: Array<{ cells: string[]; hasPicture: boolean }> }>
+  columns: string[]
+}
+
+/** A picture Past reviews can ask for: a hand-over's evidence file, or a drafted finding's picture made on demand. */
+export type QaHistoryPicture = { kind: 'handover'; file: string } | { kind: 'draft'; breakpoint: Breakpoint; index: number }
+
+/** A saved chat, as the chat history lists it. */
+export interface QaChatListItem {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  messageCount: number
+  tokens: number
+}
+
+/** A saved chat: what was shown, the token counts, and what the agent remembers. */
+export interface QaStoredChat {
+  version: 1
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  agentLabel?: string
+  messages: unknown[]
+  session?: { input: number; output: number; requests: number }
+}
+
+/** One hand-over of rows for approval, kept in the run folder so it can be looked at again (Past reviews). */
+export interface QaHandOverRecord {
+  version: 1
+  stamp: string
+  createdAt: number
+  decidedAt?: number
+  status: 'pending' | 'approved' | 'rejected'
+  note?: string
+  projectName: string
+  pageUrl: string
+  columns: string[]
+  /** As shown to the person, before any link was put in the screenshot column. */
+  rows: string[][]
+  rowPages?: Array<{ name: string; url: string }>
+  /** Evidence pictures in the run's output folder, by row. */
+  evidence: Array<{ rowIndex: number; file: string; caption: string }>
+  excludedRows?: number[]
+  /** Links put in the screenshot column, by row index. */
+  links?: Record<string, string>
+  copiedRows?: number
 }
 
 /** A tool result as the app window receives it: images as data URLs. */
@@ -199,6 +271,8 @@ export interface QaTarget {
 
 export interface QaChatSendOptions {
   agent?: AgentId
+  /** The chat this message belongs to; the agent remembers that chat's earlier messages. */
+  chatId?: string
 }
 
 export type QaRunEvent =

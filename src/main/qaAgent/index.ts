@@ -1,16 +1,18 @@
-import { app, BrowserWindow, clipboard, ipcMain, safeStorage, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, safeStorage, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { homedir } from 'os'
 import { delimiter, dirname, join } from 'path'
 import { isBreakpoint } from '../../shared/designScale'
 import { designKeyOf, pageIdOf } from '../../shared/designKey'
-import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaBatchStartOptions, type QaChatSendOptions, type QaRunEvent, type QaTarget, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
+import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type ApprovalDecision, type ApprovalRequest, type QaBatchStartOptions, type QaChatListItem, type QaChatSendOptions, type QaHistoryPicture, type QaRunDetail, type QaRunEvent, type QaRunListItem, type QaStoredChat, type QaTarget, type QaRunStartOptions, type QaRunStartResult, type QaToolCallResult, type ReportedContext } from '../../shared/qaAgent'
 import { isTrackerFormat, parseTrackerPaste, STANDARD_TRACKER, type TrackerFormat } from '../../shared/trackerFormat'
 import type { DesignStore } from '../designStore'
 import { createEvidenceUploader } from './evidenceUpload'
 import { captureLivePage } from './liveCapture'
 import { runChatTurn } from './chat'
+import { CHAT_ID_PATTERN, createChatStore } from './chats'
+import { createRunHistory } from './history'
 import { isReviewablePageUrl, MAX_BATCH_PAGES, runQaBatch, type BatchPage } from './batch'
 import { runQa } from './runner'
 import { createRunStore } from './runStore'
@@ -170,7 +172,8 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   ipcMain.handle('qa:approval-decision', (event, id: unknown, decision: unknown) => {
     if (!fromMainWindow(event) || !pendingApproval || id !== pendingApproval.id) return false
     const d = decision as Partial<ApprovalDecision>
-    resolveApproval({ approved: d?.approved === true, note: clamp(d?.note, 500) || undefined })
+    const excludedRows = Array.isArray(d?.excludedRows) ? d.excludedRows.filter((index): index is number => Number.isInteger(index) && index >= 0 && index < 10_000).slice(0, 1000) : undefined
+    resolveApproval({ approved: d?.approved === true, note: clamp(d?.note, 500) || undefined, ...(excludedRows?.length ? { excludedRows } : {}) })
     options.getMainWindow()?.flashFrame(false)
     return true
   })
@@ -411,23 +414,80 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   // The chat: free-form messages to the agent. Main keeps what was said (text only) so the
   // agent remembers the conversation; "new chat" clears it.
   let chatHistory: ChatTurn[] = []
+  let currentChatId: string | null = null
+  const chats = createChatStore(join(root(), 'chats'))
+  const history = createRunHistory({ runs, trackerFormat: readTrackerFormat })
   ipcMain.handle('qa:chat:send', async (event, text: unknown, chatOptions: unknown): Promise<QaRunStartResult> => {
     if (!fromMainWindow(event)) return { started: false, error: 'Not allowed.' }
     const message = typeof text === 'string' ? text.trim().slice(0, MAX_CHAT_MESSAGE) : ''
     if (!message) return { started: false, error: 'Type a message first.' }
     const requested = (chatOptions && typeof chatOptions === 'object' ? chatOptions : {}) as QaChatSendOptions
+    // A message for another chat than the last one: the agent remembers that chat instead.
+    const chatId = typeof requested.chatId === 'string' && CHAT_ID_PATTERN.test(requested.chatId) ? requested.chatId : null
+    if (chatId !== currentChatId && !activeRun) { chatHistory = chatId ? chats.load(chatId)?.history ?? [] : []; currentChatId = chatId }
     const settings = readAgentSettings()
     const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
     return launch(agent, settings, async (provider, signal) => {
       const result = await runChatTurn({ context, provider }, { message, history: chatHistory, signal, emit: sendRunEvent, budgetTokens: settings.budgetTokens || undefined })
       chatHistory = result.history
+      if (currentChatId) chats.save({ id: currentChatId }, chatHistory)
     })
   })
   ipcMain.handle('qa:chat:reset', (event) => {
     if (!fromMainWindow(event) || activeRun) return false
     chatHistory = []
+    currentChatId = null
     return true
   })
+
+  // ── Saved chats ─────────────────────────────────────────────────────────────────
+  ipcMain.handle('qa:chats:list', (event): QaChatListItem[] => (fromMainWindow(event) ? chats.list() : []))
+  ipcMain.handle('qa:chats:open', (event, id: unknown): QaStoredChat | null => {
+    if (!fromMainWindow(event) || activeRun || typeof id !== 'string') return null
+    const chat = chats.load(id)
+    if (!chat) return null
+    chatHistory = chat.history
+    currentChatId = chat.id
+    const { history: _remembered, ...shown } = chat
+    return shown
+  })
+  ipcMain.handle('qa:chats:save', (event, input: unknown): boolean => {
+    if (!fromMainWindow(event) || !input || typeof input !== 'object') return false
+    const id = (input as { id?: unknown }).id
+    return !!chats.save(input as Parameters<typeof chats.save>[0], id === currentChatId ? chatHistory : undefined)
+  })
+  ipcMain.handle('qa:chats:delete', (event, id: unknown): boolean => {
+    if (!fromMainWindow(event) || typeof id !== 'string') return false
+    if (id === currentChatId && !activeRun) { currentChatId = null; chatHistory = [] }
+    return chats.remove(id)
+  })
+
+  // ── Past reviews ────────────────────────────────────────────────────────────────
+  const safely = <T,>(work: () => T, fallback: T): T => { try { return work() } catch { return fallback } }
+  ipcMain.handle('qa:history:list', (event): QaRunListItem[] => (fromMainWindow(event) ? safely(() => history.list(), []) : []))
+  ipcMain.handle('qa:history:detail', (event, id: unknown): QaRunDetail | null => (fromMainWindow(event) && typeof id === 'string' ? safely(() => history.detail(id), null) : null))
+  ipcMain.handle('qa:history:picture', async (event, id: unknown, ref: unknown): Promise<string | null> => {
+    if (!fromMainWindow(event) || typeof id !== 'string' || !ref || typeof ref !== 'object') return null
+    try { return await history.picture(id, ref as QaHistoryPicture) } catch { return null }
+  })
+  ipcMain.handle('qa:history:copy', (event, id: unknown, stamp: unknown): number => {
+    if (!fromMainWindow(event) || typeof id !== 'string' || typeof stamp !== 'string') return 0
+    const copied = safely(() => history.copiedRows(id, stamp), null)
+    if (!copied) return 0
+    clipboard.write({ text: copied.text, html: copied.html })
+    return copied.count
+  })
+  ipcMain.handle('qa:history:open-folder', async (event, id: unknown): Promise<boolean> => {
+    if (!fromMainWindow(event) || typeof id !== 'string') return false
+    try {
+      if (!runs.get(id)) return false
+      const output = join(runs.folder(id), 'output')
+      return (await shell.openPath(existsSync(output) ? output : runs.folder(id))) === ''
+    } catch { return false }
+  })
+  ipcMain.handle('qa:history:pin', (event, id: unknown, pinned: unknown): boolean => (fromMainWindow(event) && typeof id === 'string' ? safely(() => !!runs.setPinned(id, pinned === true), false) : false))
+  // A run may still be in use while the agent is working, so nothing is deleted then.
+  ipcMain.handle('qa:history:delete', (event, id: unknown): boolean => (fromMainWindow(event) && typeof id === 'string' && !activeRun ? safely(() => runs.remove(id), false) : false))
   ipcMain.handle('qa:run:stop', (event) => {
     if (!fromMainWindow(event)) return false
     activeRun?.abort()

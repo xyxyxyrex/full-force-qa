@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createEvidenceUploader, type EvidenceDeps } from './evidenceUpload'
+import { createEvidenceUploader, evidenceViewerLink, type EvidenceDeps } from './evidenceUpload'
 
 let server: Server
 let base: string
@@ -68,5 +68,27 @@ describe('evidence uploader', () => {
     expect(noToken).toEqual([{ error: 'Your Parity session expired. Sign in again.' }, { error: 'Your Parity session expired. Sign in again.' }])
     const down = await createEvidenceUploader(deps({ config: () => ({ url: 'http://127.0.0.1:1', key: 'k' }) })).upload([item('1')])
     expect(down[0].error).toBe('Could not reach the upload service.')
+  })
+})
+
+describe('viewer links', () => {
+  it('puts the Parity viewer page in the screenshot column when a viewer site is set up', async () => {
+    const results = await createEvidenceUploader(deps({ config: () => ({ url: base, key: 'anon-key', viewer: 'https://parity-gfx.pages.dev' }) })).upload([item('a.webp')])
+    expect(results).toEqual([{ url: 'https://parity-gfx.pages.dev/?evidence=ID1AAAAAAAAAAAAAAAAAAA' }])
+  })
+
+  it('keeps the picture link without a viewer site', async () => {
+    const results = await createEvidenceUploader(deps()).upload([item('a.webp')])
+    expect(results[0].url).toBe(`${base}/functions/v1/qa-evidence/ID1AAAAAAAAAAAAAAAAAAA.webp`)
+  })
+
+  it('builds the viewer link only from a real evidence link and an https viewer', () => {
+    const image = 'https://proj.supabase.co/functions/v1/qa-evidence/AbCdEfGhIjKlMnOpQrStUv.webp'
+    expect(evidenceViewerLink(image, 'https://parity-gfx.pages.dev/')).toBe('https://parity-gfx.pages.dev/?evidence=AbCdEfGhIjKlMnOpQrStUv')
+    expect(evidenceViewerLink(image, 'https://example.test/viewer/')).toBe('https://example.test/viewer/?evidence=AbCdEfGhIjKlMnOpQrStUv')
+    expect(evidenceViewerLink(image, 'http://insecure.test')).toBe(image)
+    expect(evidenceViewerLink(image, 'not a url')).toBe(image)
+    expect(evidenceViewerLink(image, '')).toBe(image)
+    expect(evidenceViewerLink('https://proj.supabase.co/functions/v1/qa-evidence/short.webp', 'https://parity-gfx.pages.dev')).toBe('https://proj.supabase.co/functions/v1/qa-evidence/short.webp')
   })
 })

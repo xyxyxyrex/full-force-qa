@@ -6,11 +6,11 @@ An AI agent that does the first pass of visual QA: it compares the live staging 
 
 1. **Store the designs.** Open the project, open the Figma overlay panel and drop the Figma PNGs on the Desktop, Tablet and Mobile slots (or just drop several at once: each goes to its detected breakpoint). Parity works out the export scale (1x, 2x, 3x) from the file name or its width and shows it, so you can correct it.
    **Designs are kept per page.** The slots show the page they belong to ("For page /alopecia-page") and follow the page that is open: change the URL inside the project and the slots switch to that page's PNGs (empty if it has none yet), so a design is never compared with the wrong page. The chat header shows the same thing before you run anything: the page, and the PNG loaded for each breakpoint, with a warning for any that is missing. **The overlay follows the viewport.** With Desktop, Tablet and Mobile PNGs stored for the page, the Figma overlay shows the one for the breakpoint the viewport is at (under 600px wide is Mobile, 600–1199px Tablet, 1200px and up Desktop): switch the viewport and the overlay switches with it. A breakpoint with no PNG shows an empty overlay and a note, never an image of another size. Pasting or dropping a PNG moves the viewport to the breakpoint it belongs to, so a mobile PNG pasted while viewing Desktop switches to Mobile and shows. A review states the page and the designs it is using as its first message. Designs saved before this change move to the page they were added for the first time that page is opened.
-2. **Tracker format.** The standard tracker is built in: Page Link, Section, Screenshot, Remarks, Priority (QA/PM), Display, Status, Approval Screenshot(QA), Reason for Rejection, Screenshot and Remarks (Dev), Remarks (PM), Remarks (CRSM). The agent fills Page Link, Section, Remarks and Priority, Parity fills Screenshot with the evidence link, and the Dev, PM, CRSM and approval columns stay empty. Display is a dropdown (Desktop, Mobile, Tablet, Mobile & Tablet, Desktop and Mobile, Desktop and Tablet) and the agent picks where the issue appears; Parity rejects anything outside the list. Status is left empty because developers and the approval step set it, except "ENHANCEMENT (QA)" for suggestions. To use a different tracker, paste its header row and two or three example rows in Settings → AI Agents → Tracker format.
+2. **Tracker format.** The standard tracker is built in: Page Link, Section, Screenshot, Remarks, Priority (QA/PM), Display, Status, Approval Screenshot(QA), Reason for Rejection, Screenshot and Remarks (Dev), Remarks (PM), Remarks (CRSM). The agent fills Page Link, Section and Remarks, Parity fills Screenshot with the evidence link, and the Priority, Dev, PM, CRSM and approval columns stay empty. **Priority is never filled**: the agent does not judge it, and Parity drops anything written in a priority, severity or impact column, in any tracker. The team sets priority. Display is a dropdown (Desktop, Mobile, Tablet, Mobile & Tablet, Desktop and Mobile, Desktop and Tablet) and the agent picks where the issue appears; Parity rejects anything outside the list. Status is left empty because developers and the approval step set it, except "ENHANCEMENT (QA)" for suggestions. To use a different tracker, paste its header row and two or three example rows in Settings → AI Agents → Tracker format.
 3. **Pick an agent** (Settings → AI Agents) and open the QA chat (`Ctrl+Shift+Q` or the chat button in the top bar). The chat opens on the right and takes the place of the inspector until you close it.
 4. **Talk to it or run a review.** Type a question ("how big is the hero heading on mobile?", "recheck the footer") and the agent answers using the live page and your designs. It remembers the conversation until you press *New chat*. `/review` runs the full review of every breakpoint that has a design; `/review desktop mobile --agent codex` narrows it. `/stop` (or Esc) stops the agent, `/agents` lists the agents, `/help` lists the commands.
    The header shows token use: the total for this chat with input and output split, what the current message has used so far, and (on hover) the size of the conversation the agent is holding. Every request re-sends the conversation, so input tokens add up faster than the text on screen. If you set a token limit in Settings → AI Agents it applies to each message and each review. Some agent programs do not report usage; the meter then shows a dash.
-5. **Approve.** An approval card shows the drafted rows, the severity counts and the evidence pictures. *Approve & copy* puts the rows on your clipboard (and uploads the evidence pictures, if enabled); *Reject* sends your note back to the agent.
+5. **Approve.** An approval card shows each finding with its evidence picture. Press **Leave out** on any finding that should not go in the sheet: it is neither copied nor uploaded (*Put back* undoes it). *Approve & copy* puts the rest on your clipboard and uploads their pictures, if enabled; *Reject* sends your note back to the agent.
 6. **Paste into the tracker.**
 
 ## Reviewing with no Figma design
@@ -24,6 +24,18 @@ A page does not need a design. With none stored for the page, `/review` has the 
 3. puts every finding in one approval card, grouped by page, with each finding's picture. One *Approve & copy* puts all the rows on the clipboard, with each row's Page Link filled in.
 
 Display is set by Parity from the size a finding was seen at, never left to the model. The same finding on two sizes becomes one row with the matching combined value (for example "Desktop and Mobile"); a finding on all three sizes stays as three rows, because the sheet has no value for it. The page list comes from you, so the agent can only ever capture the pages you pasted (WordPress admin and login pages are refused). **Cost.** Every page is reviewed on every ticked size, and each review is a long conversation with many pictures. Measured with Antigravity CLI on a small three-section test page, one desktop review used about 500,000 tokens (roughly three minutes); real pages with more sections use more, and every request carries the agent app's own fixed overhead (about 12,000 tokens). A list of 20 pages on two sizes is 40 such reviews, so use a token limit in Settings → AI Agents (it covers the whole batch; if it is reached, what was found so far is handed over for approval) and start with a few pages. An API key is billed per token instead of drawing on a plan.
+
+## History
+
+**Past reviews** (the chat's *History* button, `/history`, or the command palette: "QA agent: past reviews") lists every run on this computer, newest first, filterable by page or project. A run shows:
+
+- every hand-over: approved (how many rows were copied and left out), rejected (with your note) or not decided, each finding with its picture (loaded as you scroll) and the link that went in the sheet. **Copy rows again** puts exactly the rows that were pasted back on the clipboard;
+- what the agent drafted for each size before any hand-over, with pictures made on demand, so a stopped run can still be looked at;
+- **Open folder**, **Keep** (the automatic clean-up after 14 days, 30 runs or 2 GB never removes a kept run) and **Delete**.
+
+Runs from before hand-overs were recorded are rebuilt from the rows that were copied and the pictures saved next to them.
+
+**Chats** are saved as you talk (what the chat showed, its token counts, and what the agent remembers), up to 100. Open one from History (*Chats* tab) to read it or carry on: the agent remembers that chat's earlier messages again. *New chat* starts a fresh one and keeps the old one in History.
 
 ## How a review works
 
@@ -78,6 +90,9 @@ An agent can only draft. `finalize_rows` always opens the approval card in Parit
 
 ## Evidence screenshots
 
+**The link in the sheet opens the Parity viewer** (`https://parity-gfx.pages.dev/?evidence=<id>`): a small page with the finding as its title, the picture (click to enlarge) and how long it stays available. The viewer reads `GET …/qa-evidence/<id>.json` (the finding, expiry and picture address; readable from the viewer site, still only by the unguessable id) and shows only pictures from this project's own evidence store. Builds without a viewer address (`VITE_EPHEMERAL_VIEWER_URL`) put the picture's own link in the sheet instead. The viewer is deployed by `.github/workflows/deploy-cloudflare.yml` on pushes to `main` that touch `viewer/**`; the `.json` lookup ships with the `qa-evidence` function.
+
+
 Approving can upload each evidence picture (design crop beside live crop, the issue boxed) and put its link in the tracker's screenshot column. Pictures are stored privately in Supabase and served only by the `qa-evidence` function by an unguessable id (128-bit random) until they expire (default 90 days; 7 to 365 in settings). There is no way to list or overwrite them. **Anyone who has a link can view that picture until it expires.** Uploading needs your Parity account; without it the rows are still copied and the screenshot cell is left empty.
 
 > **Deploying:** `supabase/migrations/20261004120000_create_qa_evidence.sql` and `supabase/functions/qa-evidence/` are deployed to production by `.github/workflows/deploy-supabase.yml` on any push to `main` that touches `supabase/**`. Run that workflow's dry-run first.
@@ -88,7 +103,8 @@ Approving can upload each evidence picture (design crop beside live crop, the is
 npm test                              # unit tests, including the bridge with a real MCP client
 npm run test:qa-capture:electron      # real Electron captures of a fixture page
 npm run test:qa-flow:electron         # the main-process handshake: context, approval, clipboard, bridge
-npm run test:qa-ui:electron           # renders the settings panel, chat, approval card and slots
+npm run test:qa-ui:electron           # renders the settings panel, chat, approval card, history and slots
+npm run test:viewer:electron          # the viewer site's evidence page, with the evidence service answered locally
 node scripts/test-qa-capture-electron.cjs --url <page> --width 1440 --bp desktop --out <dir>
                                       # capture any public page and write capture.png + capture.json
 ```

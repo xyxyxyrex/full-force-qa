@@ -19,6 +19,8 @@ export interface RunMeta {
   pageUrl: string
   createdAt: number
   touchedAt: number
+  /** Kept by the person: never removed by the automatic clean-up. */
+  pinned?: boolean
 }
 
 export type LiveRecord = Omit<LiveCaptureResult, 'png'> & { capturedAt: number; design: DesignSlotMeta | null }
@@ -75,6 +77,31 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
     touch(id: string): void {
       const meta = readMeta(id)
       if (meta) atomicWrite(join(dir(id), 'run.json'), JSON.stringify({ ...meta, touchedAt: now() }, null, 2))
+    },
+
+    /** Every run, newest first. */
+    list(): RunMeta[] {
+      if (!existsSync(root)) return []
+      return readdirSync(root).filter((name) => RUN_ID_PATTERN.test(name)).map((name) => readMeta(name)).filter((meta): meta is RunMeta => !!meta).sort((a, b) => b.createdAt - a.createdAt)
+    },
+
+    setPinned(id: string, pinned: boolean): RunMeta | null {
+      const meta = readMeta(id)
+      if (!meta) return null
+      const next = { ...meta, pinned }
+      atomicWrite(join(dir(id), 'run.json'), JSON.stringify(next, null, 2))
+      return next
+    },
+
+    remove(id: string): boolean {
+      if (!readMeta(id)) return false
+      rmSync(dir(id), { recursive: true, force: true })
+      return true
+    },
+
+    /** Folder of a run, for showing it to the person. */
+    folder(id: string): string {
+      return dir(id)
     },
 
     /** Latest run for a project, newest first. */
@@ -155,10 +182,10 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       const entries = readdirSync(root)
         .filter((name) => RUN_ID_PATTERN.test(name))
         .map((name) => ({ name, meta: readMeta(name) }))
-        .map((entry) => ({ name: entry.name, touchedAt: entry.meta?.touchedAt ?? 0, bytes: folderSize(join(root, entry.name)) }))
+        .map((entry) => ({ name: entry.name, touchedAt: entry.meta?.touchedAt ?? 0, pinned: entry.meta?.pinned === true, bytes: folderSize(join(root, entry.name)) }))
         .sort((a, b) => b.touchedAt - a.touchedAt)
       const removed: string[] = []
-      const protectedRun = (entry: { touchedAt: number }) => now() - entry.touchedAt < protectMs
+      const protectedRun = (entry: { touchedAt: number; pinned: boolean }) => entry.pinned || now() - entry.touchedAt < protectMs
       let kept = entries
       const drop = (entry: { name: string }) => { rmSync(join(root, entry.name), { recursive: true, force: true }); removed.push(entry.name) }
       for (const entry of kept.filter((e) => !protectedRun(e) && now() - e.touchedAt > maxAgeDays * DAY)) drop(entry)

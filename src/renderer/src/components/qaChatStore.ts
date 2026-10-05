@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { QaRunEvent } from '../../../shared/qaAgent'
+import type { QaRunEvent, QaStoredChat } from '../../../shared/qaAgent'
 
 // The QA chat's transcript and token counts live here, outside React, so they survive the chat
 // panel being closed or the editor being reopened. Main keeps what the agent remembers; this is
@@ -31,13 +31,18 @@ export interface ChatState {
   budgetTokens: number
   /** False until the agent reports usage; some agent CLIs never do. */
   usageReported: boolean
+  /** The saved chat this is, once something was said; null for a fresh chat. */
+  chatId: string | null
+  title: string
 }
 
 type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never
 
 const MAX_MESSAGES = 400
 const zero = (): TokenCounts => ({ input: 0, output: 0, requests: 0 })
-const initial = (): ChatState => ({ messages: [], running: false, agentLabel: '', session: zero(), turn: zero(), context: 0, budgetTokens: 0, usageReported: false })
+const initial = (): ChatState => ({ messages: [], running: false, agentLabel: '', session: zero(), turn: zero(), context: 0, budgetTokens: 0, usageReported: false, chatId: null, title: '' })
+const newChatId = () => `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+const KINDS = new Set(['user', 'assistant', 'tool', 'status', 'error', 'usage'])
 
 let state: ChatState = initial()
 let nextId = 1
@@ -47,6 +52,18 @@ const listeners = new Set<() => void>()
 
 const publish = (next: ChatState) => { state = next; listeners.forEach((listener) => listener()) }
 const cap = (messages: ChatMessage[]) => (messages.length > MAX_MESSAGES ? messages.slice(-MAX_MESSAGES) : messages)
+
+// The chat is saved (what it shows and its token counts) shortly after each message and each answer.
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleSave(): void {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    const { chatId, title, agentLabel, messages, session } = state
+    if (!chatId || !messages.length || typeof window === 'undefined' || !window.electronAPI?.qaChatsSave) return
+    void window.electronAPI.qaChatsSave({ id: chatId, title, agentLabel, messages, session }).catch(() => { /* saving is a convenience */ })
+  }, 400)
+}
 
 function append(message: DistributiveOmit<ChatMessage, 'id'>): void {
   streaming = false
@@ -110,6 +127,7 @@ function onEvent(event: QaRunEvent): void {
       const messages = state.messages.map((message) => (message.kind === 'tool' && message.pending ? { ...message, pending: false } : message))
       publish({ ...state, running: false, messages })
       if (turn.requests) append({ kind: 'usage', text: `${tokenTotal(turn).toLocaleString()} tokens · ${turn.input.toLocaleString()} in, ${turn.output.toLocaleString()} out · ${turn.requests} request${turn.requests === 1 ? '' : 's'}` })
+      scheduleSave()
       break
     }
   }
@@ -129,7 +147,20 @@ export const qaChat = {
     listeners.add(listener)
     return () => { listeners.delete(listener) }
   },
-  addUserMessage: (text: string) => append({ kind: 'user', text }),
+  /** Adds what the person said. The first message starts a saved chat, named after it. */
+  addUserMessage(text: string) {
+    if (!state.chatId) publish({ ...state, chatId: newChatId(), title: text.replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat' })
+    append({ kind: 'user', text })
+    scheduleSave()
+  },
+  /** Shows a saved chat again, to read or carry on. */
+  restore(chat: QaStoredChat) {
+    streaming = false
+    const messages = chat.messages.filter((message): message is ChatMessage => !!message && typeof message === 'object' && KINDS.has(String((message as { kind?: unknown }).kind)))
+    nextId = Math.max(1, ...messages.map((message) => Number(message.id) || 0)) + 1
+    const session = chat.session ?? zero()
+    publish({ ...initial(), chatId: chat.id, title: chat.title, agentLabel: chat.agentLabel ?? '', messages: messages.map((message) => (message.kind === 'tool' ? { ...message, pending: false } : message)), session, usageReported: session.requests > 0 })
+  },
   addError: (text: string) => append({ kind: 'error', text }),
   addStatus: (text: string) => append({ kind: 'status', text }),
   /** Clears the transcript and the counts. Main forgets the conversation separately. */

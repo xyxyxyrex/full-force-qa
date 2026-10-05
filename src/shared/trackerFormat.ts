@@ -70,6 +70,9 @@ export function isTrackerFormat(value: unknown): value is TrackerFormat {
   return !!v && v.version === 1 && Array.isArray(v.columns) && v.columns.length >= 2 && v.columns.every((c) => typeof c === 'string') && Array.isArray(v.examples) && v.examples.every((r) => Array.isArray(r)) && (v.choices === undefined || (typeof v.choices === 'object' && v.choices !== null && Object.values(v.choices).every((o) => Array.isArray(o) && o.every((x) => typeof x === 'string'))))
 }
 
+/** Priority, severity or impact: the team sets these themselves, so Parity never fills them. */
+export const PRIORITY_HEADER = /severity|priority|impact/i
+
 const SCREENSHOT_HEADER = /screenshot|screen shot|image|evidence|sleekshot|capture|proof|attachment|link/i
 // Columns other people fill in: the developer's reply and the QA approval after a fix.
 const OTHER_PEOPLE_HEADER = /\((dev|pm|crsm)\)|approval|rejection/i
@@ -137,7 +140,7 @@ export function trackerColumnGuide(format: TrackerFormat): Record<string, string
     else if (name === shot) guide[name] = 'Leave empty. Parity fills it with the evidence link.'
     else if (/^page\b.*(link|url)|^url$|^link$/i.test(name)) guide[name] = 'The URL of the page that was checked (openPage.url from get_context).'
     else if (/^section$/i.test(name)) guide[name] = 'The section as a person would name it, one to three words: Header, Navbar, Hero, Footer, or the section\'s own heading (for example "Treatment options"). Never an element selector, and not the breakpoint.'
-    else if (/severity|priority|impact/i.test(name)) guide[name] = 'High, Medium or Low (or the values the example rows use).'
+    else if (PRIORITY_HEADER.test(name)) guide[name] = 'Leave empty. Parity does not set a priority; the team does.'
     else if (/^(remarks|issue|description|finding|comment)s?$/i.test(name)) guide[name] = 'One short line telling the developer what to change, like "font size should be 16px", "wrong image" or "remove this duplicated section". About 15 words at most. No breakpoint (Display has it), no design-versus-live narration, no "≈". One issue per row. Give a number only when the design clearly shows it; otherwise say it plainly ("reduce section size", "follow figma").'
     else if (/^(display|status)$/i.test(name)) guide[name] = shared.size === 1 ? `Use "${[...shared][0]}", as in the example rows.` : 'Leave empty unless the example rows show a value to use.'
   })
@@ -219,6 +222,8 @@ export function buildRows(format: TrackerFormat, issues: IssueRow[], options: { 
     for (const [key, value] of Object.entries(issue || {})) {
       const column = byLowerName.get(key.trim().toLowerCase())
       if (!column) return { ok: false, error: `Row ${index + 1} uses a column that is not in the tracker: "${key}". The columns are: ${format.columns.join(', ')}.` }
+      // Priority is the team's call: whatever the agent wrote there is dropped.
+      if (PRIORITY_HEADER.test(column)) { cells[column] = ''; continue }
       const text = cleanCell(value)
       const limit = CELL_LIMITS.find((rule) => rule.column.test(column))
       if (limit && text.length > limit.max) return { ok: false, error: `Row ${index + 1}: ${column} is ${text.length} characters. ${limit.advice} Shorten it to ${limit.max} characters or fewer and call the tool again.` }

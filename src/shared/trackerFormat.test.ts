@@ -74,8 +74,14 @@ describe('neutralizeFormula', () => {
 
 describe('buildRows', () => {
   it('orders cells by column, matches names case-insensitively and fills gaps', () => {
-    const result = buildRows(format, [{ issue: 'Heading too small', PAGE: 'Home', severity: 'High' }])
-    expect(result).toEqual({ ok: true, warnings: [], rows: [['Home', 'Heading too small', '', '', 'High']] })
+    const result = buildRows(format, [{ issue: 'Heading too small', PAGE: 'Home' }])
+    expect(result).toEqual({ ok: true, warnings: [], rows: [['Home', 'Heading too small', '', '', '']] })
+  })
+
+  it('never fills a priority, severity or impact column: the team sets those', () => {
+    expect(buildRows(format, [{ Issue: 'x', Severity: 'High' }])).toEqual({ ok: true, warnings: [], rows: [['', 'x', '', '', '']] })
+    const custom: TrackerFormat = { version: 1, columns: ['Issue', 'Impact', 'Priority'], examples: [] }
+    expect(buildRows(custom, [{ Issue: 'x', Impact: 'Critical', Priority: 'P1' }])).toEqual({ ok: true, warnings: [], rows: [['x', '', '']] })
   })
 
   it('neutralizes formulas, strips tabs and control characters, clamps length', () => {
@@ -134,7 +140,7 @@ describe('standard tracker', () => {
     const guide = trackerColumnGuide(STANDARD_TRACKER)
     expect(guide['Page Link']).toMatch(/URL of the page/)
     expect(guide['Remarks']).toMatch(/issue/i)
-    expect(guide['Priority (QA/PM)']).toMatch(/High, Medium or Low/)
+    expect(guide['Priority (QA/PM)']).toMatch(/Leave empty\. Parity does not set a priority/)
     for (const name of ['Approval Screenshot(QA)', 'Reason for Rejection (if applicable)', 'Screenshot and Remarks (Dev)', 'Remarks (PM)']) expect(guide[name]).toMatch(/Leave empty/)
     expect(guide['Screenshot']).toMatch(/evidence link/)
     expect(guide['Status']).toMatch(/Leave empty.*ENHANCEMENT \(QA\)/)
@@ -166,7 +172,7 @@ describe('standard tracker', () => {
 
   it('builds a row with the right cells filled', () => {
     const built = buildRows(STANDARD_TRACKER, [{ 'Page Link': 'https://x.test/a', Section: 'Hero, H1', Remarks: 'Desktop: font-size 28px, design ≈32px', 'Priority (QA/PM)': 'Medium' }])
-    expect(built.ok && built.rows[0]).toEqual(['https://x.test/a', 'Hero, H1', '', 'Desktop: font-size 28px, design ≈32px', 'Medium', '', '', '', '', '', '', ''])
+    expect(built.ok && built.rows[0]).toEqual(['https://x.test/a', 'Hero, H1', '', 'Desktop: font-size 28px, design ≈32px', '', '', '', '', '', '', '', ''])
   })
 })
 
@@ -177,7 +183,7 @@ describe('rowView', () => {
     const view = rowView(STANDARD_TRACKER, row({ 'Page Link': 'https://x.test/a', Section: 'Hero, H1', Remarks: 'Desktop: font-size 28px, design ≈32px', 'Priority (QA/PM)': 'High', Display: 'Desktop and Mobile' }))
     expect(view).toEqual({
       title: 'Hero, H1', body: 'Desktop: font-size 28px, design ≈32px', link: 'https://x.test/a', extras: [],
-      badges: [{ label: 'Priority', value: 'High', kind: 'severity' }, { label: 'Display', value: 'Desktop and Mobile', kind: 'display' }],
+      badges: [{ label: 'Display', value: 'Desktop and Mobile', kind: 'display' }],
     })
   })
 

@@ -170,6 +170,27 @@ describe('qa-evidence downloads', () => {
     expect(bodies.size).toBe(1)
   })
 
+  it('tells the viewer page about a live image: its finding, expiry and address, readable from another site', async () => {
+    const expires = new Date(Date.now() + 86_400_000).toISOString()
+    const { get } = endpoint({ rows: [{ id: VALID_ID, object_path: `u/${VALID_ID}.webp`, content_type: 'image/webp', label: 'Hero: wrong image (Desktop)', expires_at: expires }] })
+    const response = await get(`/${VALID_ID}.json`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    expect(response.headers.get('x-robots-tag')).toContain('noindex')
+    expect(await response.json()).toEqual({ id: VALID_ID, label: 'Hero: wrong image (Desktop)', contentType: 'image/webp', expiresAt: expires, image: `https://proj.supabase.co/functions/v1/qa-evidence/${VALID_ID}.webp` })
+  })
+
+  it('answers a plain 404, still readable by the viewer, for unknown, expired or malformed details links', async () => {
+    const past = new Date(Date.now() - 1000).toISOString()
+    const { get } = endpoint({ rows: [{ id: VALID_ID, object_path: `u/${VALID_ID}.webp`, content_type: 'image/webp', label: 'x', expires_at: past }] })
+    for (const path of [`/${VALID_ID}.json`, '/BbCdEfGhIjKlMnOpQrStUv.json', '/short.json', `/${VALID_ID}.json.exe`]) {
+      const response = await get(path)
+      expect(response.status).toBe(404)
+      expect(await response.json()).toEqual({ error: 'Not found.' })
+    }
+    expect((await get(`/${VALID_ID}.json`)).headers.get('access-control-allow-origin')).toBe('*')
+  })
+
   it('has no way to list images, and no other methods', async () => {
     const { get, handler } = endpoint({ rows: [live], objects: { [live.object_path]: WEBP } })
     expect((await get('')).status).toBe(404)

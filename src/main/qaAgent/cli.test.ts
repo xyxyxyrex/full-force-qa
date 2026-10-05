@@ -91,7 +91,7 @@ describe('parity command', () => {
     fake.setDecision({ approved: true })
     const approved = await parity(['finalize', runId, rows, '--no-upload'])
     expect(approved.out).toContain('Copied 1 row(s)')
-    expect(fake.clipboard[0].text).toBe("Home\t'- stray dash\t\t\tLow")
+    expect(fake.clipboard[0].text).toBe("Home\t'- stray dash\t\t\t") // the agent's priority is never copied
   })
 
   it('validates usage before talking to Parity', async () => {
