@@ -62,7 +62,7 @@ export function parseTrackerPaste(text: string): ParseResult {
   const examples = rows.slice(1, 1 + MAX_EXAMPLES).map((r) => columns.map((_, i) => r[i] ?? ''))
   // Pasting the standard tracker's own header keeps its dropdown options.
   const isStandard = columns.length === STANDARD_TRACKER.columns.length && columns.every((name, i) => name === STANDARD_TRACKER.columns[i])
-  return { ok: true, format: { version: 1, columns, examples, ...(isStandard ? { choices: STANDARD_TRACKER.choices } : {}) } }
+  return { ok: true, format: { version: 1, columns, examples: examples.length || !isStandard ? examples : STANDARD_TRACKER.examples, ...(isStandard ? { choices: STANDARD_TRACKER.choices } : {}) } }
 }
 
 export function isTrackerFormat(value: unknown): value is TrackerFormat {
@@ -82,13 +82,31 @@ export function screenshotColumn(format: TrackerFormat): string | null {
 }
 
 /** The tracker every project uses, so nobody has to paste it. Pasting one in Settings replaces it. */
+// How the team words findings: short and direct, telling the developer what to change. Used as the tone to copy.
+const standardExample = (section: string, remarks: string, display: string): string[] => ['', section, '', remarks, '', display, '', '', '', '', '', '']
+const STANDARD_EXAMPLES: string[][] = [
+  standardExample('Header', 'logo size should be 181px by 71px', 'Desktop'),
+  standardExample('Navbar', 'blogs should be a dropdown', 'Desktop and Tablet'),
+  standardExample('Hero', 'h1 title should be 2 lines', 'Desktop'),
+  standardExample('Hero', 'wrong text. this should say "book an appointment"', 'Desktop and Mobile'),
+  standardExample('Hero', 'remove the white glow on the bottom part of the photo', 'Desktop'),
+  standardExample('Services', 'reduce top and bottom padding to 75px', 'Desktop'),
+  standardExample('Services', 'image should have no padding and round edges', 'Mobile'),
+  standardExample('Testimonials', 'remove this duplicated section', 'Desktop and Tablet'),
+  standardExample('Treatment options', 'sections are flipped', 'Desktop'),
+  standardExample('Treatment options', 'H2 should be bold (700) and a one liner. figma has negative 3% letter spacing', 'Desktop'),
+  standardExample('Gallery', 'wrong image', 'Desktop and Mobile'),
+  standardExample('Contact', 'button should be round like in figma', 'Desktop'),
+  standardExample('Footer', 'font size should be 13px', 'Mobile'),
+]
+
 export const STANDARD_TRACKER: TrackerFormat = {
   version: 1,
   columns: [
     'Page Link', 'Section', 'Screenshot', 'Remarks', 'Priority (QA/PM)', 'Display', 'Status', 'Approval Screenshot(QA)',
     'Reason for Rejection (if applicable)', 'Screenshot and Remarks (Dev)', 'Remarks (PM)', 'Remarks (CRSM)',
   ],
-  examples: [],
+  examples: STANDARD_EXAMPLES,
   choices: {
     Display: ['Desktop', 'Mobile', 'Tablet', 'Mobile & Tablet', 'Desktop and Mobile', 'Desktop and Tablet'],
     Status: ['IN PROGRESS (DEV)', 'COMPLETED (DEV)', 'REJECTED (QA)', 'APPROVED (QA)', 'INVALID (DEV)', 'ENHANCEMENT (QA)', 'PM CLARIFICATION'],
@@ -118,9 +136,9 @@ export function trackerColumnGuide(format: TrackerFormat): Record<string, string
     else if (OTHER_PEOPLE_HEADER.test(name)) guide[name] = 'Leave empty. Developers, PMs and the QA approval step fill this in later.'
     else if (name === shot) guide[name] = 'Leave empty. Parity fills it with the evidence link.'
     else if (/^page\b.*(link|url)|^url$|^link$/i.test(name)) guide[name] = 'The URL of the page that was checked (openPage.url from get_context).'
-    else if (/^section$/i.test(name)) guide[name] = 'The page section and element, for example "Basics section, H2". Add the breakpoint here if there is no better column.'
+    else if (/^section$/i.test(name)) guide[name] = 'The section as a person would name it, one to three words: Header, Navbar, Hero, Footer, or the section\'s own heading (for example "Treatment options"). Never an element selector, and not the breakpoint.'
     else if (/severity|priority|impact/i.test(name)) guide[name] = 'High, Medium or Low (or the values the example rows use).'
-    else if (/^(remarks|issue|description|finding|comment)s?$/i.test(name)) guide[name] = 'The issue: breakpoint, what is different, what the design shows and what the live page shows. One issue per row.'
+    else if (/^(remarks|issue|description|finding|comment)s?$/i.test(name)) guide[name] = 'One short line telling the developer what to change, like "font size should be 16px", "wrong image" or "remove this duplicated section". About 15 words at most. No breakpoint (Display has it), no design-versus-live narration, no "≈". One issue per row. Give a number only when the design clearly shows it; otherwise say it plainly ("reduce section size", "follow figma").'
     else if (/^(display|status)$/i.test(name)) guide[name] = shared.size === 1 ? `Use "${[...shared][0]}", as in the example rows.` : 'Leave empty unless the example rows show a value to use.'
   })
   return guide
@@ -180,6 +198,12 @@ function cleanCell(value: unknown): string {
   return text.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').slice(0, MAX_CELL_LENGTH)
 }
 
+// Remarks and Section are read at a glance in a long sheet, so they stay short.
+const CELL_LIMITS = [
+  { column: /^remarks$/i, max: 200, advice: 'Remarks are one short line that tells the developer what to change (for example "font size should be 16px" or "wrong image").' },
+  { column: /^section$/i, max: 50, advice: 'Section is the section\'s name in a few words (for example "Hero", "Footer" or "Treatment options"), not an element selector.' },
+]
+
 export type RowsResult = { ok: true; rows: string[][]; warnings: string[] } | { ok: false; error: string }
 
 /** Maps issue objects (keyed by column name) to cell arrays in column order. */
@@ -195,6 +219,8 @@ export function buildRows(format: TrackerFormat, issues: IssueRow[]): RowsResult
       const column = byLowerName.get(key.trim().toLowerCase())
       if (!column) return { ok: false, error: `Row ${index + 1} uses a column that is not in the tracker: "${key}". The columns are: ${format.columns.join(', ')}.` }
       const text = cleanCell(value)
+      const limit = CELL_LIMITS.find((rule) => rule.column.test(column))
+      if (limit && text.length > limit.max) return { ok: false, error: `Row ${index + 1}: ${column} is ${text.length} characters. ${limit.advice} Shorten it to ${limit.max} characters or fewer and call the tool again.` }
       const options = format.choices?.[column]
       if (options && text.trim()) {
         const choice = matchChoice(options, text)

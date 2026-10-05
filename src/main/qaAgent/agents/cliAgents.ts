@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { summarize, withHistory } from './common'
@@ -189,7 +189,7 @@ const AGY_PERMISSION_FREE = ['finish', 'wait', 'wait_5_seconds']
 const shellQuote = (value: string) => (process.platform === 'win32' ? `"${value}"` : `'${value.replace(/'/g, `'\\''`)}'`)
 
 /** The script agy runs before every tool call. Plain Node, so Electron's own Node can run it. */
-export function agyGuardScript(config: { server: string; tools: string[]; mcpDir: string; log: string }): string {
+export function agyGuardScript(config: { server: string; tools: string[]; mcpDir: string; brainDir: string; log: string }): string {
   return `const fs = require('fs'), path = require('path')
 const CONFIG = ${JSON.stringify({ ...config, free: AGY_PERMISSION_FREE })}
 let raw = ''
@@ -202,8 +202,14 @@ process.stdin.on('end', () => {
   let allowed = false
   if (name === 'call_mcp_tool') allowed = args.ServerName === CONFIG.server && CONFIG.tools.includes(args.ToolName)
   else if (name === 'view_file') {
-    // agy describes MCP tools in small files it reads itself; nothing else may be read.
-    try { const real = fs.realpathSync(String(args.AbsolutePath || '')); allowed = real.startsWith(CONFIG.mcpDir + path.sep) && real.endsWith('.json') } catch (error) { allowed = false }
+    // agy describes MCP tools in small files it reads itself, and saves a large tool result to a file it then asks
+    // the model to read. Those two kinds of file, inside this run's private home, are all that may be read.
+    try {
+      const real = fs.realpathSync(String(args.AbsolutePath || ''))
+      const description = real.startsWith(CONFIG.mcpDir + path.sep) && real.endsWith('.json')
+      const savedResult = real.startsWith(CONFIG.brainDir + path.sep) && /[\\\\/]\\.system_generated[\\\\/]steps[\\\\/]\\d+[\\\\/]output\\.txt$/.test(real)
+      allowed = description || savedResult
+    } catch (error) { allowed = false }
   } else allowed = CONFIG.free.includes(name)
   try { fs.appendFileSync(CONFIG.log, name + ' ' + (allowed ? 'allow' : 'deny') + '\\n') } catch (error) { /* the run checks for this file */ }
   process.stdout.write(JSON.stringify(allowed ? { decision: 'ask' } : { decision: 'deny', reason: 'Parity only lets this agent use its own QA tools.' }))
@@ -234,6 +240,7 @@ export const antigravitySpec: CliSpec = {
     const home = join(root, 'home')
     const work = join(root, 'work')
     const mcpDir = join(home, '.gemini', 'antigravity-cli', 'mcp')
+    const brainDir = join(home, '.gemini', 'antigravity-cli', 'brain')
     const log = join(root, 'guard.log')
     mkdirSync(join(home, '.gemini', 'config'), { recursive: true })
     mkdirSync(join(home, '.gemini', 'antigravity-cli'), { recursive: true })
@@ -244,10 +251,10 @@ export const antigravitySpec: CliSpec = {
     writePrivate(join(home, '.gemini', 'config', 'mcp_config.json'), JSON.stringify({ mcpServers: { parity: { serverUrl: bridge.mcpUrl, headers: { Authorization: `Bearer ${bridge.token}` } } } }))
     writePrivate(join(home, '.gemini', 'antigravity-cli', 'settings.json'), JSON.stringify({
       trustedWorkspaces: [work],
-      permissions: { allow: [...run.tools.map((tool) => `mcp(parity/${tool})`), `read_file(${mcpDir}/)`] },
+      permissions: { allow: [...run.tools.map((tool) => `mcp(parity/${tool})`), `read_file(${mcpDir}/)`, `read_file(${brainDir}/)`] },
     }))
     const guard = join(work, '.agents', 'guard.cjs')
-    writePrivate(guard, agyGuardScript({ server: 'parity', tools: run.tools, mcpDir, log }))
+    writePrivate(guard, agyGuardScript({ server: 'parity', tools: run.tools, mcpDir, brainDir, log }))
     const runner = process.platform === 'win32' ? `set ELECTRON_RUN_AS_NODE=1&& ${shellQuote(process.execPath)} ${shellQuote(guard)}` : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(process.execPath)} ${shellQuote(guard)}`
     writePrivate(join(work, '.agents', 'hooks.json'), JSON.stringify({ 'parity-guard': { PreToolUse: [{ matcher: '*', hooks: [{ command: runner, timeout: 10 }] }] } }))
 
@@ -308,6 +315,28 @@ export interface CliProviderOptions {
   homeDir?: string
 }
 
+const AGENT_FOLDER_PREFIX = 'parity-agent-'
+
+/**
+ * A run's private folder holds the bridge key and is deleted when the run ends. If Parity or the
+ * computer stopped mid-run it is left behind, so old ones are removed when the app starts.
+ */
+export function sweepStaleAgentFolders(maxAgeMs = 10 * 60 * 1000, folder = tmpdir()): number {
+  let removed = 0
+  let names: string[] = []
+  try { names = readdirSync(folder) } catch { return 0 }
+  for (const name of names) {
+    if (!name.startsWith(AGENT_FOLDER_PREFIX)) continue
+    try {
+      const path = join(folder, name)
+      if (Date.now() - statSync(path).mtimeMs < maxAgeMs) continue
+      rmSync(path, { recursive: true, force: true })
+      removed++
+    } catch { /* in use or already gone */ }
+  }
+  return removed
+}
+
 export function createCliProvider(spec: CliSpec, options: CliProviderOptions): AgentProvider {
   return {
     id: spec.id,
@@ -316,7 +345,7 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
     async run(chat: ProviderRun): Promise<ProviderResult> {
       const run = { ...chat, task: withHistory(chat.task, chat.history) }
       const bridge = options.getBridge()
-      const dir = mkdtempSync(join(tmpdir(), 'parity-agent-'))
+      const dir = mkdtempSync(join(tmpdir(), AGENT_FOLDER_PREFIX))
       try { chmodSync(dir, 0o700) } catch { /* not supported on this system */ }
       const state: ParseState = { text: '', failed: '', finished: false, violation: '', toolsFinished: 0, usageSeen: false, streamedSteps: new Set(), denied: [] }
       try {

@@ -40,9 +40,11 @@ Agent apps (Claude Code, Codex, Antigravity CLI) run headless in a private tempo
 `agy` reads its settings and MCP servers from `~/.gemini`, refuses every tool that is not allowed in its `settings.json` when run headless, and lets some tools (web search) run without any permission. So for each run Parity:
 
 1. makes a private temporary home folder and links in only your sign-in files (`oauth_creds.json`, `google_accounts.json`, `installation_id`). **Your own `~/.gemini` settings, rules, MCP servers and conversations are never read or changed**;
-2. gives that home its own `settings.json` that allows only Parity's MCP tools (and reading agy's description files for them), and its own MCP server entry holding the bridge key (agy does not expand variables in headers, so the key sits in that folder until the run ends);
-3. installs a `PreToolUse` hook that **denies every tool call except Parity's own** (shell, web search, browser, file reads and writes, sub-agents, scheduling, image generation). A hook that fails blocks the call, and if a tool ever runs without the hook having run, Parity stops the run;
+2. gives that home its own `settings.json` that allows only Parity's MCP tools (and reading agy's description files for them, and the file agy saves a large tool result to), and its own MCP server entry holding the bridge key (agy does not expand variables in headers, so the key sits in that folder until the run ends);
+3. installs a `PreToolUse` hook that **denies every tool call except Parity's own** (shell, web search, browser, file reads and writes, sub-agents, scheduling, image generation). The only files it may read are those description files and the saved copy of a large Parity tool result, all inside the run's private folder. A hook that fails blocks the call, and if a tool ever runs without the hook having run, Parity stops the run;
 4. sends the instructions and the question over stdin, never on the command line.
+
+The private folder holds the bridge key and is deleted when the run ends. If Parity is killed mid-run it is left behind, and Parity removes any such folder older than 10 minutes the next time it starts.
 
 The agent's attempts to use a refused tool come back to it as an error, and it carries on. Choose the model with Settings → AI Agents → Antigravity CLI → *List models* (`agy models`). The Windows path (`USERPROFILE`, copied instead of linked login files) is untested.
 

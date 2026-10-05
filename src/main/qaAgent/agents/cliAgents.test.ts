@@ -1,9 +1,9 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { agyGuardScript, antigravitySpec, claudeCodeSpec, codexSpec, createCliProvider, type CliSpec } from './cliAgents'
+import { agyGuardScript, antigravitySpec, claudeCodeSpec, codexSpec, createCliProvider, sweepStaleAgentFolders, type CliSpec } from './cliAgents'
 import type { AgentEvent, ProviderRun } from './types'
 
 const TOKEN = 'FAKEKEY'.repeat(6) + 'abc'
@@ -160,7 +160,7 @@ describe.skipIf(process.platform === 'win32')('Antigravity CLI adapter', () => {
     expect(JSON.parse(rec.agyMcp).mcpServers.parity).toEqual({ serverUrl: BRIDGE.mcpUrl, headers: { Authorization: `Bearer ${TOKEN}` } })
     const settings = JSON.parse(rec.agySettings)
     expect(settings.trustedWorkspaces).toEqual([rec.cwd])
-    expect(settings.permissions.allow).toEqual(['mcp(parity/get_context)', 'mcp(parity/capture_live)', 'mcp(parity/save_draft)', `read_file(${rec.home}/.gemini/antigravity-cli/mcp/)`])
+    expect(settings.permissions.allow).toEqual(['mcp(parity/get_context)', 'mcp(parity/capture_live)', 'mcp(parity/save_draft)', `read_file(${rec.home}/.gemini/antigravity-cli/mcp/)`, `read_file(${rec.home}/.gemini/antigravity-cli/brain/)`])
     const hooks = JSON.parse(rec.hooks)
     expect(hooks['parity-guard'].PreToolUse[0]).toMatchObject({ matcher: '*', hooks: [{ command: expect.stringContaining('guard.cjs'), timeout: 10 }] })
     expect(existsSync(rec.cwd)).toBe(false)
@@ -231,7 +231,7 @@ describe.skipIf(process.platform === 'win32')('Antigravity safety hook', () => {
     const log = join(dir, 'guard.log')
     const script = join(dir, 'guard.cjs')
     const mcpDir = extra.mcpDir ?? join(dir, 'home', '.gemini', 'antigravity-cli', 'mcp')
-    writeFileSync(script, agyGuardScript({ server: 'parity', tools: ['get_context', 'capture_live'], mcpDir, log }))
+    writeFileSync(script, agyGuardScript({ server: 'parity', tools: ['get_context', 'capture_live'], mcpDir, brainDir: join(dirname(mcpDir), 'brain'), log }))
     const out = spawnSync(process.execPath, [script], { input: JSON.stringify({ toolCall: call }), encoding: 'utf8' })
     return { output: JSON.parse(out.stdout), logged: existsSync(log) ? readFileSync(log, 'utf8') : '' }
   }
@@ -260,9 +260,28 @@ describe.skipIf(process.platform === 'win32')('Antigravity safety hook', () => {
     expect(decide({ name: 'view_file', args: { AbsolutePath: join(mcpDir, 'missing.json') } }).output).toEqual(denied)
   })
 
+  it('lets agy read a large tool result it saved to a file, and nothing else in its working folder', () => {
+    const brain = join(dir, 'home', '.gemini', 'antigravity-cli', 'brain', 'conv-1')
+    mkdirSync(join(brain, '.system_generated', 'steps', '4'), { recursive: true })
+    mkdirSync(join(brain, '.system_generated', 'logs'), { recursive: true })
+    writeFileSync(join(brain, '.system_generated', 'steps', '4', 'output.txt'), 'saved result')
+    writeFileSync(join(brain, '.system_generated', 'steps', '4', 'other.txt'), 'x')
+    writeFileSync(join(brain, '.system_generated', 'logs', 'transcript_full.jsonl'), '{}')
+    writeFileSync(join(brain, 'notes.txt'), 'x')
+    const view = (path: string) => decide({ name: 'view_file', args: { AbsolutePath: path } }).output
+    expect(view(join(brain, '.system_generated', 'steps', '4', 'output.txt'))).toEqual({ decision: 'ask' })
+    expect(view(join(brain, '.system_generated', 'steps', '4', 'other.txt'))).toEqual(denied)
+    expect(view(join(brain, '.system_generated', 'logs', 'transcript_full.jsonl'))).toEqual(denied)
+    expect(view(join(brain, 'notes.txt'))).toEqual(denied)
+    // The same file name somewhere else is not allowed.
+    mkdirSync(join(dir, 'elsewhere', '.system_generated', 'steps', '1'), { recursive: true })
+    writeFileSync(join(dir, 'elsewhere', '.system_generated', 'steps', '1', 'output.txt'), 'x')
+    expect(view(join(dir, 'elsewhere', '.system_generated', 'steps', '1', 'output.txt'))).toEqual(denied)
+  })
+
   it('denies a call it cannot read', () => {
     const script = join(dir, 'guard2.cjs')
-    writeFileSync(script, agyGuardScript({ server: 'parity', tools: [], mcpDir: dir, log: join(dir, 'guard2.log') }))
+    writeFileSync(script, agyGuardScript({ server: 'parity', tools: [], mcpDir: dir, brainDir: join(dir, 'brain'), log: join(dir, 'guard2.log') }))
     expect(JSON.parse(spawnSync(process.execPath, [script], { input: 'not json', encoding: 'utf8' }).stdout)).toEqual(denied)
   })
 })
@@ -311,5 +330,25 @@ describe.skipIf(process.platform === 'win32')('chat history for agent CLIs', () 
     const fake = fakeCli({ lines: [JSON.stringify({ type: 'result', subtype: 'success', result: 'ok' })] })
     await provider(claudeCodeSpec, fake.binary).run(makeRun({ task: 'Hello' }).run)
     expect(fake.record().stdin).toBe('Hello')
+  })
+})
+
+describe('sweepStaleAgentFolders', () => {
+  it('removes old private run folders, keeps recent ones and leaves other folders alone', () => {
+    const old = join(dir, 'parity-agent-old')
+    const recent = join(dir, 'parity-agent-recent')
+    const other = join(dir, 'something-else')
+    for (const folder of [old, recent, other]) mkdirSync(join(folder, 'home'), { recursive: true })
+    writeFileSync(join(old, 'home', 'mcp_config.json'), '{"key":"secret"}')
+    const longAgo = new Date(Date.now() - 60 * 60 * 1000)
+    utimesSync(old, longAgo, longAgo)
+    utimesSync(other, longAgo, longAgo)
+    expect(sweepStaleAgentFolders(10 * 60 * 1000, dir)).toBe(1)
+    expect(existsSync(old)).toBe(false)
+    expect(existsSync(recent)).toBe(true)
+    expect(existsSync(other)).toBe(true)
+  })
+  it('does nothing when the folder cannot be read', () => {
+    expect(sweepStaleAgentFolders(0, join(dir, 'missing'))).toBe(0)
   })
 })

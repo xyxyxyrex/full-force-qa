@@ -202,3 +202,62 @@ describe('rowView', () => {
     expect(view.extras).toEqual([{ label: 'Page', value: 'Home' }, { label: 'Expected', value: '32px' }])
   })
 })
+
+describe('short remarks and sections', () => {
+  const row = (cells: Record<string, string>) => buildRows(STANDARD_TRACKER, [{ Display: 'Desktop', ...cells }])
+
+  it('ships the team\'s own remarks as the examples to copy, all of them valid rows', () => {
+    expect(STANDARD_TRACKER.examples.length).toBeGreaterThanOrEqual(10)
+    const remarks = STANDARD_TRACKER.examples.map((example) => example[STANDARD_TRACKER.columns.indexOf('Remarks')])
+    expect(remarks).toContain('wrong image')
+    expect(remarks).toContain('remove this duplicated section')
+    expect(remarks.every((text) => text.length <= 100)).toBe(true)
+    for (const example of STANDARD_TRACKER.examples) {
+      expect(example).toHaveLength(STANDARD_TRACKER.columns.length)
+      expect(buildRows(STANDARD_TRACKER, [Object.fromEntries(STANDARD_TRACKER.columns.map((name, i) => [name, example[i]]).filter(([, value]) => value))]).ok).toBe(true)
+    }
+  })
+
+  it('keeps the examples when the standard header is pasted without any rows', () => {
+    const header = STANDARD_TRACKER.columns.join('\t')
+    const parsed = parseTrackerPaste(header)
+    expect(parsed.ok && parsed.format.examples).toEqual(STANDARD_TRACKER.examples)
+  })
+
+  it('uses the pasted rows instead when the person pastes their own', () => {
+    const own = ['https://x.test', 'Hero', '', 'my own remark', '', 'Desktop', '', '', '', '', '', ''].join('\t')
+    const parsed = parseTrackerPaste(`${STANDARD_TRACKER.columns.join('\t')}\n${own}`)
+    expect(parsed.ok && parsed.format.examples).toEqual([['https://x.test', 'Hero', '', 'my own remark', '', 'Desktop', '', '', '', '', '', '']])
+  })
+
+  it('accepts the short wording the team uses', () => {
+    expect(row({ Section: 'Hero', Remarks: 'h1 title should be 2 lines' }).ok).toBe(true)
+    expect(row({ Section: 'Treatment options', Remarks: 'H2 should be bold (700) and a one liner. figma has negative 3% letter spacing' }).ok).toBe(true)
+  })
+
+  it('sends back a remark that rambles, and says what to do', () => {
+    const result = row({ Section: 'Hero', Remarks: 'The heading on the live page is rendered at a font size of 28px with a line height of 34px, whereas the design appears to show a considerably larger heading of roughly 32px with a line height of about 38px, and it also sits lower. '.repeat(2) })
+    expect(!result.ok && result.error).toMatch(/Row 1: Remarks is \d+ characters\. Remarks are one short line that tells the developer what to change/)
+    expect(!result.ok && result.error).toMatch(/Shorten it to 200 characters or fewer/)
+  })
+
+  it('sends back a section that is an element selector or a sentence', () => {
+    const result = row({ Section: 'Basics section, H2 "The Basics of Alopecia Areata" inside div.elementor-widget', Remarks: 'font size should be 32px' })
+    expect(!result.ok && result.error).toMatch(/Section is \d+ characters\. Section is the section's name in a few words/)
+  })
+
+  it('does not apply the limits to the other Remarks columns or to custom trackers', () => {
+    const long = 'x'.repeat(400)
+    expect(row({ Remarks: 'ok', 'Remarks (PM)': long, 'Remarks (CRSM)': long }).ok).toBe(true)
+    const custom: TrackerFormat = { version: 1, columns: ['Page', 'Issue'], examples: [] }
+    expect(buildRows(custom, [{ Page: 'Home', Issue: long }]).ok).toBe(true)
+  })
+
+  it('tells the agent the same thing in the column guide', () => {
+    const guide = trackerColumnGuide(STANDARD_TRACKER)
+    expect(guide.Remarks).toMatch(/One short line telling the developer what to change/)
+    expect(guide.Remarks).toMatch(/No breakpoint/)
+    expect(guide.Section).toMatch(/Header, Navbar, Hero, Footer/)
+    expect(guide.Section).toMatch(/Never an element selector/)
+  })
+})

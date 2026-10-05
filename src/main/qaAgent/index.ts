@@ -15,6 +15,7 @@ import { runQa } from './runner'
 import { createRunStore } from './runStore'
 import { accountAccessToken, accountAuthId, parityPublicConfig } from '../account'
 import { createProvider, describeAgents, listModels, normalizeSettings } from './agents/registry'
+import { sweepStaleAgentFolders } from './agents/cliAgents'
 import type { AgentProvider, ChatTurn } from './agents/types'
 import { createBridgeServer, type BridgeLogEntry } from './bridge/httpServer'
 import { ensureToken, resetToken } from './bridge/token'
@@ -48,6 +49,9 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   const trackerFile = () => join(root(), 'tracker-format.json')
   const runs = createRunStore(join(app.getPath('userData'), 'qa-runs'))
   try { runs.prune() } catch (error) { console.warn('[Parity QA] Could not prune old runs:', error) }
+
+  // A run that was cut short (a crash, a power cut) can leave its private folder, with the bridge key, behind.
+  try { sweepStaleAgentFolders() } catch { /* best effort */ }
 
   let reported: ReportedContext | null = null
   let pendingApproval: { id: string; resolve: (decision: ApprovalDecision) => void; timer: NodeJS.Timeout } | null = null
