@@ -57,15 +57,32 @@ async function smoke() {
 
   // Approval card
   await open('approval')
-  assert.match(await text('.qa-approval h2'), /Copy 3 rows for the tracker/)
-  assert.equal(await run(`document.querySelectorAll('.qa-approval tbody tr').length`), 3)
-  assert.equal(await run(`document.querySelectorAll('.qa-approval-evidence img').length`), 2)
+  assert.match(await text('.qa-approval h2'), /Copy 3 findings for the tracker/)
+  assert.equal(await run(`document.querySelectorAll('.qa-finding').length`), 3, 'one block per finding')
+  assert.match(await text('.qa-finding'), /Basics section, H2/); assert.match(await text('.qa-finding'), /font-size 28px/); assert.match(await text('.qa-finding'), /Desktop and Tablet/)
+  assert.doesNotMatch(await text('.qa-finding'), /Approval Screenshot|Remarks \(PM\)|Status/, 'empty tracker columns are not shown')
+  assert.equal(await run(`document.querySelectorAll('.qa-finding-shot img').length`), 2, 'the pictures sit inside their findings')
+  assert.equal(await run(`document.querySelectorAll('.qa-finding-noshot').length`), 1, 'a finding without a picture says so')
+  assert.equal(await run(`document.querySelectorAll('.qa-finding')[0].querySelector('.qa-finding-shot img') !== null`), true)
+  assert.ok((await run(`document.querySelector('.qa-finding-shot img').getBoundingClientRect().width`)) > 600, 'the picture is large enough to read')
+  assert.equal(await run(`document.querySelector('.qa-badge.sev-high').textContent`), 'High'); assert.equal(await run(`document.querySelector('.qa-finding .qa-badge.display').textContent`), 'Desktop and Tablet')
   assert.match(await text('.qa-approval-chips'), /2 High/); assert.match(await text('.qa-approval-warning'), /Sign in to Parity/)
   assert.match(await text('.qa-approval-effect'), /copies the rows to your clipboard/)
   await shot('approval')
-  await run(`(() => { const t = document.querySelector('.qa-approval-note textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, 'Row 3 is wrong'); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  // Enlarging a picture, and closing it with Esc without closing the card.
+  await click('.qa-finding-shot button'); await sleep(150)
+  assert.equal(await run(`!!document.querySelector('.qa-lightbox img')`), true, 'clicking a picture enlarges it')
+  await shot('approval-zoom')
+  await run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`); await sleep(100)
+  assert.equal(await run(`document.querySelector('.qa-lightbox')`), null, 'Esc closes the enlarged picture'); assert.equal(await run(`!!document.querySelector('.qa-approval')`), true, 'but not the card')
+  // The raw rows, as they will be pasted.
+  await click('.qa-approval-view button', 1); await sleep(100)
+  assert.equal(await run(`document.querySelectorAll('.qa-approval tbody tr').length`), 3, 'the sheet view lists the rows')
+  assert.equal(await run(`document.querySelectorAll('.qa-approval thead th').length`), 13, 'with every tracker column')
+  await click('.qa-approval-view button', 0); await sleep(100)
+  await run(`(() => { const t = document.querySelector('.qa-approval-note textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, 'Finding 3 is wrong'); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await sleep(100); await click('.qa-approval-secondary'); await sleep(100)
-  assert.ok((await run('window.__calls')).includes('decide false Row 3 is wrong'), 'rejecting sends the note')
+  assert.ok((await run('window.__calls')).includes('decide false Finding 3 is wrong'), 'rejecting sends the note')
   assert.equal(await run(`document.querySelector('.qa-approval-primary').disabled`), true, 'buttons lock after a decision')
 
   // Chat

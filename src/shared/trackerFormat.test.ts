@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildHtml, buildRows, buildTsv, neutralizeFormula, parseTrackerPaste, parseTsv, screenshotColumn, STANDARD_TRACKER, trackerColumnGuide, type TrackerFormat } from './trackerFormat'
+import { buildHtml, buildRows, buildTsv, neutralizeFormula, parseTrackerPaste, parseTsv, rowView, screenshotColumn, STANDARD_TRACKER, trackerColumnGuide, type TrackerFormat } from './trackerFormat'
 
 const format: TrackerFormat = {
   version: 1,
@@ -167,5 +167,38 @@ describe('standard tracker', () => {
   it('builds a row with the right cells filled', () => {
     const built = buildRows(STANDARD_TRACKER, [{ 'Page Link': 'https://x.test/a', Section: 'Hero, H1', Remarks: 'Desktop: font-size 28px, design ≈32px', 'Priority (QA/PM)': 'Medium' }])
     expect(built.ok && built.rows[0]).toEqual(['https://x.test/a', 'Hero, H1', '', 'Desktop: font-size 28px, design ≈32px', 'Medium', '', '', '', '', '', '', ''])
+  })
+})
+
+describe('rowView', () => {
+  const row = (cells: Record<string, string>) => buildRows(STANDARD_TRACKER, [cells]).ok ? (buildRows(STANDARD_TRACKER, [cells]) as { rows: string[][] }).rows[0] : []
+
+  it('picks out what a finding says in the standard tracker and leaves empty columns out', () => {
+    const view = rowView(STANDARD_TRACKER, row({ 'Page Link': 'https://x.test/a', Section: 'Hero, H1', Remarks: 'Desktop: font-size 28px, design ≈32px', 'Priority (QA/PM)': 'High', Display: 'Desktop and Mobile' }))
+    expect(view).toEqual({
+      title: 'Hero, H1', body: 'Desktop: font-size 28px, design ≈32px', link: 'https://x.test/a', extras: [],
+      badges: [{ label: 'Priority', value: 'High', kind: 'severity' }, { label: 'Display', value: 'Desktop and Mobile', kind: 'display' }],
+    })
+  })
+
+  it('does not mistake developer, PM or approval columns for the finding', () => {
+    const cells = ['', 'Footer', '', '', '', '', '', '', '', 'Dev: fixed in 1.2', 'PM: please confirm', '']
+    const view = rowView(STANDARD_TRACKER, cells)
+    expect(view.body).toBe('')
+    expect(view.extras).toEqual([{ label: 'Screenshot and Remarks (Dev)', value: 'Dev: fixed in 1.2' }, { label: 'Remarks (PM)', value: 'PM: please confirm' }])
+  })
+
+  it('keeps the screenshot link out of the details, since the picture is shown instead', () => {
+    const view = rowView(STANDARD_TRACKER, row({ Remarks: 'x', Screenshot: 'https://shots.test/1.webp' }))
+    expect(view.extras).toEqual([])
+  })
+
+  it('works for a tracker with other column names', () => {
+    const format: TrackerFormat = { version: 1, columns: ['Page', 'Problem', 'Expected', 'Screenshot', 'Severity'], examples: [] }
+    const view = rowView(format, ['Home', 'Heading is 28px, the design shows 32px', '32px', '', 'High'])
+    expect(view.body).toBe('Heading is 28px, the design shows 32px')
+    expect(view.title).toBe('Heading is 28px, the design shows 32px')
+    expect(view.badges).toEqual([{ label: 'Priority', value: 'High', kind: 'severity' }])
+    expect(view.extras).toEqual([{ label: 'Page', value: 'Home' }, { label: 'Expected', value: '32px' }])
   })
 })

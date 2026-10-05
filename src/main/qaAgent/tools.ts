@@ -408,6 +408,8 @@ const saveDraft = defineTool({
 // ── finalize_rows ───────────────────────────────────────────────────────────────────
 
 const SEVERITY_HEADER = /severity|priority|impact/i
+// Wide enough to read the design and live pictures side by side on the approval card.
+const APPROVAL_PREVIEW_WIDTH = 1100
 
 async function renderRowEvidence(context: QaContext, runId: string, row: z.infer<typeof rowSchema>, index: number): Promise<{ data: Buffer; caption: string } | null> {
   const evidence = row.evidence
@@ -475,7 +477,7 @@ const finalizeRows = defineTool({
     const severityCounts: Record<string, number> = {}
     if (severityIndex >= 0) for (const row of built.rows) { const key = row[severityIndex].trim() || '(blank)'; severityCounts[key] = (severityCounts[key] || 0) + 1 }
 
-    const thumbnails = await Promise.all(evidenceFiles.map(async (item) => ({ rowIndex: item.rowIndex, caption: item.caption, thumbnail: `data:image/jpeg;base64,${(await thumbnailJpeg(item.data)).toString('base64')}` })))
+    const thumbnails = await Promise.all(evidenceFiles.map(async (item) => ({ rowIndex: item.rowIndex, caption: item.caption, thumbnail: `data:image/jpeg;base64,${(await thumbnailJpeg(item.data, APPROVAL_PREVIEW_WIDTH)).toString('base64')}` })))
     const decision = await context.approve({
       id: randomUUID(), runId: args.runId, projectName: reported.project.name, pageUrl: run.pageUrl,
       // The card shows what the agent wrote; the apostrophe that keeps a cell from being read as a formula is only for the clipboard.

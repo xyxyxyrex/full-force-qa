@@ -185,7 +185,7 @@ export async function renderEvidence(input: EvidenceInput): Promise<Buffer> {
   return sharp({ create: { width: canvasWidth, height: canvasHeight, channels: 3, background: '#1c1c1c' } }).composite(layers).webp({ quality: 90, smartSubsample: true }).toBuffer()
 }
 
-/** A small JPEG for the approval card. */
+/** A JPEG preview for the approval card. */
 export async function thumbnailJpeg(image: Buffer, width = 360): Promise<Buffer> {
-  return sharp(image).resize({ width, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer()
+  return sharp(image).resize({ width, withoutEnlargement: true }).jpeg({ quality: width > 600 ? 82 : 70 }).toBuffer()
 }

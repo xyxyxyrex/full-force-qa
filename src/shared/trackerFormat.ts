@@ -126,6 +126,47 @@ export function trackerColumnGuide(format: TrackerFormat): Record<string, string
   return guide
 }
 
+export interface RowView {
+  /** The page section, or the start of the issue when the tracker has no section column. */
+  title: string
+  /** The issue text. */
+  body: string
+  /** Short labelled values worth showing as badges: priority, where it shows. */
+  badges: Array<{ label: string; value: string; kind: 'severity' | 'display' }>
+  /** The page link, if the tracker has one. */
+  link: string
+  /** Everything else that has a value, in sheet order (the screenshot column is left out: the picture is shown instead). */
+  extras: Array<{ label: string; value: string }>
+}
+
+/** What a row says, in plain terms, for showing it to a person. Works for any tracker layout. */
+export function rowView(format: TrackerFormat, row: string[]): RowView {
+  const shot = screenshotColumn(format)
+  const used = new Set<number>()
+  const find = (test: (name: string) => boolean) => {
+    const index = format.columns.findIndex((name, i) => !used.has(i) && test(name) && (row[i] ?? '').trim() !== '')
+    if (index >= 0) used.add(index)
+    return index >= 0 ? row[index].trim() : ''
+  }
+  const plain = (name: string) => !OTHER_PEOPLE_HEADER.test(name)
+  const section = find((name) => /^section$/i.test(name))
+  const link = find((name) => plain(name) && /^page\b.*(link|url)|^url$|^link$/i.test(name))
+  const severity = find((name) => plain(name) && /severity|priority|impact/i.test(name))
+  const display = find((name) => plain(name) && /^display$/i.test(name))
+  let body = find((name) => plain(name) && /^(remarks|issue|description|finding|comment)s?$/i.test(name))
+  // A tracker with other names: the longest free text is the issue.
+  if (!body) {
+    let best = -1
+    format.columns.forEach((name, i) => { if (!used.has(i) && name !== shot && plain(name) && (row[i] ?? '').length > (best >= 0 ? row[best].length : 0)) best = i })
+    if (best >= 0) { used.add(best); body = row[best].trim() }
+  }
+  const badges: RowView['badges'] = []
+  if (severity) badges.push({ label: 'Priority', value: severity, kind: 'severity' })
+  if (display) badges.push({ label: 'Display', value: display, kind: 'display' })
+  const extras = format.columns.flatMap((name, i) => (!used.has(i) && name !== shot && (row[i] ?? '').trim() !== '' ? [{ label: name, value: row[i].trim() }] : []))
+  return { title: section || body.split('\n')[0].slice(0, 90), body, badges, link, extras }
+}
+
 /**
  * Sheets reads a pasted cell that starts with = + - or @ as a formula. A stray "- Button"
  * or injected =IMAGE(...) must stay plain text, so those cells get a leading apostrophe.

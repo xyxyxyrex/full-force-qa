@@ -60,7 +60,7 @@ export interface ReportedContext {
 
 export interface ApprovalEvidence {
   rowIndex: number
-  /** Small JPEG data URL shown on the approval card. */
+  /** JPEG data URL of the evidence picture (design and live side by side), shown on the approval card. */
   thumbnail: string
   caption: string
 }

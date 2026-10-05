@@ -49,16 +49,20 @@ let runListener: ((event: unknown) => void) | null = null
   qaCallTool: async (name: string, args: unknown) => { calls.push(`tool ${name} ${JSON.stringify(args)}`); return { text: name === 'get_context' ? '{ "project": { "name": "[Svenson] Alopecia" } }' : 'ok', isError: false, images: name === 'capture_live' ? [{ dataUrl: swatch('#223344'), caption: 'Overview desktop' }] : [] } },
 }
 
+// A side-by-side evidence picture like the real ones: design on the left, live page on the right, the problem boxed in red.
+const evidencePicture = (label: string) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="430"><rect width="1100" height="430" fill="#1c1c1c"/><rect x="0" y="26" width="540" height="404" fill="#f4f1ec"/><rect x="560" y="26" width="540" height="404" fill="#f4f1ec"/><text x="8" y="18" font-family="sans-serif" font-size="14" fill="#fff">Design</text><text x="568" y="18" font-family="sans-serif" font-size="14" fill="#fff">Live</text><rect x="40" y="90" width="460" height="64" fill="#223344"/><rect x="600" y="90" width="400" height="48" fill="#223344"/><rect x="596" y="84" width="408" height="60" fill="none" stroke="#e03030" stroke-width="3"/><text x="40" y="400" font-family="sans-serif" font-size="13" fill="#444">${label}</text></svg>`)}`
+const approvalColumns = ['Page Link', 'Section', 'Screenshot', 'Remarks', 'Priority (QA/PM)', 'Display', 'Status', 'Approval Screenshot(QA)', 'Reason for Rejection (if applicable)', 'Screenshot and Remarks (Dev)', 'Remarks (PM)', 'Remarks (CRSM)']
+const approvalRow = (cells: Record<string, string>) => approvalColumns.map((name) => cells[name] ?? '')
 const approval = {
   id: 'a1', runId: 'run-1', projectName: '[Svenson] Alopecia', pageUrl: 'https://svenson.test/alopecia-page/',
-  columns: ['Page', 'Issue', 'Expected', 'Screenshot', 'Severity'],
+  columns: approvalColumns,
   rows: [
-    ['Alopecia', 'Heading "The Basics of Alopecia Areata" is 28px; the design shows ≈32px', '32px', '', 'High'],
-    ['Alopecia', "'- Button label differs: live says Book now, design says Book a Consultation", '', '', 'Low'],
-    ['Alopecia', 'Content overflows the page horizontally by 100px (div.alt-text-image)', 'No horizontal scroll', '', 'High'],
+    approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Basics section, H2 "The Basics of Alopecia Areata"', Remarks: 'Desktop: heading is font-size 28px, line-height 34px. The design shows ≈32px / 38px. The heading also sits ≈24px lower than in the design.', 'Priority (QA/PM)': 'High', Display: 'Desktop and Tablet' }),
+    approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Hero, call to action', Remarks: "'- Button label differs: live says Book now, design says Book a Consultation", 'Priority (QA/PM)': 'Low', Display: 'Desktop' }),
+    approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Treatment, image row', Remarks: 'Content overflows the page horizontally by 100px (div.alt-text-image), which causes a horizontal scrollbar on mobile.', 'Priority (QA/PM)': 'High', Display: 'Mobile' }),
   ],
   severityCounts: { High: 2, Low: 1 },
-  evidence: [{ rowIndex: 0, thumbnail: swatch('#335577'), caption: 'Heading size' }, { rowIndex: 2, thumbnail: swatch('#775533'), caption: 'Overflow' }],
+  evidence: [{ rowIndex: 0, thumbnail: evidencePicture('Heading size'), caption: 'Basics section · desktop · design 0–420 / live 1010–1450' }, { rowIndex: 2, thumbnail: evidencePicture('Overflow'), caption: 'Treatment · mobile' }],
   warnings: ['Evidence images were not uploaded: Sign in to Parity to upload evidence. The screenshot column is left empty.'],
   uploadsEvidence: false,
 }
