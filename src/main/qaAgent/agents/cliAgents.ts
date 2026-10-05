@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { summarize, withHistory } from './common'
@@ -38,6 +38,8 @@ interface ParseState {
   usageSeen: boolean
   streamedSteps: Set<number>
   denied: string[]
+  /** The newest error a tool step reported, to explain a stop. */
+  lastToolError: string
 }
 
 export interface CliSpec {
@@ -46,6 +48,8 @@ export interface CliSpec {
   binary: string
   /** Builds the command for one conversation. `dir` is a private working folder. */
   invoke(input: { run: ProviderRun; bridge: BridgeAccess; dir: string; model?: string; homeDir?: string }): CliInvocation
+  /** Extra detail from the CLI's own log, to explain a stop. */
+  diagnose?(dir: string): string
   /** Turns one line of the CLI's output into events. */
   parse(line: string, emit: (event: AgentEvent) => void, state: ParseState): void
 }
@@ -183,6 +187,8 @@ export const codexSpec: CliSpec = {
 //  - Some tools (web search) need no permission, so a PreToolUse hook denies everything except
 //    Parity's tools. A hook that fails, fails closed; if it never runs the run is stopped.
 
+// A freshly started program can be slow on a busy computer (antivirus scans, a cold disk); a timed-out hook blocks the tool.
+const HOOK_TIMEOUT_SECONDS = 30
 const AGY_LOGIN_FILES = ['oauth_creds.json', 'google_accounts.json', 'installation_id']
 const AGY_PERMISSION_FREE = ['finish', 'wait', 'wait_5_seconds']
 
@@ -231,10 +237,20 @@ const agyToolName = (info: any): string => (info?.name === 'call_mcp_tool' ? Str
 // agy reads the description of each MCP tool from a file before first using it; that is plumbing, not something to show.
 const isAgySchemaRead = (info: any): boolean => info?.name === 'view_file' && /[\\/]antigravity-cli[\\/]mcp[\\/]/.test(String(info.parameters?.AbsolutePath ?? ''))
 
+/** The last lines of agy's own log that mention a hook or an error, from the run's private home. */
+function agyLogExcerpt(dir: string): string {
+  try {
+    const text = readFileSync(join(realpathSync(dir), 'home', '.gemini', 'antigravity-cli', 'cli.log'), 'utf8')
+    const lines = text.split('\n').filter((line) => /hook|denied|error|fail/i.test(line)).slice(-4)
+    return lines.map((line) => line.replace(/^[A-Z]\d{4} [\d:.]+\s+\d+\s+/, '').slice(0, 220)).join(' | ')
+  } catch { return '' }
+}
+
 export const antigravitySpec: CliSpec = {
   id: 'antigravity',
   label: 'Antigravity CLI',
   binary: 'agy',
+  diagnose: agyLogExcerpt,
   invoke({ run, bridge, dir, model, homeDir: realHome = homedir() }) {
     const root = realpathSync(dir)
     const home = join(root, 'home')
@@ -256,7 +272,7 @@ export const antigravitySpec: CliSpec = {
     const guard = join(work, '.agents', 'guard.cjs')
     writePrivate(guard, agyGuardScript({ server: 'parity', tools: run.tools, mcpDir, brainDir, log }))
     const runner = process.platform === 'win32' ? `set ELECTRON_RUN_AS_NODE=1&& ${shellQuote(process.execPath)} ${shellQuote(guard)}` : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(process.execPath)} ${shellQuote(guard)}`
-    writePrivate(join(work, '.agents', 'hooks.json'), JSON.stringify({ 'parity-guard': { PreToolUse: [{ matcher: '*', hooks: [{ command: runner, timeout: 10 }] }] } }))
+    writePrivate(join(work, '.agents', 'hooks.json'), JSON.stringify({ 'parity-guard': { PreToolUse: [{ matcher: '*', hooks: [{ command: runner, timeout: HOOK_TIMEOUT_SECONDS }] }] } }))
 
     return {
       args: ['--input-format', 'stream-json', '--output-format', 'stream-json', '--print-timeout', '0', ...(model ? ['--model', model] : []), '-p='],
@@ -287,6 +303,7 @@ export const antigravitySpec: CliSpec = {
         else {
           state.toolsFinished++
           const failed = step.state === 'ERROR' || !!info?.error
+          if (failed) state.lastToolError = String(info?.error?.message ?? '').slice(0, 600)
           emit({ type: 'tool-result', name: agyToolName(info), isError: failed, text: summarize(String(failed ? info?.error?.message ?? 'The tool failed.' : info?.output ?? 'done')), images: 0 })
         }
       }
@@ -347,7 +364,7 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
       const bridge = options.getBridge()
       const dir = mkdtempSync(join(tmpdir(), AGENT_FOLDER_PREFIX))
       try { chmodSync(dir, 0o700) } catch { /* not supported on this system */ }
-      const state: ParseState = { text: '', failed: '', finished: false, violation: '', toolsFinished: 0, usageSeen: false, streamedSteps: new Set(), denied: [] }
+      const state: ParseState = { text: '', failed: '', finished: false, violation: '', toolsFinished: 0, usageSeen: false, streamedSteps: new Set(), denied: [], lastToolError: '' }
       try {
         const invocation = spec.invoke({ run, bridge, dir, model: options.model, homeDir: options.homeDir })
         const emit = (event: AgentEvent) => run.emit(event)
@@ -370,7 +387,11 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
             try { spec.parse(line, emit, state) } catch { /* a line we cannot read is skipped */ }
             // A tool ran, so the safety hook must have run before it. If not, the agent is not being held to its allowed tools.
             if (invocation.guardLog && state.toolsFinished > 0 && !state.violation && !existsSync(invocation.guardLog)) {
-              state.violation = `${spec.label} used a tool without Parity's safety check running, so the run was stopped.`
+              // A tool that was refused because the hook failed to run looks the same from here; say which it was.
+              const detail = [state.lastToolError, spec.diagnose?.(dir)].filter(Boolean).join(' | ').slice(0, 900)
+              state.violation = /hook/i.test(state.lastToolError)
+                ? `${spec.label} was stopped because Parity's safety hook could not run: ${detail}`
+                : `${spec.label} used a tool without Parity's safety check running, so the run was stopped.${detail ? ` Details: ${detail}` : ''}`
               stop()
             }
           }
@@ -395,7 +416,7 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
           child.stdin.end(invocation.stdin)
         })
 
-        if (state.violation) throw new AgentError(state.violation)
+        if (state.violation) throw new AgentError(redact(state.violation, bridge.token))
         if (outcome.aborted) return { stopped: 'aborted', text: state.text }
         if (outcome.timedOut) throw new AgentError(`${spec.label} did not finish within 45 minutes and was stopped.`)
         if (state.failed) throw new AgentError(redact(`${spec.label}: ${state.failed}`, bridge.token))

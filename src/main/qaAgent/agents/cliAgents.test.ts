@@ -13,7 +13,7 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'parity-cli-agents-')) })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 /** A stand-in agent CLI: records how it was started, then prints the given lines and exits. */
-function fakeCli(options: { lines?: string[]; stderr?: string; exitCode?: number; hangMs?: number; touchGuard?: boolean }): { binary: string; record: () => any } {
+function fakeCli(options: { lines?: string[]; stderr?: string; exitCode?: number; hangMs?: number; touchGuard?: boolean; agyLog?: string }): { binary: string; record: () => any } {
   const binary = join(dir, 'fake-agent')
   const recordFile = join(dir, 'record.json')
   writeFileSync(binary, `#!/usr/bin/env node
@@ -30,6 +30,7 @@ process.stdin.on('end', () => {
     agyMcp: readAbs(path.join(process.env.HOME || '/nonexistent', '.gemini/config/mcp_config.json')), agySettings: readAbs(path.join(process.env.HOME || '/nonexistent', '.gemini/antigravity-cli/settings.json')),
     homeFiles: (() => { try { return fs.readdirSync(path.join(process.env.HOME, '.gemini')).sort() } catch { return [] } })() }))
   if (${JSON.stringify(options.touchGuard ?? false)}) fs.writeFileSync(path.join(path.dirname(cwd), 'guard.log'), 'call_mcp_tool allow\\n')
+  if (${JSON.stringify(options.agyLog ?? '')}) { fs.mkdirSync(path.join(process.env.HOME, '.gemini/antigravity-cli'), { recursive: true }); fs.writeFileSync(path.join(process.env.HOME, '.gemini/antigravity-cli/cli.log'), ${JSON.stringify(options.agyLog ?? '')}) }
   const out = ${JSON.stringify(options.lines ?? [])}
   for (const line of out) process.stdout.write(line + '\\n')
   if (${JSON.stringify(options.stderr ?? '')}) process.stderr.write(${JSON.stringify(options.stderr ?? '')})
@@ -162,7 +163,7 @@ describe.skipIf(process.platform === 'win32')('Antigravity CLI adapter', () => {
     expect(settings.trustedWorkspaces).toEqual([rec.cwd])
     expect(settings.permissions.allow).toEqual(['mcp(parity/get_context)', 'mcp(parity/capture_live)', 'mcp(parity/save_draft)', `read_file(${rec.home}/.gemini/antigravity-cli/mcp/)`, `read_file(${rec.home}/.gemini/antigravity-cli/brain/)`])
     const hooks = JSON.parse(rec.hooks)
-    expect(hooks['parity-guard'].PreToolUse[0]).toMatchObject({ matcher: '*', hooks: [{ command: expect.stringContaining('guard.cjs'), timeout: 10 }] })
+    expect(hooks['parity-guard'].PreToolUse[0]).toMatchObject({ matcher: '*', hooks: [{ command: expect.stringContaining('guard.cjs'), timeout: 30 }] })
     expect(existsSync(rec.cwd)).toBe(false)
     expect(existsSync(rec.home)).toBe(false)
 
@@ -223,6 +224,33 @@ describe.skipIf(process.platform === 'win32')('Antigravity CLI adapter', () => {
     const error = await provider(antigravitySpec, cli.binary).run(makeRun().run).catch((e) => e)
     expect(error.message).toMatch(/without Parity's safety check running/)
     expect(Date.now() - started).toBeLessThan(8000)
+  })
+
+  it('says the safety hook could not run, and why, when a tool was blocked because the hook failed', async () => {
+    const cli = fakeCli({
+      hangMs: 20_000,
+      agyLog: ['I1005 12:00:01.000000 12 hooks.go:10] running hook parity-guard', 'W1005 12:00:01.500000 12 hooks.go:44] hook timed out after 10s', 'I1005 12:00:02.000000 12 other.go:1] unrelated line'].join('\n'),
+      lines: [
+        agyStep({ step_index: 2, state: 'ACTIVE', step_type: 'tool', tool_name: 'view_file', tool_info: { name: 'view_file', parameters: {} } }),
+        agyStep({ step_index: 2, state: 'ERROR', step_type: 'tool', tool_name: 'view_file', tool_info: { name: 'view_file', parameters: {}, error: { type: 'TOOL_ERROR', message: 'JSON hook "jsonhook__parity-guard_PreToolUse_0_0" failed: command failed: exit status 1, stderr: boom' } } }),
+      ],
+    })
+    const error = await provider(antigravitySpec, cli.binary).run(makeRun().run).catch((e) => e)
+    expect(error.message).toMatch(/was stopped because Parity's safety hook could not run/)
+    expect(error.message).toContain('stderr: boom')
+    expect(error.message).toContain('hook timed out after 10s') // from agy's own log
+    expect(error.message).not.toContain('unrelated line')
+    expect(error.message).not.toContain(TOKEN)
+  })
+
+  it('adds the last tool error to the plain stop message too', async () => {
+    const cli = fakeCli({ hangMs: 20_000, lines: [
+      agyStep({ step_index: 3, state: 'ACTIVE', step_type: 'tool', tool_name: 'call_mcp_tool', tool_info: { name: 'call_mcp_tool', parameters: { ServerName: 'parity', ToolName: 'capture_live' } } }),
+      agyStep({ step_index: 3, state: 'ERROR', step_type: 'tool', tool_name: 'call_mcp_tool', tool_info: { name: 'call_mcp_tool', parameters: { ServerName: 'parity', ToolName: 'capture_live' }, error: { type: 'TOOL_ERROR', message: 'server parity is not connected' } } }),
+    ] })
+    const error = await provider(antigravitySpec, cli.binary).run(makeRun().run).catch((e) => e)
+    expect(error.message).toMatch(/used a tool without Parity's safety check running/)
+    expect(error.message).toContain('Details: server parity is not connected')
   })
 })
 
