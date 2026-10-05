@@ -192,10 +192,34 @@ const HOOK_TIMEOUT_SECONDS = 30
 const AGY_LOGIN_FILES = ['oauth_creds.json', 'google_accounts.json', 'installation_id']
 const AGY_PERMISSION_FREE = ['finish', 'wait', 'wait_5_seconds']
 
-const shellQuote = (value: string) => (process.platform === 'win32' ? `"${value}"` : `'${value.replace(/'/g, `'\\''`)}'`)
+const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+
+/**
+ * The command agy runs before every tool call, and any file it needs beside hooks.json.
+ *
+ * Unix: `sh -c`, so an inline command with quotes is fine. Windows: agy starts it with `cmd /c <command>` and
+ * Go escapes quotes in a way cmd does not understand, so a command holding quotes (and the app's path has to
+ * be quoted) breaks at the first space with "is not recognized as an internal or external command". The Windows
+ * command therefore holds no quotes or spaces: a batch file next to hooks.json (agy runs hooks from that folder)
+ * does the quoting itself.
+ */
+export function agyHookLauncher(platform: NodeJS.Platform, execPath: string, guardFile: string): { command: string; batch?: { name: string; content: string } } {
+  if (platform === 'win32') {
+    return {
+      command: '.\\guard.cmd',
+      batch: { name: 'guard.cmd', content: ['@echo off', 'chcp 65001 >nul', 'set ELECTRON_RUN_AS_NODE=1', `"${execPath.replace(/%/g, '%%')}" "%~dp0guard.cjs"`, ''].join('\r\n') },
+    }
+  }
+  return { command: `ELECTRON_RUN_AS_NODE=1 ${shellQuote(execPath)} ${shellQuote(guardFile)}` }
+}
+
+/** The read permissions for folders agy needs to read from; on Windows both slash styles, since agy may use either. */
+export function agyReadRules(platform: NodeJS.Platform, dirs: string[]): string[] {
+  return dirs.flatMap((dir) => (platform === 'win32' ? [...new Set([`read_file(${dir.replace(/[\\/]+$/, '')}\\)`, `read_file(${dir.replace(/\\/g, '/').replace(/\/+$/, '')}/)`])] : [`read_file(${dir}/)`]))
+}
 
 /** The script agy runs before every tool call. Plain Node, so Electron's own Node can run it. */
-export function agyGuardScript(config: { server: string; tools: string[]; mcpDir: string; brainDir: string; log: string }): string {
+export function agyGuardScript(config: { server: string; tools: string[]; mcpDir: string; brainDir: string; log: string; caseInsensitive?: boolean }): string {
   return `const fs = require('fs'), path = require('path')
 const CONFIG = ${JSON.stringify({ ...config, free: AGY_PERMISSION_FREE })}
 let raw = ''
@@ -211,9 +235,11 @@ process.stdin.on('end', () => {
     // agy describes MCP tools in small files it reads itself, and saves a large tool result, and every picture a
     // tool returns, to files it then asks the model to open. Those files, inside this run's private home, are all that may be read.
     try {
+      // Windows paths are not case sensitive.
+      const fold = (text) => (CONFIG.caseInsensitive ? text.toLowerCase() : text)
       const real = fs.realpathSync(String(args.AbsolutePath || ''))
-      const description = real.startsWith(CONFIG.mcpDir + path.sep) && real.endsWith('.json')
-      const savedResult = real.startsWith(CONFIG.brainDir + path.sep) && /[\\\\/]\\.system_generated[\\\\/]steps[\\\\/]\\d+[\\\\/](output\\.txt|media_\\d+\\.(jpe?g|png|webp))$/.test(real)
+      const description = fold(real).startsWith(fold(CONFIG.mcpDir + path.sep)) && real.endsWith('.json')
+      const savedResult = fold(real).startsWith(fold(CONFIG.brainDir + path.sep)) && /[\\\\/]\\.system_generated[\\\\/]steps[\\\\/]\\d+[\\\\/](output\\.txt|media_\\d+\\.(jpe?g|png|webp))$/.test(real)
       allowed = description || savedResult
     } catch (error) { allowed = false }
   } else allowed = CONFIG.free.includes(name)
@@ -267,12 +293,13 @@ export const antigravitySpec: CliSpec = {
     writePrivate(join(home, '.gemini', 'config', 'mcp_config.json'), JSON.stringify({ mcpServers: { parity: { serverUrl: bridge.mcpUrl, headers: { Authorization: `Bearer ${bridge.token}` } } } }))
     writePrivate(join(home, '.gemini', 'antigravity-cli', 'settings.json'), JSON.stringify({
       trustedWorkspaces: [work],
-      permissions: { allow: [...run.tools.map((tool) => `mcp(parity/${tool})`), `read_file(${mcpDir}/)`, `read_file(${brainDir}/)`] },
+      permissions: { allow: [...run.tools.map((tool) => `mcp(parity/${tool})`), ...agyReadRules(process.platform, [mcpDir, brainDir])] },
     }))
     const guard = join(work, '.agents', 'guard.cjs')
-    writePrivate(guard, agyGuardScript({ server: 'parity', tools: run.tools, mcpDir, brainDir, log }))
-    const runner = process.platform === 'win32' ? `set ELECTRON_RUN_AS_NODE=1&& ${shellQuote(process.execPath)} ${shellQuote(guard)}` : `ELECTRON_RUN_AS_NODE=1 ${shellQuote(process.execPath)} ${shellQuote(guard)}`
-    writePrivate(join(work, '.agents', 'hooks.json'), JSON.stringify({ 'parity-guard': { PreToolUse: [{ matcher: '*', hooks: [{ command: runner, timeout: HOOK_TIMEOUT_SECONDS }] }] } }))
+    writePrivate(guard, agyGuardScript({ server: 'parity', tools: run.tools, mcpDir, brainDir, log, caseInsensitive: process.platform === 'win32' }))
+    const launcher = agyHookLauncher(process.platform, process.execPath, guard)
+    if (launcher.batch) writePrivate(join(work, '.agents', launcher.batch.name), launcher.batch.content)
+    writePrivate(join(work, '.agents', 'hooks.json'), JSON.stringify({ 'parity-guard': { PreToolUse: [{ matcher: '*', hooks: [{ command: launcher.command, timeout: HOOK_TIMEOUT_SECONDS }] }] } }))
 
     return {
       args: ['--input-format', 'stream-json', '--output-format', 'stream-json', '--print-timeout', '0', ...(model ? ['--model', model] : []), '-p='],

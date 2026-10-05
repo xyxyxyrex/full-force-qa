@@ -1,9 +1,9 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { agyGuardScript, antigravitySpec, claudeCodeSpec, codexSpec, createCliProvider, sweepStaleAgentFolders, type CliSpec } from './cliAgents'
+import { agyGuardScript, agyHookLauncher, agyReadRules, antigravitySpec, claudeCodeSpec, codexSpec, createCliProvider, sweepStaleAgentFolders, type CliSpec } from './cliAgents'
 import type { AgentEvent, ProviderRun } from './types'
 
 const TOKEN = 'FAKEKEY'.repeat(6) + 'abc'
@@ -387,5 +387,55 @@ describe('sweepStaleAgentFolders', () => {
   })
   it('does nothing when the folder cannot be read', () => {
     expect(sweepStaleAgentFolders(0, join(dir, 'missing'))).toBe(0)
+  })
+})
+
+describe('Antigravity hook on Windows', () => {
+  const exe = 'C:\\Program Files\\Parity\\Parity.exe'
+
+  it('uses a command with no quotes or spaces, because agy runs it with cmd /c and Go escapes quotes in a way cmd cannot read', () => {
+    const { command, batch } = agyHookLauncher('win32', exe, 'C:\\Users\\Jane Smith\\AppData\\Local\\Temp\\parity-agent-x\\work\\.agents\\guard.cjs')
+    expect(command).toBe('.\\guard.cmd')
+    expect(command).toMatch(/^[^\s"']+$/)
+    expect(command).not.toContain('Program Files')
+    expect(command).not.toContain('Jane Smith')
+    // The batch file does the quoting itself, finds the script next to it, and runs the app as plain Node.
+    expect(batch?.name).toBe('guard.cmd')
+    expect(batch?.content.split('\r\n')).toEqual(['@echo off', 'chcp 65001 >nul', 'set ELECTRON_RUN_AS_NODE=1', `"${exe}" "%~dp0guard.cjs"`, ''])
+  })
+
+  it('escapes a percent sign in the app\'s path, which a batch file would read as a variable', () => {
+    expect(agyHookLauncher('win32', 'C:\\Apps\\100%\\Parity.exe', 'x').batch?.content).toContain('"C:\\Apps\\100%%\\Parity.exe" "%~dp0guard.cjs"')
+  })
+
+  it('keeps the inline command for Unix', () => {
+    const { command, batch } = agyHookLauncher('linux', '/opt/Parity App/parity', '/tmp/it\'s/guard.cjs')
+    expect(batch).toBeUndefined()
+    expect(command).toBe("ELECTRON_RUN_AS_NODE=1 '/opt/Parity App/parity' '/tmp/it'\\''s/guard.cjs'")
+  })
+
+  it('grants the read permissions with both slash styles on Windows, one on Unix', () => {
+    expect(agyReadRules('win32', ['C:\\t\\home\\mcp', 'C:\\t\\home\\brain'])).toEqual([
+      'read_file(C:\\t\\home\\mcp\\)', 'read_file(C:/t/home/mcp/)', 'read_file(C:\\t\\home\\brain\\)', 'read_file(C:/t/home/brain/)',
+    ])
+    expect(agyReadRules('linux', ['/t/home/mcp'])).toEqual(['read_file(/t/home/mcp/)'])
+  })
+
+  it('writes the batch file next to hooks.json and points hooks.json at it when run on Windows', () => {
+    const real = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const folder = mkdtempSync(join(dir, 'win-'))
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' })
+      antigravitySpec.invoke({ run: makeRun().run, bridge: BRIDGE, dir: folder, homeDir: join(dir, 'no-home') })
+    } finally {
+      Object.defineProperty(process, 'platform', real)
+    }
+    const work = join(realpathSync(folder), 'work', '.agents')
+    const hooks = JSON.parse(readFileSync(join(work, 'hooks.json'), 'utf8'))
+    expect(hooks['parity-guard'].PreToolUse[0].hooks[0]).toEqual({ command: '.\\guard.cmd', timeout: 30 })
+    expect(readFileSync(join(work, 'guard.cmd'), 'utf8')).toContain('set ELECTRON_RUN_AS_NODE=1')
+    expect(existsSync(join(work, 'guard.cjs'))).toBe(true)
+    const settings = JSON.parse(readFileSync(join(realpathSync(folder), 'home', '.gemini', 'antigravity-cli', 'settings.json'), 'utf8'))
+    expect(settings.permissions.allow.filter((rule: string) => rule.startsWith('read_file(')).length).toBe(4) // two folders, two slash styles
   })
 })

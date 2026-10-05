@@ -58,7 +58,7 @@ Agent apps (Claude Code, Codex, Antigravity CLI) run headless in a private tempo
 
 The private folder holds the bridge key and is deleted when the run ends. If Parity is killed mid-run it is left behind, and Parity removes any such folder older than 10 minutes the next time it starts.
 
-The agent's attempts to use a refused tool come back to it as an error, and it carries on. Choose the model with Settings → AI Agents → Antigravity CLI → *List models* (`agy models`). The Windows path (`USERPROFILE`, copied instead of linked login files) is untested.
+The agent's attempts to use a refused tool come back to it as an error, and it carries on. Choose the model with Settings → AI Agents → Antigravity CLI → *List models* (`agy models`). **Windows:** `agy` starts the hook with `cmd /c`, and Go escapes quotes in a way `cmd` cannot read, so a hook command containing the app's quoted path fails with "is not recognized as an internal or external command". On Windows the hook command is therefore just `.\guard.cmd`, a batch file written next to `hooks.json` that does the quoting itself. The read permissions are granted with both slash styles. The Windows path (`USERPROFILE`, copied instead of linked login files, that batch file) has had this one real-world failure and is otherwise untested; if a run is stopped, the message now carries the reason from `agy`'s own log.
 
 ## Using it from a terminal or another agent
 
