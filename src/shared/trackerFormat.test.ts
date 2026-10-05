@@ -194,6 +194,12 @@ describe('rowView', () => {
     expect(view.extras).toEqual([{ label: 'Screenshot and Remarks (Dev)', value: 'Dev: fixed in 1.2' }, { label: 'Remarks (PM)', value: 'PM: please confirm' }])
   })
 
+  it('shows a suggestion\'s status as a badge', () => {
+    const view = rowView(STANDARD_TRACKER, row({ Section: 'Contact', Remarks: 'add a success message after sending', Display: 'Desktop', Status: 'ENHANCEMENT (QA)' }))
+    expect(view.badges).toEqual([{ label: 'Display', value: 'Desktop', kind: 'display' }, { label: 'Status', value: 'ENHANCEMENT (QA)', kind: 'status' }])
+    expect(view.extras).toEqual([])
+  })
+
   it('keeps the screenshot link out of the details, since the picture is shown instead', () => {
     const view = rowView(STANDARD_TRACKER, row({ Remarks: 'x', Screenshot: 'https://shots.test/1.webp' }))
     expect(view.extras).toEqual([])

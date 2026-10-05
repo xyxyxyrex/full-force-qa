@@ -10,11 +10,11 @@ const argsPreview = (value: unknown) => { const text = value === undefined ? '' 
 const SUGGESTIONS = [
   { label: 'Review this page', send: '/review' },
   { label: 'Which designs are loaded?', send: 'Which designs are loaded for this page, and at what sizes?' },
-  { label: 'Check the hero on mobile', send: 'Compare the hero section on mobile with the design and tell me what differs.' },
+  { label: 'Test links and forms', send: 'Test the links, buttons, menus and forms on this page and tell me what does not work.' },
 ]
 
 const HELP = [
-  '/review [desktop] [tablet] [mobile] [--no-design]   review the open page and hand the rows over for approval.\n                                         With no design stored for the page (or --no-design) the agent judges the page on its own.',
+  '/review [desktop] [tablet] [mobile] [--no-design] [--visual-only]\n                                       review the open page and hand the rows over for approval.\n                                       With no design stored for the page (or --no-design) the agent judges the page on its own.\n                                       It then tests links, buttons, menus and forms, unless --visual-only (or turned off in Settings).',
   '/stop                                 stop what the agent is doing',
   '/new                                  start a new chat (the current one is kept in History)',
   '/history                              past chats and past reviews, with their screenshots',
@@ -181,9 +181,11 @@ export default function QaChat({ onClose }: Props) {
   const startReview = async (words: string[]) => {
     let agent: AgentId | undefined
     let standalone = false
+    let visualOnly = false
     const breakpoints: Breakpoint[] = []
     for (let i = 0; i < words.length; i++) {
       if (words[i] === '--no-design') standalone = true
+      else if (words[i] === '--visual-only') visualOnly = true
       else if (words[i] === '--agent') {
         const value = words[++i]
         if (!isAgentId(value)) throw new Error(`Unknown agent "${value || ''}". Type /agents to see the ids.`)
@@ -191,7 +193,8 @@ export default function QaChat({ onClose }: Props) {
       } else if (isBreakpoint(words[i])) breakpoints.push(words[i] as Breakpoint)
       else throw new Error(`Unknown option "${words[i]}". Breakpoints are: ${BREAKPOINTS.join(', ')}.`)
     }
-    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}) })
+    // Testing follows the setting unless this review is visual only.
+    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}), ...(visualOnly ? { functional: false } : {}) })
     if (!result.started) throw new Error(result.error)
   }
 

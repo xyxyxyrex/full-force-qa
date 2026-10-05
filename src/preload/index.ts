@@ -131,6 +131,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener('qa:approval-request', handler) }
   },
   qaAgentsOverview: () => ipcRenderer.invoke('qa:agents:overview'),
+  qaAgentsSettings: () => ipcRenderer.invoke('qa:agents:settings'),
   qaAgentsSaveSettings: (patch: unknown) => ipcRenderer.invoke('qa:agents:save-settings', patch),
   qaAgentsSetKey: (id: string, key: string) => ipcRenderer.invoke('qa:agents:set-key', id, key),
   qaAgentsClearKey: (id: string) => ipcRenderer.invoke('qa:agents:clear-key', id),

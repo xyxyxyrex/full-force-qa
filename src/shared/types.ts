@@ -450,6 +450,7 @@ export interface ElectronAPI extends InspectorApi {
   qaApprovalDecision: (id: string, decision: ApprovalDecision) => Promise<boolean>
   onQaApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void
   qaAgentsOverview: () => Promise<AgentsOverview | null>
+  qaAgentsSettings: () => Promise<AgentSettings | null>
   qaAgentsSaveSettings: (patch: Partial<Omit<AgentSettings, 'models'>> & { models?: Partial<AgentSettings['models']> }) => Promise<AgentsOverview | null>
   qaAgentsSetKey: (id: AgentId, key: string) => Promise<AgentsOverview | { error: string } | null>
   qaAgentsClearKey: (id: AgentId) => Promise<AgentsOverview | null>

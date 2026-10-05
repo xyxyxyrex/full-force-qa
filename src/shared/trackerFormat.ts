@@ -134,7 +134,7 @@ export function trackerColumnGuide(format: TrackerFormat): Record<string, string
   format.columns.forEach((name, index) => {
     const shared = new Set(format.examples.map((row) => (row[index] ?? '').trim()).filter(Boolean))
     const options = format.choices?.[name]
-    if (options && /^status$/i.test(name)) guide[name] = 'Leave empty: developers and the approval step set it. Only for a suggestion that is not a mismatch with the design, use "ENHANCEMENT (QA)". Allowed values: ' + options.join(' | ')
+    if (options && /^status$/i.test(name)) guide[name] = 'Leave empty for defects: developers and the approval step set it. For a suggestion (your own idea to make the page better, not a defect or a mismatch with the design), use "ENHANCEMENT (QA)". Allowed values: ' + options.join(' | ')
     else if (options) guide[name] = `Where the issue appears. Exactly one of: ${options.join(' | ')}. The same problem on several breakpoints is one row with the matching combination.`
     else if (OTHER_PEOPLE_HEADER.test(name)) guide[name] = 'Leave empty. Developers, PMs and the QA approval step fill this in later.'
     else if (name === shot) guide[name] = 'Leave empty. Parity fills it with the evidence link.'
@@ -152,8 +152,8 @@ export interface RowView {
   title: string
   /** The issue text. */
   body: string
-  /** Short labelled values worth showing as badges: priority, where it shows. */
-  badges: Array<{ label: string; value: string; kind: 'severity' | 'display' }>
+  /** Short labelled values worth showing as badges: priority, where it shows, and a status such as a suggestion. */
+  badges: Array<{ label: string; value: string; kind: 'severity' | 'display' | 'status' }>
   /** The page link, if the tracker has one. */
   link: string
   /** Everything else that has a value, in sheet order (the screenshot column is left out: the picture is shown instead). */
@@ -174,6 +174,7 @@ export function rowView(format: TrackerFormat, row: string[]): RowView {
   const link = find((name) => plain(name) && /^page\b.*(link|url)|^url$|^link$/i.test(name))
   const severity = find((name) => plain(name) && /severity|priority|impact/i.test(name))
   const display = find((name) => plain(name) && /^display$/i.test(name))
+  const status = find((name) => plain(name) && /^status$/i.test(name))
   let body = find((name) => plain(name) && /^(remarks|issue|description|finding|comment)s?$/i.test(name))
   // A tracker with other names: the longest free text is the issue.
   if (!body) {
@@ -184,6 +185,7 @@ export function rowView(format: TrackerFormat, row: string[]): RowView {
   const badges: RowView['badges'] = []
   if (severity) badges.push({ label: 'Priority', value: severity, kind: 'severity' })
   if (display) badges.push({ label: 'Display', value: display, kind: 'display' })
+  if (status) badges.push({ label: 'Status', value: status, kind: 'status' })
   const extras = format.columns.flatMap((name, i) => (!used.has(i) && name !== shot && (row[i] ?? '').trim() !== '' ? [{ label: name, value: row[i].trim() }] : []))
   return { title: section || body.split('\n')[0].slice(0, 90), body, badges, link, extras }
 }

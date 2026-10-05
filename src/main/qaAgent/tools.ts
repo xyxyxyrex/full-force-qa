@@ -12,30 +12,21 @@ import { formatSectionNodes } from './formatNodes'
 import { cropJpeg, placeholderJpeg, renderEvidence, renderOverview, thumbnailJpeg, type Rect } from './imageOps'
 import type { LiveCaptureOptions, LiveCaptureResult } from './liveCapture'
 import type { RunStore } from './runStore'
+import { DEFAULT_WIDTH, defineTool, fail, loadRun, requireContext, type ToolDefinition, type ToolImage, type ToolResult } from './toolBasics'
+import { BROWSER_TOOLS } from './browserTools'
+import type { QaBrowser } from './qaBrowserTypes'
+
+export type { ToolDefinition, ToolImage, ToolResult }
 
 // The QA tools, defined once. The in-app agent, the local MCP endpoint and the `parity`
 // command all call these same definitions; only `finalize_rows` has side effects and it
 // waits for a person to approve the rows in Parity.
 
 export const BRIDGE_VERSION = 1
-const DEFAULT_WIDTH: Record<Breakpoint, number> = { desktop: 1440, tablet: 834, mobile: 390 }
 const MAX_DESIGN_FILE_BYTES = 100 * 1024 * 1024
 const DESIGN_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
-export interface ToolImage {
-  data: Buffer
-  mimeType: 'image/jpeg' | 'image/png' | 'image/webp'
-  /** One line telling the reader what the picture shows. */
-  caption: string
-  /** Where the same picture was saved, for readers that cannot take inline images. */
-  file?: string
-}
 
-export interface ToolResult {
-  text: string
-  images?: ToolImage[]
-  isError?: boolean
-}
 
 export interface EvidenceUploader {
   /** Why uploads are unavailable (not signed in, not set up), or null when they work. */
@@ -65,21 +56,13 @@ export interface QaContext {
   copyToClipboard(text: string, html: string): void
   evidence?: EvidenceUploader
   onProgress?(message: string): void
+  /** The agent's own browser, for testing the page like a visitor. */
+  browser?: QaBrowser
+  /** Whether the person lets the agent submit forms and send API requests on the site under review. */
+  allowSend?(): boolean
 }
 
-export interface ToolDefinition<S extends z.ZodObject = z.ZodObject> {
-  name: string
-  title: string
-  description: string
-  input: S
-  /** No side effects outside Parity's own run folders. */
-  readOnly: boolean
-  /** Whether headless agent runs may call it; tools that read arbitrary local files are for the person only. */
-  agentAllowed: boolean
-  run(args: z.infer<S>, context: QaContext): Promise<ToolResult>
-}
 
-const defineTool = <S extends z.ZodObject>(tool: ToolDefinition<S>): ToolDefinition<S> => tool
 
 const breakpointSchema = z.enum(['desktop', 'tablet', 'mobile']).describe('Which design to compare: desktop, tablet or mobile.')
 const runIdSchema = z.string().min(8).max(80).describe('The runId returned by capture_live.')
@@ -87,6 +70,7 @@ const rectSchema = z.object({ x: z.number(), y: z.number(), width: z.number().po
 const evidenceSchema = z.object({
   breakpoint: breakpointSchema,
   section: z.string().regex(/^S\d+$/).optional().describe('Section id such as S3, used when no live area is given.'),
+  screenshot: z.string().regex(/^B\d{1,4}$/).optional().describe('A screenshot from the agent\'s browser, such as B3, for a finding seen while testing; live is then the area in that screenshot.'),
   design: rectSchema.optional().describe('The issue area on the design, in CSS px (design px divided by the export scale).'),
   live: rectSchema.optional().describe('The issue area on the live page, in CSS px.'),
   caption: z.string().max(200).optional(),
@@ -96,7 +80,6 @@ const rowSchema = z.object({
   evidence: evidenceSchema.optional(),
 })
 
-const fail = (text: string): ToolResult => ({ text, isError: true })
 
 export function pagePathOf(url: string): string | undefined {
   try { return new URL(url).pathname || '/' } catch { return undefined }
@@ -108,19 +91,7 @@ const designsKey = (reported: ReportedContext) => designKeyOf(reported.projectKe
 const describeSlot = (slot: DesignSlotMeta | undefined) =>
   slot ? { frameWidth: slot.frameWidth, frameHeight: slot.frameHeight, exportScale: slot.scale, pixelSize: `${slot.pixelWidth}x${slot.pixelHeight}`, file: slot.fileName ?? null, forPage: slot.pagePath ?? null, confidence: slot.confidence } : null
 
-function requireContext(context: QaContext): ReportedContext | string {
-  const reported = context.reportedContext()
-  if (!reported) return 'No project is open in Parity. Open the project and its staging page, then try again.'
-  return reported
-}
 
-function loadRun(context: QaContext, runId: string, reported: ReportedContext): { ok: true; pageUrl: string } | { ok: false; error: string } {
-  let meta
-  try { meta = context.runs.get(runId) } catch { meta = null }
-  if (!meta) return { ok: false, error: `There is no run "${runId}". Call capture_live first and use the runId it returns.` }
-  if (meta.projectKey !== reported.projectKey) return { ok: false, error: 'That run belongs to a different project than the one open in Parity.' }
-  return { ok: true, pageUrl: meta.pageUrl }
-}
 
 function suggestDesignRange(live: { top: number; bottom: number }, liveHeight: number, designHeight: number): { top: number; bottom: number } {
   if (!liveHeight || !designHeight) return live
@@ -138,7 +109,7 @@ async function sizeOf(image: Buffer): Promise<{ width: number; height: number }>
 const getContext = defineTool({
   name: 'get_context',
   title: 'Get QA context',
-  description: 'Shows what is open in Parity: the project and page, which Figma designs are stored per breakpoint, the tracker format, and the latest run. Call this first.',
+  description: 'Shows what is open in Parity: the project and page, which Figma designs (optional) are stored per breakpoint, the tracker format, and the latest run. Call this first.',
   input: z.object({}),
   readOnly: true,
   agentAllowed: true,
@@ -151,7 +122,8 @@ const getContext = defineTool({
     if (!reported) notes.push('No project is open in Parity.')
     else {
       // Designs are kept per page, so these are the open page's own; there is nothing to mismatch.
-      if (!BREAKPOINTS.some((bp) => slots[bp])) notes.push(`No designs are stored for the open page (${pageIdOf(reported.pageUrl) ?? reported.pageUrl}). Add the Figma PNGs for this page in the Figma overlay panel, or call set_design.`)
+      // Designs are optional: without one the page is judged on its own. Never a reason to ask the person.
+      if (!BREAKPOINTS.some((bp) => slots[bp])) notes.push(`No designs are stored for this page (${pageIdOf(reported.pageUrl) ?? reported.pageUrl}), so review it on its own. That is fine; do not ask for a design.`)
     }
     if (!format) notes.push('The tracker format is not set. In Parity: Settings → AI Agents → paste the tracker header row and a few example rows.')
     const evidenceReason = context.evidence ? context.evidence.unavailableReason() : 'Evidence uploads are not set up.'
@@ -268,7 +240,7 @@ const captureLive = defineTool({
     const record = stored.record
     const designPng = context.runs.readDesign(runId, args.breakpoint)
     const designHeight = designPng ? (await sizeOf(designPng)).height : 0
-    if (!slot) lines.push(`No ${args.breakpoint} design is stored, so the page was captured at ${width}px. Add the design in Parity (Figma overlay panel) to compare.`)
+    if (!slot) lines.push(`No ${args.breakpoint} design is stored, so the page was captured at ${width}px. Judge it on its own.`)
 
     lines.unshift(`Run ${runId} · ${args.breakpoint} · ${record.finalUrl}`)
     lines.push(`Live page: ${record.width}px wide, ${record.documentHeight}px tall (${record.capturedHeight}px captured, ${record.tiles} screens, ${record.mode}). Browser window height ${record.viewportHeight}px. Coordinates below are CSS px.`)
@@ -394,8 +366,13 @@ const getSection = defineTool({
 const saveDraft = defineTool({
   name: 'save_draft',
   title: 'Save draft rows',
-  description: 'Saves the issues found for one breakpoint in the run folder, so they survive a long conversation, and checks them against the tracker\'s columns.',
-  input: z.object({ runId: runIdSchema, breakpoint: breakpointSchema, rows: z.array(rowSchema).max(60) }),
+  description: 'Saves the issues found for one breakpoint in the run folder, so they survive a long conversation, and checks them against the tracker\'s columns. Saving again for the same breakpoint and area replaces the earlier rows. Use area "functional" for what you found by testing the page in your browser.',
+  input: z.object({
+    runId: runIdSchema,
+    breakpoint: breakpointSchema,
+    rows: z.array(rowSchema).max(60),
+    area: z.enum(['visual', 'functional']).optional().describe('visual (default): from looking at the page. functional: from testing it in your browser.'),
+  }),
   readOnly: true,
   agentAllowed: true,
   async run(args, context) {
@@ -408,8 +385,12 @@ const saveDraft = defineTool({
       const checked = buildRows(format, args.rows.map((row) => row.cells))
       if (!checked.ok) return fail(checked.error)
     }
-    context.runs.saveDraft(args.runId, args.breakpoint, args.rows)
-    return { text: `Saved ${args.rows.length} draft row(s) for ${args.breakpoint} in run ${args.runId}.` }
+    // A browser screenshot named as evidence must exist, or the finding would have no picture.
+    const missing = [...new Set(args.rows.flatMap((row) => (row.evidence?.screenshot && !context.runs.readBrowserShot(args.runId, row.evidence.screenshot) ? [row.evidence.screenshot] : [])))]
+    if (missing.length) return fail(`Run ${args.runId} has no browser screenshot ${missing.join(', ')}. Name a screenshot from a browser result of this run.`)
+    const area = args.area ?? 'visual'
+    context.runs.saveDraft(args.runId, args.breakpoint, args.rows, area)
+    return { text: `Saved ${args.rows.length} ${area === 'functional' ? 'functional ' : ''}draft row(s) for ${args.breakpoint} in run ${args.runId}.` }
   },
 })
 
@@ -424,6 +405,14 @@ const BATCH_PREVIEW_WIDTH = 640
 export async function renderRowEvidence(runs: RunStore, runId: string, row: z.infer<typeof rowSchema>, index: number): Promise<{ data: Buffer; caption: string } | null> {
   const evidence = row.evidence
   if (!evidence) return null
+  if (evidence.screenshot) {
+    // A finding from testing the page: the browser's screenshot, with the issue boxed when an area was given.
+    const shot = runs.readBrowserShot(runId, evidence.screenshot)
+    if (!shot) return null
+    const caption = (evidence.caption || Object.values(row.cells)[0] || `Row ${index + 1}`).slice(0, 160)
+    const data = await renderEvidence({ design: null, live: shot, liveRect: evidence.live, header: { design: '', live: `Live · ${evidence.breakpoint} · while testing (${evidence.screenshot})` }, caption }).catch(() => null)
+    return data ? { data, caption } : null
+  }
   const live = runs.readLive(runId, evidence.breakpoint)
   if (!live) return null
   const design = runs.readDesign(runId, evidence.breakpoint)
@@ -594,7 +583,7 @@ const finalizeRows = defineTool({
   },
 })
 
-export const QA_TOOLS = [getContext, setDesign, captureLive, getOverview, getSection, saveDraft, finalizeRows] as const
+export const QA_TOOLS = [getContext, setDesign, captureLive, getOverview, getSection, saveDraft, finalizeRows, ...BROWSER_TOOLS] as const
 
 export type QaToolName = (typeof QA_TOOLS)[number]['name']
 

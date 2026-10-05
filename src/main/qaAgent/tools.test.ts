@@ -85,8 +85,9 @@ const addDesign = async (bp: 'desktop' | 'tablet' | 'mobile' = 'desktop', width 
 
 describe('tool registry', () => {
   it('lists the tools and marks only the ones with side effects', () => {
-    expect(QA_TOOLS.map((tool) => tool.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows'])
-    expect(QA_TOOLS.filter((tool) => !tool.readOnly).map((tool) => tool.name)).toEqual(['set_design', 'finalize_rows'])
+    expect(QA_TOOLS.map((tool) => tool.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows', 'browser_open', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_scroll', 'browser_back', 'browser_events', 'check_links', 'page_audit', 'http_request'])
+    // The browser tools that click, type or send change the page; the browser's own rules keep them safe.
+    expect(QA_TOOLS.filter((tool) => !tool.readOnly).map((tool) => tool.name)).toEqual(['set_design', 'finalize_rows', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'http_request'])
     expect(QA_TOOLS.filter((tool) => !tool.agentAllowed).map((tool) => tool.name)).toEqual(['set_design'])
   })
 
@@ -133,7 +134,7 @@ describe('get_context', () => {
     const second = JSON.parse((await call('get_context')).text)
     expect(second.designsAreFor).toBe('/contact')
     expect(second.designs.desktop).toBeNull()
-    expect(second.notes.join(' ')).toMatch(/No designs are stored for the open page \(\/contact\)/)
+    expect(second.notes.join(' ')).toMatch(/No designs are stored for this page \(\/contact\), so review it on its own\. That is fine; do not ask for a design\./)
 
     // A design added now belongs to the contact page only.
     await designStore.put(designKeyOf('proj-1', 'https://svenson.test/contact/'), await bands(1440, 3000), { target: 'desktop', fileName: 'contact.png' })

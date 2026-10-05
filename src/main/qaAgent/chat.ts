@@ -1,12 +1,14 @@
-import { QA_CHAT_PROMPT, QA_RUBRIC } from './prompt'
+import { BROWSER_TOOL_NAMES } from './browserTools'
+import { QA_AGENT_PROMPT } from './prompt'
 import type { AgentEvent, AgentProvider, ChatTurn } from './agents/types'
 import { callTool, type QaContext } from './tools'
 
 // One message of the chat: the agent gets the earlier conversation (text only), may use the
 // tools, and answers. Like a review, it only drafts; rows are approved by the person in Parity.
 
-// Every tool except the one that changes which designs are stored.
-export const CHAT_TOOLS = ['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows']
+// Every tool except the one that changes which designs are stored: looking, testing in the agent's
+// own browser, and writing rows.
+export const CHAT_TOOLS = ['get_context', 'capture_live', 'get_overview', 'get_section', ...BROWSER_TOOL_NAMES, 'save_draft', 'finalize_rows']
 export const MAX_CHAT_TURNS = 60
 export const MAX_CHAT_HISTORY = 40
 
@@ -36,7 +38,7 @@ export async function runChatTurn(deps: { context: QaContext; provider: AgentPro
   let overBudget = false
   try {
     const result = await provider.run({
-      system: `${QA_RUBRIC}\n\n${QA_CHAT_PROMPT}`,
+      system: QA_AGENT_PROMPT,
       task: message,
       history,
       tools: CHAT_TOOLS,

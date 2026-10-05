@@ -30,6 +30,8 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   budgetTokens: 0,
   evidenceUploads: true,
   evidenceDays: 90,
+  allowSend: false,
+  functionalChecks: true,
 }
 
 export const EVIDENCE_DAY_OPTIONS = [7, 30, 90, 180, 365]
@@ -62,6 +64,9 @@ export function normalizeSettings(raw: unknown): AgentSettings {
     budgetTokens: Number.isFinite(budget) && budget >= 0 ? Math.min(Math.round(budget), 50_000_000) : 0,
     evidenceUploads: source.evidenceUploads === false ? false : true,
     evidenceDays: EVIDENCE_DAY_OPTIONS.includes(Number(source.evidenceDays)) ? Number(source.evidenceDays) : DEFAULT_AGENT_SETTINGS.evidenceDays,
+    // Sending is only on when it was turned on; anything else keeps it off.
+    allowSend: source.allowSend === true,
+    functionalChecks: source.functionalChecks === false ? false : true,
   }
 }
 

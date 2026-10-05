@@ -107,13 +107,13 @@ export interface QaRunDetail {
   run: QaRunListItem
   /** Newest first. */
   handovers: QaHandOverRecord[]
-  /** The agent's drafts per breakpoint, as rows in the tracker's column order. */
-  drafts: Array<{ breakpoint: Breakpoint; rows: Array<{ cells: string[]; hasPicture: boolean }> }>
+  /** The agent's drafts per breakpoint, as rows in the tracker's column order: from looking at the page, then from testing it ("functional"). */
+  drafts: Array<{ breakpoint: Breakpoint; area?: 'functional'; rows: Array<{ cells: string[]; hasPicture: boolean }> }>
   columns: string[]
 }
 
 /** A picture Past reviews can ask for: a hand-over's evidence file, or a drafted finding's picture made on demand. */
-export type QaHistoryPicture = { kind: 'handover'; file: string } | { kind: 'draft'; breakpoint: Breakpoint; index: number }
+export type QaHistoryPicture = { kind: 'handover'; file: string } | { kind: 'draft'; breakpoint: Breakpoint; index: number; area?: 'functional' }
 
 /** A saved chat, as the chat history lists it. */
 export interface QaChatListItem {
@@ -212,6 +212,10 @@ export interface AgentSettings {
   evidenceUploads: boolean
   /** How long evidence links keep working. */
   evidenceDays: number
+  /** Let the agent's browser submit forms and send POST/PUT/DELETE requests to the site under review. Off: it only fills forms in and reads. */
+  allowSend: boolean
+  /** After the visual check, reviews also test each page's links, buttons, menus and forms. */
+  functionalChecks: boolean
 }
 
 export interface AgentInfo {
@@ -239,6 +243,8 @@ export interface QaRunStartOptions {
   breakpoints?: Breakpoint[]
   /** Review the page on its own, without comparing it to a design. */
   standalone?: boolean
+  /** Also test links, buttons, menus and forms after the visual check. Defaults to the setting. */
+  functional?: boolean
 }
 
 /** How many pages one batch review covers. */
@@ -255,6 +261,8 @@ export interface QaBatchStartOptions {
   pages: QaBatchPage[]
   breakpoints?: Breakpoint[]
   agent?: AgentId
+  /** Also test links, buttons, menus and forms on each page. Defaults to the setting. */
+  functional?: boolean
 }
 
 export type QaRunStartResult = { started: true } | { started: false; error: string }

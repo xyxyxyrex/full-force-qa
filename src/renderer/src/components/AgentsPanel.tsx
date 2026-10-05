@@ -56,7 +56,7 @@ export default function AgentsPanel() {
       <header className="agents-header">
         <div>
           <h3>AI agents</h3>
-          <p>Choose what compares the live page with the Figma designs. The agent only drafts rows; you approve them before anything is copied.</p>
+          <p>Choose the agent that QAs your pages: how they look (against the Figma designs when you have them), how they work, and the SEO basics. It only drafts rows; you approve them before anything is copied.</p>
         </div>
         <button type="button" className="agents-button" onClick={() => void refresh()} disabled={busy === 'refresh'}>{busy === 'refresh' ? 'Checking…' : 'Refresh'}</button>
       </header>
@@ -132,6 +132,26 @@ export default function AgentsPanel() {
             <input type="number" min={0} step={100000} defaultValue={settings.budgetTokens} onBlur={(event) => { const value = Math.max(0, Number(event.target.value) || 0); if (value !== settings.budgetTokens) void save({ budgetTokens: value }) }} />
           </label>
         </div>
+      </div>
+
+      <div className="agents-group">
+        <h4>Testing the page</h4>
+        <p className="agents-muted">The agent has its own browser to click links, buttons and menus, fill forms in, and read console and network errors. It is signed in as you, stays on the site under review, and never opens WordPress admin, login or logout pages.</p>
+        <div className="agents-switches">
+          <label className="agents-switch">
+            <input type="checkbox" checked={settings.functionalChecks} onChange={(event) => void save({ functionalChecks: event.target.checked })} />
+            <span>Reviews also test links, buttons, menus and forms</span>
+          </label>
+          <label className="agents-switch">
+            <input type="checkbox" checked={settings.allowSend} onChange={(event) => void save({ allowSend: event.target.checked })} />
+            <span>Let the agent submit forms and send API requests</span>
+          </label>
+        </div>
+        <p className={settings.allowSend ? 'agents-warn' : 'agents-muted'}>
+          {settings.allowSend
+            ? 'Forms the agent tests are really sent, and POST, PUT and DELETE requests reach the site, using made-up test data. Turn this on only for staging sites where test submissions are fine.'
+            : 'Off: the agent fills forms in and checks their validation, but submissions and POST, PUT and DELETE requests are stopped. Reading pages and GET requests always work.'}
+        </p>
       </div>
 
       <div className="agents-group">

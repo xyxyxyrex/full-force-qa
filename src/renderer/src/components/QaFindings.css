@@ -5,6 +5,8 @@
 .qa-finding-title{font-size:14px}
 .qa-badge{padding:2px 9px;border-radius:999px;border:1px solid var(--border-color);font-size:11px;font-weight:700;white-space:nowrap}
 .qa-badge.display{color:var(--text-secondary);background:var(--bg-card)}
+.qa-badge.status{color:var(--text-secondary);background:var(--bg-card)}
+.qa-badge.suggestion{color:#b9a7f2;background:#7c5cd61f;border-color:#7c5cd677}
 .sev-high{color:#f2a5a5;background:#c0504d22;border-color:#c0504d77}
 .sev-medium{color:#e8c27a;background:#d9a13a1f;border-color:#d9a13a77}
 .sev-low{color:#9cc3f0;background:#4a86d01f;border-color:#4a86d077}

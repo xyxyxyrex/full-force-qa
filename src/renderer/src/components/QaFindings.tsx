@@ -26,13 +26,16 @@ interface FindingCardProps {
   cardRef?: Ref<HTMLLIElement>
 }
 
+const badgeClass = (badge: RowView['badges'][number]) =>
+  badge.kind === 'severity' ? `sev-${severityClass(badge.value)}` : badge.kind === 'status' ? `status${/enhancement/i.test(badge.value) ? ' suggestion' : ''}` : 'display'
+
 export function FindingCard({ index, view, picture, link, excluded, onToggleExcluded, onZoom, cardRef }: FindingCardProps) {
   return (
     <li ref={cardRef} className={`qa-finding${excluded ? ' excluded' : ''}`}>
       <div className="qa-finding-head">
         <span className="qa-finding-number">{index + 1}</span>
         <strong className="qa-finding-title">{view.title || `Finding ${index + 1}`}</strong>
-        {view.badges.map((badge) => <span key={badge.label} className={`qa-badge ${badge.kind === 'severity' ? `sev-${severityClass(badge.value)}` : 'display'}`} title={badge.label}>{badge.value}</span>)}
+        {view.badges.map((badge) => <span key={badge.label} className={`qa-badge ${badgeClass(badge)}`} title={badge.label}>{badge.kind === 'status' && /enhancement/i.test(badge.value) ? 'Suggestion' : badge.value}</span>)}
         {onToggleExcluded && (
           <button type="button" className="qa-finding-toggle" onClick={onToggleExcluded} aria-pressed={!!excluded} title={excluded ? 'Copy this finding after all' : 'Do not copy this finding'}>
             {excluded ? 'Put back' : 'Leave out'}

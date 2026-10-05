@@ -8,6 +8,7 @@ import { parseTrackerPaste } from '../../shared/trackerFormat'
 import type { ApprovalDecision, ApprovalRequest, ReportedContext } from '../../shared/qaAgent'
 import type { LiveCaptureOptions, LiveCaptureResult } from './liveCapture'
 import { createRunStore } from './runStore'
+import type { BrowserStep, QaBrowser } from './qaBrowserTypes'
 import type { QaContext } from './tools'
 
 export const bands = async (width: number, height: number): Promise<Buffer> => {
@@ -76,4 +77,29 @@ export function createFakeContext(root: string, over: Partial<QaContext> = {}): 
     ...over,
   }
   return { context, designs, clipboard, approvals, setDecision: (next) => { decision = next } }
+}
+
+/** A stand-in for the agent's browser: every step shows the same page and a small grey screenshot. */
+export async function createFakeBrowser(): Promise<QaBrowser & { opened: string[]; closed: number }> {
+  const screenshot = await sharp({ create: { width: 1440, height: 1024, channels: 3, background: '#ddd' } }).jpeg().toBuffer()
+  let state: { runId: string; site: string; breakpoint: QaBrowser['breakpoint'] } | null = null
+  const step = (): BrowserStep => ({
+    snapshot: { url: 'https://svenson.test/alopecia-page/', title: 'Alopecia', headings: [], elements: [{ ref: 'e1', tag: 'button', role: 'button', name: 'Send', inViewport: true }], totalElements: 1, forms: [], scrollY: 0, scrollHeight: 1024, viewport: { width: 1440, height: 1024 } },
+    screenshot, navigated: false, status: 200, events: { console: [], requests: [], blocked: [], dialogs: [], popups: [], downloads: [] },
+  })
+  const browser = {
+    opened: [] as string[],
+    closed: 0,
+    get runId() { return state?.runId ?? null },
+    get site() { return state?.site ?? null },
+    get breakpoint() { return state?.breakpoint ?? null },
+    async open(input) { browser.opened.push(`${input.breakpoint} ${input.url}`); state = { runId: input.runId, site: input.site, breakpoint: input.breakpoint }; return step() },
+    snapshot: async () => step(), click: async () => step(), type: async () => step(), select: async () => step(), press: async () => step(), scroll: async () => step(), back: async () => step(),
+    allEvents: () => step().events,
+    links: async () => [],
+    audit: async () => { throw new Error('not used') },
+    request: async () => { throw new Error('not used') },
+    close() { state = null; browser.closed++ },
+  } satisfies QaBrowser & { opened: string[]; closed: number }
+  return browser
 }

@@ -2,7 +2,8 @@ import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
 import { QA_BATCH_MAX_PAGES, type ReportedContext } from '../../shared/qaAgent'
 import { matchChoice, type TrackerFormat } from '../../shared/trackerFormat'
 import type { AgentEvent, AgentProvider } from './agents/types'
-import { QA_RUBRIC_STANDALONE } from './prompt'
+import { BROWSER_TOOL_NAMES } from './browserTools'
+import { QA_FUNCTIONAL, QA_RUBRIC_STANDALONE } from './prompt'
 import type { RunSummary } from './runner'
 import { callTool, handOverRows, type DraftRow, type HandOverEntry, type QaContext, type ToolResult } from './tools'
 
@@ -13,20 +14,15 @@ import { callTool, handOverRows, type DraftRow, type HandOverEntry, type QaConte
 
 const BATCH_TOOLS = ['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft']
 const MAX_TURNS_PER_BREAKPOINT = 80
+// After the look, one conversation per page tests how it works in the agent's own browser.
+export const FUNCTIONAL_TOOLS = ['get_context', ...BROWSER_TOOL_NAMES, 'save_draft']
+export const MAX_TURNS_FUNCTIONAL = 70
 export const MAX_BATCH_PAGES = QA_BATCH_MAX_PAGES
 export const MAX_BATCH_ROWS = 400
 /** After this many pages in a row fail the same way, the cause is not the page (a wrong key, no sign-in): stop. */
 const MAX_CONSECUTIVE_FAILURES = 3
 
-/** A page the person may have the agent review: a plain web page, not WordPress admin or login. */
-export function isReviewablePageUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    if (!/^https?:$/.test(parsed.protocol)) return false
-    if (/\/wp-admin(\/|$)|\/wp-login\.php/i.test(parsed.pathname) || /[?&]action=/i.test(parsed.search)) return false
-    return true
-  } catch { return false }
-}
+export { isReviewablePageUrl } from './qaBrowserPolicy'
 
 const BREAKPOINT_LABEL: Record<Breakpoint, string> = { desktop: 'Desktop', tablet: 'Tablet', mobile: 'Mobile' }
 
@@ -44,6 +40,41 @@ export interface BatchOptions {
   emit(event: AgentEvent): void
   /** Stops the batch once this many tokens (input + output) were used. 0 or undefined means no limit. */
   budgetTokens?: number
+  /** After the look, also test each page's links, buttons, menus and forms in the agent's browser. */
+  functional?: boolean
+}
+
+// ── Testing how a page works ────────────────────────────────────────────────────────────
+
+/** Where the functional test runs: desktop and mobile when they are reviewed, otherwise the first breakpoint reviewed. */
+export function functionalBreakpoints(visual: Breakpoint[]): Breakpoint[] {
+  const list = visual.length ? visual : [...BREAKPOINTS]
+  const picked = list.filter((breakpoint) => breakpoint === 'desktop' || breakpoint === 'mobile')
+  return picked.length ? picked : [list[0]]
+}
+
+/** The functional conversation for one page. Display is filled in afterwards when displaySetForYou is true. */
+export function functionalConversation(runId: string, page: { name: string; url: string }, testAt: Breakpoint[], displaySetForYou: boolean): { system: string; task: string } {
+  const where = testAt.join(', then ')
+  return {
+    system: `${QA_FUNCTIONAL}
+
+# This conversation
+You test the page of run ${runId}, at ${where}. Pass runId "${runId}" to browser_open and save_draft. Finish by calling save_draft with area "functional" for each breakpoint you tested, even with an empty list, then stop.`,
+    task: `Run id: ${runId}. Test "${page.name}" (${page.url}) like a visitor now, at ${where}: browser_open it with this runId, work through what to test, then save_draft with area "functional".${displaySetForYou ? ' Display is set for you.' : ''}`,
+  }
+}
+
+/** A page's drafts from looking (per breakpoint reviewed) and from testing (any breakpoint), together. */
+export function pageDrafts(context: QaContext, runId: string, breakpoints: Breakpoint[]): Partial<Record<Breakpoint, DraftRow[]>> {
+  const visual = context.runs.readDrafts(runId)
+  const functional = context.runs.readDrafts(runId, 'functional')
+  const byBreakpoint: Partial<Record<Breakpoint, DraftRow[]>> = {}
+  for (const breakpoint of BREAKPOINTS) {
+    const rows = [...(breakpoints.includes(breakpoint) ? (visual[breakpoint] ?? []) : []), ...(functional[breakpoint] ?? [])] as DraftRow[]
+    if (rows.length) byBreakpoint[breakpoint] = rows
+  }
+  return byBreakpoint
 }
 
 // ── Putting one page's findings in order ────────────────────────────────────────────────
@@ -134,7 +165,7 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
   if (!options.pages.length) return finish('nothing-to-do', 'There are no pages to review.')
   const pages = options.pages.slice(0, MAX_BATCH_PAGES)
   if (options.pages.length > pages.length) emit({ type: 'status', message: `Only the first ${MAX_BATCH_PAGES} of ${options.pages.length} pages are reviewed at once.` })
-  emit({ type: 'status', message: `Reviewing ${pages.length} page${pages.length === 1 ? '' : 's'} on their own, with no design to compare: ${breakpoints.join(', ')}.` })
+  emit({ type: 'status', message: `Reviewing ${pages.length} page${pages.length === 1 ? '' : 's'} on their own, with no design to compare: ${breakpoints.join(', ')}${options.functional && context.browser ? ', then links, buttons and forms' : ''}.` })
 
   let tokens = 0
   let overBudget = false
@@ -168,38 +199,60 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
       outputRunId ??= run.id
       summary.runId ??= run.id
 
-      const allowed = (name: string) => BATCH_TOOLS.includes(name)
-      const call = async (name: string, args: unknown): Promise<ToolResult> => (allowed(name) ? callTool(name, args, pageContext) : { text: `The tool "${name}" is not available in this step.`, isError: true })
+      const callWith = (tools: string[]) => async (name: string, args: unknown): Promise<ToolResult> => (tools.includes(name) ? callTool(name, args, pageContext) : { text: `The tool "${name}" is not available in this step.`, isError: true })
       let pageFailed = false
-      for (const breakpoint of breakpoints) {
-        if (controller.signal.aborted) break
-        emit({ type: 'status', message: `Reviewing ${breakpoint}…` })
+      // One conversation with the agent. Returns false when the same failure repeated too often to go on.
+      const converse = async (label: string, work: () => Promise<unknown>): Promise<boolean> => {
         try {
-          await provider.run({
-            system: `${QA_RUBRIC_STANDALONE}\n\n# This conversation\nYou review only the ${breakpoint} breakpoint of run ${run.id}. Finish by calling save_draft for ${breakpoint}, even with an empty list, then stop.`,
-            task: `Run id: ${run.id}. Review the ${breakpoint} breakpoint of "${page.name}" (${page.url}) now: capture_live (with this runId), study the overview, look at every section with get_section, then save_draft your rows for ${breakpoint}. Display is set for you.`,
-            tools: BATCH_TOOLS,
-            maxTurns: MAX_TURNS_PER_BREAKPOINT,
-            signal: controller.signal,
-            call,
-            emit: tracked,
-          })
+          await work()
           consecutiveFailures = 0
         } catch (error: any) {
-          if (controller.signal.aborted) break
+          if (controller.signal.aborted) return true
           pageFailed = true
           const message = error?.message || 'The agent failed.'
           consecutiveFailures = message === lastFailure ? consecutiveFailures + 1 : 1
           lastFailure = message
-          emit({ type: 'status', message: `The ${breakpoint} review of ${page.url} failed: ${message}` })
-          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return finish('failed', `Stopped after the same failure ${MAX_CONSECUTIVE_FAILURES} times in a row: ${message}`)
+          emit({ type: 'status', message: `The ${label} of ${page.url} failed: ${message}` })
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return false
         }
+        return true
+      }
+      const giveUp = () => finish('failed', `Stopped after the same failure ${MAX_CONSECUTIVE_FAILURES} times in a row: ${lastFailure}`)
+
+      for (const breakpoint of breakpoints) {
+        if (controller.signal.aborted) break
+        emit({ type: 'status', message: `Reviewing ${breakpoint}…` })
+        const going = await converse(`${breakpoint} review`, () => provider.run({
+          system: `${QA_RUBRIC_STANDALONE}\n\n# This conversation\nYou review only the ${breakpoint} breakpoint of run ${run.id}. Finish by calling save_draft for ${breakpoint}, even with an empty list, then stop.`,
+          task: `Run id: ${run.id}. Review the ${breakpoint} breakpoint of "${page.name}" (${page.url}) now: capture_live (with this runId), study the overview, look at every section with get_section, then save_draft your rows for ${breakpoint}. Display is set for you.`,
+          tools: BATCH_TOOLS,
+          maxTurns: MAX_TURNS_PER_BREAKPOINT,
+          signal: controller.signal,
+          call: callWith(BATCH_TOOLS),
+          emit: tracked,
+        }))
+        if (!going) return giveUp()
         if (!pageContext.runs.readDrafts(run.id)[breakpoint]) emit({ type: 'status', message: `No draft rows were saved for ${breakpoint}.` })
       }
 
-      const drafts = pageContext.runs.readDrafts(run.id)
-      const byBreakpoint: Partial<Record<Breakpoint, DraftRow[]>> = {}
-      for (const breakpoint of breakpoints) if (drafts[breakpoint]) byBreakpoint[breakpoint] = drafts[breakpoint] as DraftRow[]
+      if (options.functional && context.browser && !controller.signal.aborted) {
+        const testAt = functionalBreakpoints(breakpoints)
+        emit({ type: 'status', message: `Testing links, buttons and forms (${testAt.join(' and ')})…` })
+        const conversation = functionalConversation(run.id, page, testAt, true)
+        const going = await converse('functional test', () => provider.run({
+          ...conversation,
+          tools: FUNCTIONAL_TOOLS,
+          maxTurns: MAX_TURNS_FUNCTIONAL,
+          signal: controller.signal,
+          call: callWith(FUNCTIONAL_TOOLS),
+          emit: tracked,
+        }))
+        context.browser.close()
+        if (!going) return giveUp()
+        if (!Object.keys(pageContext.runs.readDrafts(run.id, 'functional')).length) emit({ type: 'status', message: 'No rows were saved from testing the page.' })
+      }
+
+      const byBreakpoint = pageDrafts(pageContext, run.id, breakpoints)
       const rows = finishPageRows(format, page, byBreakpoint)
       for (const row of rows) entries.push({ runId: run.id, row, page: { name: page.name, url: page.url } })
       summary.rowsDrafted += rows.length

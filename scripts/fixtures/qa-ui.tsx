@@ -19,7 +19,7 @@ const agents = [
   { id: 'gemini-api', label: 'Gemini API key', kind: 'api', ready: false, detail: 'Add your API key.', model: '', needsKey: true, hasKey: false },
   { id: 'local', label: 'Local model (Ollama, LM Studio)', kind: 'local', ready: false, detail: 'Choose a model that can read pictures and use tools.', model: '', needsKey: false, hasKey: false },
 ]
-const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90 }
+const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90, allowSend: false, functionalChecks: true }
 const bridge = { enabled: true, running: true, port: 29849, error: '', keyHint: '••••a1b2', mcpUrl: 'http://127.0.0.1:29849/mcp', keyFile: '/home/user/.config/Parity/qa-agent/token', lastRequestAt: 1, recent: [{ at: Date.now(), method: 'POST', path: '/mcp', status: 200, ms: 12, tool: 'capture_live' }, { at: Date.now() - 4000, method: 'GET', path: '/api/status', status: 401, ms: 1 }] }
 const slot = (breakpoint: string, fileName: string, frameWidth: number, scale: number) => ({ breakpoint, fileName, pixelWidth: frameWidth * scale, pixelHeight: 6000, scale, frameWidth, frameHeight: 3000, detection: 'dimensions', confidence: 'high', sha256: fileName, addedAt: 1 })
 const alopeciaTarget = {
@@ -61,7 +61,7 @@ let runListener: ((event: unknown) => void) | null = null
   qaChatsDelete: async (id: string) => { calls.push(`chats-delete ${id}`); return true },
   qaHistoryList: async () => structuredClone(historyRuns),
   qaHistoryDetail: async (id: string) => structuredClone(id === historyRuns[0].id ? historyDetail : { ...historyDetail, run: historyRuns[1], handovers: [], drafts: [] }),
-  qaHistoryPicture: async (id: string, ref: any) => { calls.push(`picture ${id} ${ref.kind} ${ref.file ?? `${ref.breakpoint}-${ref.index}`}`); return evidencePicture('History') },
+  qaHistoryPicture: async (id: string, ref: any) => { calls.push(`picture ${id} ${ref.kind} ${ref.file ?? `${ref.area ? `${ref.area}-` : ''}${ref.breakpoint}-${ref.index}`}`); return evidencePicture('History') },
   qaHistoryCopy: async (id: string, stamp: string) => { calls.push(`copy ${id} ${stamp}`); return 2 },
   qaHistoryOpenFolder: async (id: string) => { calls.push(`open-folder ${id}`); return true },
   qaHistoryPin: async (id: string, pinned: boolean) => { calls.push(`pin ${id} ${pinned}`); historyRuns[0].pinned = pinned; historyDetail.run.pinned = pinned; return true },
@@ -93,7 +93,7 @@ const batchApproval = {
   rows: [
     approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Hero', Remarks: 'h1 title should be 2 lines', 'Priority (QA/PM)': 'Medium', Display: 'Desktop' }),
     approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Footer', Remarks: 'font size should be 13px', 'Priority (QA/PM)': 'Low', Display: 'Mobile' }),
-    approvalRow({ 'Page Link': 'https://svenson.test/contact/', Section: 'Contact form', Remarks: 'button should be round', 'Priority (QA/PM)': 'Low', Display: 'Desktop and Tablet' }),
+    approvalRow({ 'Page Link': 'https://svenson.test/contact/', Section: 'Contact form', Remarks: 'add a success message after sending', Display: 'Desktop and Tablet', Status: 'ENHANCEMENT (QA)' }),
   ],
   severityCounts: { Medium: 1, Low: 2 },
   evidence: [{ rowIndex: 0, thumbnail: evidencePicture('Heading'), caption: 'Hero · desktop' }, { rowIndex: 2, thumbnail: evidencePicture('Button'), caption: 'Contact form · desktop' }],
@@ -101,7 +101,7 @@ const batchApproval = {
 }
 
 const historyRuns: any[] = [
-  { id: '20261005-035056-dynamiq-real-estate-mana-5229', projectName: 'Dynamiq Real Estate Management', pageUrl: 'https://dynamiqes.com/products/dynamiq-real-estate-management/', createdAt: 1791172256735, pinned: false, breakpoints: ['desktop', 'tablet', 'mobile'], drafted: 2, handovers: [{ stamp: '1791174398615', status: 'approved', rows: 3, copied: 2 }] },
+  { id: '20261005-035056-dynamiq-real-estate-mana-5229', projectName: 'Dynamiq Real Estate Management', pageUrl: 'https://dynamiqes.com/products/dynamiq-real-estate-management/', createdAt: 1791172256735, pinned: false, breakpoints: ['desktop', 'tablet', 'mobile'], drafted: 3, handovers: [{ stamp: '1791174398615', status: 'approved', rows: 3, copied: 2 }] },
   { id: '20261005-040514-our-services-cd9c', projectName: 'Our Services', pageUrl: 'https://dynamiqes.com/our-services/', createdAt: 1791172000000, pinned: true, breakpoints: ['desktop'], drafted: 0, handovers: [] },
 ]
 const historyDetail: any = {
@@ -117,7 +117,10 @@ const historyDetail: any = {
     evidence: [{ rowIndex: 0, file: 'evidence-1791174398615-row-01.webp', caption: '' }, { rowIndex: 1, file: 'evidence-1791174398615-row-02.webp', caption: '' }],
     excludedRows: [2], links: { 0: 'https://parity-gfx.pages.dev/?evidence=AbCdEfGhIjKlMnOpQrStUv' }, copiedRows: 2,
   }],
-  drafts: [{ breakpoint: 'tablet', rows: [{ cells: approvalRow({ Section: 'Hero', Remarks: 'h1 title should be 2 lines', Display: 'Tablet' }), hasPicture: true }, { cells: approvalRow({ Section: 'Footer', Remarks: 'logo too small', Display: 'Tablet' }), hasPicture: false }] }],
+  drafts: [
+    { breakpoint: 'tablet', rows: [{ cells: approvalRow({ Section: 'Hero', Remarks: 'h1 title should be 2 lines', Display: 'Tablet' }), hasPicture: true }, { cells: approvalRow({ Section: 'Footer', Remarks: 'logo too small', Display: 'Tablet' }), hasPicture: false }] },
+    { breakpoint: 'desktop', area: 'functional', rows: [{ cells: approvalRow({ Section: 'Navbar', Remarks: 'Contact link goes to a 404 page', Display: 'Desktop' }), hasPicture: true }] },
+  ],
 }
 
 function Fixture() {

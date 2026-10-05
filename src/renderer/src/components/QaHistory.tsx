@@ -119,12 +119,12 @@ function ReviewDetail({ runId, onChanged, onDeleted }: { runId: string; onChange
       {detail.handovers.map((record) => <HandOverSection key={record.stamp} runId={run.id} record={record} onZoom={setZoomed} scroller={scroller} onCopied={setNotice} />)}
       {detail.drafts.length > 0 && (
         <section className="qa-history-section">
-          <header><div><strong className="qa-history-status draft">Drafted by the agent</strong><small>Findings as the agent saved them for each size, before any hand-over.</small></div></header>
+          <header><div><strong className="qa-history-status draft">Drafted by the agent</strong><small>Findings as the agent saved them for each size, before any hand-over: from looking at the page, then from testing it.</small></div></header>
           {detail.drafts.map((group) => (
-            <Fragment key={group.breakpoint}>
-              <h4 className="qa-history-breakpoint">{group.breakpoint} · {plural(group.rows.length, 'finding')}</h4>
+            <Fragment key={`${group.area ?? 'visual'}-${group.breakpoint}`}>
+              <h4 className="qa-history-breakpoint">{group.breakpoint[0].toUpperCase() + group.breakpoint.slice(1)}{group.area === 'functional' ? ' · testing links, buttons and forms' : ''} · {plural(group.rows.length, 'finding')}</h4>
               <ol className="qa-findings qa-history-list">
-                {group.rows.map((row, index) => <LazyFinding key={index} runId={run.id} index={index} view={rowView(draftFormat!, row.cells)} pictureRef={row.hasPicture ? { kind: 'draft', breakpoint: group.breakpoint, index } : null} onZoom={setZoomed} scroller={scroller} />)}
+                {group.rows.map((row, index) => <LazyFinding key={index} runId={run.id} index={index} view={rowView(draftFormat!, row.cells)} pictureRef={row.hasPicture ? { kind: 'draft', breakpoint: group.breakpoint, index, ...(group.area ? { area: group.area } : {}) } : null} onZoom={setZoomed} scroller={scroller} />)}
               </ol>
             </Fragment>
           ))}

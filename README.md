@@ -104,9 +104,10 @@ The current link audit inventories destinations but does not make HTTP requests 
 
 ### 5. QA Agent
 
-An AI agent does the first pass of visual QA: it compares the live page with the Figma exports per breakpoint, drafts the differences as rows for the master tracker, and you approve them before anything is copied.
+An AI agent does the first pass of QA: how the page looks (against the Figma exports when there are any, on its own when not), how it works (links, menus, buttons, forms, errors, tested in a browser of its own), and the SEO and accessibility basics. It drafts rows for the master tracker, adds a few suggestions as ENHANCEMENT (QA) rows, and you approve them before anything is copied.
 
-- **Designs per breakpoint**: drop the Figma PNGs on the Desktop, Tablet and Mobile slots in the Figma overlay panel; the export scale (1x/2x/3x) is detected and can be corrected.
+- **Designs are optional**: drop the Figma PNGs on the Desktop, Tablet and Mobile slots in the Figma overlay panel to have the page compared with them; the export scale (1x/2x/3x) is detected and can be corrected. Without them the agent judges the page on its own.
+- **Testing the page**: the agent's browser stays on the site, never opens WordPress admin or login, and does not submit forms or send POST/PUT/DELETE requests unless you allow it in Settings → AI Agents.
 - **QA chat** (`Ctrl+Shift+Q`): a chat panel on the right (in place of the inspector). Ask about the page, or `/review` for a full review; the header shows token use.
 - **Any model**: Claude Code, Codex or Antigravity CLI (`agy`) on your own plan; Claude, OpenAI or Gemini API keys; or a local vision model (Ollama, LM Studio). Pick one in Settings → AI Agents.
 - **Approval first**: an approval card shows the rows and evidence pictures; approving copies the rows in the tracker's column order (and optionally uploads evidence pictures whose links go in the screenshot column).

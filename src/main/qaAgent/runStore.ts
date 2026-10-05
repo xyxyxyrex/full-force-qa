@@ -23,6 +23,10 @@ export interface RunMeta {
   pinned?: boolean
 }
 
+/** Drafts from looking at the page, or from testing it in the agent's browser. */
+export type DraftArea = 'visual' | 'functional'
+const draftFile = (breakpoint: Breakpoint, area: DraftArea) => `${area === 'functional' ? 'functional-' : ''}${breakpoint}.json`
+
 export type LiveRecord = Omit<LiveCaptureResult, 'png'> & { capturedAt: number; design: DesignSlotMeta | null }
 
 export interface PruneOptions {
@@ -99,6 +103,21 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       return true
     },
 
+    /** Saves a picture taken by the agent's browser; answers its name (B1, B2, …) for evidence. */
+    saveBrowserShot(id: string, jpeg: Buffer): string {
+      const folder = join(dir(id), 'browser')
+      mkdirSync(folder, { recursive: true })
+      const taken = readdirSync(folder).filter((name) => /^B\d+\.jpg$/.test(name)).length
+      const name = `B${taken + 1}`
+      atomicWrite(join(folder, `${name}.jpg`), jpeg)
+      return name
+    },
+
+    readBrowserShot(id: string, name: string): Buffer | null {
+      if (!/^B\d{1,4}$/.test(name)) return null
+      try { return readFileSync(join(dir(id), 'browser', `${name}.jpg`)) } catch { return null }
+    },
+
     /** Folder of a run, for showing it to the person. */
     folder(id: string): string {
       return dir(id)
@@ -141,17 +160,18 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       return folder
     },
 
-    saveDraft(id: string, breakpoint: Breakpoint, rows: unknown[]): void {
+    /** Rows drafted for a breakpoint: from looking at the page (visual) or from testing it in the browser (functional). */
+    saveDraft(id: string, breakpoint: Breakpoint, rows: unknown[], area: DraftArea = 'visual'): void {
       const folder = join(dir(id), 'drafts')
       mkdirSync(folder, { recursive: true })
-      atomicWrite(join(folder, `${breakpoint}.json`), JSON.stringify({ savedAt: now(), rows }, null, 2))
+      atomicWrite(join(folder, draftFile(breakpoint, area)), JSON.stringify({ savedAt: now(), rows }, null, 2))
       this.touch(id)
     },
 
-    readDrafts(id: string): Partial<Record<Breakpoint, unknown[]>> {
+    readDrafts(id: string, area: DraftArea = 'visual'): Partial<Record<Breakpoint, unknown[]>> {
       const drafts: Partial<Record<Breakpoint, unknown[]>> = {}
       for (const breakpoint of BREAKPOINTS) {
-        try { drafts[breakpoint] = (JSON.parse(readFileSync(join(dir(id), 'drafts', `${breakpoint}.json`), 'utf8')) as { rows: unknown[] }).rows } catch { /* none yet */ }
+        try { drafts[breakpoint] = (JSON.parse(readFileSync(join(dir(id), 'drafts', draftFile(breakpoint, area)), 'utf8')) as { rows: unknown[] }).rows } catch { /* none yet */ }
       }
       return drafts
     },

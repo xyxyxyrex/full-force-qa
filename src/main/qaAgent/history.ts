@@ -4,7 +4,7 @@ import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
 import type { QaHandOverRecord, QaHistoryPicture, QaRunDetail, QaRunListItem } from '../../shared/qaAgent'
 import { buildHtml, buildRows, parseTsv, screenshotColumn, type TrackerFormat } from '../../shared/trackerFormat'
 import { thumbnailJpeg } from './imageOps'
-import type { RunMeta, RunStore } from './runStore'
+import type { DraftArea, RunMeta, RunStore } from './runStore'
 import { renderRowEvidence, type DraftRow } from './tools'
 
 // Past reviews: what each run captured, drafted and handed over, with its pictures. Hand-overs are
@@ -62,15 +62,15 @@ export function createRunHistory(deps: { runs: RunStore; trackerFormat: () => Tr
     return records.sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  const draftsOf = (id: string) => runs.readDrafts(id) as Partial<Record<Breakpoint, DraftRow[]>>
+  const draftsOf = (id: string, area: DraftArea = 'visual') => runs.readDrafts(id, area) as Partial<Record<Breakpoint, DraftRow[]>>
+  const draftCount = (drafts: Partial<Record<Breakpoint, DraftRow[]>>) => BREAKPOINTS.reduce((sum, breakpoint) => sum + (drafts[breakpoint]?.length ?? 0), 0)
 
   function summary(meta: RunMeta): QaRunListItem {
     const folder = runs.folder(meta.id)
-    const drafts = draftsOf(meta.id)
     return {
       id: meta.id, projectName: meta.projectName, pageUrl: meta.pageUrl, createdAt: meta.createdAt, pinned: meta.pinned === true,
       breakpoints: BREAKPOINTS.filter((breakpoint) => existsSync(join(folder, breakpoint, 'live.json'))),
-      drafted: BREAKPOINTS.reduce((sum, breakpoint) => sum + (drafts[breakpoint]?.length ?? 0), 0),
+      drafted: draftCount(draftsOf(meta.id)) + draftCount(draftsOf(meta.id, 'functional')),
       handovers: handovers(meta).map((record) => ({ stamp: record.stamp, status: record.status, rows: record.rows.length, ...(record.copiedRows !== undefined ? { copied: record.copiedRows } : {}) })),
     }
   }
@@ -85,7 +85,8 @@ export function createRunHistory(deps: { runs: RunStore; trackerFormat: () => Tr
       if (!meta) return null
       const format = deps.trackerFormat()
       const drafts = draftsOf(id)
-      const keys = [...new Set(BREAKPOINTS.flatMap((breakpoint) => (drafts[breakpoint] ?? []).flatMap((row) => Object.keys(row?.cells ?? {}))))]
+      const functional = draftsOf(id, 'functional')
+      const keys = [...new Set([drafts, functional].flatMap((byBreakpoint) => BREAKPOINTS.flatMap((breakpoint) => (byBreakpoint[breakpoint] ?? []).flatMap((row) => Object.keys(row?.cells ?? {})))))]
       const columns = format?.columns ?? keys
       const toCells = (row: DraftRow): string[] => {
         if (format) {
@@ -97,7 +98,10 @@ export function createRunHistory(deps: { runs: RunStore; trackerFormat: () => Tr
       return {
         run: summary(meta),
         handovers: handovers(meta),
-        drafts: BREAKPOINTS.filter((breakpoint) => drafts[breakpoint]?.length).map((breakpoint) => ({ breakpoint, rows: drafts[breakpoint]!.map((row) => ({ cells: toCells(row), hasPicture: !!row?.evidence })) })),
+        drafts: [
+          ...BREAKPOINTS.filter((breakpoint) => drafts[breakpoint]?.length).map((breakpoint) => ({ breakpoint, rows: drafts[breakpoint]!.map((row) => ({ cells: toCells(row), hasPicture: !!row?.evidence })) })),
+          ...BREAKPOINTS.filter((breakpoint) => functional[breakpoint]?.length).map((breakpoint) => ({ breakpoint, area: 'functional' as const, rows: functional[breakpoint]!.map((row) => ({ cells: toCells(row), hasPicture: !!row?.evidence })) })),
+        ],
         columns,
       }
     },
@@ -111,7 +115,7 @@ export function createRunHistory(deps: { runs: RunStore; trackerFormat: () => Tr
         try { image = readFileSync(join(outputDir(id), ref.file)) } catch { return null }
       } else {
         if (!BREAKPOINTS.includes(ref.breakpoint) || !Number.isInteger(ref.index) || ref.index < 0) return null
-        const row = draftsOf(id)[ref.breakpoint]?.[ref.index]
+        const row = draftsOf(id, ref.area === 'functional' ? 'functional' : 'visual')[ref.breakpoint]?.[ref.index]
         if (!row) return null
         image = (await renderRowEvidence(runs, id, row, ref.index))?.data ?? null
       }

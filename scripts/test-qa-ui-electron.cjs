@@ -36,7 +36,16 @@ async function smoke() {
   assert.match(await text('.agents-chips'), /Screenshot/, 'the saved tracker columns are shown')
   assert.match(await text('.agents-kv'), /127\.0\.0\.1:29849\/mcp/, 'the bridge address is shown')
   assert.match(await text('.agents-panel'), /Uploading needs your Parity account/, 'signed-out users are told uploads need an account')
-  assert.equal(await run(`document.querySelectorAll('.agents-group')[1].querySelector('select').value`), '90', 'the evidence lifetime defaults to 90 days')
+  const group = heading => `[...document.querySelectorAll('.agents-group')].find(g => g.querySelector('h4')?.textContent === ${JSON.stringify(heading)})`
+  assert.equal(await run(`${group('Evidence screenshots')}.querySelector('select').value`), '90', 'the evidence lifetime defaults to 90 days')
+  // Testing the page: on for reviews, sending off, and each switch saves.
+  assert.deepEqual(await run(`[...${group('Testing the page')}.querySelectorAll('input[type=checkbox]')].map(i => i.checked)`), [true, false], 'reviews test the page, and nothing is sent, by default')
+  assert.match(await run(`${group('Testing the page')}.innerText`), /submissions and POST, PUT and DELETE requests are stopped/)
+  await run(`${group('Testing the page')}.querySelectorAll('input[type=checkbox]')[1].click()`); await sleep(150)
+  assert.ok((await run('window.__calls')).includes('save {"allowSend":true}'), 'allowing sends saves it')
+  await run(`${group('Testing the page')}.querySelectorAll('input[type=checkbox]')[0].click()`); await sleep(150)
+  assert.ok((await run('window.__calls')).includes('save {"functionalChecks":false}'), 'turning testing off saves it')
+  await run(`${group('Testing the page')}.scrollIntoView()`); await shot('agents-testing')
   await run(`document.querySelectorAll('input[name=default-agent]')[4].click()`)
   await sleep(200)
   assert.ok((await run('window.__calls')).some(c => c === 'save {"defaultAgent":"openai-api"}'), 'choosing an agent saves it')
@@ -106,7 +115,7 @@ async function smoke() {
   // Past reviews: runs, their hand-overs and drafts with screenshots, copy again, keep, delete.
   await open('history')
   assert.equal(await run(`document.querySelectorAll('.qa-history-runs li').length`), 2)
-  assert.match(await text('.qa-history-runs li'), /Dynamiq Real Estate Management/); assert.match(await text('.qa-history-runs li'), /2 copied/); assert.match(await text('.qa-history-runs li'), /2 drafted/)
+  assert.match(await text('.qa-history-runs li'), /Dynamiq Real Estate Management/); assert.match(await text('.qa-history-runs li'), /2 copied/); assert.match(await text('.qa-history-runs li'), /3 drafted/)
   assert.match(await text('.qa-history-detail'), /Approved · 2 rows copied · 1 left out/)
   assert.match(await text('.qa-history-detail'), /replace watermarked image/); assert.match(await text('.qa-history-detail'), /Drafted by the agent/); assert.match(await text('.qa-history-detail'), /h1 title should be 2 lines/)
   assert.equal(await run(`document.querySelectorAll('.qa-history-detail .qa-finding.excluded').length`), 1, 'a finding left out at the time is marked')
@@ -115,8 +124,11 @@ async function smoke() {
   const pictureCalls = (await run('window.__calls')).filter(c => c.startsWith('picture '))
   assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 handover evidence-1791174398615-row-01.webp'), 'hand-over pictures load')
   assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 draft tablet-0'), 'drafted findings get their pictures made')
+  assert.match(await text('.qa-history-detail'), /Desktop · testing links, buttons and forms · 1 finding/, 'findings from testing the page have their own group')
+  assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 draft functional-desktop-0'), 'with the browser screenshot as their picture')
   assert.equal(pictureCalls.some(c => c.endsWith('tablet-1')), false, 'no picture is asked for a draft without evidence')
   assert.ok((await run(`document.querySelectorAll('.qa-history-detail .qa-finding-shot img').length`)) >= 2)
+  await run(`document.querySelectorAll('.qa-history-breakpoint')[1].scrollIntoView()`)
   await shot('history-reviews')
   await run(`[...document.querySelectorAll('.qa-history-section header button')].find(b => b.textContent === 'Copy rows again').click()`); await sleep(150)
   assert.ok((await run('window.__calls')).includes('copy 20261005-035056-dynamiq-real-estate-mana-5229 1791174398615'))
@@ -150,6 +162,7 @@ async function smoke() {
   assert.equal(await run(`document.querySelectorAll('.qa-finding-page').length`), 2, 'one heading per page')
   assert.match(await text('.qa-finding-page'), /Alopecia/); assert.match(await text('.qa-finding-page'), /2 findings/)
   assert.equal(await run(`[...document.querySelectorAll('.qa-findings > li')].map(li => li.className).join(',')`), 'qa-finding-page,qa-finding,qa-finding,qa-finding-page,qa-finding', 'a heading starts each page\'s findings')
+  assert.equal(await run(`document.querySelector('.qa-badge.suggestion')?.textContent`), 'Suggestion', 'a suggestion is marked as one')
   await shot('approval-batch')
 
   // Chat
@@ -180,6 +193,7 @@ async function smoke() {
   await send('/agents'); assert.match(await text('.qa-chat-body'), /claude-code\s+ready/); assert.match(await text('.qa-chat-body'), /codex\s+not ready/)
   await send('/help'); assert.match(await text('.qa-chat-body'), /\/review \[desktop\]/); assert.match(await text('.qa-chat-body'), /--no-design/)
   await send('/review mobile --no-design'); assert.ok((await run('window.__calls')).includes('run {"breakpoints":["mobile"],"standalone":true}'), '--no-design reviews the page on its own')
+  await send('/review --visual-only'); assert.ok((await run('window.__calls')).includes('run {"functional":false}'), '--visual-only skips testing links, buttons and forms')
   // A streamed answer: deltas join into one message, tool calls become cards, tokens add up, the turn ends with a summary.
   for (const e of [
     { type: 'started', agent: 'anthropic-api', label: 'Claude API (claude-opus-5-5)', budgetTokens: 10000 },
