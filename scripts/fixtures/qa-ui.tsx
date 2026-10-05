@@ -5,6 +5,7 @@ import AgentsPanel from '../../src/renderer/src/components/AgentsPanel'
 import DesignSlots from '../../src/renderer/src/components/DesignSlots'
 import QaApprovalCard from '../../src/renderer/src/components/QaApprovalCard'
 import QaChat from '../../src/renderer/src/components/QaChat'
+import QaHistory from '../../src/renderer/src/components/QaHistory'
 
 // Stand-in for the app's bridge to the main process, so the real components can be rendered and
 // driven without the rest of Parity.
@@ -18,7 +19,7 @@ const agents = [
   { id: 'gemini-api', label: 'Gemini API key', kind: 'api', ready: false, detail: 'Add your API key.', model: '', needsKey: true, hasKey: false },
   { id: 'local', label: 'Local model (Ollama, LM Studio)', kind: 'local', ready: false, detail: 'Choose a model that can read pictures and use tools.', model: '', needsKey: false, hasKey: false },
 ]
-const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90 }
+const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90, allowSend: false, functionalChecks: true }
 const bridge = { enabled: true, running: true, port: 29849, error: '', keyHint: '••••a1b2', mcpUrl: 'http://127.0.0.1:29849/mcp', keyFile: '/home/user/.config/Parity/qa-agent/token', lastRequestAt: 1, recent: [{ at: Date.now(), method: 'POST', path: '/mcp', status: 200, ms: 12, tool: 'capture_live' }, { at: Date.now() - 4000, method: 'GET', path: '/api/status', status: 401, ms: 1 }] }
 const slot = (breakpoint: string, fileName: string, frameWidth: number, scale: number) => ({ breakpoint, fileName, pixelWidth: frameWidth * scale, pixelHeight: 6000, scale, frameWidth, frameHeight: 3000, detection: 'dimensions', confidence: 'high', sha256: fileName, addedAt: 1 })
 const alopeciaTarget = {
@@ -53,7 +54,18 @@ let runListener: ((event: unknown) => void) | null = null
   onQaRunEvent: (callback: (event: unknown) => void) => { runListener = callback; return () => { runListener = null } },
   qaRunStart: async (options: unknown) => { calls.push(`run ${JSON.stringify(options)}`); return { started: true } },
   qaRunStop: async () => { calls.push('stop'); return true },
-  qaChatSend: async (text: string) => { calls.push(`chat ${text}`); return { started: true } },
+  qaChatSend: async (text: string, options?: { chatId?: string }) => { calls.push(`chat ${text}`); (window as any).__lastChatId = options?.chatId; return { started: true } },
+  qaChatsSave: async (chat: any) => { calls.push(`chats-save ${chat.id} ${chat.messages.length}`); return true },
+  qaChatsList: async () => [{ id: 'chat-saved-0001', title: 'How big is the hero heading?', createdAt: 1791100000000, updatedAt: 1791100000000, messageCount: 4, tokens: 18250 }],
+  qaChatsOpen: async (id: string) => { calls.push(`chats-open ${id}`); return { version: 1, id, title: 'How big is the hero heading?', createdAt: 1, updatedAt: 1, agentLabel: 'Antigravity CLI', messages: [{ id: 1, kind: 'user', text: 'How big is the hero heading?' }, { id: 2, kind: 'assistant', text: 'It is **28px**.' }], session: { input: 18000, output: 250, requests: 2 } } },
+  qaChatsDelete: async (id: string) => { calls.push(`chats-delete ${id}`); return true },
+  qaHistoryList: async () => structuredClone(historyRuns),
+  qaHistoryDetail: async (id: string) => structuredClone(id === historyRuns[0].id ? historyDetail : { ...historyDetail, run: historyRuns[1], handovers: [], drafts: [] }),
+  qaHistoryPicture: async (id: string, ref: any) => { calls.push(`picture ${id} ${ref.kind} ${ref.file ?? `${ref.area ? `${ref.area}-` : ''}${ref.breakpoint}-${ref.index}`}`); return evidencePicture('History') },
+  qaHistoryCopy: async (id: string, stamp: string) => { calls.push(`copy ${id} ${stamp}`); return 2 },
+  qaHistoryOpenFolder: async (id: string) => { calls.push(`open-folder ${id}`); return true },
+  qaHistoryPin: async (id: string, pinned: boolean) => { calls.push(`pin ${id} ${pinned}`); historyRuns[0].pinned = pinned; historyDetail.run.pinned = pinned; return true },
+  qaHistoryDelete: async (id: string) => { calls.push(`delete ${id}`); return true },
   qaChatReset: async () => { calls.push('chat-reset'); return true },
   qaCallTool: async (name: string, args: unknown) => { calls.push(`tool ${name} ${JSON.stringify(args)}`); return { text: name === 'get_context' ? '{ "project": { "name": "[Svenson] Alopecia" } }' : 'ok', isError: false, images: name === 'capture_live' ? [{ dataUrl: swatch('#223344'), caption: 'Overview desktop' }] : [] } },
 }
@@ -81,11 +93,34 @@ const batchApproval = {
   rows: [
     approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Hero', Remarks: 'h1 title should be 2 lines', 'Priority (QA/PM)': 'Medium', Display: 'Desktop' }),
     approvalRow({ 'Page Link': 'https://svenson.test/alopecia-page/', Section: 'Footer', Remarks: 'font size should be 13px', 'Priority (QA/PM)': 'Low', Display: 'Mobile' }),
-    approvalRow({ 'Page Link': 'https://svenson.test/contact/', Section: 'Contact form', Remarks: 'button should be round', 'Priority (QA/PM)': 'Low', Display: 'Desktop and Tablet' }),
+    approvalRow({ 'Page Link': 'https://svenson.test/contact/', Section: 'Contact form', Remarks: 'add a success message after sending', Display: 'Desktop and Tablet', Status: 'ENHANCEMENT (QA)' }),
   ],
   severityCounts: { Medium: 1, Low: 2 },
   evidence: [{ rowIndex: 0, thumbnail: evidencePicture('Heading'), caption: 'Hero · desktop' }, { rowIndex: 2, thumbnail: evidencePicture('Button'), caption: 'Contact form · desktop' }],
   rowPages: [{ name: 'Alopecia', url: 'https://svenson.test/alopecia-page/' }, { name: 'Alopecia', url: 'https://svenson.test/alopecia-page/' }, { name: 'Contact', url: 'https://svenson.test/contact/' }],
+}
+
+const historyRuns: any[] = [
+  { id: '20261005-035056-dynamiq-real-estate-mana-5229', projectName: 'Dynamiq Real Estate Management', pageUrl: 'https://dynamiqes.com/products/dynamiq-real-estate-management/', createdAt: 1791172256735, pinned: false, breakpoints: ['desktop', 'tablet', 'mobile'], drafted: 3, handovers: [{ stamp: '1791174398615', status: 'approved', rows: 3, copied: 2 }] },
+  { id: '20261005-040514-our-services-cd9c', projectName: 'Our Services', pageUrl: 'https://dynamiqes.com/our-services/', createdAt: 1791172000000, pinned: true, breakpoints: ['desktop'], drafted: 0, handovers: [] },
+]
+const historyDetail: any = {
+  run: historyRuns[0],
+  columns: approvalColumns,
+  handovers: [{
+    version: 1, stamp: '1791174398615', createdAt: 1791174398615, status: 'approved', projectName: 'Dynamiq Real Estate Management', pageUrl: historyRuns[0].pageUrl, columns: approvalColumns,
+    rows: [
+      approvalRow({ 'Page Link': historyRuns[0].pageUrl, Section: 'Features', Remarks: 'replace watermarked image', Display: 'Desktop' }),
+      approvalRow({ 'Page Link': historyRuns[0].pageUrl, Section: 'Features', Remarks: 'wrong image', Display: 'Desktop and Mobile' }),
+      approvalRow({ 'Page Link': historyRuns[0].pageUrl, Section: 'Footer', Remarks: 'font size should be 13px', Display: 'Mobile' }),
+    ],
+    evidence: [{ rowIndex: 0, file: 'evidence-1791174398615-row-01.webp', caption: '' }, { rowIndex: 1, file: 'evidence-1791174398615-row-02.webp', caption: '' }],
+    excludedRows: [2], links: { 0: 'https://parity-gfx.pages.dev/?evidence=AbCdEfGhIjKlMnOpQrStUv' }, copiedRows: 2,
+  }],
+  drafts: [
+    { breakpoint: 'tablet', rows: [{ cells: approvalRow({ Section: 'Hero', Remarks: 'h1 title should be 2 lines', Display: 'Tablet' }), hasPicture: true }, { cells: approvalRow({ Section: 'Footer', Remarks: 'logo too small', Display: 'Tablet' }), hasPicture: false }] },
+    { breakpoint: 'desktop', area: 'functional', rows: [{ cells: approvalRow({ Section: 'Navbar', Remarks: 'Contact link goes to a 404 page', Display: 'Desktop' }), hasPicture: true }] },
+  ],
 }
 
 function Fixture() {
@@ -102,7 +137,8 @@ function Fixture() {
         thumbnails={{ desktop: swatch('#335577'), mobile: swatch('#553377') }} activeBreakpoint="desktop"
         onAddFiles={(files, target) => (window as any).__calls.push(`add ${files.length} ${target}`)} onRemove={(bp) => (window as any).__calls.push(`remove ${bp}`)} onMove={(bp, to) => (window as any).__calls.push(`move ${bp} ${to}`)} onScale={(bp, s) => (window as any).__calls.push(`scale ${bp} ${s}`)} /></div>}
       {view === 'approval-batch' && <QaApprovalCard request={batchApproval} onDecide={(approved, note) => (window as any).__calls.push(`decide ${approved} ${note ?? ''}`)} />}
-      {view === 'approval' && <QaApprovalCard request={approval} onDecide={(approved, note) => (window as any).__calls.push(`decide ${approved} ${note ?? ''}`)} />}
+      {view === 'approval' && <QaApprovalCard request={approval} onDecide={(approved, note, excluded) => (window as any).__calls.push(`decide ${approved} ${note ?? ''} ${JSON.stringify(excluded ?? [])}`)} />}
+      {view === 'history' && <QaHistory initialTab={(new URLSearchParams(location.search).get('tab') as any) || 'reviews'} onClose={() => (window as any).__calls.push('history-close')} />}
       {view === 'chat' && <div style={{ width: 400, height: 640, border: '1px solid var(--border-color)' }}><QaChat onClose={() => (window as any).__calls.push('close')} /></div>}
     </main>
   )

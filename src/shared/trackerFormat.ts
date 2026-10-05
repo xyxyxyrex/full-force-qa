@@ -70,6 +70,9 @@ export function isTrackerFormat(value: unknown): value is TrackerFormat {
   return !!v && v.version === 1 && Array.isArray(v.columns) && v.columns.length >= 2 && v.columns.every((c) => typeof c === 'string') && Array.isArray(v.examples) && v.examples.every((r) => Array.isArray(r)) && (v.choices === undefined || (typeof v.choices === 'object' && v.choices !== null && Object.values(v.choices).every((o) => Array.isArray(o) && o.every((x) => typeof x === 'string'))))
 }
 
+/** Priority, severity or impact: the team sets these themselves, so Parity never fills them. */
+export const PRIORITY_HEADER = /severity|priority|impact/i
+
 const SCREENSHOT_HEADER = /screenshot|screen shot|image|evidence|sleekshot|capture|proof|attachment|link/i
 // Columns other people fill in: the developer's reply and the QA approval after a fix.
 const OTHER_PEOPLE_HEADER = /\((dev|pm|crsm)\)|approval|rejection/i
@@ -131,13 +134,13 @@ export function trackerColumnGuide(format: TrackerFormat): Record<string, string
   format.columns.forEach((name, index) => {
     const shared = new Set(format.examples.map((row) => (row[index] ?? '').trim()).filter(Boolean))
     const options = format.choices?.[name]
-    if (options && /^status$/i.test(name)) guide[name] = 'Leave empty: developers and the approval step set it. Only for a suggestion that is not a mismatch with the design, use "ENHANCEMENT (QA)". Allowed values: ' + options.join(' | ')
+    if (options && /^status$/i.test(name)) guide[name] = 'Leave empty for defects: developers and the approval step set it. For a suggestion (your own idea to make the page better, not a defect or a mismatch with the design), use "ENHANCEMENT (QA)". Allowed values: ' + options.join(' | ')
     else if (options) guide[name] = `Where the issue appears. Exactly one of: ${options.join(' | ')}. The same problem on several breakpoints is one row with the matching combination.`
     else if (OTHER_PEOPLE_HEADER.test(name)) guide[name] = 'Leave empty. Developers, PMs and the QA approval step fill this in later.'
     else if (name === shot) guide[name] = 'Leave empty. Parity fills it with the evidence link.'
     else if (/^page\b.*(link|url)|^url$|^link$/i.test(name)) guide[name] = 'The URL of the page that was checked (openPage.url from get_context).'
     else if (/^section$/i.test(name)) guide[name] = 'The section as a person would name it, one to three words: Header, Navbar, Hero, Footer, or the section\'s own heading (for example "Treatment options"). Never an element selector, and not the breakpoint.'
-    else if (/severity|priority|impact/i.test(name)) guide[name] = 'High, Medium or Low (or the values the example rows use).'
+    else if (PRIORITY_HEADER.test(name)) guide[name] = 'Leave empty. Parity does not set a priority; the team does.'
     else if (/^(remarks|issue|description|finding|comment)s?$/i.test(name)) guide[name] = 'One short line telling the developer what to change, like "font size should be 16px", "wrong image" or "remove this duplicated section". About 15 words at most. No breakpoint (Display has it), no design-versus-live narration, no "≈". One issue per row. Give a number only when the design clearly shows it; otherwise say it plainly ("reduce section size", "follow figma").'
     else if (/^(display|status)$/i.test(name)) guide[name] = shared.size === 1 ? `Use "${[...shared][0]}", as in the example rows.` : 'Leave empty unless the example rows show a value to use.'
   })
@@ -149,8 +152,8 @@ export interface RowView {
   title: string
   /** The issue text. */
   body: string
-  /** Short labelled values worth showing as badges: priority, where it shows. */
-  badges: Array<{ label: string; value: string; kind: 'severity' | 'display' }>
+  /** Short labelled values worth showing as badges: priority, where it shows, and a status such as a suggestion. */
+  badges: Array<{ label: string; value: string; kind: 'severity' | 'display' | 'status' }>
   /** The page link, if the tracker has one. */
   link: string
   /** Everything else that has a value, in sheet order (the screenshot column is left out: the picture is shown instead). */
@@ -171,6 +174,7 @@ export function rowView(format: TrackerFormat, row: string[]): RowView {
   const link = find((name) => plain(name) && /^page\b.*(link|url)|^url$|^link$/i.test(name))
   const severity = find((name) => plain(name) && /severity|priority|impact/i.test(name))
   const display = find((name) => plain(name) && /^display$/i.test(name))
+  const status = find((name) => plain(name) && /^status$/i.test(name))
   let body = find((name) => plain(name) && /^(remarks|issue|description|finding|comment)s?$/i.test(name))
   // A tracker with other names: the longest free text is the issue.
   if (!body) {
@@ -181,6 +185,7 @@ export function rowView(format: TrackerFormat, row: string[]): RowView {
   const badges: RowView['badges'] = []
   if (severity) badges.push({ label: 'Priority', value: severity, kind: 'severity' })
   if (display) badges.push({ label: 'Display', value: display, kind: 'display' })
+  if (status) badges.push({ label: 'Status', value: status, kind: 'status' })
   const extras = format.columns.flatMap((name, i) => (!used.has(i) && name !== shot && (row[i] ?? '').trim() !== '' ? [{ label: name, value: row[i].trim() }] : []))
   return { title: section || body.split('\n')[0].slice(0, 90), body, badges, link, extras }
 }
@@ -219,6 +224,8 @@ export function buildRows(format: TrackerFormat, issues: IssueRow[], options: { 
     for (const [key, value] of Object.entries(issue || {})) {
       const column = byLowerName.get(key.trim().toLowerCase())
       if (!column) return { ok: false, error: `Row ${index + 1} uses a column that is not in the tracker: "${key}". The columns are: ${format.columns.join(', ')}.` }
+      // Priority is the team's call: whatever the agent wrote there is dropped.
+      if (PRIORITY_HEADER.test(column)) { cells[column] = ''; continue }
       const text = cleanCell(value)
       const limit = CELL_LIMITS.find((rule) => rule.column.test(column))
       if (limit && text.length > limit.max) return { ok: false, error: `Row ${index + 1}: ${column} is ${text.length} characters. ${limit.advice} Shorten it to ${limit.max} characters or fewer and call the tool again.` }

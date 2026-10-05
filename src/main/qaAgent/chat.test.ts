@@ -4,6 +4,7 @@ import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentEvent, AgentProvider, ProviderResult, ProviderRun } from './agents/types'
 import { CHAT_TOOLS, MAX_CHAT_HISTORY, runChatTurn } from './chat'
+import { QA_AGENT_PROMPT } from './prompt'
 import { createFakeContext, type FakeContext } from './testSupport'
 
 let root: string
@@ -29,9 +30,17 @@ describe('runChatTurn', () => {
     const history = [{ role: 'user' as const, text: 'hi' }, { role: 'assistant' as const, text: 'hello' }]
     const result = await turn(provider, 'How big is the heading?', { history }).promise
     expect(runs[0]).toMatchObject({ task: 'How big is the heading?', history, tools: CHAT_TOOLS })
-    expect(runs[0].system).toContain('# This is a chat')
+    expect(runs[0].system).toContain('You are Parity\'s QA agent')
     expect(result.history).toEqual([...history, { role: 'user', text: 'How big is the heading?' }, { role: 'assistant', text: 'It is 28px.' }])
     expect(result.stopped).toBe('finished')
+  })
+
+  it('is a QA agent, not only a design comparer: it can test the page and never asks for a design', () => {
+    expect(CHAT_TOOLS).toEqual(expect.arrayContaining(['browser_open', 'browser_click', 'browser_type', 'check_links', 'page_audit', 'http_request', 'save_draft', 'finalize_rows']))
+    expect(QA_AGENT_PROMPT).toContain('A design is optional')
+    expect(QA_AGENT_PROMPT).toContain('Never ask the person for a Figma file')
+    expect(QA_AGENT_PROMPT).toContain('ENHANCEMENT (QA)')
+    expect(QA_AGENT_PROMPT).toContain('area "functional"')
   })
 
   it('lets the agent use read-only tools and the approval-gated one, but not set_design', async () => {

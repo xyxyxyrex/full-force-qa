@@ -4,6 +4,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4'
 //   POST /qa-evidence?days=90&label=…   Parity account token + the image as the request body.
 //                                       Stores it and answers with a link.
 //   GET  /qa-evidence/<id>.<ext>        Serves the image to anyone who has the link, until it expires.
+//   GET  /qa-evidence/<id>.json         What the Parity viewer page shows with it: the finding, the expiry and
+//                                       the image address. Readable from any page (the viewer is on another site).
 // Links cannot be listed or guessed (128-bit random ids), images cannot be overwritten, and expired
 // or unknown ids all answer the same plain 404.
 
@@ -15,6 +17,7 @@ const MAX_DAYS = 365
 const EXTENSION: Record<string, string> = { 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpg' }
 const CONTENT_TYPE_FOR: Record<string, string> = { webp: 'image/webp', png: 'image/png', jpg: 'image/jpeg' }
 const FILE_ROUTE = /\/([A-Za-z0-9_-]{22})\.(webp|png|jpg)$/
+const DETAILS_ROUTE = /\/([A-Za-z0-9_-]{22})\.json$/
 
 const jsonHeaders = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: jsonHeaders })
@@ -38,6 +41,16 @@ Deno.serve(async request => {
   const url = new URL(request.url)
 
   if (request.method === 'GET') {
+    const details = DETAILS_ROUTE.exec(url.pathname)
+    if (details) {
+      // The viewer page (another site) reads this, so it may be read from anywhere; it holds nothing the link does not already give.
+      const viewerHeaders = { ...jsonHeaders, 'Access-Control-Allow-Origin': '*', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' }
+      const { data: row } = await admin.from('qa_evidence').select('content_type, label, expires_at').eq('id', details[1]).maybeSingle()
+      const extension = row ? EXTENSION[row.content_type] : undefined
+      if (!row || !extension || !(new Date(row.expires_at).getTime() > Date.now())) return new Response(JSON.stringify({ error: 'Not found.' }), { status: 404, headers: viewerHeaders })
+      const base = Deno.env.get('SUPABASE_URL')!.replace(/\/$/, '')
+      return new Response(JSON.stringify({ id: details[1], label: row.label || '', contentType: row.content_type, expiresAt: row.expires_at, image: `${base}/functions/v1/qa-evidence/${details[1]}.${extension}` }), { status: 200, headers: viewerHeaders })
+    }
     const match = FILE_ROUTE.exec(url.pathname)
     if (!match) return notFound()
     const [, id, extension] = match

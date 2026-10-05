@@ -3,9 +3,10 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentEvent, AgentProvider, ProviderResult, ProviderRun } from './agents/types'
-import { QA_RUBRIC } from './prompt'
+import { FUNCTIONAL_TOOLS } from './batch'
+import { QA_FUNCTIONAL, QA_RUBRIC } from './prompt'
 import { runQa } from './runner'
-import { bands, createFakeContext, PAGE_DESIGN_KEY, reportedContext, type FakeContext } from './testSupport'
+import { bands, createFakeBrowser, createFakeContext, PAGE_DESIGN_KEY, reportedContext, type FakeContext } from './testSupport'
 
 let root: string
 let fake: FakeContext
@@ -94,7 +95,7 @@ describe('runQa with one breakpoint', () => {
     expect(run.system).toContain('only the desktop breakpoint')
     expect(run.tools).toEqual(['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft'])
     expect(fake.approvals).toHaveLength(1)
-    expect(fake.clipboard[0].text).toBe('Home\tHeading is smaller than the design\t\t\tHigh')
+    expect(fake.clipboard[0].text).toBe('Home\tHeading is smaller than the design\t\t\t')
     expect(events.at(-1)).toMatchObject({ type: 'done' })
   })
 
@@ -188,6 +189,50 @@ describe('runQa with several breakpoints', () => {
     await start(p, { breakpoints: ['mobile'] }).promise
     expect(calls.runs).toHaveLength(1)
     expect(calls.runs[0].task).toContain('mobile breakpoint')
+  })
+})
+
+describe('runQa with functional testing', () => {
+  it('tests the page after comparing it with the design, and merges both into one hand-over', async () => {
+    await addDesigns('desktop')
+    const browser = await createFakeBrowser()
+    fake.context.browser = browser
+    const { provider: p, calls } = provider(async (run) => {
+      const runId = runIdOf(run.task)
+      if (run.tools.includes('finalize_rows')) {
+        const rows = JSON.parse(run.task.split('Drafted rows (JSON):\n')[1].split('\n\nMerge them')[0])
+        await run.call('finalize_rows', { runId, rows })
+        return finished('Merged.')
+      }
+      if (run.tools.includes('browser_open')) {
+        await run.call('browser_open', { runId })
+        await run.call('save_draft', { runId, breakpoint: 'desktop', area: 'functional', rows: [rowFor('Contact link goes to a 404 page')] })
+        return finished()
+      }
+      await run.call('save_draft', { runId, breakpoint: 'desktop', rows: [rowFor('Heading is smaller than the design')] })
+      return finished()
+    })
+    const summary = await start(p, { functional: true }).promise
+    expect(calls.runs.map((run) => run.tools)).toEqual([['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft'], FUNCTIONAL_TOOLS, ['get_context', 'finalize_rows']])
+    expect(calls.runs[1].system).toContain(QA_FUNCTIONAL.slice(0, 80))
+    expect(calls.runs[1].task).toContain('at desktop:')
+    expect(calls.runs[1].task).not.toContain('Display is set for you')
+    expect(calls.runs[2].task).toContain('Contact link goes to a 404 page')
+    expect(browser.closed).toBe(1)
+    expect(summary).toMatchObject({ finalized: true, rowsDrafted: 2 })
+    expect(fake.clipboard[0].text.split('\n')).toHaveLength(2)
+  })
+
+  it('passes the choice on when the page has no design', async () => {
+    fake.context.browser = await createFakeBrowser()
+    const { provider: p, calls } = provider(async (run) => {
+      const runId = runIdOf(run.task)
+      if (run.tools.includes('browser_open')) await run.call('save_draft', { runId, breakpoint: 'desktop', area: 'functional', rows: [] })
+      else { const bp = /Review the (\w+) breakpoint/.exec(run.task)![1]; await run.call('save_draft', { runId, breakpoint: bp, rows: [] }) }
+      return finished()
+    })
+    await start(p, { functional: true, breakpoints: ['desktop'] }).promise
+    expect(calls.runs.map((run) => run.tools.includes('browser_open'))).toEqual([false, true])
   })
 })
 

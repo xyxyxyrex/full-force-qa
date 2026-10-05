@@ -8,6 +8,7 @@ import { setProjectOwner } from './store'
 
 declare const __PARITY_SUPABASE_URL__: string
 declare const __PARITY_SUPABASE_KEY__: string
+declare const __PARITY_VIEWER_URL__: string | undefined
 let client: SupabaseClient | undefined
 let user: ParityAccountUser | undefined
 let authId: string | undefined
@@ -96,7 +97,9 @@ async function freshAccessToken(): Promise<{ accessToken: string; generation: nu
   return { accessToken: session.access_token, generation }
 }
 export async function accountAccessToken(): Promise<string> { return (await freshAccessToken()).accessToken }
-export const parityPublicConfig = () => config()
+// The public viewer site (parity-gfx.pages.dev). Bundles built without the define (tests) simply have none.
+const viewerUrl = () => process.env.VITE_EPHEMERAL_VIEWER_URL || (typeof __PARITY_VIEWER_URL__ === 'string' ? __PARITY_VIEWER_URL__ : '')
+export const parityPublicConfig = () => ({ ...config(), viewer: viewerUrl() })
 export async function accountRequest(action: string, payload: Record<string, unknown> = {}): Promise<any> {
   const { accessToken, generation } = await freshAccessToken()
   const { url, key } = config()

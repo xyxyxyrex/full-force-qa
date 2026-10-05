@@ -168,6 +168,15 @@
     .form-status.error { color:var(--danger); }.form-status.success{color:var(--success)}
     .toast { position:fixed; bottom:24px; left:50%; z-index:1100; padding:10px 18px; border:1px solid #3f3f46; border-radius:999px; background:#27272a; opacity:0; transform:translate(-50%,10px); transition:.2s; pointer-events:none; }
     .toast.show { opacity:1; transform:translate(-50%,0); }
+    .evidence-card { overflow:hidden; border:1px solid var(--border); border-radius:14px; background:var(--card); }
+    .evidence-head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:8px 16px; padding:18px 20px 14px; border-bottom:1px solid var(--border); }
+    .evidence-head h2 { margin:6px 0 0; font-size:20px; line-height:1.35; overflow-wrap:anywhere; }
+    .evidence-kicker { color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .evidence-expiry { color:var(--muted); font-size:12px; }
+    .evidence-body { display:grid; place-items:center; min-height:220px; padding:16px; background:#111613; }
+    .evidence-body img { display:block; max-width:100%; max-height:calc(100vh - 260px); border-radius:8px; cursor:zoom-in; box-shadow:0 12px 40px #0008; }
+    .evidence-foot { display:flex; flex-wrap:wrap; gap:8px 16px; padding:12px 20px; border-top:1px solid var(--border); color:var(--muted); font-size:12px; }
+    .evidence-foot a { color:var(--text); }
     .lightbox { position:fixed; inset:0; z-index:1000; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:12px; padding:20px; background:#000e; backdrop-filter:blur(8px); }
     .lightbox[hidden] { display:none; }
     .lightbox-close { justify-self:end; width:42px; height:42px; display:grid; place-items:center; padding:0; border:1px solid #ffffff38; border-radius:999px; background:#18181cd9; color:white; font-size:28px; line-height:1; cursor:pointer; }
@@ -235,6 +244,27 @@
         </section>
       </div>
       <footer class="landing-footer"><span>© 2026 Parity</span><a href="/privacy/">Privacy policy</a><a href="/terms/">Terms of service</a><a href="mailto:xyrexkyle@gmail.com">Contact</a></footer>
+    </section>
+  </main>
+
+  <main class="page" id="evidencePage" hidden>
+    <header class="header">
+      <div class="logo" aria-hidden="true"><svg viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1C2321"/><rect x="18" y="24" width="28" height="5" rx="2.5" fill="#1D9E75"/><rect x="18" y="35" width="28" height="5" rx="2.5" fill="#1D9E75"/></svg></div>
+      <h1>parity</h1>
+    </header>
+    <section class="evidence-card" aria-labelledby="evidenceTitle">
+      <div class="evidence-head">
+        <div><span class="evidence-kicker">QA finding</span><h2 id="evidenceTitle">Loading…</h2></div>
+        <span class="evidence-expiry" id="evidenceExpiry"></span>
+      </div>
+      <div class="evidence-body">
+        <div class="message" id="evidenceMessage">Loading the picture…</div>
+        <img id="evidenceImage" alt="" hidden>
+      </div>
+      <div class="evidence-foot" id="evidenceFoot" hidden>
+        <span>Click the picture to enlarge it.</span>
+        <a id="evidenceOpen" href="#" target="_blank" rel="noopener noreferrer">Open the picture on its own</a>
+      </div>
     </section>
   </main>
 
@@ -375,7 +405,10 @@
       objectUrls: new Set(),
       modalAnnotationId: '',
     };
-    const isLanding = !state.site && !state.masterId && !params.get('img');
+    // A QA evidence picture from the Parity app: ?evidence=<id>, shown on its own small page.
+    const evidenceParam = params.get('evidence');
+    const isEvidence = evidenceParam !== null;
+    const isLanding = !state.site && !state.masterId && !params.get('img') && !isEvidence;
     if (isLanding) {
       document.body.classList.add('landing-mode');
       el('landing').hidden = false;
@@ -1379,7 +1412,7 @@
 
     document.addEventListener('click', (event) => {
       const image = event.target instanceof Element
-        ? event.target.closest('.rich-content img, #image')
+        ? event.target.closest('.rich-content img, #image, #evidenceImage')
         : null;
       if (!(image instanceof HTMLImageElement)) return;
       event.preventDefault();
@@ -1417,7 +1450,41 @@
     });
 
     addEventListener('beforeunload', () => { state.objectUrls.forEach((url) => URL.revokeObjectURL(url)); });
-    if (!isLanding) void initialize();
+    async function loadEvidence() {
+      el('viewerPage').hidden = true;
+      el('evidencePage').hidden = false;
+      document.title = 'QA finding · Parity';
+      const robots = document.createElement('meta'); robots.name = 'robots'; robots.content = 'noindex, nofollow'; document.head.append(robots);
+      const fail = (text) => { el('evidenceMessage').hidden = false; el('evidenceMessage').className = 'message error'; el('evidenceMessage').textContent = text; el('evidenceTitle').textContent = 'Picture not available'; };
+      try {
+        if (!/^[A-Za-z0-9_-]{22}$/.test(evidenceParam || '')) throw new Error('This link is not complete. Copy the whole link from the tracker again.');
+        if (!configured) throw new Error('The Parity viewer is missing its Supabase configuration.');
+        const base = `${SUPABASE_URL}/functions/v1/qa-evidence/${evidenceParam}`;
+        const response = await fetch(`${base}.json`, { headers: { Accept: 'application/json' } });
+        if (response.status === 404) throw new Error('This picture has expired, or the link is not complete.');
+        if (!response.ok) throw new Error(`The picture service answered ${response.status}. Try again in a moment.`);
+        const details = await response.json();
+        // Only a picture on this project's own evidence store is shown, whatever the answer says.
+        if (typeof details.image !== 'string' || !/^\.(webp|png|jpg)$/.test(details.image.slice(base.length)) || !details.image.startsWith(base)) throw new Error('The picture service gave an unexpected answer.');
+        const label = typeof details.label === 'string' && details.label.trim() ? details.label.trim() : 'QA finding';
+        el('evidenceTitle').textContent = label;
+        document.title = `${label.slice(0, 60)} · Parity`;
+        const expires = details.expiresAt ? new Date(details.expiresAt) : null;
+        el('evidenceExpiry').textContent = expires && !Number.isNaN(expires.getTime()) ? `Available until ${expires.toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' })}` : '';
+        const image = el('evidenceImage');
+        image.alt = label;
+        await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('The picture could not be loaded. It may have just expired.')); image.src = details.image; });
+        image.hidden = false;
+        el('evidenceMessage').hidden = true;
+        el('evidenceOpen').href = details.image;
+        el('evidenceFoot').hidden = false;
+      } catch (error) {
+        fail(error.message || 'The picture could not be loaded.');
+      }
+    }
+
+    if (isEvidence) void loadEvidence();
+    else if (!isLanding) void initialize();
   </script>
 </body>
 </html>

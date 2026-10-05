@@ -3,7 +3,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node'
 import * as z from 'zod'
 import { BRIDGE_VERSION, callTool, findTool, QA_TOOLS, type QaContext } from '../tools'
 import { checkRequest, MAX_BODY_BYTES } from './guards'
-import { QA_RUBRIC } from '../prompt'
+import { QA_AGENT_PROMPT } from '../prompt'
 import { createQaMcpHandler } from './mcp'
 
 // The local bridge: `/mcp` for MCP clients (Claude Code, Codex, Antigravity CLI, …) and
@@ -78,7 +78,7 @@ export function createBridgeServer(options: BridgeOptions) {
         return done(200)
       }
       if (path === '/api/prompt') {
-        sendJson(res, 200, { prompt: QA_RUBRIC })
+        sendJson(res, 200, { prompt: QA_AGENT_PROMPT })
         return done(200)
       }
       if (path === '/api/tools') {

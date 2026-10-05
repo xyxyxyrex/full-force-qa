@@ -50,7 +50,7 @@ describe('parity command', () => {
     expect(JSON.parse((await parity(['status', '--json'])).out)).toMatchObject({ ok: true, projectOpen: true })
     const tools = (await parity(['tools'])).out
     expect(tools).toContain('capture_live'); expect(tools).toContain('finalize_rows (changes something)')
-    expect((await parity(['prompt'])).out).toContain('visual QA reviewer')
+    expect((await parity(['prompt'])).out).toContain('Parity\'s QA agent')
   })
 
   it('stores designs, captures, reads a section and writes drafts', async () => {
@@ -91,7 +91,7 @@ describe('parity command', () => {
     fake.setDecision({ approved: true })
     const approved = await parity(['finalize', runId, rows, '--no-upload'])
     expect(approved.out).toContain('Copied 1 row(s)')
-    expect(fake.clipboard[0].text).toBe("Home\t'- stray dash\t\t\tLow")
+    expect(fake.clipboard[0].text).toBe("Home\t'- stray dash\t\t\t") // the agent's priority is never copied
   })
 
   it('validates usage before talking to Parity', async () => {

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import sharp from 'sharp'
@@ -85,8 +85,9 @@ const addDesign = async (bp: 'desktop' | 'tablet' | 'mobile' = 'desktop', width 
 
 describe('tool registry', () => {
   it('lists the tools and marks only the ones with side effects', () => {
-    expect(QA_TOOLS.map((tool) => tool.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows'])
-    expect(QA_TOOLS.filter((tool) => !tool.readOnly).map((tool) => tool.name)).toEqual(['set_design', 'finalize_rows'])
+    expect(QA_TOOLS.map((tool) => tool.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows', 'browser_open', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_scroll', 'browser_back', 'browser_events', 'check_links', 'page_audit', 'http_request'])
+    // The browser tools that click, type or send change the page; the browser's own rules keep them safe.
+    expect(QA_TOOLS.filter((tool) => !tool.readOnly).map((tool) => tool.name)).toEqual(['set_design', 'finalize_rows', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'http_request'])
     expect(QA_TOOLS.filter((tool) => !tool.agentAllowed).map((tool) => tool.name)).toEqual(['set_design'])
   })
 
@@ -133,7 +134,7 @@ describe('get_context', () => {
     const second = JSON.parse((await call('get_context')).text)
     expect(second.designsAreFor).toBe('/contact')
     expect(second.designs.desktop).toBeNull()
-    expect(second.notes.join(' ')).toMatch(/No designs are stored for the open page \(\/contact\)/)
+    expect(second.notes.join(' ')).toMatch(/No designs are stored for this page \(\/contact\), so review it on its own\. That is fine; do not ask for a design\./)
 
     // A design added now belongs to the contact page only.
     await designStore.put(designKeyOf('proj-1', 'https://svenson.test/contact/'), await bands(1440, 3000), { target: 'desktop', fileName: 'contact.png' })
@@ -275,7 +276,7 @@ describe('finalize_rows', () => {
     decision = { approved: false, note: 'Heading size is correct on the design' }
     const result = await call('finalize_rows', { runId, rows })
     expect(approvals).toHaveLength(1)
-    expect(approvals[0]).toMatchObject({ runId, projectName: '[Svenson] Alopecia', columns: ['Page', 'Issue', 'Expected', 'Screenshot', 'Severity'], severityCounts: { High: 2, Low: 1 }, uploadsEvidence: false })
+    expect(approvals[0]).toMatchObject({ runId, projectName: '[Svenson] Alopecia', columns: ['Page', 'Issue', 'Expected', 'Screenshot', 'Severity'], severityCounts: {}, uploadsEvidence: false })
     expect(approvals[0].rows[1][1]).toBe('- Button label differs') // shown as written, without the clipboard apostrophe
     expect(approvals[0].evidence).toHaveLength(1)
     expect(approvals[0].evidence[0].thumbnail).toMatch(/^data:image\/jpeg;base64,/)
@@ -289,8 +290,8 @@ describe('finalize_rows', () => {
     expect(result.isError).toBeUndefined()
     expect(clipboard).toHaveLength(1)
     const parsed = parseTsv(clipboard[0].text)
-    expect(parsed[0]).toEqual(['Home', 'Heading is 28px, expected 32px', '32px', '', 'High'])
-    expect(parsed[1]).toEqual(['Home', "'- Button label differs", '', '', 'Low'])
+    expect(parsed[0]).toEqual(['Home', 'Heading is 28px, expected 32px', '32px', '', ''])
+    expect(parsed[1]).toEqual(['Home', "'- Button label differs", '', '', ''])
     expect(parsed[2][1]).toBe('\'=IMAGE("https://evil.test/x")')
     expect(clipboard[0].html).toContain('<table>')
     expect(result.text).toContain('Copied 3 row(s) to the clipboard')
@@ -310,6 +311,66 @@ describe('finalize_rows', () => {
     const cells = clipboard[0].text.split('\n')[0].split('\t')
     expect(cells[3]).toMatch(/^https:\/\/evidence\.test\/evidence-\d+-row-01\.webp$/)
     expect(result.text).toContain('Uploaded 1 of 1 evidence image(s)')
+  })
+
+  it('copies and uploads only the rows the person kept, and tells the agent which were left out', async () => {
+    const upload = vi.fn(async (items: Array<{ name: string; label: string }>) => items.map((item) => ({ url: `https://evidence.test/${item.name}` })))
+    context.evidence = { unavailableReason: () => null, upload }
+    decision = { approved: true, excludedRows: [1] }
+    const result = await call('finalize_rows', { runId, rows })
+    const copied = parseTsv(clipboard[0].text)
+    expect(copied.map((row) => row[1])).toEqual(['Heading is 28px, expected 32px', '\'=IMAGE("https://evil.test/x")'])
+    expect(upload.mock.calls[0][0]).toHaveLength(1)
+    expect(copied[0][3]).toMatch(/^https:\/\/evidence\.test\//)
+    expect(result.text).toContain('Copied 2 row(s)')
+    expect(result.text).toContain('The person left out 1 row(s): 2.')
+  })
+
+  it('uploads nothing for a left-out row with a picture', async () => {
+    const upload = vi.fn(async () => [])
+    context.evidence = { unavailableReason: () => null, upload }
+    decision = { approved: true, excludedRows: [0] }
+    await call('finalize_rows', { runId, rows })
+    expect(upload).not.toHaveBeenCalled()
+    expect(parseTsv(clipboard[0].text)).toHaveLength(2)
+  })
+
+  it('copies nothing when every row is left out', async () => {
+    decision = { approved: true, excludedRows: [0, 1, 2] }
+    const result = await call('finalize_rows', { runId, rows })
+    expect(clipboard).toHaveLength(0)
+    expect(result.text).toBe('The person approved but left out every row, so nothing was copied or uploaded.')
+  })
+
+  it('ignores left-out indexes that do not exist', async () => {
+    decision = { approved: true, excludedRows: [-1, 7, 1.5] }
+    await call('finalize_rows', { runId, rows })
+    expect(parseTsv(clipboard[0].text)).toHaveLength(3)
+  })
+
+  it('keeps a record of every hand-over in the run, with the decision', async () => {
+    const upload = vi.fn(async (items: Array<{ name: string }>) => items.map((item) => ({ url: `https://evidence.test/${item.name}` })))
+    context.evidence = { unavailableReason: () => null, upload }
+    decision = { approved: true, excludedRows: [2] }
+    await call('finalize_rows', { runId, rows })
+    decision = { approved: false, note: 'too many' }
+    await call('finalize_rows', { runId, rows })
+    const folder = context.runs.outputDir(runId)
+    const records = readdirSync(folder).filter((name) => name.startsWith('handover-')).sort().map((name) => JSON.parse(readFileSync(join(folder, name), 'utf8')))
+    expect(records).toHaveLength(2)
+    expect(records[0]).toMatchObject({ status: 'approved', excludedRows: [2], copiedRows: 2, columns: ['Page', 'Issue', 'Expected', 'Screenshot', 'Severity'], projectName: '[Svenson] Alopecia' })
+    expect(records[0].rows[2][1]).toBe('=IMAGE("https://evil.test/x")') // as shown, not as pasted
+    expect(records[0].evidence).toEqual([{ rowIndex: 0, file: expect.stringMatching(/^evidence-\d+-row-01\.webp$/), caption: expect.any(String) }])
+    expect(records[0].links['0']).toMatch(/^https:\/\/evidence\.test\//)
+    expect(existsSync(join(folder, records[0].evidence[0].file))).toBe(true)
+    expect(records[1]).toMatchObject({ status: 'rejected', note: 'too many' })
+  })
+
+  it('labels each uploaded picture with its finding, for the viewer page', async () => {
+    const upload = vi.fn(async (items: Array<{ name: string; label: string }>) => items.map(() => ({ url: 'https://evidence.test/x' })))
+    context.evidence = { unavailableReason: () => null, upload }
+    await call('finalize_rows', { runId, rows })
+    expect(upload.mock.calls[0][0][0].label).toBe('Heading is 28px, expected 32px')
   })
 
   it('does not upload when the person has not signed in, and says why', async () => {

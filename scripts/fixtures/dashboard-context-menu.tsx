@@ -16,6 +16,7 @@ window.addEventListener('parity:open-qa-chat', () => { (window as any).__dashboa
     else savedProjects.push(nextProject)
     return nextProject
   },
+  qaAgentsSettings: async () => ({ functionalChecks: true }),
   qaBatchStart: async (options: any) => { (window as any).__dashboardTest.batchCalls.push(options); return (window as any).__dashboardTest.batchResult },
   capture: async () => { (window as any).__dashboardTest.captureCalls += 1; return { success: false } },
   ticketsList: async () => ({ records: [], ownerKey: null }),

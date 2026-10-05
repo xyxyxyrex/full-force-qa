@@ -10,13 +10,14 @@ const argsPreview = (value: unknown) => { const text = value === undefined ? '' 
 const SUGGESTIONS = [
   { label: 'Review this page', send: '/review' },
   { label: 'Which designs are loaded?', send: 'Which designs are loaded for this page, and at what sizes?' },
-  { label: 'Check the hero on mobile', send: 'Compare the hero section on mobile with the design and tell me what differs.' },
+  { label: 'Test links and forms', send: 'Test the links, buttons, menus and forms on this page and tell me what does not work.' },
 ]
 
 const HELP = [
-  '/review [desktop] [tablet] [mobile] [--no-design]   review the open page and hand the rows over for approval.\n                                         With no design stored for the page (or --no-design) the agent judges the page on its own.',
+  '/review [desktop] [tablet] [mobile] [--no-design] [--visual-only]\n                                       review the open page and hand the rows over for approval.\n                                       With no design stored for the page (or --no-design) the agent judges the page on its own.\n                                       It then tests links, buttons, menus and forms, unless --visual-only (or turned off in Settings).',
   '/stop                                 stop what the agent is doing',
-  '/new                                  start a new chat (clears what the agent remembers)',
+  '/new                                  start a new chat (the current one is kept in History)',
+  '/history                              past chats and past reviews, with their screenshots',
   '/agents                               which agents are ready',
   '/help                                 show this list',
   'Anything else is sent to the agent as a message.',
@@ -180,9 +181,11 @@ export default function QaChat({ onClose }: Props) {
   const startReview = async (words: string[]) => {
     let agent: AgentId | undefined
     let standalone = false
+    let visualOnly = false
     const breakpoints: Breakpoint[] = []
     for (let i = 0; i < words.length; i++) {
       if (words[i] === '--no-design') standalone = true
+      else if (words[i] === '--visual-only') visualOnly = true
       else if (words[i] === '--agent') {
         const value = words[++i]
         if (!isAgentId(value)) throw new Error(`Unknown agent "${value || ''}". Type /agents to see the ids.`)
@@ -190,7 +193,8 @@ export default function QaChat({ onClose }: Props) {
       } else if (isBreakpoint(words[i])) breakpoints.push(words[i] as Breakpoint)
       else throw new Error(`Unknown option "${words[i]}". Breakpoints are: ${BREAKPOINTS.join(', ')}.`)
     }
-    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}) })
+    // Testing follows the setting unless this review is visual only.
+    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}), ...(visualOnly ? { functional: false } : {}) })
     if (!result.started) throw new Error(result.error)
   }
 
@@ -205,6 +209,7 @@ export default function QaChat({ onClose }: Props) {
     setBusy(true)
     try {
       if (head === '/help') { qaChat.addUserMessage(text); qaChat.addStatus(HELP) }
+      else if (head === '/history') window.dispatchEvent(new CustomEvent('parity:open-qa-history', { detail: { tab: rest[0] === 'chats' ? 'chats' : 'reviews' } }))
       else if (head === '/new') {
         if (chat.running) throw new Error('Stop the agent first.')
         await window.electronAPI.qaChatReset()
@@ -221,7 +226,7 @@ export default function QaChat({ onClose }: Props) {
         await startReview(rest)
       } else {
         qaChat.addUserMessage(text)
-        const result = await window.electronAPI.qaChatSend(text)
+        const result = await window.electronAPI.qaChatSend(text, { chatId: qaChat.getState().chatId ?? undefined })
         if (!result.started) throw new Error(result.error)
       }
     } catch (cause) {
@@ -241,6 +246,7 @@ export default function QaChat({ onClose }: Props) {
           {chat.running && <span className="qa-chat-running" role="status"><span /> Working</span>}
         </div>
         <div className="qa-chat-actions">
+          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('parity:open-qa-history', { detail: { tab: 'chats' } }))} title="Past chats and reviews">History</button>
           <button type="button" onClick={() => void submit('/new')} disabled={chat.running} title="New chat">New chat</button>
           <button type="button" onClick={onClose} aria-label="Close the QA chat" title="Close (Ctrl+Shift+Q)">×</button>
         </div>

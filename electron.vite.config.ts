@@ -10,6 +10,7 @@ export default defineConfig({
     define: {
       __PARITY_SUPABASE_URL__: JSON.stringify(accountEnv.VITE_SUPABASE_URL || ''),
       __PARITY_SUPABASE_KEY__: JSON.stringify(accountEnv.VITE_SUPABASE_ANON_KEY || ''),
+      __PARITY_VIEWER_URL__: JSON.stringify(accountEnv.VITE_EPHEMERAL_VIEWER_URL || ''),
     },
     plugins: [externalizeDepsPlugin({ exclude: ['pixelmatch'] })],
     build: {

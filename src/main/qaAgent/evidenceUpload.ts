@@ -7,8 +7,8 @@ export interface EvidenceDeps {
   settings(): { evidenceUploads: boolean; evidenceDays: number }
   isSignedIn(): boolean
   accessToken(): Promise<string>
-  /** The project's public address and key (the same ones the account features use). */
-  config(): { url: string; key: string }
+  /** The project's public address and key (the same ones the account features use), and the viewer site if there is one. */
+  config(): { url: string; key: string; viewer?: string }
 }
 
 const UPLOAD_TIMEOUT_MS = 60_000
@@ -22,8 +22,22 @@ function describeFailure(status: number): string {
 }
 
 // A status check must never throw just because the online service is not configured.
-function safeConfig(deps: EvidenceDeps): { url: string; key: string } {
+function safeConfig(deps: EvidenceDeps): { url: string; key: string; viewer?: string } {
   try { return deps.config() } catch { return { url: '', key: '' } }
+}
+
+/**
+ * The link for the screenshot column: the Parity viewer page for the picture (it shows the finding with it)
+ * when a viewer site is set up, otherwise the picture itself.
+ */
+export function evidenceViewerLink(imageUrl: string, viewer: string | undefined): string {
+  const id = /\/qa-evidence\/([A-Za-z0-9_-]{22})\.(webp|png|jpg)$/.exec(imageUrl)?.[1]
+  if (!id || !viewer) return imageUrl
+  try {
+    const base = new URL(viewer)
+    if (base.protocol !== 'https:') return imageUrl
+    return `${base.origin}${base.pathname.replace(/\/+$/, '')}/?evidence=${id}`
+  } catch { return imageUrl }
 }
 
 export function createEvidenceUploader(deps: EvidenceDeps): EvidenceUploader {
@@ -55,7 +69,7 @@ export function createEvidenceUploader(deps: EvidenceDeps): EvidenceUploader {
           if (response.status !== 201) { results.push({ error: describeFailure(response.status) }); continue }
           const body = (await response.json()) as { url?: unknown }
           // Only a link into our own store is accepted, whatever the response says.
-          if (typeof body.url === 'string' && body.url.startsWith(`${base}/functions/v1/qa-evidence/`)) results.push({ url: body.url })
+          if (typeof body.url === 'string' && body.url.startsWith(`${base}/functions/v1/qa-evidence/`)) results.push({ url: evidenceViewerLink(body.url, safeConfig(deps).viewer) })
           else results.push({ error: 'The upload service answered with an unexpected link.' })
         } catch (error: any) {
           results.push({ error: error?.name === 'TimeoutError' ? 'The upload timed out.' : 'Could not reach the upload service.' })

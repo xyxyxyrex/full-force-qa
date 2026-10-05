@@ -27,6 +27,10 @@ async function smoke() {
   const open = async view => { await win.loadFile(path.join(dir, 'ui.html'), { query: { view } }); await sleep(500) }
   const text = selector => run(`document.querySelector(${JSON.stringify(selector)})?.innerText ?? ''`)
   const click = (selector, index = 0) => run(`document.querySelectorAll(${JSON.stringify(selector)})[${index}].click()`)
+  const until = async (expression) => {
+    for (let attempt = 0; attempt < 120; attempt++) { if (await run(expression)) return; await sleep(50) }
+    throw new Error(`Timeout: ${expression}`)
+  }
 
   // Settings → AI Agents
   await open('agents')
@@ -36,7 +40,16 @@ async function smoke() {
   assert.match(await text('.agents-chips'), /Screenshot/, 'the saved tracker columns are shown')
   assert.match(await text('.agents-kv'), /127\.0\.0\.1:29849\/mcp/, 'the bridge address is shown')
   assert.match(await text('.agents-panel'), /Uploading needs your Parity account/, 'signed-out users are told uploads need an account')
-  assert.equal(await run(`document.querySelectorAll('.agents-group')[1].querySelector('select').value`), '90', 'the evidence lifetime defaults to 90 days')
+  const group = heading => `[...document.querySelectorAll('.agents-group')].find(g => g.querySelector('h4')?.textContent === ${JSON.stringify(heading)})`
+  assert.equal(await run(`${group('Evidence screenshots')}.querySelector('select').value`), '90', 'the evidence lifetime defaults to 90 days')
+  // Testing the page: on for reviews, sending off, and each switch saves.
+  assert.deepEqual(await run(`[...${group('Testing the page')}.querySelectorAll('input[type=checkbox]')].map(i => i.checked)`), [true, false], 'reviews test the page, and nothing is sent, by default')
+  assert.match(await run(`${group('Testing the page')}.innerText`), /submissions and POST, PUT and DELETE requests are stopped/)
+  await run(`${group('Testing the page')}.querySelectorAll('input[type=checkbox]')[1].click()`); await sleep(150)
+  assert.ok((await run('window.__calls')).includes('save {"allowSend":true}'), 'allowing sends saves it')
+  await run(`${group('Testing the page')}.querySelectorAll('input[type=checkbox]')[0].click()`); await sleep(150)
+  assert.ok((await run('window.__calls')).includes('save {"functionalChecks":false}'), 'turning testing off saves it')
+  await run(`${group('Testing the page')}.scrollIntoView()`); await shot('agents-testing')
   await run(`document.querySelectorAll('input[name=default-agent]')[4].click()`)
   await sleep(200)
   assert.ok((await run('window.__calls')).some(c => c === 'save {"defaultAgent":"openai-api"}'), 'choosing an agent saves it')
@@ -82,8 +95,70 @@ async function smoke() {
   await click('.qa-approval-view button', 0); await sleep(100)
   await run(`(() => { const t = document.querySelector('.qa-approval-note textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, 'Finding 3 is wrong'); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
   await sleep(100); await click('.qa-approval-secondary'); await sleep(100)
-  assert.ok((await run('window.__calls')).includes('decide false Finding 3 is wrong'), 'rejecting sends the note')
+  assert.ok((await run('window.__calls')).includes('decide false Finding 3 is wrong []'), 'rejecting sends the note')
   assert.equal(await run(`document.querySelector('.qa-approval-primary').disabled`), true, 'buttons lock after a decision')
+
+  // Leaving findings out before copying.
+  await open('approval')
+  await click('.qa-finding-toggle', 1); await sleep(100)
+  assert.match(await text('.qa-approval h2'), /Copy 2 of 3 findings/, 'the title counts what will be copied')
+  assert.equal(await run(`document.querySelectorAll('.qa-finding.excluded').length`), 1)
+  assert.equal(await run(`document.querySelector('.qa-finding.excluded .qa-finding-toggle').textContent`), 'Put back')
+  assert.match(await text('.qa-approval-primary'), /Approve & copy 2/)
+  await click('.qa-approval-view button', 1); await sleep(100)
+  assert.equal(await run(`document.querySelectorAll('.qa-approval tr.excluded').length`), 1, 'the sheet view marks a left-out row')
+  await click('.qa-approval-view button', 0); await sleep(100)
+  await click('.qa-finding-toggle', 0); await click('.qa-finding-toggle', 2); await sleep(100)
+  assert.equal(await run(`document.querySelector('.qa-approval-primary').disabled`), true, 'nothing to copy when everything is left out')
+  assert.match(await text('.qa-approval-effect'), /Every finding is left out/)
+  await click('.qa-finding-toggle', 2); await sleep(100)
+  await click('.qa-approval-primary'); await sleep(100)
+  assert.ok((await run('window.__calls')).includes('decide true  [0,1]'), 'approving sends the findings that were left out')
+  await shot('approval-leave-out')
+
+  // Past reviews: runs, their hand-overs and drafts with screenshots, copy again, keep, delete.
+  await open('history')
+  assert.equal(await run(`document.querySelectorAll('.qa-history-runs li').length`), 2)
+  assert.match(await text('.qa-history-runs li'), /Dynamiq Real Estate Management/); assert.match(await text('.qa-history-runs li'), /2 copied/); assert.match(await text('.qa-history-runs li'), /3 drafted/)
+  assert.match(await text('.qa-history-detail'), /Approved · 2 rows copied · 1 left out/)
+  assert.match(await text('.qa-history-detail'), /replace watermarked image/); assert.match(await text('.qa-history-detail'), /Drafted by the agent/); assert.match(await text('.qa-history-detail'), /h1 title should be 2 lines/)
+  assert.equal(await run(`document.querySelectorAll('.qa-history-detail .qa-finding.excluded').length`), 1, 'a finding left out at the time is marked')
+  assert.match(await text('.qa-finding-evidence-link'), /parity-gfx\.pages\.dev\/\?evidence=/, 'the link that went in the sheet is shown')
+  await run(`[...document.querySelectorAll('.qa-history-breakpoint')].find(el => el.textContent.includes('testing links')).scrollIntoView()`)
+  await until(`window.__calls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 draft functional-desktop-0')`)
+  const pictureCalls = (await run('window.__calls')).filter(c => c.startsWith('picture '))
+  assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 handover evidence-1791174398615-row-01.webp'), 'hand-over pictures load')
+  assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 draft tablet-0'), 'drafted findings get their pictures made')
+  assert.match(await text('.qa-history-detail'), /Desktop · testing links, buttons and forms · 1 finding/, 'findings from testing the page have their own group')
+  assert.ok(pictureCalls.includes('picture 20261005-035056-dynamiq-real-estate-mana-5229 draft functional-desktop-0'), 'with the browser screenshot as their picture')
+  assert.equal(pictureCalls.some(c => c.endsWith('tablet-1')), false, 'no picture is asked for a draft without evidence')
+  assert.ok((await run(`document.querySelectorAll('.qa-history-detail .qa-finding-shot img').length`)) >= 2)
+  await shot('history-reviews')
+  await run(`[...document.querySelectorAll('.qa-history-section header button')].find(b => b.textContent === 'Copy rows again').click()`); await sleep(150)
+  assert.ok((await run('window.__calls')).includes('copy 20261005-035056-dynamiq-real-estate-mana-5229 1791174398615'))
+  assert.match(await text('.qa-history-notice'), /Copied 2 rows to the clipboard/)
+  await run(`[...document.querySelectorAll('.qa-history-actions button')].find(b => b.textContent === 'Keep').click()`); await sleep(200)
+  assert.ok((await run('window.__calls')).includes('pin 20261005-035056-dynamiq-real-estate-mana-5229 true'))
+  assert.equal(await run(`[...document.querySelectorAll('.qa-history-actions button')].some(b => b.textContent === 'Kept')`), true)
+  await run(`[...document.querySelectorAll('.qa-history-actions button')].find(b => b.textContent === 'Open folder').click()`); await sleep(100)
+  assert.ok((await run('window.__calls')).includes('open-folder 20261005-035056-dynamiq-real-estate-mana-5229'))
+  await run(`document.querySelector('.qa-history-actions .danger').click()`); await sleep(100)
+  assert.equal(await run(`document.querySelector('.qa-history-actions .danger').textContent`), 'Delete for good?', 'deleting asks once more')
+  assert.equal((await run('window.__calls')).some(c => c.startsWith('delete ')), false)
+  await run(`document.querySelector('.qa-history-actions .danger').click()`); await sleep(200)
+  assert.ok((await run('window.__calls')).includes('delete 20261005-035056-dynamiq-real-estate-mana-5229'))
+  await run(`(() => { const i = document.querySelector('.qa-history-runs input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'services'); i.dispatchEvent(new Event('input', { bubbles: true })) })()`); await sleep(100)
+  assert.equal(await run(`document.querySelectorAll('.qa-history-runs li').length`), 1, 'the list filters by page or project')
+
+  // Past chats: open one into the chat, or delete it.
+  await run(`window.__chatOpened = 0; window.addEventListener('parity:open-qa-chat', () => { window.__chatOpened++ })`)
+  await click('.qa-history-tabs button', 1); await sleep(200)
+  assert.match(await text('.qa-history-chats'), /How big is the hero heading\?/); assert.match(await text('.qa-history-chats'), /18,250 tokens/)
+  await run(`[...document.querySelectorAll('.qa-history-chats button')].find(b => b.textContent === 'Open').click()`); await sleep(200)
+  assert.ok((await run('window.__calls')).includes('chats-open chat-saved-0001'))
+  assert.equal(await run('window.__chatOpened'), 1, 'opening a chat shows the chat panel')
+  assert.ok((await run('window.__calls')).includes('history-close'))
+  await shot('history-chats')
 
   // Approval card for a batch of pages: findings grouped under a heading per page.
   await open('approval-batch')
@@ -91,6 +166,7 @@ async function smoke() {
   assert.equal(await run(`document.querySelectorAll('.qa-finding-page').length`), 2, 'one heading per page')
   assert.match(await text('.qa-finding-page'), /Alopecia/); assert.match(await text('.qa-finding-page'), /2 findings/)
   assert.equal(await run(`[...document.querySelectorAll('.qa-findings > li')].map(li => li.className).join(',')`), 'qa-finding-page,qa-finding,qa-finding,qa-finding-page,qa-finding', 'a heading starts each page\'s findings')
+  assert.equal(await run(`document.querySelector('.qa-badge.suggestion')?.textContent`), 'Suggestion', 'a suggestion is marked as one')
   await shot('approval-batch')
 
   // Chat
@@ -112,12 +188,16 @@ async function smoke() {
   const send = async message => { await run(`(() => { const t = document.querySelector('.qa-chat-composer textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, ${JSON.stringify(message)}); t.dispatchEvent(new Event('input', { bubbles: true })) })()`); await sleep(80); await click('.qa-chat-send'); await sleep(250) }
   await send('How big is the hero heading?')
   assert.ok((await run('window.__calls')).includes('chat How big is the hero heading?'), 'a message goes to the agent')
+  assert.match(await run('window.__lastChatId'), /^chat-/, 'with the id of the chat it belongs to')
+  await sleep(500)
+  assert.ok((await run('window.__calls')).some(c => c.startsWith('chats-save chat-')), 'the chat is saved')
   assert.match(await text('.qa-chat-body'), /How big is the hero heading\?/, 'and shows as your bubble')
   await send('/review tablet --agent codex'); assert.ok((await run('window.__calls')).includes('run {"agent":"codex","breakpoints":["tablet"]}'), '/review starts a review')
   await send('/review --agent skynet'); assert.match(await text('.qa-chat-body'), /Unknown agent "skynet"/)
   await send('/agents'); assert.match(await text('.qa-chat-body'), /claude-code\s+ready/); assert.match(await text('.qa-chat-body'), /codex\s+not ready/)
   await send('/help'); assert.match(await text('.qa-chat-body'), /\/review \[desktop\]/); assert.match(await text('.qa-chat-body'), /--no-design/)
   await send('/review mobile --no-design'); assert.ok((await run('window.__calls')).includes('run {"breakpoints":["mobile"],"standalone":true}'), '--no-design reviews the page on its own')
+  await send('/review --visual-only'); assert.ok((await run('window.__calls')).includes('run {"functional":false}'), '--visual-only skips testing links, buttons and forms')
   // A streamed answer: deltas join into one message, tool calls become cards, tokens add up, the turn ends with a summary.
   for (const e of [
     { type: 'started', agent: 'anthropic-api', label: 'Claude API (claude-opus-5-5)', budgetTokens: 10000 },
@@ -144,7 +224,10 @@ async function smoke() {
   assert.match(await text('.qa-chat-meter'), /3\.5k tokens/); assert.match(await text('.qa-chat-meter'), /3k in · 500 out/)
   assert.equal(await run(`document.querySelector('.qa-chat-running')`), null, 'the working marker clears when the agent finishes')
   await shot('chat')
-  await click('.qa-chat-actions button'); await sleep(250)
+  await run(`window.__historyTab = ''; window.addEventListener('parity:open-qa-history', (e) => { window.__historyTab = e.detail.tab })`)
+  await run(`[...document.querySelectorAll('.qa-chat-actions button')].find(b => b.textContent === 'History').click()`); await sleep(100)
+  assert.equal(await run('window.__historyTab'), 'chats', 'History opens past chats')
+  await run(`[...document.querySelectorAll('.qa-chat-actions button')].find(b => b.textContent === 'New chat').click()`); await sleep(250)
   assert.ok((await run('window.__calls')).includes('chat-reset'), 'New chat tells the agent to forget')
   assert.equal(await run(`document.querySelectorAll('.qa-chat-msg').length`), 0, 'and clears the transcript')
   assert.match(await text('.qa-chat-meter'), /tokens: —/, 'and the counts')

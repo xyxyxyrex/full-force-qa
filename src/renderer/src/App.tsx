@@ -18,6 +18,7 @@ import type { AuditCaptureContext } from '../../shared/auditExport'
 import CommandPalette from './components/CommandPalette'
 import QaApprovalCard from './components/QaApprovalCard'
 import QaChat from './components/QaChat'
+import QaHistory, { type HistoryTab } from './components/QaHistory'
 import type { ApprovalRequest } from '../../shared/qaAgent'
 import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/registry'
 import { getPaletteNotes, setPaletteNotes, workspaceItems } from './palette/workspaceSearch'
@@ -71,6 +72,13 @@ export default function App() {
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
   const [qaChatOpen, setQaChatOpen] = useState(false)
+  const [qaHistoryTab, setQaHistoryTab] = useState<HistoryTab | null>(null)
+  // The chat's History button and /history open past reviews and chats.
+  useEffect(() => {
+    const open = (event: Event) => setQaHistoryTab((event as CustomEvent<{ tab?: HistoryTab }>).detail?.tab === 'chats' ? 'chats' : 'reviews')
+    window.addEventListener('parity:open-qa-history', open)
+    return () => window.removeEventListener('parity:open-qa-history', open)
+  }, [])
   // Other screens (the Multi-capture dialog) open the chat when they start a review.
   useEffect(() => {
     const open = () => setQaChatOpen(true)
@@ -831,6 +839,8 @@ export default function App() {
       { id: 'app.capture', title: 'New project / capture website', group: 'Commands', run: () => handleNewProject() },
       { id: 'app.tab', title: 'New tab', group: 'Commands', run: handleNewTab },
       { id: 'app.settings', title: 'Open Settings', group: 'Commands', description: 'Account, integrations, shortcuts, appearance and directory', run: () => setSettingsOpen(true) },
+      { id: 'app.qa-history', title: 'QA agent: past reviews', group: 'Commands', description: 'Every run with its findings and screenshots; copy rows again', run: () => setQaHistoryTab('reviews') },
+      { id: 'app.qa-chats', title: 'QA agent: past chats', group: 'Commands', description: 'Open or delete a saved chat', run: () => setQaHistoryTab('chats') },
       { id: 'app.qa-console', title: 'QA agent: open the chat', group: 'Commands', description: 'Ask the agent about the open page or review it against its Figma designs (Ctrl+Shift+Q)', run: () => setQaChatOpen(true) },
       { id: 'app.feedback', title: 'Send feedback or report a bug', group: 'Commands', description: 'Tell us about a problem or suggest a Parity feature', run: () => setFeedbackOpen(true) },
       ...(['account', 'general', 'hotkeys', 'appearance', 'integrations', 'agents'] as const).map(section => ({ id: `settings:${section}`, title: `Settings: ${section}`, group: 'Commands' as const, run: () => { setSettingsOpen(true); window.dispatchEvent(new CustomEvent('parity:settings-section', { detail: section })) } })),
@@ -1048,12 +1058,13 @@ export default function App() {
         }}
       />
       {qaChatOpen && activeTab?.view !== 'editor' && <div className="qa-chat-float"><QaChat onClose={() => setQaChatOpen(false)} /></div>}
+      {qaHistoryTab && <QaHistory initialTab={qaHistoryTab} onClose={() => setQaHistoryTab(null)} />}
       {qaApproval && <QaApprovalCard
         request={qaApproval}
-        onDecide={(approved, note) => {
+        onDecide={(approved, note, excludedRows) => {
           const id = qaApproval.id
           setQaApproval(null)
-          void window.electronAPI.qaApprovalDecision(id, { approved, note })
+          void window.electronAPI.qaApprovalDecision(id, { approved, note, ...(excludedRows?.length ? { excludedRows } : {}) })
         }}
       />}
       {feedbackOpen && <FeedbackModal

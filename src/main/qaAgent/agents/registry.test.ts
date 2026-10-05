@@ -37,6 +37,12 @@ describe('normalizeSettings', () => {
     expect(DEFAULT_AGENT_SETTINGS).toMatchObject({ evidenceUploads: true, evidenceDays: 90 })
   })
 
+  it('keeps sending off unless it was turned on, and functional checks on unless turned off', () => {
+    expect(DEFAULT_AGENT_SETTINGS).toMatchObject({ allowSend: false, functionalChecks: true })
+    expect(normalizeSettings({ allowSend: 'yes', functionalChecks: 0 })).toMatchObject({ allowSend: false, functionalChecks: true })
+    expect(normalizeSettings({ allowSend: true, functionalChecks: false })).toMatchObject({ allowSend: true, functionalChecks: false })
+  })
+
   it('caps absurd budgets and long model names', () => {
     expect(normalizeSettings({ budgetTokens: 9e15 }).budgetTokens).toBe(50_000_000)
     expect(normalizeSettings({ models: { local: 'x'.repeat(500) } }).models.local).toHaveLength(120)

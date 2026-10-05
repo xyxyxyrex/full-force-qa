@@ -41,6 +41,12 @@ export default function MultiCaptureDialog({
   const [stopping, setStopping] = useState(false)
   const [message, setMessage] = useState('')
   const [reviewOn, setReviewOn] = useState<Record<Breakpoint, boolean>>({ desktop: true, tablet: false, mobile: true })
+  // After looking at each page, the agent also tests its links, buttons, menus and forms. Starts from the setting.
+  const [testPages, setTestPages] = useState(true)
+  const testTouched = useRef(false)
+  useEffect(() => {
+    void window.electronAPI.qaAgentsSettings().then(settings => { if (settings && !testTouched.current) setTestPages(settings.functionalChecks) }).catch(() => {})
+  }, [])
   const [starting, setStarting] = useState(false)
   const [summary, setSummary] = useState<{ added: number; skipped: number; failed: number; stopped: number } | null>(null)
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -177,7 +183,7 @@ export default function MultiCaptureDialog({
     setMessage('')
     try {
       if (addableCount > 0 && !(await saveRows())) return
-      const result = await window.electronAPI.qaBatchStart({ pages: reviewPages, breakpoints: chosenBreakpoints })
+      const result = await window.electronAPI.qaBatchStart({ pages: reviewPages, breakpoints: chosenBreakpoints, functional: testPages })
       if (!result.started) { setMessage(result.error); return }
       window.dispatchEvent(new Event('parity:open-qa-chat'))
       onClose()
@@ -236,7 +242,8 @@ export default function MultiCaptureDialog({
       <div className="multi-capture-review">
         <span className="multi-capture-review-label">QA agent</span>
         {(['desktop', 'tablet', 'mobile'] as Breakpoint[]).map(breakpoint => <label key={breakpoint}><input type="checkbox" checked={reviewOn[breakpoint]} onChange={event => setReviewOn(current => ({ ...current, [breakpoint]: event.target.checked }))} disabled={saving || starting} />{breakpoint[0].toUpperCase() + breakpoint.slice(1)}</label>)}
-        <small>Reviews each page by itself, with no design, on every ticked size: {reviewPages.length * chosenBreakpoints.length} review{reviewPages.length * chosenBreakpoints.length === 1 ? '' : 's'} ({reviewPages.length} page{reviewPages.length === 1 ? '' : 's'} × {chosenBreakpoints.length} size{chosenBreakpoints.length === 1 ? '' : 's'}). {tooManyPages ? `Review at most ${QA_BATCH_MAX_PAGES} pages at once.` : 'Each review can use hundreds of thousands of tokens (about 500,000 on a small test page with a subscription agent), so a long list can use up a plan. Set a token limit in Settings → AI Agents.'}</small>
+        <label className="multi-capture-review-test"><input type="checkbox" checked={testPages} onChange={event => { testTouched.current = true; setTestPages(event.target.checked) }} disabled={saving || starting} />Also test links, forms and buttons</label>
+        <small>Reviews each page by itself, with no design, on every ticked size{testPages ? ', then tests how it works' : ''}: {reviewPages.length * chosenBreakpoints.length} review{reviewPages.length * chosenBreakpoints.length === 1 ? '' : 's'} ({reviewPages.length} page{reviewPages.length === 1 ? '' : 's'} × {chosenBreakpoints.length} size{chosenBreakpoints.length === 1 ? '' : 's'}){testPages ? ` and ${reviewPages.length} test${reviewPages.length === 1 ? '' : 's'}` : ''}. {tooManyPages ? `Review at most ${QA_BATCH_MAX_PAGES} pages at once.` : 'Each review can use hundreds of thousands of tokens (about 500,000 on a small test page with a subscription agent), so a long list can use up a plan. Set a token limit in Settings → AI Agents.'}</small>
       </div>
 
       <footer className="multi-capture-footer">

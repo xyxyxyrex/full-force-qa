@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Breakpoint } from '../../shared/designScale'
 import { STANDARD_TRACKER } from '../../shared/trackerFormat'
 import type { AgentEvent, AgentProvider, ProviderResult, ProviderRun } from './agents/types'
-import { finishPageRows, isReviewablePageUrl, MAX_BATCH_PAGES, runQaBatch } from './batch'
-import { QA_RUBRIC_STANDALONE } from './prompt'
-import { createFakeContext, type FakeContext } from './testSupport'
+import { FUNCTIONAL_TOOLS, finishPageRows, functionalBreakpoints, isReviewablePageUrl, MAX_BATCH_PAGES, runQaBatch } from './batch'
+import { QA_FUNCTIONAL, QA_RUBRIC_STANDALONE } from './prompt'
+import { createFakeBrowser, createFakeContext, type FakeContext } from './testSupport'
 import type { DraftRow } from './tools'
 
 let root: string
@@ -285,5 +285,101 @@ describe('runQaBatch', () => {
     await promise
     expect(runs).toHaveLength(MAX_BATCH_PAGES)
     expect(events.some((e) => e.type === 'status' && e.message.includes(`Only the first ${MAX_BATCH_PAGES} of ${MAX_BATCH_PAGES + 5}`))).toBe(true)
+  })
+})
+
+describe('functionalBreakpoints', () => {
+  it('tests at desktop and mobile when they are reviewed, otherwise at the first breakpoint reviewed', () => {
+    expect(functionalBreakpoints(['desktop', 'tablet', 'mobile'])).toEqual(['desktop', 'mobile'])
+    expect(functionalBreakpoints([])).toEqual(['desktop', 'mobile'])
+    expect(functionalBreakpoints(['mobile'])).toEqual(['mobile'])
+    expect(functionalBreakpoints(['tablet'])).toEqual(['tablet'])
+    expect(functionalBreakpoints(['desktop', 'tablet'])).toEqual(['desktop'])
+  })
+})
+
+describe('runQaBatch with functional testing', () => {
+  // Looks at each breakpoint like the other tests; the functional conversation opens the page in the
+  // browser, then saves what it found on desktop (with the browser screenshot) and on mobile.
+  const functionalProvider = () => {
+    const runs: ProviderRun[] = []
+    const provider: AgentProvider = {
+      id: 'fake', label: 'Fake',
+      run: async (run) => {
+        runs.push(run)
+        const runId = /Run id: (\S+)\./.exec(run.task)![1]
+        if (run.tools.includes('browser_open')) {
+          const opened = await run.call('browser_open', { runId })
+          const shot = /Screenshot (B\d+) is attached/.exec(opened.text)![1]
+          const desktop = await run.call('save_draft', { runId, breakpoint: 'desktop', area: 'functional', rows: [{ ...row('Contact form', 'form sends with an empty email', { Display: 'Mobile' }), evidence: { breakpoint: 'desktop', screenshot: shot, live: { x: 10, y: 10, width: 300, height: 120 } } }] })
+          expect(desktop.text).toContain('Saved 1 functional draft row(s) for desktop')
+          await run.call('save_draft', { runId, breakpoint: 'mobile', area: 'functional', rows: [row('Navbar', 'menu does not close'), row('Contact', 'make the phone number a tap-to-call link', { Status: 'ENHANCEMENT (QA)' })] })
+          return { stopped: 'finished', text: 'tested' }
+        }
+        const breakpoint = /Review the (\w+) breakpoint/.exec(run.task)![1] as Breakpoint
+        await saveRows(breakpoint === 'desktop' ? [row('Hero', 'wrong image')] : [])({ run, runId, breakpoint })
+        return { stopped: 'finished', text: 'ok' }
+      },
+    }
+    return { provider, runs }
+  }
+
+  it('tests each page after looking at it, and hands the findings over together', async () => {
+    const browser = await createFakeBrowser()
+    fake = createFakeContext(root, { trackerFormat: () => STANDARD_TRACKER, browser })
+    const { provider, runs } = functionalProvider()
+    const { promise, events } = start(provider, { pages: [pages[0]], functional: true })
+    const summary = await promise
+
+    expect(runs).toHaveLength(3) // desktop, mobile, then the functional test
+    const tester = runs[2]
+    expect(tester.tools).toEqual(FUNCTIONAL_TOOLS)
+    expect(tester.system).toContain(QA_FUNCTIONAL.slice(0, 80))
+    expect(tester.task).toContain('at desktop, then mobile')
+    expect(browser.opened).toEqual(['desktop https://svenson.test/alopecia-page/'])
+    expect(browser.closed).toBe(1) // closed when the page is done
+    expect(events.some((e) => e.type === 'status' && e.message === 'Testing links, buttons and forms (desktop and mobile)…')).toBe(true)
+
+    const approval = fake.approvals[0]
+    const at = (name: string) => approval.columns.indexOf(name)
+    expect(approval.rows.map((r) => [r[at('Remarks')], r[at('Display')], r[at('Status')]])).toEqual([
+      ['wrong image', 'Desktop', ''],
+      ['form sends with an empty email', 'Desktop', ''],
+      ['menu does not close', 'Mobile', ''],
+      ['make the phone number a tap-to-call link', 'Mobile', 'ENHANCEMENT (QA)'],
+    ])
+    // The finding seen while testing has the browser screenshot as its picture.
+    expect(approval.evidence.map((e) => e.rowIndex)).toEqual([0, 1])
+    expect(summary).toMatchObject({ finalized: true, rowsDrafted: 4 })
+  })
+
+  it('does not test when not asked, or when there is no browser', async () => {
+    const browser = await createFakeBrowser()
+    fake = createFakeContext(root, { trackerFormat: () => STANDARD_TRACKER, browser })
+    const first = functionalProvider()
+    await start(first.provider, { pages: [pages[0]] }).promise
+    expect(first.runs.map((r) => r.tools.includes('browser_open'))).toEqual([false, false])
+
+    fake = createFakeContext(root, { trackerFormat: () => STANDARD_TRACKER })
+    const second = functionalProvider()
+    await start(second.provider, { pages: [pages[0]], functional: true }).promise
+    expect(second.runs).toHaveLength(2)
+  })
+
+  it('refuses a draft that names a screenshot the run does not have', async () => {
+    const browser = await createFakeBrowser()
+    fake = createFakeContext(root, { trackerFormat: () => STANDARD_TRACKER, browser })
+    let refused = ''
+    const provider: AgentProvider = {
+      id: 'fake', label: 'Fake',
+      run: async (run) => {
+        const runId = /Run id: (\S+)\./.exec(run.task)![1]
+        if (run.tools.includes('browser_open')) refused = (await run.call('save_draft', { runId, breakpoint: 'desktop', area: 'functional', rows: [{ ...row('Hero', 'button does nothing'), evidence: { breakpoint: 'desktop', screenshot: 'B7' } }] })).text
+        else await run.call('save_draft', { runId, breakpoint: 'desktop', rows: [] })
+        return { stopped: 'finished', text: 'ok' }
+      },
+    }
+    await start(provider, { pages: [pages[0]], breakpoints: ['desktop'], functional: true }).promise
+    expect(refused).toMatch(/has no browser screenshot B7/)
   })
 })

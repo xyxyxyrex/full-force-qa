@@ -19,7 +19,13 @@ export interface RunMeta {
   pageUrl: string
   createdAt: number
   touchedAt: number
+  /** Kept by the person: never removed by the automatic clean-up. */
+  pinned?: boolean
 }
+
+/** Drafts from looking at the page, or from testing it in the agent's browser. */
+export type DraftArea = 'visual' | 'functional'
+const draftFile = (breakpoint: Breakpoint, area: DraftArea) => `${area === 'functional' ? 'functional-' : ''}${breakpoint}.json`
 
 export type LiveRecord = Omit<LiveCaptureResult, 'png'> & { capturedAt: number; design: DesignSlotMeta | null }
 
@@ -77,6 +83,46 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       if (meta) atomicWrite(join(dir(id), 'run.json'), JSON.stringify({ ...meta, touchedAt: now() }, null, 2))
     },
 
+    /** Every run, newest first. */
+    list(): RunMeta[] {
+      if (!existsSync(root)) return []
+      return readdirSync(root).filter((name) => RUN_ID_PATTERN.test(name)).map((name) => readMeta(name)).filter((meta): meta is RunMeta => !!meta).sort((a, b) => b.createdAt - a.createdAt)
+    },
+
+    setPinned(id: string, pinned: boolean): RunMeta | null {
+      const meta = readMeta(id)
+      if (!meta) return null
+      const next = { ...meta, pinned }
+      atomicWrite(join(dir(id), 'run.json'), JSON.stringify(next, null, 2))
+      return next
+    },
+
+    remove(id: string): boolean {
+      if (!readMeta(id)) return false
+      rmSync(dir(id), { recursive: true, force: true })
+      return true
+    },
+
+    /** Saves a picture taken by the agent's browser; answers its name (B1, B2, …) for evidence. */
+    saveBrowserShot(id: string, jpeg: Buffer): string {
+      const folder = join(dir(id), 'browser')
+      mkdirSync(folder, { recursive: true })
+      const taken = readdirSync(folder).filter((name) => /^B\d+\.jpg$/.test(name)).length
+      const name = `B${taken + 1}`
+      atomicWrite(join(folder, `${name}.jpg`), jpeg)
+      return name
+    },
+
+    readBrowserShot(id: string, name: string): Buffer | null {
+      if (!/^B\d{1,4}$/.test(name)) return null
+      try { return readFileSync(join(dir(id), 'browser', `${name}.jpg`)) } catch { return null }
+    },
+
+    /** Folder of a run, for showing it to the person. */
+    folder(id: string): string {
+      return dir(id)
+    },
+
     /** Latest run for a project, newest first. */
     latest(projectKey: string): RunMeta | null {
       if (!existsSync(root)) return null
@@ -114,17 +160,18 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       return folder
     },
 
-    saveDraft(id: string, breakpoint: Breakpoint, rows: unknown[]): void {
+    /** Rows drafted for a breakpoint: from looking at the page (visual) or from testing it in the browser (functional). */
+    saveDraft(id: string, breakpoint: Breakpoint, rows: unknown[], area: DraftArea = 'visual'): void {
       const folder = join(dir(id), 'drafts')
       mkdirSync(folder, { recursive: true })
-      atomicWrite(join(folder, `${breakpoint}.json`), JSON.stringify({ savedAt: now(), rows }, null, 2))
+      atomicWrite(join(folder, draftFile(breakpoint, area)), JSON.stringify({ savedAt: now(), rows }, null, 2))
       this.touch(id)
     },
 
-    readDrafts(id: string): Partial<Record<Breakpoint, unknown[]>> {
+    readDrafts(id: string, area: DraftArea = 'visual'): Partial<Record<Breakpoint, unknown[]>> {
       const drafts: Partial<Record<Breakpoint, unknown[]>> = {}
       for (const breakpoint of BREAKPOINTS) {
-        try { drafts[breakpoint] = (JSON.parse(readFileSync(join(dir(id), 'drafts', `${breakpoint}.json`), 'utf8')) as { rows: unknown[] }).rows } catch { /* none yet */ }
+        try { drafts[breakpoint] = (JSON.parse(readFileSync(join(dir(id), 'drafts', draftFile(breakpoint, area)), 'utf8')) as { rows: unknown[] }).rows } catch { /* none yet */ }
       }
       return drafts
     },
@@ -155,10 +202,10 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       const entries = readdirSync(root)
         .filter((name) => RUN_ID_PATTERN.test(name))
         .map((name) => ({ name, meta: readMeta(name) }))
-        .map((entry) => ({ name: entry.name, touchedAt: entry.meta?.touchedAt ?? 0, bytes: folderSize(join(root, entry.name)) }))
+        .map((entry) => ({ name: entry.name, touchedAt: entry.meta?.touchedAt ?? 0, pinned: entry.meta?.pinned === true, bytes: folderSize(join(root, entry.name)) }))
         .sort((a, b) => b.touchedAt - a.touchedAt)
       const removed: string[] = []
-      const protectedRun = (entry: { touchedAt: number }) => now() - entry.touchedAt < protectMs
+      const protectedRun = (entry: { touchedAt: number; pinned: boolean }) => entry.pinned || now() - entry.touchedAt < protectMs
       let kept = entries
       const drop = (entry: { name: string }) => { rmSync(join(root, entry.name), { recursive: true, force: true }); removed.push(entry.name) }
       for (const entry of kept.filter((e) => !protectedRun(e) && now() - e.touchedAt > maxAgeDays * DAY)) drop(entry)

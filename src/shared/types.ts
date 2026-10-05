@@ -1,7 +1,7 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
 import type { Breakpoint } from './designScale'
-import type { AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBatchStartOptions, QaBridgeStatus, QaChatSendOptions, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaTarget, QaToolCallResult, ReportedContext } from './qaAgent'
+import type { AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBatchStartOptions, QaBridgeStatus, QaChatListItem, QaChatSendOptions, QaHistoryPicture, QaRunDetail, QaRunListItem, QaStoredChat, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaTarget, QaToolCallResult, ReportedContext } from './qaAgent'
 import type { TrackerFormat } from './trackerFormat'
 import type {
   AuditCaptureContext,
@@ -450,6 +450,7 @@ export interface ElectronAPI extends InspectorApi {
   qaApprovalDecision: (id: string, decision: ApprovalDecision) => Promise<boolean>
   onQaApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void
   qaAgentsOverview: () => Promise<AgentsOverview | null>
+  qaAgentsSettings: () => Promise<AgentSettings | null>
   qaAgentsSaveSettings: (patch: Partial<Omit<AgentSettings, 'models'>> & { models?: Partial<AgentSettings['models']> }) => Promise<AgentsOverview | null>
   qaAgentsSetKey: (id: AgentId, key: string) => Promise<AgentsOverview | { error: string } | null>
   qaAgentsClearKey: (id: AgentId) => Promise<AgentsOverview | null>
@@ -459,6 +460,17 @@ export interface ElectronAPI extends InspectorApi {
   qaBatchStart: (options: QaBatchStartOptions) => Promise<QaRunStartResult>
   qaChatSend: (text: string, options?: QaChatSendOptions) => Promise<QaRunStartResult>
   qaChatReset: () => Promise<boolean>
+  qaChatsList: () => Promise<QaChatListItem[]>
+  qaChatsOpen: (id: string) => Promise<QaStoredChat | null>
+  qaChatsSave: (chat: { id: string; title?: string; agentLabel?: string; messages: unknown[]; session?: { input: number; output: number; requests: number } }) => Promise<boolean>
+  qaChatsDelete: (id: string) => Promise<boolean>
+  qaHistoryList: () => Promise<QaRunListItem[]>
+  qaHistoryDetail: (id: string) => Promise<QaRunDetail | null>
+  qaHistoryPicture: (id: string, ref: QaHistoryPicture) => Promise<string | null>
+  qaHistoryCopy: (id: string, stamp: string) => Promise<number>
+  qaHistoryOpenFolder: (id: string) => Promise<boolean>
+  qaHistoryPin: (id: string, pinned: boolean) => Promise<boolean>
+  qaHistoryDelete: (id: string) => Promise<boolean>
   designsImage: (projectKey: string, breakpoint: string) => Promise<string | null>
   qaTarget: () => Promise<QaTarget | null>
   qaRunActive: () => Promise<boolean>
