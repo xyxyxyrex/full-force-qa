@@ -32,6 +32,9 @@ jobs:
       - run: npm run test:figma:ui
       - run: npm run test:free-transform:electron
       - run: npm run test:dashboard-menu:electron
+      - run: npm run test:qa-capture:electron
+      - run: npm run test:qa-flow:electron
+      - run: npm run test:qa-ui:electron
       - run: npm run test:automation:electron
 
   visual-worker-build:
