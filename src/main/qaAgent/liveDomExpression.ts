@@ -136,6 +136,10 @@ export const PREPARE_EXPRESSION = String.raw`(async () => {
     await wait(60);
     state.scan();
     state.apply(first, last);
+    // capturePage can run before a visibility-only change reaches the compositor,
+    // especially in a hidden Windows CI window. Wait through a paint boundary so
+    // fixed controls appear on their intended first/last tile consistently.
+    await frame();
     await wait(30);
     const scroller = document.scrollingElement || root;
     return {
