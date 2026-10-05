@@ -71,3 +71,12 @@ export function detectDesignScale(input: { pixelWidth: number; fileName?: string
   const frameWidth = Math.round(pixelWidth / scale)
   return { scale, frameWidth, breakpoint: input.slotHint ?? breakpointForFrameWidth(frameWidth), detection: 'fallback', confidence: 'low' }
 }
+
+/**
+ * After designs were just added, which breakpoint the viewport should move to so the person sees
+ * them: none when one of them is for the breakpoint already showing, otherwise the first one added.
+ */
+export function breakpointToFollow(added: Breakpoint[], showing: Breakpoint): Breakpoint | null {
+  if (!added.length || added.includes(showing)) return null
+  return added[0]
+}

@@ -11,6 +11,8 @@ interface Props {
   thumbnails: Partial<Record<Breakpoint, string>>
   /** The page these designs are for (its path), shown so it is clear what is loaded. */
   pageLabel?: string
+  /** Something to tell the person about the breakpoint they are looking at, such as a missing design. */
+  notice?: string
   activeBreakpoint?: Breakpoint | null
   busy?: boolean
   error?: string
@@ -27,7 +29,7 @@ function sizeLabel(slot: DesignSlotMeta): string {
 }
 
 /** Figma exports per breakpoint, stored by Parity so the QA agent can read them. */
-export default function DesignSlots({ slots, thumbnails, pageLabel, activeBreakpoint, busy, error, onAddFiles, onRemove, onMove, onScale }: Props) {
+export default function DesignSlots({ slots, thumbnails, pageLabel, notice, activeBreakpoint, busy, error, onAddFiles, onRemove, onMove, onScale }: Props) {
   const inputs = useRef<Partial<Record<Breakpoint, HTMLInputElement | null>>>({})
   const [dragOver, setDragOver] = useState<Breakpoint | null>(null)
 
@@ -107,6 +109,7 @@ export default function DesignSlots({ slots, thumbnails, pageLabel, activeBreakp
           )
         })}
       </div>
+      {notice && !error && <div className="design-slots-notice" role="status">{notice}</div>}
       {error && <div className="design-slots-error" role="alert">{error}</div>}
     </div>
   )

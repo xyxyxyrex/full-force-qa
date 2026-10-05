@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { breakpointForFrameWidth, detectDesignScale, isBreakpoint } from './designScale'
+import { breakpointForFrameWidth, detectDesignScale, isBreakpoint, breakpointToFollow } from './designScale'
 
 describe('breakpointForFrameWidth', () => {
   it('maps widths to breakpoints', () => {
@@ -58,5 +58,17 @@ describe('detectDesignScale', () => {
   it('rejects invalid widths', () => {
     expect(() => detectDesignScale({ pixelWidth: 0 })).toThrow()
     expect(() => detectDesignScale({ pixelWidth: Number.NaN })).toThrow()
+  })
+})
+
+describe('breakpointToFollow', () => {
+  it('stays put when nothing was added or one of the designs is for the breakpoint on screen', () => {
+    expect(breakpointToFollow([], 'desktop')).toBeNull()
+    expect(breakpointToFollow(['desktop'], 'desktop')).toBeNull()
+    expect(breakpointToFollow(['mobile', 'desktop'], 'desktop')).toBeNull()
+  })
+  it('moves to the first design added when none is for the breakpoint on screen', () => {
+    expect(breakpointToFollow(['mobile'], 'desktop')).toBe('mobile')
+    expect(breakpointToFollow(['tablet', 'mobile'], 'desktop')).toBe('tablet')
   })
 })

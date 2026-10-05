@@ -21,3 +21,4 @@
 .design-slots-page{margin:0 0 6px;font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .design-slots-page code{color:var(--text-primary);font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .design-slot-file{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text-muted)}
+.design-slots-notice{margin-top:8px;padding:6px 9px;border:1px solid #d9a13a88;border-radius:6px;background:#d9a13a17;color:#e8c27a;font-size:11px;line-height:1.4}

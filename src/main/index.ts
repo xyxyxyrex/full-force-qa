@@ -1559,6 +1559,15 @@ function registerIpcHandlers(): void {
       })
     } catch (error: any) { return { success: false, error: error?.message || 'The design could not be saved.' } }
   })
+  // The stored design as an image, for the editor's overlay, so it can follow the viewport's breakpoint.
+  ipcMain.handle('designs:image', (_event, projectKey: string, breakpoint: string) => {
+    if (!isBreakpoint(breakpoint)) return null
+    const store = getDesignStore()
+    const key = designKey(projectKey)
+    store.list(key) // a design saved before pages had their own set moves over when its page is first looked at
+    const bytes = store.readOriginal(key, breakpoint)
+    return bytes ? `data:image/png;base64,${bytes.toString('base64')}` : null
+  })
   ipcMain.handle('designs:update', (_event, projectKey: string, breakpoint: string, options: DesignUpdateOptions) => {
     try {
       if (!isBreakpoint(breakpoint)) return { success: false, error: 'Unknown breakpoint.' }

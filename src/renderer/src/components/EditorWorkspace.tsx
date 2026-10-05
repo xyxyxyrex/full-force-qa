@@ -58,6 +58,7 @@ import {
 } from "../../../shared/annotationSequences";
 import DesignSlots from "./DesignSlots";
 import { designKeyOf, pageIdOf } from "../../../shared/designKey";
+import { breakpointForFrameWidth, breakpointToFollow } from "../../../shared/designScale";
 import type { Breakpoint } from "../../../shared/designScale";
 import type { DesignSlots as DesignSlotsState } from "../../../shared/qaAgent";
 import "./EditorWorkspace.css";
@@ -2321,6 +2322,15 @@ export default function EditorWorkspace({
   const designPageId = pageIdOf(designPageUrl || sourceUrl) || "";
   const designProjectRef = useRef(designKey);
   designProjectRef.current = designKey;
+  // Which page's designs `designSlots` currently holds; the overlay waits for it so it never reacts to a half-loaded state.
+  const [designsLoadedKey, setDesignsLoadedKey] = useState("");
+  // The overlay shows the design for the breakpoint the viewport is at: Desktop, Tablet or Mobile.
+  const activeDesignBp = breakpointForFrameWidth(activeAnnotationViewport.width);
+  const activeDesignBpRef = useRef(activeDesignBp);
+  activeDesignBpRef.current = activeDesignBp;
+  const overlayLabelRef = useRef(overlayLabel);
+  overlayLabelRef.current = overlayLabel;
+  const switchPresetRef = useRef<((preset: DevicePreset) => void) | null>(null);
 
 
   const refreshDesigns = useCallback(async (projectKey: string) => {
@@ -2329,22 +2339,25 @@ export default function EditorWorkspace({
       if (designProjectRef.current !== projectKey) return;
       setDesignSlots(result.slots);
       setDesignThumbs(result.thumbnails);
+      setDesignsLoadedKey(projectKey);
     } catch {
       if (designProjectRef.current === projectKey) {
         setDesignSlots({});
         setDesignThumbs({});
+        setDesignsLoadedKey(projectKey);
       }
     }
   }, []);
 
   const addDesignFiles = useCallback(
-    async (files: Blob[], target: Breakpoint | "auto" = "auto") => {
+    async (files: Blob[], target: Breakpoint | "auto" = "auto", follow = true) => {
       // Ask the page now rather than trust the last poll: the URL may have just changed.
       const pageUrlNow = (workspaceTab === "live" ? designPageUrl : editBetaRef.current?.getCurrentUrl?.()) || designPageUrl || sourceUrl;
       const projectKey = designKeyOf(activeProjectId, pageUrlNow);
       if (pageUrlNow !== designPageUrl) setDesignPageUrl(pageUrlNow);
       setDesignBusy(true);
       setDesignError("");
+      const assigned: Breakpoint[] = [];
       try {
         for (const file of files) {
           const bytes = new Uint8Array(await file.arrayBuffer());
@@ -2354,12 +2367,16 @@ export default function EditorWorkspace({
             target,
           });
           if (!result.success) setDesignError(result.error);
+          else assigned.push(result.assigned);
         }
       } catch (error: any) {
         setDesignError(error?.message || "The design could not be saved.");
       } finally {
         await refreshDesigns(projectKey);
         if (designProjectRef.current === projectKey) setDesignBusy(false);
+        // A mobile design pasted at a desktop viewport should be seen: move the viewport to the breakpoint it belongs to.
+        const wanted = follow ? breakpointToFollow(assigned, activeDesignBpRef.current) : null;
+        if (wanted) switchPresetRef.current?.(wanted === "desktop" ? "Desktop" : wanted === "tablet" ? "Tablet" : "Mobile");
       }
     },
     [activeProjectId, designPageUrl, sourceUrl, workspaceTab, refreshDesigns],
@@ -2378,13 +2395,14 @@ export default function EditorWorkspace({
         if (cancelled) return;
         setDesignSlots(result.slots);
         setDesignThumbs(result.thumbnails);
+        setDesignsLoadedKey(designKey);
         if (Object.keys(result.slots).length) return;
         // The overlay PNG attached before designs were stored belongs to the project's own page only.
         if (pageIdOf(sourceUrl) !== pageIdOf(designPageUrl || sourceUrl)) return;
         const legacy = localStorage.getItem(`qa_${activeProjectId}_uploaded_figma_png`);
         if (!legacy || !legacy.startsWith("data:image/")) return;
         const blob = await (await fetch(legacy)).blob();
-        if (!cancelled) await addDesignFiles([blob], "auto");
+        if (!cancelled) await addDesignFiles([blob], "auto", false);
       } catch {
         // Designs are optional; the overlay keeps working without them.
       }
@@ -2394,6 +2412,27 @@ export default function EditorWorkspace({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designKey]);
+
+  // The overlay draws the design for the breakpoint the viewport is at, so a Desktop PNG and a Mobile PNG can both be used:
+  // switch the viewport and the overlay switches with it. A breakpoint with no design shows nothing, never another size's image.
+  const activeDesignSha = designSlots[activeDesignBp]?.sha256 || "";
+  useEffect(() => {
+    if (designsLoadedKey !== designKey) return;
+    let cancelled = false;
+    if (!activeDesignSha) {
+      setFigmaImageState(null);
+      if (overlayLabelRef.current === "Figma Design") setOverlayImageState(null);
+      return;
+    }
+    void window.electronAPI.designsImage(designKey, activeDesignBp).then((dataUrl) => {
+      if (cancelled || !dataUrl) return;
+      setFigmaImageState(dataUrl);
+      if (overlayLabelRef.current === "Figma Design") setOverlayImageState(dataUrl);
+    }).catch(() => { /* the overlay keeps what it has */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [designKey, designsLoadedKey, activeDesignBp, activeDesignSha]);
 
   const removeDesign = useCallback(
     async (breakpoint: Breakpoint) => {
@@ -4294,6 +4333,8 @@ export default function EditorWorkspace({
     setVpHeight(h);
     applyDimensions(w, h);
   };
+
+  switchPresetRef.current = switchPreset;
 
   const selectDevtoolsPreset = (p: DevtoolsPreset) => {
     setSelectedDevicePresetName(p.name);
@@ -8549,6 +8590,7 @@ export default function EditorWorkspace({
                       slots={designSlots}
                       thumbnails={designThumbs}
                       pageLabel={designPageId}
+                      notice={designsLoadedKey === designKey && !designSlots[activeDesignBp] && Object.keys(designSlots).length > 0 ? `No ${activeDesignBp} design for this page, so the overlay is empty at this size. Drop one on the ${activeDesignBp[0].toUpperCase()}${activeDesignBp.slice(1)} slot.` : undefined}
                       activeBreakpoint={activeAnnotationViewport.deviceType === "custom" ? null : activeAnnotationViewport.deviceType}
                       busy={designBusy}
                       error={designError}

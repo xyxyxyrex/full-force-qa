@@ -458,6 +458,7 @@ export interface ElectronAPI extends InspectorApi {
   qaRunStop: () => Promise<boolean>
   qaChatSend: (text: string, options?: QaChatSendOptions) => Promise<QaRunStartResult>
   qaChatReset: () => Promise<boolean>
+  designsImage: (projectKey: string, breakpoint: string) => Promise<string | null>
   qaTarget: () => Promise<QaTarget | null>
   qaRunActive: () => Promise<boolean>
   onQaRunEvent: (callback: (event: QaRunEvent) => void) => () => void
