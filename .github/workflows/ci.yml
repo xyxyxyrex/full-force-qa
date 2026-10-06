@@ -36,6 +36,7 @@ jobs:
       - run: npm run test:qa-flow:electron
       - run: npm run test:qa-ui:electron
       - run: npm run test:qa-browser:electron
+      - run: npm run test:page-checks:electron
       - run: npm run test:viewer:electron
       - run: npm run test:automation:electron
 

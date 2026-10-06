@@ -9,12 +9,13 @@ const argsPreview = (value: unknown) => { const text = value === undefined ? '' 
 
 const SUGGESTIONS = [
   { label: 'Review this page', send: '/review' },
-  { label: 'Which designs are loaded?', send: 'Which designs are loaded for this page, and at what sizes?' },
   { label: 'Test links and forms', send: 'Test the links, buttons, menus and forms on this page and tell me what does not work.' },
+  { label: 'Check copy, contrast and layout', send: 'Open this page in your browser and check the copy, contrast and layout (desktop, then mobile). Tell me what a visitor would notice.' },
+  { label: 'SEO check', send: 'Run the SEO checks on this page and tell me what to fix before launch.' },
 ]
 
 const HELP = [
-  '/review [desktop] [tablet] [mobile] [--no-design] [--visual-only]\n                                       review the open page and hand the rows over for approval.\n                                       With no design stored for the page (or --no-design) the agent judges the page on its own.\n                                       It then tests links, buttons, menus and forms, unless --visual-only (or turned off in Settings).',
+  '/review [desktop] [tablet] [mobile] [--no-design] [--visual-only] [--test]\n                                       review the open page and hand the rows over for approval.\n                                       With no design stored for the page (or --no-design) the agent judges the page on its own.\n                                       It then tests links, buttons, menus and forms, unless --visual-only (or turned off in Settings).\n                                       A free model reviews one breakpoint and skips the test unless you name more or add --test.',
   '/stop                                 stop what the agent is doing',
   '/new                                  start a new chat (the current one is kept in History)',
   '/history                              past chats and past reviews, with their screenshots',
@@ -182,10 +183,12 @@ export default function QaChat({ onClose }: Props) {
     let agent: AgentId | undefined
     let standalone = false
     let visualOnly = false
+    let test = false
     const breakpoints: Breakpoint[] = []
     for (let i = 0; i < words.length; i++) {
       if (words[i] === '--no-design') standalone = true
       else if (words[i] === '--visual-only') visualOnly = true
+      else if (words[i] === '--test') test = true
       else if (words[i] === '--agent') {
         const value = words[++i]
         if (!isAgentId(value)) throw new Error(`Unknown agent "${value || ''}". Type /agents to see the ids.`)
@@ -193,8 +196,9 @@ export default function QaChat({ onClose }: Props) {
       } else if (isBreakpoint(words[i])) breakpoints.push(words[i] as Breakpoint)
       else throw new Error(`Unknown option "${words[i]}". Breakpoints are: ${BREAKPOINTS.join(', ')}.`)
     }
-    // Testing follows the setting unless this review is visual only.
-    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}), ...(visualOnly ? { functional: false } : {}) })
+    if (test && visualOnly) throw new Error('--test and --visual-only cannot go together.')
+    // Testing follows the setting (off for a free model) unless this review asks otherwise.
+    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}), ...(visualOnly ? { functional: false } : test ? { functional: true } : {}) })
     if (!result.started) throw new Error(result.error)
   }
 
@@ -261,7 +265,7 @@ export default function QaChat({ onClose }: Props) {
         {chat.messages.length === 0 ? (
           <div className="qa-chat-empty">
             <h3>Ask about this page</h3>
-            <p>I compare the live staging page with your Figma designs, one breakpoint at a time, and draft rows for the tracker. You approve them before anything is copied.</p>
+            <p>I check the live staging page (against your Figma designs when you have them), test its links and forms, measure contrast, layout, copy and SEO, and draft rows for the tracker. You approve them before anything is copied.</p>
             <div className="qa-chat-suggestions">
               {SUGGESTIONS.map((suggestion) => <button key={suggestion.label} type="button" disabled={running} onClick={() => void submit(suggestion.send)}>{suggestion.label}</button>)}
             </div>

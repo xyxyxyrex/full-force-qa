@@ -34,8 +34,21 @@ async function smoke() {
 
   // Settings → AI Agents
   await open('agents')
-  assert.equal(await run(`document.querySelectorAll('.agents-card').length`), 7, 'seven agents are listed')
+  assert.equal(await run(`document.querySelectorAll('.agents-card').length`), 8, 'eight agents are listed')
   assert.match(await text('.agents-card.selected'), /Claude Code/, 'the default agent is selected')
+  // Free keys: a way to get one, a model picked for you, the free-tier badge, and Gemini's billing switch.
+  const card = label => `[...document.querySelectorAll('.agents-card')].find(c => c.querySelector('.agents-card-title').textContent.startsWith(${JSON.stringify(label)}))`
+  assert.match(await text('.agents-header'), /No Claude, ChatGPT or Google plan\?/, 'people without a plan are pointed at the free keys')
+  assert.match(await run(`${card('Gemini')}.innerText`), /free tier[\s\S]*no AI plan or card needed/, 'Gemini is marked free, with what that means')
+  await run(`[...${card('Gemini')}.querySelectorAll('.agents-link')].find(b => b.textContent === 'Get a free key').click()`); await sleep(100)
+  assert.ok((await run('window.__calls')).includes('external https://aistudio.google.com/apikey'), 'Get a free key opens the key page')
+  await run(`[...${card('OpenRouter')}.querySelectorAll('.agents-button')].find(b => b.textContent === 'List models').click()`); await sleep(250)
+  assert.ok((await run('window.__calls')).includes('save {"models":{"openrouter":"vendor/vision:free"}}'), 'a free model is picked when none was chosen')
+  assert.match(await run(`${card('OpenRouter')}.innerText`), /2 free models that read pictures and use tools found\. Picked vendor\/vision:free for you/)
+  await run(`${card('Gemini')}.querySelector('input[type=checkbox]').click()`); await sleep(150)
+  assert.ok((await run('window.__calls')).includes('save {"geminiBilling":true}'), 'turning Gemini billing on saves it')
+  assert.match(await run(`${card('Local or custom')}.querySelector('input[type=password]').placeholder`), /only if the server needs one/, 'a custom server can take a key')
+  await run(`${card('OpenRouter')}.scrollIntoView()`); await shot('agents-free')
   assert.match(await text('.agents-panel'), /Not found\. Install codex/, 'a missing CLI says how to fix it')
   assert.match(await text('.agents-chips'), /Screenshot/, 'the saved tracker columns are shown')
   assert.match(await text('.agents-kv'), /127\.0\.0\.1:29849\/mcp/, 'the bridge address is shown')
@@ -171,7 +184,8 @@ async function smoke() {
 
   // Chat
   await open('chat')
-  assert.equal(await run(`document.querySelectorAll('.qa-chat-suggestions button').length`), 3, 'an empty chat offers starting points')
+  assert.equal(await run(`document.querySelectorAll('.qa-chat-suggestions button').length`), 4, 'an empty chat offers starting points')
+  assert.match(await text('.qa-chat-suggestions'), /Check copy, contrast and layout/, 'including the page checks')
   // The review target: which page, and which designs are stored for it.
   assert.match(await text('.qa-target-page'), /\/alopecia-page/, 'the open page is shown')
   assert.equal(await run(`document.querySelectorAll('.qa-target-design:not(.missing) img').length`), 2, 'the stored designs are shown')

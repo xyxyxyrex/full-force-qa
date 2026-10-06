@@ -99,6 +99,7 @@ export async function createFakeBrowser(): Promise<QaBrowser & { opened: string[
     links: async () => [],
     audit: async () => { throw new Error('not used') },
     request: async () => { throw new Error('not used') },
+    read: async () => { throw new Error('not used') },
     close() { state = null; browser.closed++ },
   } satisfies QaBrowser & { opened: string[]; closed: number }
   return browser

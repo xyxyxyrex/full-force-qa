@@ -192,7 +192,7 @@ export interface QaBridgeStatus {
 
 // ── Agent choice and settings ─────────────────────────────────────────────────────────
 
-export const AGENT_IDS = ['claude-code', 'codex', 'antigravity', 'anthropic-api', 'openai-api', 'gemini-api', 'local'] as const
+export const AGENT_IDS = ['claude-code', 'codex', 'antigravity', 'anthropic-api', 'openai-api', 'gemini-api', 'openrouter', 'local'] as const
 export type AgentId = (typeof AGENT_IDS)[number]
 
 export const isAgentId = (value: unknown): value is AgentId => typeof value === 'string' && (AGENT_IDS as readonly string[]).includes(value)
@@ -216,19 +216,28 @@ export interface AgentSettings {
   allowSend: boolean
   /** After the visual check, reviews also test each page's links, buttons, menus and forms. */
   functionalChecks: boolean
+  /** The Gemini key's project has billing on, so it is not held to the free tier's limits. */
+  geminiBilling: boolean
 }
 
 export interface AgentInfo {
   id: AgentId
   label: string
-  kind: 'subscription' | 'api' | 'local'
+  /** free: a free key with daily limits, for people without an AI plan. */
+  kind: 'subscription' | 'api' | 'free' | 'local'
   /** Can be used right now. */
   ready: boolean
   /** One line for the person: version and sign-in, or what is missing. */
   detail: string
   model: string
   needsKey: boolean
+  /** The key may be left out (a local server). */
+  keyOptional?: boolean
   hasKey: boolean
+  /** Runs are kept lighter because the chosen model is on a free tier. */
+  lite: boolean
+  /** Where to get a key. */
+  keyUrl?: string
 }
 
 export interface AgentsOverview {

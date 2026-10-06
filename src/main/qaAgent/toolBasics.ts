@@ -39,6 +39,11 @@ export const defineTool = <S extends z.ZodObject>(tool: ToolDefinition<S>): Tool
 
 export const fail = (text: string): ToolResult => ({ text, isError: true })
 
+export function browserOf(context: QaContext) {
+  if (!context.browser) throw new Error('The agent\'s browser is not available here.')
+  return context.browser
+}
+
 export function requireContext(context: QaContext): ReportedContext | string {
   const reported = context.reportedContext()
   if (!reported) return 'No project is open in Parity. Open the project and its staging page, then try again.'

@@ -18,6 +18,16 @@ describe('QA prompts', () => {
     }
   })
 
+  it('point the agent at the text-only checks instead of judging values from pictures', () => {
+    for (const name of ['inspect_element', 'check_contrast', 'check_layout', 'style_summary', 'check_text', 'seo_check']) {
+      expect(QA_FUNCTIONAL, name).toContain(name)
+      expect(QA_AGENT_PROMPT, name).toContain(name)
+    }
+    // Staging is noindexed and blocked on purpose: a reminder, not a defect on every page.
+    expect(QA_FUNCTIONAL).toContain('launch reminders, not as rows')
+    expect(QA_FUNCTIONAL).toContain('browser_scroll to its ref first')
+  })
+
   it('tell the tester how sending works and where its findings go', () => {
     expect(QA_FUNCTIONAL).toContain('browser_open says whether sending is on')
     expect(QA_FUNCTIONAL).toContain('save_draft with area "functional"')

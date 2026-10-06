@@ -3,7 +3,7 @@ import { acquireDebugger, type DebuggerLease } from '../debuggerConnection'
 import type { Breakpoint } from '../../shared/designScale'
 import { userAgentFor, viewportHeightFor } from './captureSettings'
 import { checkApiRequest, checkNavigation, checkRequest, linkCheckPlan, SEND_OFF_REASON } from './qaBrowserPolicy'
-import { AUDIT_SCRIPT, call, FOCUS_SCRIPT, LINKS_SCRIPT, SCROLL_SCRIPT, SELECT_SCRIPT, SEND_GUARD_SCRIPT, SNAPSHOT_SCRIPT, TARGET_SCRIPT } from './qaBrowserScripts'
+import { AUDIT_SCRIPT, BOX_SCRIPT, call, FOCUS_SCRIPT, LINKS_SCRIPT, SCROLL_SCRIPT, SELECT_SCRIPT, SEND_GUARD_SCRIPT, SNAPSHOT_SCRIPT, TARGET_SCRIPT } from './qaBrowserScripts'
 import type { BrowserEvents, BrowserOpenInput, BrowserStep, HttpResult, LinkResult, PageAudit, QaBrowser } from './qaBrowserTypes'
 
 // The agent's own browser: an offscreen window it can click, type into and scroll, on a session of
@@ -303,7 +303,18 @@ export function createQaBrowser(): QaBrowser {
 
     press: (name) => step(async (open) => { await key(open, name) }),
 
-    scroll: (to) => step(async (open) => { await evaluate(open, SCROLL_SCRIPT, to) }),
+    async scroll(to) {
+      const result = await step(async (open) => {
+        const done = await evaluate<{ missing?: boolean }>(open, SCROLL_SCRIPT, to)
+        if (done?.missing) throw new Error(`There is no element ${to} on the page now. Run the check or take a snapshot again; the page may have changed.`)
+      })
+      // Measured after the page settled, as in the screenshot, so it can box the finding.
+      if (typeof to === 'string' && /^e\d+$/.test(to)) {
+        const box = await evaluate<{ x: number; y: number; width: number; height: number } | null>(requireOpen(), BOX_SCRIPT, to)
+        if (box) result.note = [result.note, `${to} is at x ${box.x}, y ${box.y}, ${box.width}×${box.height} in this view; use that as the live box of a finding's evidence.`].filter(Boolean).join(' ')
+      }
+      return result
+    },
 
     back: () => step(async (open) => {
       if (!open.contents.navigationHistory.canGoBack()) return 'There is no earlier page in this browser.'
@@ -350,6 +361,8 @@ export function createQaBrowser(): QaBrowser {
     async audit(): Promise<PageAudit> {
       return evaluate<PageAudit>(requireOpen(), AUDIT_SCRIPT)
     },
+
+    read: (script, ...args) => evaluate(requireOpen(), script, ...args),
 
     async request(input): Promise<HttpResult> {
       const open = requireOpen()

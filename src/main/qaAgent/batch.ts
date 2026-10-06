@@ -1,8 +1,9 @@
 import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
 import { QA_BATCH_MAX_PAGES, type ReportedContext } from '../../shared/qaAgent'
 import { matchChoice, type TrackerFormat } from '../../shared/trackerFormat'
-import type { AgentEvent, AgentProvider } from './agents/types'
+import { QuotaError, type AgentEvent, type AgentProvider } from './agents/types'
 import { BROWSER_TOOL_NAMES } from './browserTools'
+import { LITE_LIMITS, LITE_NOTE, liteBreakpoints } from './lite'
 import { QA_FUNCTIONAL, QA_RUBRIC_STANDALONE } from './prompt'
 import type { RunSummary } from './runner'
 import { callTool, handOverRows, type DraftRow, type HandOverEntry, type QaContext, type ToolResult } from './tools'
@@ -151,7 +152,7 @@ const reportedFor = (page: BatchPage, now: number): ReportedContext => ({
 export async function runQaBatch(deps: { context: QaContext; provider: AgentProvider }, options: BatchOptions): Promise<RunSummary> {
   const { context, provider } = deps
   const { emit, signal } = options
-  const breakpoints = options.breakpoints?.length ? options.breakpoints : [...BREAKPOINTS]
+  const breakpoints = options.breakpoints?.length ? options.breakpoints : provider.lite ? liteBreakpoints([...BREAKPOINTS]) : [...BREAKPOINTS]
   const summary: RunSummary = { runId: null, breakpoints, rowsDrafted: 0, finalized: false, stopped: 'failed', message: '' }
   const finish = (stopped: RunSummary['stopped'], message: string): RunSummary => {
     summary.stopped = stopped
@@ -166,6 +167,11 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
   const pages = options.pages.slice(0, MAX_BATCH_PAGES)
   if (options.pages.length > pages.length) emit({ type: 'status', message: `Only the first ${MAX_BATCH_PAGES} of ${options.pages.length} pages are reviewed at once.` })
   emit({ type: 'status', message: `Reviewing ${pages.length} page${pages.length === 1 ? '' : 's'} on their own, with no design to compare: ${breakpoints.join(', ')}${options.functional && context.browser ? ', then links, buttons and forms' : ''}.` })
+  if (provider.lite) {
+    // Each conversation can take up to its step limit in requests; say what that means against a daily allowance.
+    const conversations = pages.length * (breakpoints.length + (options.functional && context.browser ? 1 : 0))
+    emit({ type: 'status', message: conversations > 2 ? `${LITE_NOTE} This batch is ${conversations} conversations of up to ${LITE_LIMITS.breakpointTurns} requests each; a free tier may run out partway, and what was found by then is still handed over.` : LITE_NOTE })
+  }
 
   let tokens = 0
   let overBudget = false
@@ -186,6 +192,7 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
   let outputRunId: string | null = null
   let consecutiveFailures = 0
   let lastFailure = ''
+  let quotaSpent = false
 
   try {
     for (const [index, page] of pages.entries()) {
@@ -213,6 +220,8 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
           consecutiveFailures = message === lastFailure ? consecutiveFailures + 1 : 1
           lastFailure = message
           emit({ type: 'status', message: `The ${label} of ${page.url} failed: ${message}` })
+          // Today's allowance is gone: nothing more can run, so stop like a reached token limit and hand over what was found.
+          if (error instanceof QuotaError) { quotaSpent = true; controller.abort(); return true }
           if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return false
         }
         return true
@@ -226,7 +235,7 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
           system: `${QA_RUBRIC_STANDALONE}\n\n# This conversation\nYou review only the ${breakpoint} breakpoint of run ${run.id}. Finish by calling save_draft for ${breakpoint}, even with an empty list, then stop.`,
           task: `Run id: ${run.id}. Review the ${breakpoint} breakpoint of "${page.name}" (${page.url}) now: capture_live (with this runId), study the overview, look at every section with get_section, then save_draft your rows for ${breakpoint}. Display is set for you.`,
           tools: BATCH_TOOLS,
-          maxTurns: MAX_TURNS_PER_BREAKPOINT,
+          maxTurns: provider.lite ? LITE_LIMITS.breakpointTurns : MAX_TURNS_PER_BREAKPOINT,
           signal: controller.signal,
           call: callWith(BATCH_TOOLS),
           emit: tracked,
@@ -242,7 +251,7 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
         const going = await converse('functional test', () => provider.run({
           ...conversation,
           tools: FUNCTIONAL_TOOLS,
-          maxTurns: MAX_TURNS_FUNCTIONAL,
+          maxTurns: provider.lite ? LITE_LIMITS.functionalTurns : MAX_TURNS_FUNCTIONAL,
           signal: controller.signal,
           call: callWith(FUNCTIONAL_TOOLS),
           emit: tracked,
@@ -260,9 +269,11 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
       emit({ type: 'status', message: `Page ${index + 1}: ${rows.length} finding${rows.length === 1 ? '' : 's'}.` })
     }
 
-    if (controller.signal.aborted && !overBudget) return finish('aborted', 'Stopped.')
+    if (controller.signal.aborted && !overBudget && !quotaSpent) return finish('aborted', 'Stopped.')
+    if (!entries.length && quotaSpent) return finish('failed', lastFailure)
     if (!entries.length) return finish(overBudget ? 'budget' : 'completed', overBudget ? `Stopped: the token limit was reached before any finding was written (${options.budgetTokens?.toLocaleString()} tokens).` : `No problems found on ${pages.length} page${pages.length === 1 ? '' : 's'}, so nothing was handed over.`)
     if (overBudget) emit({ type: 'status', message: `The token limit (${options.budgetTokens?.toLocaleString()}) was reached. Handing over what was found so far (${perPage.length} of ${pages.length} pages).` })
+    if (quotaSpent) emit({ type: 'status', message: `The free requests ran out. Handing over what was found so far (${perPage.length} of ${pages.length} pages).` })
 
     emit({ type: 'status', message: `Handing over ${entries.length} finding${entries.length === 1 ? '' : 's'} from ${perPage.length} page${perPage.length === 1 ? '' : 's'} for approval…` })
     const result = await handOverRows(context, {
