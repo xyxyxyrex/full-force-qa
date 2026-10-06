@@ -1,4 +1,5 @@
 import { BrowserWindow, session, type Session, type WebContents } from 'electron'
+import { withSiteAuthenticationTimeout } from '../httpAuth'
 import { acquireDebugger, type DebuggerLease } from '../debuggerConnection'
 import type { Breakpoint } from '../../shared/designScale'
 import { userAgentFor, viewportHeightFor } from './captureSettings'
@@ -260,10 +261,8 @@ export function createQaBrowser(): QaBrowser {
       if (agent) await lease.send('Emulation.setUserAgentOverride', { userAgent: agent })
       return step(async (open) => {
         let failure = ''
-        await Promise.race([
-          open.contents.loadURL(input.url).catch((error: Error) => { failure = error.message }),
-          sleep(LOAD_TIMEOUT_MS).then(() => { failure = failure || 'the page did not finish loading within 30 seconds' }),
-        ])
+        await withSiteAuthenticationTimeout(open.contents.loadURL(input.url), open.contents, LOAD_TIMEOUT_MS, 'the page did not finish loading within 30 seconds')
+          .catch((error: Error) => { failure = error.message })
         return failure && !/ERR_ABORTED/.test(failure) ? `Loading reported: ${failure}` : undefined
       })
     },

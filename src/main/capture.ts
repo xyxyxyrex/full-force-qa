@@ -1,5 +1,6 @@
 import { BrowserWindow, net } from 'electron'
 import { safeResourceReferer } from './resourceReferrer'
+import { withSiteAuthenticationTimeout } from './httpAuth'
 
 export function sanitizeUrl(rawUrl: string): string {
   if (!rawUrl) return ''
@@ -173,9 +174,15 @@ export async function captureUrl(rawUrl: string): Promise<string> {
       await captureWindow.webContents.session.clearCache()
     } catch {}
 
-    await captureWindow.loadURL(url, {
+    await withSiteAuthenticationTimeout(captureWindow.loadURL(url, {
       extraHeaders: 'pragma: no-cache\r\ncache-control: no-cache\r\n'
+    }), captureWindow.webContents, 30_000, 'The page did not finish loading. Check the connection and try capturing again.').catch((error: Error) => {
+      if (/ERR_INVALID_AUTH_CREDENTIALS|ERR_PROXY_AUTH_REQUESTED|ERR_UNEXPECTED_PROXY_AUTH/.test(error.message)) {
+        throw new Error('Sign-in was cancelled or the server did not accept your credentials. Capture again to sign in.')
+      }
+      throw error
     })
+    if (httpStatusCode === 401 || httpStatusCode === 407) throw new Error('Sign-in was cancelled or the server did not accept your credentials. Capture again to sign in.')
     // Wait for page load + extra 3s for dynamic JS rendering
     await captureWindow.webContents.executeJavaScript(`
       new Promise((resolve) => {

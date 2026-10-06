@@ -16,6 +16,7 @@ import { assertFigmaNativeSize } from './automation/captureNormalization'
 import { validateFeedback } from './feedback'
 import { safeResourceReferer } from './resourceReferrer'
 import { friendlyMondayError } from '../shared/mondayErrors'
+import { clearSiteAuthentication, registerSiteAuthentication } from './httpAuth'
 
 const PARITY_APP_ID = 'com.fullforce.parity'
 
@@ -559,6 +560,7 @@ function createWindow(): void {
   })
 
   qaAgent?.attachMainWindow(mainWindow)
+  mainWindow.on('closed', clearSiteAuthentication)
 
   // The app window never navigates away from itself. Without this, an image dropped
   // outside a drop target opens as file:///….png and the unsaved workspace is lost.
@@ -1639,6 +1641,25 @@ app.whenReady().then(async () => {
     })
   })
   registerIpcHandlers()
+  registerSiteAuthentication(() => mainWindow, contents => {
+    const source = contents ? BrowserWindow.fromWebContents(contents) : null
+    const parent = source?.isVisible() ? source : mainWindow!
+    const prompt = new BrowserWindow({
+      parent, modal: true, show: false, width: 460, height: 530, useContentSize: true,
+      frame: false, resizable: false, minimizable: false, maximizable: false, fullscreenable: false,
+      title: 'Website sign-in', backgroundColor: '#1c2321', skipTaskbar: true,
+      webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: false, nodeIntegration: false },
+    })
+    prompt.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    prompt.webContents.on('will-navigate', event => event.preventDefault())
+    prompt.once('ready-to-show', () => { if (!prompt.isDestroyed()) prompt.show() })
+    const renderer = process.env.ELECTRON_RENDERER_URL
+    const load = renderer
+      ? prompt.loadURL(`${renderer}${renderer.includes('?') ? '&' : '?'}siteAuth=1`)
+      : prompt.loadFile(join(__dirname, '../renderer/index.html'), { query: { siteAuth: '1' } })
+    void load.catch(() => { if (!prompt.isDestroyed()) prompt.close() })
+    return prompt
+  })
   registerInspectorHandlers()
   registerTicketHandlers()
   registerAuditExportHandlers()

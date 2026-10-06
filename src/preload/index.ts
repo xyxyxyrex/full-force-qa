@@ -4,6 +4,13 @@ import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPubli
 import type { AuditCaptureContext, AuditExportProgress, AuditExportScanRequest, AuditMediaRequest } from '../shared/auditExport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  siteAuthPending: () => ipcRenderer.invoke('site-auth:pending'),
+  siteAuthRespond: (id: string, value: import('../shared/httpAuth').SiteCredentials | null) => ipcRenderer.invoke('site-auth:respond', id, value),
+  onSiteAuthRequest: (callback: (request: import('../shared/httpAuth').SiteAuthRequest | null) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/httpAuth').SiteAuthRequest | null) => callback(request)
+    ipcRenderer.on('site-auth:request', handler)
+    return () => ipcRenderer.removeListener('site-auth:request', handler)
+  },
   comparisonStatus: () => ipcRenderer.invoke('comparison:status'),
   comparisonInstall: (engine: import('../shared/crossBrowser').ComparisonEngine) => ipcRenderer.invoke('comparison:install', engine),
   comparisonOpenLogin: (engine: import('../shared/crossBrowser').ComparisonEngine, projectId: string, url: string) => ipcRenderer.invoke('comparison:open-login', engine, projectId, url),

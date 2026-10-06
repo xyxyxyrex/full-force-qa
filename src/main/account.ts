@@ -5,6 +5,7 @@ import { createServer, type Server } from 'http'
 import { join } from 'path'
 import type { AccountStatus, ParityAccountUser } from '../shared/types'
 import { setProjectOwner } from './store'
+import { clearSiteAuthentication } from './httpAuth'
 
 declare const __PARITY_SUPABASE_URL__: string
 declare const __PARITY_SUPABASE_KEY__: string
@@ -44,6 +45,7 @@ function authClient() {
   return client
 }
 function publish() {
+  clearSiteAuthentication()
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send('account:changed')
 }
 async function persist() {

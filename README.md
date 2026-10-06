@@ -2,7 +2,7 @@
 
 Parity is an Electron desktop application for quality assurance engineers, web developers, and designers reviewing website implementations. It combines authenticated Chromium previews, direct visual editing, Figma comparison, SEO and grammar audits, automated visual findings, annotations, and expiring browser-based review links in one QA workspace.
 
-**v1.5.0 was Parity's first public release. v1.5.2 includes the approval-gated QA agent and fixes the Antigravity safety-hook launcher on Windows.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
+**v1.5.0 was Parity's first public release. v1.5.3 adds staging server sign-in, functional QA checks, review/chat history, and free-model support with lighter runs.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
 
 ## Links
 
@@ -36,6 +36,7 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 
 ### 1. Live Workspace (`live`)
 - **Authenticated Chromium Preview**: Opens the target website in a native Electron webview and reuses the application's browser session, including cookies established through staging or WordPress authentication.
+- **Staging server sign-in**: Sites protected by HTTP authentication show a themed username/password dialog during capture or preview. Matching credentials are reused in the current app session, including Firefox/WebKit comparisons; they are not saved to projects or synced to Supabase. Closing Parity or changing accounts clears them. Cancel stops the protected capture, and an incorrect password can be retried.
 - **Figma Viewport Integration**: Renders Figma design frames inside an embedded `<webview>` using Figma embed URLs (`https://www.figma.com/embed?...`). Supports side-by-side positioning against the staging site frame or static PNG snapshot overlays.
 - **Comparison Modes**: Provides four frame comparison modes:
   - `side-by-side`: Places the Figma frame adjacent to the staging website frame.

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { dirname, join } from 'path'
 import { spawn } from 'child_process'
 import type { Browser, BrowserContext, BrowserType } from 'playwright'
+import { openAuthenticatedComparison } from './playwrightSiteAuth'
 import sharp from 'sharp'
 import { getProjectOwner, getProjects } from './store'
 import type { BrowserComparison, BrowserComparisonCapture, BrowserComparisonImage, BrowserComparisonProgress, ComparisonAnnotation, ComparisonEngine } from '../shared/crossBrowser'
@@ -139,10 +140,8 @@ export function registerComparisonHandlers(): void {
     const browser = await engines[selected].launch({ headless: false })
     try {
       assertOwner(sourceOwner)
-      const context = await browser.newContext()
-      const page = await context.newPage()
+      const { context } = await openAuthenticatedComparison(browser, url, {}, event.sender)
       sessions.set(event.sender.id, { owner: sourceOwner, projectId, engine: selected, browser, context })
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {})
       emit(event.sender.id, selected, 'ready', 'Sign in in the opened browser, then select Save login in Parity.')
     } catch (error) { sessions.delete(event.sender.id); await browser.close().catch(() => {}); throw error }
   })
@@ -187,16 +186,13 @@ export function registerComparisonHandlers(): void {
         storageState = saved.storageState || saved
         sessionStorage = saved.sessionStorage || {}
       }
-      const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, storageState })
-      if (Object.keys(sessionStorage).length) {
-        await context.addInitScript(values => {
+      emit(event.sender.id, selected, 'loading', `Loading ${url}…`)
+      const { page, response } = await openAuthenticatedComparison(browser, url, { viewport: { width, height }, deviceScaleFactor: 1, storageState }, event.sender, async context => {
+        if (Object.keys(sessionStorage).length) await context.addInitScript(values => {
           const entries = values[window.location.origin]
           if (entries) for (const [key, value] of Object.entries(entries)) window.sessionStorage.setItem(key, value)
         }, sessionStorage)
-      }
-      const page = await context.newPage()
-      emit(event.sender.id, selected, 'loading', `Loading ${url}…`)
-      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      })
       await Promise.race([page.evaluate(() => document.fonts.ready).catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000))])
       // Load ordinary lazy content before taking the full-page screenshot.
       let pageHeight = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0, innerHeight))

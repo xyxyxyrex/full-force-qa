@@ -62,7 +62,7 @@ jobs:
       - run: npm ci
       - name: Run regression tests
         run: npm test
-      - name: Verify accounts, inspector and command palette in Electron
+      - name: Verify desktop, authentication and QA workflows in Electron
         shell: pwsh
         run: |
           npm run test:accounts:electron
@@ -76,6 +76,8 @@ jobs:
           npm run test:feedback:edge
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:feedback:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:site-auth:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:figma:ui
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

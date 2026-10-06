@@ -1,6 +1,6 @@
 {
   "name": "parity",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
@@ -32,6 +32,7 @@
     "test:viewer:electron": "node scripts/test-viewer-evidence-electron.cjs",
     "test:qa-browser:electron": "node scripts/test-qa-browser-electron.cjs",
     "test:page-checks:electron": "node scripts/test-page-checks-electron.cjs",
+    "test:site-auth:electron": "node scripts/test-site-auth-electron.cjs --native",
     "test:watch": "vitest",
     "build:visual-worker": "python -m PyInstaller --noconfirm --clean --onefile --name visual-compare --distpath resources/visual-worker --workpath .python-build --specpath .python-build python/visual_compare.py",
     "build:dist": "npm run build:visual-worker && node scripts/electron-dev.js electron-vite build && node scripts/electron-dev.js electron-builder --publish never",

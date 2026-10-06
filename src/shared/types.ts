@@ -403,6 +403,9 @@ export interface ResourceFileSizeResult {
 }
 
 export interface ElectronAPI extends InspectorApi {
+  siteAuthPending: () => Promise<import('./httpAuth').SiteAuthRequest | null>
+  siteAuthRespond: (id: string, value: import('./httpAuth').SiteCredentials | null) => Promise<boolean>
+  onSiteAuthRequest: (callback: (request: import('./httpAuth').SiteAuthRequest | null) => void) => () => void
   comparisonStatus: () => Promise<Record<import('./crossBrowser').ComparisonEngine, boolean>>
   comparisonInstall: (engine: import('./crossBrowser').ComparisonEngine) => Promise<void>
   comparisonOpenLogin: (engine: import('./crossBrowser').ComparisonEngine, projectId: string, url: string) => Promise<void>

@@ -7,6 +7,7 @@ import { createCaptureScrollPositions, resolveCaptureScrollPosition } from '../a
 import { checkCaptureUrl, isLoginUrl, MAX_CAPTURE_HEIGHT, SOFT_CAPTURE_DEADLINE_MS, userAgentFor, viewportHeightFor } from './captureSettings'
 import { MEASURE_EXPRESSION, PREPARE_EXPRESSION, VALUES_EXPRESSION } from './liveDomExpression'
 import { finalizeSections, sectionIdAt, type PageSection } from './sections'
+import { SiteAuthenticationCancelledError, siteAuthenticationWait, withSiteAuthenticationTimeout } from '../httpAuth'
 
 // Tolerant full-page capture of a live page at a design's width, for the QA agent.
 //
@@ -105,7 +106,7 @@ async function runCapture(options: LiveCaptureOptions, width: number): Promise<L
   const viewportHeight = Math.round(options.viewportHeight || viewportHeightFor(width))
   const warnings: string[] = []
   const warn = (message: string) => { if (!warnings.includes(message)) warnings.push(message) }
-  const startedAt = Date.now()
+  let startedAt = Date.now()
   installPermissionGuard()
 
   const win = new BrowserWindow({
@@ -156,17 +157,20 @@ async function runCapture(options: LiveCaptureOptions, width: number): Promise<L
     const loadEvent = new Promise<void>((resolve) => { loaded = resolve })
     const stopListening = lease.onMessage((method) => { if (method === 'Page.loadEventFired') loaded() })
     try {
-      const navigation: any = await withTimeout(lease.send('Page.navigate', { url: options.url }), LOAD_TIMEOUT_MS, 'navigation timeout')
+      const navigation: any = await withSiteAuthenticationTimeout(lease.send('Page.navigate', { url: options.url }), contents, LOAD_TIMEOUT_MS, 'navigation timeout')
       if (navigation?.errorText) throw new Error(navigation.errorText)
-      await withTimeout(loadEvent, LOAD_TIMEOUT_MS, 'load timeout')
+      await withSiteAuthenticationTimeout(loadEvent, contents, LOAD_TIMEOUT_MS, 'load timeout')
     } catch (error: any) {
+      if (error instanceof SiteAuthenticationCancelledError) throw error
       warn(`The page did not finish loading within 30 seconds (${error?.message || 'error'}); the capture used what had loaded.`)
     } finally {
       stopListening()
+      startedAt += siteAuthenticationWait(contents)
     }
     const finalUrl = (await evaluate<string>('location.href').catch(() => '')) || options.url
     if (isLoginUrl(finalUrl)) throw new Error('The page redirected to the WordPress login. Log in to the site in Parity first, then try again.')
     const status = await evaluate<number>('(performance.getEntriesByType("navigation")[0] || {}).responseStatus || 0').catch(() => 0)
+    if (status === 401 || status === 407) throw new Error('Sign-in was cancelled or the server did not accept your credentials. Try capturing again to sign in.')
     if (status >= 400) warn(`The page answered with HTTP ${status}.`)
     await sleep(1_500)
 
