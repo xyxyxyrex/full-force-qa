@@ -2,6 +2,7 @@ import type { Breakpoint } from '../../shared/designScale'
 import { BREAKPOINTS } from '../../shared/designScale'
 import { designKeyOf, pageIdOf } from '../../shared/designKey'
 import { FUNCTIONAL_TOOLS, functionalBreakpoints, functionalConversation, MAX_TURNS_FUNCTIONAL, runQaBatch } from './batch'
+import { LITE_LIMITS, LITE_NOTE, liteBreakpoints } from './lite'
 import { QA_RUBRIC } from './prompt'
 import type { AgentEvent, AgentProvider, ProviderResult } from './agents/types'
 import { callTool, type QaContext, type ToolResult } from './tools'
@@ -72,7 +73,9 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
     if (!options.standalone) emit({ type: 'status', message: `No designs are stored for this page (${pageIdOf(reported.pageUrl) ?? reported.pageUrl}), so the agent reviews the page on its own.` })
     return runQaBatch(deps, { pages: [{ url: reported.pageUrl, name: reported.project.name, projectId: reported.projectKey }], breakpoints: options.breakpoints, signal, emit, budgetTokens: options.budgetTokens, functional: options.functional })
   }
-  const breakpoints = options.breakpoints?.length ? options.breakpoints : stored
+  // A free tier would run out of requests on every breakpoint; it checks one unless more were named.
+  const breakpoints = options.breakpoints?.length ? options.breakpoints : provider.lite ? liteBreakpoints(stored) : stored
+  if (provider.lite) emit({ type: 'status', message: LITE_NOTE })
   summary.breakpoints = breakpoints
   const missing = breakpoints.filter((bp) => !slots[bp])
   if (missing.length) emit({ type: 'status', message: `No design is stored for ${missing.join(', ')}; ${missing.length === 1 ? 'that breakpoint' : 'those breakpoints'} will be captured without a comparison.` })
@@ -120,7 +123,7 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
         `${QA_RUBRIC}\n\n# This conversation\nYou review only the ${breakpoint} breakpoint of run ${run.id}. Finish by calling save_draft for ${breakpoint}, even if you found nothing (an empty list), then stop.`,
         taskFor(run.id, breakpoint),
         BREAKPOINT_TOOLS,
-        MAX_TURNS_PER_BREAKPOINT,
+        provider.lite ? LITE_LIMITS.breakpointTurns : MAX_TURNS_PER_BREAKPOINT,
       )
       if (result.stopped === 'failed' || result.stopped === 'refused') {
         emit({ type: 'status', message: `The ${breakpoint} review stopped early (${result.stopped}).` })
@@ -134,7 +137,7 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
       const testAt = functionalBreakpoints(breakpoints)
       emit({ type: 'status', message: `Testing links, buttons and forms (${testAt.join(' and ')})…` })
       const { system, task } = functionalConversation(run.id, { name: reported.project.name, url: reported.pageUrl }, testAt, false)
-      const result = await conversation(system, task, FUNCTIONAL_TOOLS, MAX_TURNS_FUNCTIONAL).finally(() => context.browser?.close())
+      const result = await conversation(system, task, FUNCTIONAL_TOOLS, provider.lite ? LITE_LIMITS.functionalTurns : MAX_TURNS_FUNCTIONAL).finally(() => context.browser?.close())
       if (result.stopped === 'failed' || result.stopped === 'refused') emit({ type: 'status', message: `The functional test stopped early (${result.stopped}).` })
       const saved = Object.values(context.runs.readDrafts(run.id, 'functional'))
       if (!saved.length) emit({ type: 'status', message: 'No rows were saved from testing the page.' })

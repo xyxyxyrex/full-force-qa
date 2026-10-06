@@ -16,10 +16,11 @@ const agents = [
   { id: 'antigravity', label: 'Antigravity CLI (your Google plan)', kind: 'subscription', ready: false, detail: 'Not found. Install agy and sign in, then refresh.', model: '', needsKey: false, hasKey: false },
   { id: 'anthropic-api', label: 'Claude API key', kind: 'api', ready: false, detail: 'Add your API key.', model: 'claude-opus-5-5', needsKey: true, hasKey: false },
   { id: 'openai-api', label: 'OpenAI API key', kind: 'api', ready: true, detail: 'gpt-test', model: 'gpt-test', needsKey: true, hasKey: true },
-  { id: 'gemini-api', label: 'Gemini API key', kind: 'api', ready: false, detail: 'Add your API key.', model: '', needsKey: true, hasKey: false },
-  { id: 'local', label: 'Local model (Ollama, LM Studio)', kind: 'local', ready: false, detail: 'Choose a model that can read pictures and use tools.', model: '', needsKey: false, hasKey: false },
-]
-const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90, allowSend: false, functionalChecks: true }
+  { id: 'gemini-api', label: 'Gemini API key (free tier)', kind: 'free', ready: false, detail: 'Add your free API key (no card needed), then list the models.', model: '', needsKey: true, hasKey: false, lite: true, keyUrl: 'https://aistudio.google.com/apikey' },
+  { id: 'openrouter', label: 'OpenRouter (free models)', kind: 'free', ready: false, detail: 'List the models and choose one.', model: '', needsKey: true, hasKey: true, lite: false, keyUrl: 'https://openrouter.ai/settings/keys' },
+  { id: 'local', label: 'Local or custom server (Ollama, LM Studio, any OpenAI-compatible API)', kind: 'local', ready: false, detail: 'Choose a model that can read pictures and use tools.', model: '', needsKey: true, keyOptional: true, hasKey: false },
+].map((agent) => ({ lite: false, ...agent }))
+const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90, allowSend: false, functionalChecks: true, geminiBilling: false }
 const bridge = { enabled: true, running: true, port: 29849, error: '', keyHint: '••••a1b2', mcpUrl: 'http://127.0.0.1:29849/mcp', keyFile: '/home/user/.config/Parity/qa-agent/token', lastRequestAt: 1, recent: [{ at: Date.now(), method: 'POST', path: '/mcp', status: 200, ms: 12, tool: 'capture_live' }, { at: Date.now() - 4000, method: 'GET', path: '/api/status', status: 401, ms: 1 }] }
 const slot = (breakpoint: string, fileName: string, frameWidth: number, scale: number) => ({ breakpoint, fileName, pixelWidth: frameWidth * scale, pixelHeight: 6000, scale, frameWidth, frameHeight: 3000, detection: 'dimensions', confidence: 'high', sha256: fileName, addedAt: 1 })
 const alopeciaTarget = {
@@ -39,7 +40,8 @@ let runListener: ((event: unknown) => void) | null = null
   qaAgentsSaveSettings: async (patch: any) => { calls.push(`save ${JSON.stringify(patch)}`); return { settings, agents, keyStorage: 'secure' } },
   qaAgentsSetKey: async () => ({ settings, agents, keyStorage: 'secure' }),
   qaAgentsClearKey: async () => ({ settings, agents, keyStorage: 'secure' }),
-  qaAgentsModels: async () => ({ models: ['gpt-test', 'gpt-test-mini'] }),
+  qaAgentsModels: async (id: string) => (id === 'openrouter' ? { models: ['vendor/vision:free', 'older/vision:free'], recommended: 'vendor/vision:free' } : { models: ['gpt-test', 'gpt-test-mini'] }),
+  openExternal: async (url: string) => { calls.push(`external ${url}`) },
   qaBridgeStatus: async () => bridge,
   qaBridgeSetEnabled: async () => bridge,
   qaBridgeResetKey: async () => bridge,

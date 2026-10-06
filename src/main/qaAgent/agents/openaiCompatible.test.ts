@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createOpenAiCompatibleProvider, trimCarriedImages } from './openaiCompatible'
-import type { AgentEvent, ProviderRun } from './types'
+import { createOpenAiCompatibleProvider, isDailyLimit, retryDelayMs, trimCarriedImages } from './openaiCompatible'
+import { QuotaError, type AgentEvent, type ProviderRun } from './types'
 
-interface Scripted { status?: number; body: unknown; delayMs?: number }
+interface Scripted { status?: number; body: unknown; delayMs?: number; headers?: Record<string, string> }
 let server: Server
 let baseUrl: string
 let queue: Scripted[]
@@ -19,7 +19,7 @@ beforeEach(async () => {
       requests.push({ url: req.url || '', headers: req.headers, body: JSON.parse(raw) })
       const next = queue.shift() ?? { status: 500, body: { error: { message: 'no scripted response' } } }
       if (next.delayMs) await new Promise((r) => setTimeout(r, next.delayMs))
-      res.writeHead(next.status ?? 200, { 'Content-Type': 'application/json' })
+      res.writeHead(next.status ?? 200, { 'Content-Type': 'application/json', ...next.headers })
       res.end(JSON.stringify(next.body))
     })
   })
@@ -148,5 +148,89 @@ describe('openai-compatible provider chat history', () => {
       { role: 'assistant', content: 'It is 28px on desktop.' },
       { role: 'user', content: 'And on mobile?' },
     ])
+  })
+})
+
+describe('free tiers and rate limits', () => {
+  const quick = (over: Partial<Parameters<typeof createOpenAiCompatibleProvider>[0]> = {}) => provider({ maxWaitMs: 200, ...over })
+
+  it('waits as long as the server asks, says so, and tries again', async () => {
+    queue.push({ status: 429, body: { error: { message: 'Rate limit exceeded: free-models-per-min.' } }, headers: { 'retry-after': '0' } }, reply({ content: 'Done.' }))
+    const { run, events } = makeRun()
+    expect(await quick({ lite: true, label: 'OpenRouter' }).run(run)).toEqual({ stopped: 'finished', text: 'Done.' })
+    expect(requests).toHaveLength(2)
+    expect(events).toContainEqual({ type: 'status', message: 'OpenRouter is rate limiting (free tier). Waiting 1s, then trying again (1 of 3)…' })
+  })
+
+  it('retries an overloaded provider, and gives up after three tries', async () => {
+    for (let i = 0; i < 4; i++) queue.push({ status: 503, body: { error: { message: 'Provider returned error' } } })
+    await expect(quick().run(makeRun().run)).rejects.toThrow(/overloaded right now \(Provider returned error\)/)
+    expect(requests).toHaveLength(4)
+  })
+
+  it('stops at once with a QuotaError when the daily allowance is used up', async () => {
+    queue.push({ status: 429, body: { error: { message: 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', code: 429 } } })
+    const failure = await quick({ label: 'OpenRouter', dailyLimitHint: 'Come back tomorrow.' }).run(makeRun().run).catch((error) => error)
+    expect(failure).toBeInstanceOf(QuotaError)
+    expect(failure.message).toBe('Today\'s free requests on OpenRouter are used up. Come back tomorrow.')
+    expect(requests).toHaveLength(1)
+  })
+
+  it('reads Gemini\'s list-shaped errors and its retryDelay', async () => {
+    const quota = [{ error: { code: 429, message: 'You exceeded your current quota. Please retry in 0.05s.', status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0s' }] } }]
+    queue.push({ status: 429, body: quota }, reply({ content: 'ok' }))
+    expect((await quick({ label: 'Gemini' }).run(makeRun().run)).text).toBe('ok')
+    queue.push({ status: 404, body: [{ error: { code: 404, message: 'models/gemini-nope is not found' } }] })
+    await expect(quick({ label: 'Gemini', model: 'gemini-nope' }).run(makeRun().run)).rejects.toThrow('Gemini does not know the model "gemini-nope" (models/gemini-nope is not found)')
+  })
+
+  it('gives up when asked to wait far longer than a minute', async () => {
+    queue.push({ status: 429, body: { error: { message: 'slow down' } }, headers: { 'retry-after': '3600' } })
+    await expect(quick({ lite: true }).run(makeRun().run)).rejects.toThrow(/wait about 60 minute\(s\).*free tier limit/)
+    expect(requests).toHaveLength(1)
+  })
+
+  it('treats an error inside a 200 answer (OpenRouter) as the error it is', async () => {
+    queue.push({ body: { error: { code: 502, message: 'Upstream error' } } }, reply({ content: 'recovered' }))
+    expect((await quick().run(makeRun().run)).text).toBe('recovered')
+    queue.push({ body: { error: { code: 401, message: 'No auth credentials found' } } })
+    await expect(quick().run(makeRun().run)).rejects.toThrow(/rejected the API key/)
+  })
+
+  it('stops waiting when the person stops the run', async () => {
+    queue.push({ status: 429, body: { error: { message: 'busy' } }, headers: { 'retry-after': '30' } })
+    const during = makeRun()
+    setTimeout(() => during.controller.abort(), 100)
+    expect((await provider({ maxWaitMs: 60_000 }).run(during.run)).stopped).toBe('aborted')
+  })
+
+  it('sends extra headers and keeps fewer pictures on a free tier', async () => {
+    for (let i = 0; i < 3; i++) queue.push(reply({ content: '', tool_calls: [toolCall(`c${i}`, 'capture_live', { breakpoint: 'desktop' })] }, 'tool_calls'))
+    queue.push(reply({ content: 'done' }))
+    await quick({ lite: true, headers: { 'X-Title': 'Parity' } }).run(makeRun().run)
+    expect(requests[0].headers['x-title']).toBe('Parity')
+    const pictures = requests[3].body.messages.filter((m: any) => Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url'))
+    expect(pictures).toHaveLength(2)
+    expect(quick({ lite: true }).lite).toBe(true)
+    expect(quick().lite).toBe(false)
+  })
+})
+
+describe('retryDelayMs and isDailyLimit', () => {
+  const headers = (entries: Record<string, string>) => new Headers(entries)
+  it('reads every way a server says how long to wait', () => {
+    expect(retryDelayMs(headers({ 'retry-after': '7' }), '')).toBe(7000)
+    expect(retryDelayMs(headers({ 'retry-after': new Date(10_000).toUTCString() }), '', 4_000)).toBe(6000)
+    expect(retryDelayMs(headers({ 'x-ratelimit-reset': String(1_800_000_030_000) }), '', 1_800_000_000_000)).toBe(30_000)
+    expect(retryDelayMs(headers({}), '{"retryDelay": "37s"}')).toBe(37_000)
+    expect(retryDelayMs(headers({}), 'Please retry in 2.5s.')).toBe(2500)
+    expect(retryDelayMs(headers({}), 'busy')).toBeNull()
+  })
+  it('tells a daily quota from a per-minute one', () => {
+    expect(isDailyLimit('Rate limit exceeded: free-models-per-day')).toBe(true)
+    expect(isDailyLimit('Quota exceeded for metric: generate_content_free_tier_requests, limit: 250, quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier')).toBe(true)
+    expect(isDailyLimit('Rate limit exceeded: free-models-per-min')).toBe(false)
+    expect(isDailyLimit('GenerateRequestsPerMinutePerProjectPerModel-FreeTier')).toBe(false)
+    expect(isDailyLimit('Rate limit exceeded: free-models-per-min. Add 10 credits to unlock 1000 free model requests per day')).toBe(false)
   })
 })

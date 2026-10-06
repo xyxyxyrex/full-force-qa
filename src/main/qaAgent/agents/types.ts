@@ -46,7 +46,12 @@ export interface AgentProvider {
   label: string
   /** True when tools reach the agent over the local bridge, which must be running. */
   needsBridge?: boolean
+  /** A free tier with few requests a minute and a day: reviews and chats are kept short (see lite.ts). */
+  lite?: boolean
   run(run: ProviderRun): Promise<ProviderResult>
 }
 
 export class AgentError extends Error {}
+
+/** The allowance for the day (a free tier) is used up: nothing more can run today, so a batch stops at once. */
+export class QuotaError extends AgentError {}

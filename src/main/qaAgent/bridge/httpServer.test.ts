@@ -93,7 +93,7 @@ describe('/api for the parity command', () => {
     const status = JSON.parse((await raw({ path: '/api/status', headers: auth })).body)
     expect(status).toMatchObject({ ok: true, projectOpen: true, project: 'Fixture site', page: 'https://x.test/home/' })
     const tools = JSON.parse((await raw({ path: '/api/tools', headers: auth })).body).tools
-    expect(tools.map((t: { name: string }) => t.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows', 'browser_open', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_scroll', 'browser_back', 'browser_events', 'check_links', 'page_audit', 'http_request'])
+    expect(tools.map((t: { name: string }) => t.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows', 'browser_open', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_scroll', 'browser_back', 'browser_events', 'check_links', 'page_audit', 'inspect_element', 'check_contrast', 'check_layout', 'style_summary', 'check_text', 'seo_check', 'http_request'])
     const capture = tools.find((t: { name: string }) => t.name === 'capture_live')
     expect(capture.inputSchema.properties.breakpoint.enum).toEqual(['desktop', 'tablet', 'mobile'])
     expect(capture.readOnly).toBe(true)
@@ -148,7 +148,7 @@ describe('/mcp for agents', () => {
   it('lists the tools and marks which ones change anything', async () => {
     const client = await connect()
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows', 'browser_open', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_scroll', 'browser_back', 'browser_events', 'check_links', 'page_audit', 'http_request'])
+    expect(tools.map((t) => t.name)).toEqual(['get_context', 'set_design', 'capture_live', 'get_overview', 'get_section', 'save_draft', 'finalize_rows', 'browser_open', 'browser_snapshot', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_scroll', 'browser_back', 'browser_events', 'check_links', 'page_audit', 'inspect_element', 'check_contrast', 'check_layout', 'style_summary', 'check_text', 'seo_check', 'http_request'])
     expect(tools.filter((t) => !t.annotations?.readOnlyHint).map((t) => t.name)).toEqual(['set_design', 'finalize_rows', 'browser_click', 'browser_type', 'browser_select', 'browser_press', 'http_request'])
     expect(tools.find((t) => t.name === 'get_section')!.inputSchema.required).toEqual(expect.arrayContaining(['runId', 'breakpoint', 'section']))
     await client.close()

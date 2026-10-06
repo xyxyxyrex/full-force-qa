@@ -40,3 +40,5 @@
 .agents-log li{display:flex;gap:12px;padding:2px 0}
 .agents-log li span:nth-child(2){flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agents-log .bad{color:#f2a5a5}
+.agents-header p.agents-free-hint{margin-top:6px;color:var(--text-secondary)}
+.agents-badge{padding:1px 7px;border:1px solid #3fb97a88;border-radius:999px;color:#3fb97a;font-size:11px;font-weight:600;white-space:nowrap}

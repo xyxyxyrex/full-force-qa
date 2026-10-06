@@ -1,9 +1,13 @@
 import { imagePlaceholder, isAbortError, KEEP_IMAGE_TURNS, summarize, toolSchemas } from './common'
-import { AgentError, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
+import { AgentError, QuotaError, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
 
-// Any server that speaks the Chat Completions API: OpenAI itself, and local servers such as
-// Ollama or LM Studio. Chat Completions cannot carry pictures inside a tool result, so the
-// pictures a tool returns arrive in a user message right after the tool results.
+// Any server that speaks the Chat Completions API: OpenAI itself, Gemini, OpenRouter, and local
+// servers such as Ollama or LM Studio. Chat Completions cannot carry pictures inside a tool result,
+// so the pictures a tool returns arrive in a user message right after the tool results.
+//
+// Free tiers allow a few requests a minute, so a rate limit is waited out (as long as the server
+// asks, up to about a minute) instead of ending the run; a used-up daily allowance ends it with a
+// message that says so.
 
 export interface OpenAiCompatibleConfig {
   id: string
@@ -12,6 +16,14 @@ export interface OpenAiCompatibleConfig {
   baseUrl: string
   apiKey?: string
   model: string
+  /** Sent with every request, for example OpenRouter's app name. */
+  headers?: Record<string, string>
+  /** A free tier: runs are kept short and fewer pictures stay in the conversation. */
+  lite?: boolean
+  /** What to tell the person when today's free requests are used up. */
+  dailyLimitHint?: string
+  /** The longest wait for a rate limit to pass. Tests shorten it. */
+  maxWaitMs?: number
 }
 
 type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
@@ -23,6 +35,50 @@ type Message =
 interface ToolCall { id: string; type: 'function'; function: { name: string; arguments: string | Record<string, unknown> } }
 
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000
+const MAX_RETRIES = 3
+const DEFAULT_MAX_WAIT_MS = 65_000
+/** Waits when the server does not say how long: free tiers count per minute. */
+const BACKOFF_MS = [10_000, 25_000, 60_000]
+/** Fewer pictures for a free tier: its per-minute token allowance is small. */
+const LITE_KEEP_IMAGE_TURNS = 2
+
+/** The error object of a failed response. Gemini wraps it in a list. */
+function errorOf(body: string): { message: string; code?: number } {
+  try {
+    const parsed = JSON.parse(body)
+    const first = Array.isArray(parsed) ? parsed[0] : parsed
+    const error = first?.error ?? first
+    // OpenRouter puts the provider's own message under metadata.raw.
+    const raw = typeof error?.metadata?.raw === 'string' ? error.metadata.raw : ''
+    return { message: String(error?.message || first?.message || raw || ''), code: Number(error?.code) || undefined }
+  } catch { return { message: body.slice(0, 200) } }
+}
+
+/** A quota for the day, not the minute: waiting a minute will not help. A per-minute marker wins, as a minute's limit may still mention the daily one. */
+export const isDailyLimit = (body: string) => !/per[\s_-]?min|PerMinute/i.test(body) && /per[\s_-]?day|PerDay|daily (limit|quota)/i.test(body)
+
+/** How long the server asked to wait, from Retry-After, an X-RateLimit-Reset time, or Gemini's retryDelay. */
+export function retryDelayMs(headers: Headers, body: string, now = Date.now()): number | null {
+  const after = headers.get('retry-after')
+  if (after) {
+    const seconds = Number(after)
+    if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
+    const date = Date.parse(after)
+    if (!Number.isNaN(date)) return Math.max(0, date - now)
+  }
+  // OpenRouter sends the reset time in ms since 1970; others send seconds.
+  const reset = Number(headers.get('x-ratelimit-reset'))
+  if (Number.isFinite(reset) && reset > 0) return Math.max(0, reset > 1e12 ? reset - now : reset > 1e9 ? reset * 1000 - now : reset * 1000)
+  const asked = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(body) ?? /retry (?:in|after) (\d+(?:\.\d+)?)\s*s/i.exec(body)
+  return asked ? Math.round(Number(asked[1]) * 1000) : null
+}
+
+const pause = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
+  if (signal.aborted) return resolve()
+  const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve() }
+  const timer = setTimeout(done, ms)
+  signal.addEventListener('abort', done)
+})
 
 export function trimCarriedImages(messages: Message[], keepTurns = KEEP_IMAGE_TURNS): void {
   let seen = 0
@@ -35,12 +91,16 @@ export function trimCarriedImages(messages: Message[], keepTurns = KEEP_IMAGE_TU
   }
 }
 
+function dailyLimitError(config: OpenAiCompatibleConfig): AgentError {
+  return new QuotaError(`Today's free requests on ${config.label} are used up. ${config.dailyLimitHint ?? 'They come back tomorrow; until then, pick another model or agent in Settings → AI Agents.'}`)
+}
+
 function describeFailure(config: OpenAiCompatibleConfig, status: number, body: string): AgentError {
-  let detail = ''
-  try { const parsed = JSON.parse(body); detail = parsed?.error?.message || parsed?.message || '' } catch { detail = body.slice(0, 200) }
+  const detail = errorOf(body).message
   if (status === 401 || status === 403) return new AgentError(`${config.label} rejected the API key. Check it in Settings → AI Agents.`)
   if (status === 404) return new AgentError(`${config.label} does not know the model "${config.model}"${detail ? ` (${detail})` : ''}. Pick another in Settings → AI Agents.`)
-  if (status === 429) return new AgentError(`${config.label} is rate limiting this key. Wait a minute and run again.`)
+  if (status === 429) return new AgentError(`${config.label} is still rate limiting this key${config.lite ? ' (free tier)' : ''}. Wait a few minutes and run again${config.lite ? ', or pick another free model' : ''}.`)
+  if (status === 502 || status === 503 || status === 529) return new AgentError(`${config.label} is overloaded right now${detail ? ` (${detail.slice(0, 160)})` : ''}. Try again in a few minutes${config.lite ? ', or pick another free model' : ''}.`)
   if (/tool/i.test(detail) && /support/i.test(detail)) return new AgentError(`The model "${config.model}" does not support tool calling, which the QA review needs. Pick another model.`)
   if (/image|vision|multimodal/i.test(detail)) return new AgentError(`The model "${config.model}" cannot read pictures, which the QA review needs. Pick a vision model.`)
   return new AgentError(`${config.label} returned an error (${status})${detail ? `: ${detail}` : '.'}`)
@@ -48,37 +108,61 @@ function describeFailure(config: OpenAiCompatibleConfig, status: number, body: s
 
 export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): AgentProvider {
   const endpoint = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`
+  const maxWait = config.maxWaitMs ?? DEFAULT_MAX_WAIT_MS
   return {
     id: config.id,
     label: config.label,
+    lite: !!config.lite,
     async run(run: ProviderRun): Promise<ProviderResult> {
       const tools = toolSchemas(run.tools).map((tool) => ({ type: 'function' as const, function: { name: tool.name, description: tool.description, parameters: tool.schema } }))
       const messages: Message[] = [{ role: 'system', content: run.system }, ...(run.history ?? []).map((turn): Message => (turn.role === 'user' ? { role: 'user', content: turn.text } : { role: 'assistant', content: turn.text })), { role: 'user', content: run.task }]
       let lastText = ''
 
+      /** One completion, waiting out rate limits. Null when the person stopped the run. */
+      const complete = async (): Promise<any | null> => {
+        const payload = JSON.stringify({ model: config.model, messages: messages.map((message) => { const { carriesImages: _carries, ...wire } = message as Message & { carriesImages?: boolean }; return wire }), tools, tool_choice: 'auto' })
+        for (let attempt = 0; ; attempt++) {
+          let response: Response
+          let text: string
+          try {
+            response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...config.headers, ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
+              body: payload,
+              signal: AbortSignal.any([run.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+            })
+            text = await response.text()
+          } catch (error: any) {
+            if (run.signal.aborted) return null
+            if (isAbortError(error) || error?.name === 'TimeoutError') throw new AgentError(`${config.label} did not answer within 5 minutes.`)
+            if (error?.cause?.code === 'ECONNREFUSED' || /fetch failed/i.test(error?.message || '')) throw new AgentError(`Could not reach ${config.label} at ${config.baseUrl}. Is it running?`)
+            throw new AgentError(error?.message || `${config.label} did not return a usable answer.`)
+          }
+          let body: any = null
+          try { body = JSON.parse(text) } catch { /* handled below */ }
+          // OpenRouter can answer 200 with the provider's error in the body.
+          const status = response.ok && body?.error && !body.choices ? Number(body.error.code) || 502 : response.status
+          if (status >= 200 && status < 300) {
+            if (!body) throw new AgentError(`${config.label} did not return a usable answer.`)
+            return body
+          }
+          if (status === 429 && isDailyLimit(text)) throw dailyLimitError(config)
+          if (![429, 502, 503, 529].includes(status) || attempt >= MAX_RETRIES) throw describeFailure(config, status, text)
+          const asked = retryDelayMs(response.headers, text)
+          // A wait of many minutes is a limit for the hour or the day, not a busy moment.
+          if (asked !== null && asked > maxWait) throw status === 429 ? new AgentError(`${config.label} asks to wait about ${Math.ceil(asked / 60_000)} minute(s) before the next request${config.lite ? ' (free tier limit)' : ''}. Try again later, or pick another agent in Settings → AI Agents.`) : describeFailure(config, status, text)
+          const wait = Math.min(asked ?? BACKOFF_MS[attempt], maxWait)
+          run.emit({ type: 'status', message: `${config.label} is ${status === 429 ? `rate limiting${config.lite ? ' (free tier)' : ''}` : 'busy'}. Waiting ${Math.max(1, Math.round(wait / 1000))}s, then trying again (${attempt + 1} of ${MAX_RETRIES})…` })
+          await pause(wait, run.signal)
+          if (run.signal.aborted) return null
+        }
+      }
+
       for (let turn = 0; turn < run.maxTurns; turn++) {
         if (run.signal.aborted) return { stopped: 'aborted', text: lastText }
-        trimCarriedImages(messages)
-        let body: any
-        try {
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
-            body: JSON.stringify({ model: config.model, messages: messages.map((message) => { const { carriesImages: _carries, ...wire } = message as Message & { carriesImages?: boolean }; return wire }), tools, tool_choice: 'auto' }),
-            signal: AbortSignal.any([run.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
-          })
-          const text = await response.text()
-          if (!response.ok) throw describeFailure(config, response.status, text)
-          body = JSON.parse(text)
-        } catch (error: any) {
-          if (error instanceof AgentError) throw error
-          if (run.signal.aborted || isAbortError(error)) {
-            if (run.signal.aborted) return { stopped: 'aborted', text: lastText }
-            throw new AgentError(`${config.label} did not answer within 5 minutes.`)
-          }
-          if (error?.cause?.code === 'ECONNREFUSED' || /fetch failed/i.test(error?.message || '')) throw new AgentError(`Could not reach ${config.label} at ${config.baseUrl}. Is it running?`)
-          throw new AgentError(error?.message || `${config.label} did not return a usable answer.`)
-        }
+        trimCarriedImages(messages, config.lite ? LITE_KEEP_IMAGE_TURNS : KEEP_IMAGE_TURNS)
+        const body = await complete()
+        if (!body) return { stopped: 'aborted', text: lastText }
 
         if (body.usage) run.emit({ type: 'usage', inputTokens: Number(body.usage.prompt_tokens) || 0, outputTokens: Number(body.usage.completion_tokens) || 0 })
         const choice = body.choices?.[0]
