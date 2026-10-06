@@ -130,13 +130,16 @@ export interface QaBrowser {
   type(ref: string, text: string, options: { clear: boolean; enter: boolean }): Promise<BrowserStep>
   select(ref: string, value: string): Promise<BrowserStep>
   press(key: string): Promise<BrowserStep>
-  scroll(to: 'top' | 'bottom' | 'up' | 'down' | number): Promise<BrowserStep>
+  /** A ref (e12) scrolls that element to the middle of the screen; the step's note then gives its box in the view. */
+  scroll(to: 'top' | 'bottom' | 'up' | 'down' | number | string): Promise<BrowserStep>
   back(): Promise<BrowserStep>
   /** Everything since the page was opened. */
   allEvents(): BrowserEvents
   links(): Promise<LinkResult[]>
   audit(): Promise<PageAudit>
   request(input: { method: string; url: string; headers?: Record<string, string>; body?: string }): Promise<HttpResult>
+  /** Runs one of Parity's own page scripts (pageCheckScripts.ts) in the open page and returns what it answers. Never a script from the agent. */
+  read<T>(script: string, ...args: unknown[]): Promise<T>
   close(): void
 }
 

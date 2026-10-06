@@ -2,7 +2,8 @@ import * as z from 'zod'
 import { BREAKPOINTS, type Breakpoint } from '../../shared/designScale'
 import { siteOf } from './qaBrowserPolicy'
 import { BROWSER_KEYS, type BrowserEvents, type BrowserStep } from './qaBrowserTypes'
-import { DEFAULT_WIDTH, defineTool, fail, loadRun, requireContext, type ToolResult } from './toolBasics'
+import { PAGE_CHECK_TOOLS } from './pageCheckTools'
+import { browserOf, DEFAULT_WIDTH, defineTool, fail, loadRun, requireContext, type ToolResult } from './toolBasics'
 import type { QaContext } from './tools'
 
 // Tools that let the agent use the site like a visitor: open pages, click, type, choose, scroll,
@@ -13,11 +14,6 @@ const SENDING_OFF = 'Sending is off: you can fill forms in and see their validat
 const SENDING_ON = 'Sending is on: forms really submit and POST, PUT and DELETE requests reach the site. Use made-up test data only, and send each form at most once.'
 
 const refSchema = z.string().regex(/^e\d{1,5}$/).describe('An element ref from the latest snapshot, such as e12.')
-
-function browserOf(context: QaContext) {
-  if (!context.browser) throw new Error('The agent\'s browser is not available here.')
-  return context.browser
-}
 
 function describeEvents(events: BrowserEvents, heading: string): string[] {
   const lines: string[] = []
@@ -157,8 +153,8 @@ const browserPress = defineTool({
 const browserScroll = defineTool({
   name: 'browser_scroll',
   title: 'Scroll the page',
-  description: 'Scrolls to the top or bottom, up or down a screen, or to a y position in CSS px.',
-  input: z.object({ to: z.union([z.enum(['top', 'bottom', 'up', 'down']), z.number().min(0).max(100_000)]) }),
+  description: 'Scrolls to the top or bottom, up or down a screen, to a y position in CSS px, or to an element by its ref (e12). Scrolling to a ref also says where that element is in the screenshot, ready to use as the live box of a finding\'s evidence.',
+  input: z.object({ to: z.union([z.enum(['top', 'bottom', 'up', 'down']), z.number().min(0).max(100_000), refSchema]) }),
   readOnly: true,
   agentAllowed: true,
   run: (args, context) => act(context, 'After scrolling', () => browserOf(context).scroll(args.to)),
@@ -277,5 +273,5 @@ const httpRequest = defineTool({
   },
 })
 
-export const BROWSER_TOOLS = [browserOpen, browserSnapshot, browserClick, browserType, browserSelect, browserPress, browserScroll, browserBack, browserEvents, checkLinks, pageAudit, httpRequest] as const
+export const BROWSER_TOOLS = [browserOpen, browserSnapshot, browserClick, browserType, browserSelect, browserPress, browserScroll, browserBack, browserEvents, checkLinks, pageAudit, ...PAGE_CHECK_TOOLS, httpRequest] as const
 export const BROWSER_TOOL_NAMES = BROWSER_TOOLS.map((tool) => tool.name)

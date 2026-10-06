@@ -454,7 +454,8 @@ export interface ElectronAPI extends InspectorApi {
   qaAgentsSaveSettings: (patch: Partial<Omit<AgentSettings, 'models'>> & { models?: Partial<AgentSettings['models']> }) => Promise<AgentsOverview | null>
   qaAgentsSetKey: (id: AgentId, key: string) => Promise<AgentsOverview | { error: string } | null>
   qaAgentsClearKey: (id: AgentId) => Promise<AgentsOverview | null>
-  qaAgentsModels: (id: AgentId) => Promise<{ models: string[]; error?: string }>
+  /** `recommended` is a sensible first choice for a free key, picked for the person when they have none. */
+  qaAgentsModels: (id: AgentId) => Promise<{ models: string[]; error?: string; recommended?: string }>
   qaRunStart: (options?: QaRunStartOptions) => Promise<QaRunStartResult>
   qaRunStop: () => Promise<boolean>
   qaBatchStart: (options: QaBatchStartOptions) => Promise<QaRunStartResult>

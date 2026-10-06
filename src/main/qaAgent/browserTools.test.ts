@@ -63,6 +63,7 @@ beforeEach(async () => {
     ] },
     async audit() { return { title: 'Alopecia', description: '', canonical: '', robots: 'noindex, nofollow', lang: '', viewport: 'width=device-width', h1: ['A', 'B'], headingJumps: ['H1 → H3 "Why"'], ogTitle: '', ogImage: '', favicon: true, imagesWithoutAlt: ['https://svenson.test/hero.jpg'], brokenImages: [], unnamedLinks: 2, unnamedButtons: 1, unlabeledInputs: ['input[name=email] (placeholder "Email")'], duplicateIds: ['menu'], mixedContent: [], loadMs: 1800, requests: 64, transferKb: 2400, largeImages: [{ url: 'https://svenson.test/hero.jpg', kb: 900 }] } },
     async request(input) { calls.push(`request ${input.method} ${input.url}`); return { status: 200, statusText: 'OK', headers: { 'content-type': 'application/json' }, body: '[{"id":1,"slug":"alopecia-page"}]', truncated: false, ms: 42 } },
+    async read() { throw new Error('not used') },
     close() { state = null },
   }
   fake = createFakeContext(root, { trackerFormat: () => STANDARD_TRACKER, browser, allowSend: () => allowSend })

@@ -18,7 +18,7 @@ import { runQa } from './runner'
 import { createRunStore } from './runStore'
 import { createQaBrowser } from './qaBrowser'
 import { accountAccessToken, accountAuthId, parityPublicConfig } from '../account'
-import { createProvider, describeAgents, listModels, normalizeSettings } from './agents/registry'
+import { createProvider, describeAgents, listModels, normalizeSettings, usesFreeTier } from './agents/registry'
 import { sweepStaleAgentFolders } from './agents/cliAgents'
 import type { AgentProvider, ChatTurn } from './agents/types'
 import { createBridgeServer, type BridgeLogEntry } from './bridge/httpServer'
@@ -374,7 +374,7 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
       try {
         if (provider.needsBridge && !bridge.running()) { await startBridge(); startedBridge = bridge.running(); pushStatus() }
         if (provider.needsBridge && !bridge.running()) { sendRunEvent({ type: 'error', message: bridgeError || 'The local bridge could not start, so this agent cannot reach Parity\'s tools.' }); return }
-        sendRunEvent({ type: 'started', agent, label: provider.label, budgetTokens: settings.budgetTokens || undefined })
+        sendRunEvent({ type: 'started', agent, label: provider.lite ? `${provider.label} · free tier` : provider.label, budgetTokens: settings.budgetTokens || undefined })
         await job(provider, controller.signal)
       } catch (error: any) {
         sendRunEvent({ type: 'error', message: error?.message || 'The agent failed.' })
@@ -393,7 +393,8 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     const settings = readAgentSettings()
     const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
     const breakpoints = Array.isArray(requested.breakpoints) ? requested.breakpoints.filter(isBreakpoint) : undefined
-    const functional = typeof requested.functional === 'boolean' ? requested.functional : settings.functionalChecks
+    // A free tier skips the functional test unless it was asked for: it would not fit in the allowance.
+    const functional = typeof requested.functional === 'boolean' ? requested.functional : settings.functionalChecks && !usesFreeTier(agent, settings)
     return launch(agent, settings, async (provider, signal) => {
       try { await runQa({ context, provider }, { breakpoints, signal, emit: sendRunEvent, budgetTokens: settings.budgetTokens || undefined, standalone: requested.standalone === true, functional }) }
       finally { browser.close() }
@@ -418,7 +419,7 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     const settings = readAgentSettings()
     const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
     const breakpoints = Array.isArray(requested.breakpoints) ? requested.breakpoints.filter(isBreakpoint) : undefined
-    const functional = typeof requested.functional === 'boolean' ? requested.functional : settings.functionalChecks
+    const functional = typeof requested.functional === 'boolean' ? requested.functional : settings.functionalChecks && !usesFreeTier(agent, settings)
     return launch(agent, settings, async (provider, signal) => {
       try { await runQaBatch({ context, provider }, { pages: pages.slice(0, MAX_BATCH_PAGES), breakpoints, signal, emit: sendRunEvent, budgetTokens: settings.budgetTokens || undefined, functional }) }
       finally { browser.close() }

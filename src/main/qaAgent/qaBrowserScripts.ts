@@ -104,9 +104,23 @@ export const SELECT_SCRIPT = `(ref, wanted) => {${HELPERS}
 }`
 
 export const SCROLL_SCRIPT = `(to) => {
+  if (typeof to === 'string' && /^e\\d+$/.test(to)) {
+    const el = document.querySelector('[data-parity-ref="' + to + '"]');
+    if (!el) return { missing: true };
+    el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+    return { y: Math.round(scrollY) };
+  }
   const y = to === 'top' ? 0 : to === 'bottom' ? document.documentElement.scrollHeight : to === 'up' ? scrollY - innerHeight * 0.8 : to === 'down' ? scrollY + innerHeight * 0.8 : Number(to) || 0;
   window.scrollTo({ top: y, behavior: 'instant' });
-  return Math.round(scrollY);
+  return { y: Math.round(scrollY) };
+}`
+
+/** Where an element is in the current view, in CSS px, for the evidence box of a finding. */
+export const BOX_SCRIPT = `(ref) => {
+  const el = document.querySelector('[data-parity-ref="' + ref + '"]');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
 }`
 
 export const LINKS_SCRIPT = `() => {${HELPERS}

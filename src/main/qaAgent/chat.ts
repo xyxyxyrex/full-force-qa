@@ -1,4 +1,5 @@
 import { BROWSER_TOOL_NAMES } from './browserTools'
+import { LITE_LIMITS } from './lite'
 import { QA_AGENT_PROMPT } from './prompt'
 import type { AgentEvent, AgentProvider, ChatTurn } from './agents/types'
 import { callTool, type QaContext } from './tools'
@@ -42,7 +43,7 @@ export async function runChatTurn(deps: { context: QaContext; provider: AgentPro
       task: message,
       history,
       tools: CHAT_TOOLS,
-      maxTurns: MAX_CHAT_TURNS,
+      maxTurns: provider.lite ? LITE_LIMITS.chatTurns : MAX_CHAT_TURNS,
       signal: controller.signal,
       call: (name, args) => (CHAT_TOOLS.includes(name) ? callTool(name, args, context) : Promise.resolve({ text: `The tool "${name}" is not available in this chat.`, isError: true })),
       emit: (event) => {
@@ -54,6 +55,7 @@ export async function runChatTurn(deps: { context: QaContext; provider: AgentPro
       },
     })
     if (overBudget) emit({ type: 'error', message: `Stopped: this message used more than ${options.budgetTokens?.toLocaleString()} tokens (the limit in Settings → AI Agents).` })
+    else if (result.stopped === 'max-turns' && provider.lite) emit({ type: 'status', message: `The free model used its ${LITE_LIMITS.chatTurns} steps for one message. Ask for one thing at a time ("check the contrast", "any broken links?"), or use /review.` })
     const answer = result.text || (result.stopped === 'finished' ? '(no reply)' : '(stopped before answering)')
     return { history: [...history, { role: 'user' as const, text: message }, { role: 'assistant' as const, text: answer }].slice(-MAX_CHAT_HISTORY), stopped: overBudget ? 'budget' : result.stopped }
   } finally {

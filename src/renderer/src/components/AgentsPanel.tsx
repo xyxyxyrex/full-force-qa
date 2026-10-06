@@ -8,7 +8,8 @@ const cleanError = (cause: unknown) => (cause instanceof Error ? cause.message :
 const KIND_NOTE: Record<AgentInfo['kind'], string> = {
   subscription: 'Uses the app you are already signed in to, so your plan pays for it.',
   api: 'Uses your own API key and is billed by the provider.',
-  local: 'Runs on a model on this computer. It must read pictures and use tools.',
+  free: 'Free: no AI plan or card needed. A free key allows only so many requests a minute and a day, so runs are lighter: one breakpoint unless you name more, fewer steps, and no link and form test unless you ask (/review --test).',
+  local: 'Runs on a model on this computer, or on any server that speaks the OpenAI API (add its key if it needs one). It must read pictures and use tools.',
 }
 
 type CliStatus = { installed: boolean; path: string; onPath: boolean; platform: string }
@@ -18,7 +19,7 @@ export default function AgentsPanel() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
   const [keyDrafts, setKeyDrafts] = useState<Partial<Record<AgentId, string>>>({})
-  const [models, setModels] = useState<Partial<Record<AgentId, { list: string[]; error?: string }>>>({})
+  const [models, setModels] = useState<Partial<Record<AgentId, { list: string[]; error?: string; picked?: string }>>>({})
   const [bridge, setBridge] = useState<QaBridgeStatus | null>(null)
   const [tracker, setTracker] = useState<TrackerFormat | null>(null)
   const [trackerText, setTrackerText] = useState('')
@@ -57,6 +58,7 @@ export default function AgentsPanel() {
         <div>
           <h3>AI agents</h3>
           <p>Choose the agent that QAs your pages: how they look (against the Figma designs when you have them), how they work, and the SEO basics. It only drafts rows; you approve them before anything is copied.</p>
+          <p className="agents-free-hint">No Claude, ChatGPT or Google plan? <b>Gemini</b> and <b>OpenRouter</b> give free keys: lighter runs, but no cost.</p>
         </div>
         <button type="button" className="agents-button" onClick={() => void refresh()} disabled={busy === 'refresh'}>{busy === 'refresh' ? 'Checking…' : 'Refresh'}</button>
       </header>
@@ -71,6 +73,7 @@ export default function AgentsPanel() {
               <label className="agents-card-head">
                 <input type="radio" name="default-agent" checked={selected} onChange={() => void save({ defaultAgent: agent.id })} />
                 <span className="agents-card-title">{agent.label}</span>
+                {agent.lite && <span className="agents-badge" title="Runs are kept within the free tier's limits">free tier</span>}
                 <span className={`agents-dot ${agent.ready ? 'ready' : 'idle'}`} aria-label={agent.ready ? 'Ready' : 'Not ready'} />
               </label>
               <p className="agents-detail">{agent.detail}</p>
@@ -85,12 +88,13 @@ export default function AgentsPanel() {
                     </>
                   ) : (
                     <>
-                      <input type="password" autoComplete="off" spellCheck={false} placeholder="Paste your API key" value={keyDrafts[agent.id] || ''} onChange={(event) => setKeyDrafts({ ...keyDrafts, [agent.id]: event.target.value })} />
+                      <input type="password" autoComplete="off" spellCheck={false} placeholder={agent.keyOptional ? 'API key (only if the server needs one)' : agent.kind === 'free' ? 'Paste your free API key' : 'Paste your API key'} value={keyDrafts[agent.id] || ''} onChange={(event) => setKeyDrafts({ ...keyDrafts, [agent.id]: event.target.value })} />
                       <button type="button" className="agents-button" disabled={!keyDrafts[agent.id]} onClick={() => void guard('key', async () => {
                         const result = await window.electronAPI.qaAgentsSetKey(agent.id, keyDrafts[agent.id] || '')
                         if (result && 'error' in result) setError(result.error)
                         else if (result) { setOverview(result); setKeyDrafts({ ...keyDrafts, [agent.id]: '' }) }
                       })}>Save key</button>
+                      {agent.keyUrl && <button type="button" className="agents-link" onClick={() => void window.electronAPI.openExternal(agent.keyUrl!)}>Get a free key</button>}
                     </>
                   )}
                 </div>
@@ -104,16 +108,31 @@ export default function AgentsPanel() {
 
               <div className="agents-row">
                 <label className="agents-field grow"><span>{agent.kind === 'subscription' ? 'Model (optional)' : 'Model'}</span>
-                  <input type="text" list={`models-${agent.id}`} defaultValue={settings.models[agent.id]} placeholder={agent.kind === 'subscription' ? "the app's default" : 'choose a model'} spellCheck={false}
+                  {/* Keyed by the saved model, so a model picked for the person shows up in the box. */}
+                  <input key={`${agent.id}:${settings.models[agent.id]}`} type="text" list={`models-${agent.id}`} defaultValue={settings.models[agent.id]} placeholder={agent.kind === 'subscription' ? "the app's default" : agent.kind === 'free' ? 'list the models first' : 'choose a model'} spellCheck={false}
                     onBlur={(event) => { if (event.target.value.trim() !== settings.models[agent.id]) void save({ models: { [agent.id]: event.target.value } }) }} />
                   <datalist id={`models-${agent.id}`}>{(list?.list || []).map((name) => <option key={name} value={name} />)}</datalist>
                 </label>
                 {(agent.kind !== 'subscription' || agent.id === 'antigravity') && (
-                  <button type="button" className="agents-button" onClick={() => void guard('models', async () => { const result = await window.electronAPI.qaAgentsModels(agent.id); setModels({ ...models, [agent.id]: { list: result.models, error: result.error } }) })}>List models</button>
+                  <button type="button" className="agents-button" onClick={() => void guard('models', async () => {
+                    const result = await window.electronAPI.qaAgentsModels(agent.id)
+                    // A free key works straight away: with no model chosen yet, the recommended one is picked.
+                    const picked = !settings.models[agent.id] && result.recommended ? result.recommended : undefined
+                    setModels({ ...models, [agent.id]: { list: result.models, error: result.error, picked } })
+                    // And when the default agent cannot run (no plan, nothing signed in), this one becomes the default.
+                    const defaultReady = agents.find((other) => other.id === settings.defaultAgent)?.ready
+                    if (picked) { const next = await window.electronAPI.qaAgentsSaveSettings({ models: { [agent.id]: picked }, ...(defaultReady ? {} : { defaultAgent: agent.id }) }); if (next) setOverview(next) }
+                  })}>List models</button>
                 )}
               </div>
               {list?.error && <p className="agents-warn">{list.error}</p>}
-              {list && !list.error && <p className="agents-muted">{list.list.length} models found. Pick one in the box above.</p>}
+              {list && !list.error && <p className="agents-muted">{list.list.length} {agent.id === 'openrouter' ? 'free models that read pictures and use tools' : 'models'} found. {list.picked ? `Picked ${list.picked} for you; choose another in the box above if you like.` : 'Pick one in the box above.'}</p>}
+              {agent.id === 'gemini-api' && (
+                <label className="agents-switch">
+                  <input type="checkbox" checked={settings.geminiBilling} onChange={(event) => void save({ geminiBilling: event.target.checked })} />
+                  <span>Billing is on for this key's Google project (full runs, no free-tier limits)</span>
+                </label>
+              )}
             </div>
           )
         })}
