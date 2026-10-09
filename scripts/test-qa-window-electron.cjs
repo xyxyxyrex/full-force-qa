@@ -71,7 +71,10 @@ async function smoke() {
   await click(detached, '[id="qa-tab-chat"]'); await click(detached, '.qa-chat-actions button[title="Past chats and reviews"]')
   await until(() => run(host, `__opened.some(item => item.name === 'parity:open-qa-history')`), 'history route')
   console.log('Live transcript, draft, theme and history verified')
-  fs.writeFileSync(path.join(dir, 'detached.png'), (await detached.webContents.capturePage()).toPNG())
+  // The host is foreground after History. Do not capture an occluded native
+  // window: Electron can stall on that diagnostic on Windows CI. Chat visuals
+  // are captured separately by the offscreen QA UI regression; all native
+  // bounds, synchronization, docking and lifecycle checks remain mandatory.
   await click(detached, '[aria-label="Dock agent chat"]')
   await until(() => !controller.getWindow(), 'docked')
   await until(() => run(host, `!!document.querySelector('textarea')`), 'panel restored')
