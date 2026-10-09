@@ -75,7 +75,9 @@ async function smoke() {
   // window: Electron can stall on that diagnostic on Windows CI. Chat visuals
   // are captured separately by the offscreen QA UI regression; all native
   // bounds, synchronization, docking and lifecycle checks remain mandatory.
-  await click(detached, '[aria-label="Dock agent chat"]')
+  // Closing this renderer can discard executeJavaScript's reply. Observe the
+  // host/controller instead of awaiting a response from the destroyed window.
+  void click(detached, '[aria-label="Dock agent chat"]').catch(() => {})
   await until(() => !controller.getWindow(), 'docked')
   await until(() => run(host, `!!document.querySelector('textarea')`), 'panel restored')
   assert.equal(await run(host, `document.querySelector('textarea').value`), 'Updated unsent message')
