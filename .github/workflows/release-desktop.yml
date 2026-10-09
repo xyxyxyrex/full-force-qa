@@ -135,6 +135,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "GitHub Release publication failed."
           }
+          # A cancelled upload can leave a draft. Uploading missing artifacts
+          # does not publish it, so finalize only after all uploads succeeded.
+          $notes = "RELEASE_NOTES_$version.md"
+          if (Test-Path -LiteralPath $notes) {
+            gh release edit $env:RELEASE_TAG --draft=false --title "Parity v$version" --notes-file $notes --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release edit $env:RELEASE_TAG --draft=false --title "Parity v$version" --repo $env:GITHUB_REPOSITORY
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release draft finalization failed."
+          }
       - name: Archive release artifacts
         uses: actions/upload-artifact@v6
         with:
