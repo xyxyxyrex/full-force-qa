@@ -9,14 +9,14 @@ import type { RunSummary } from './runner'
 import { callTool, handOverRows, type DraftRow, type HandOverEntry, type QaContext, type ToolResult } from './tools'
 
 // Reviews pages on their own, with no Figma design: one fresh conversation per page and
-// breakpoint, one after another, then ONE hand-over for approval covering every page. The pages
+// breakpoint, one after another, then ONE hand-over in the organizer covering every page. The pages
 // come from the person (a pasted list of links), never from the agent, so the agent still cannot
 // make Parity load anything it chooses.
 
-const BATCH_TOOLS = ['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft']
+const BATCH_TOOLS = ['read_result', 'get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft']
 const MAX_TURNS_PER_BREAKPOINT = 80
 // After the look, one conversation per page tests how it works in the agent's own browser.
-export const FUNCTIONAL_TOOLS = ['get_context', ...BROWSER_TOOL_NAMES, 'save_draft']
+export const FUNCTIONAL_TOOLS = ['read_result', 'get_context', ...BROWSER_TOOL_NAMES, 'save_draft']
 export const MAX_TURNS_FUNCTIONAL = 70
 export const MAX_BATCH_PAGES = QA_BATCH_MAX_PAGES
 export const MAX_BATCH_ROWS = 400
@@ -121,6 +121,7 @@ export function finishPageRows(format: TrackerFormat, page: { url: string }, byB
     if (breakpoints.length > 1 && displayColumn && options) {
       const choice = matchChoice(options, breakpoints.map((breakpoint) => BREAKPOINT_LABEL[breakpoint]).join(' and '))
       if (choice) {
+        group[0].row.sourceFindingIds = [...new Set(group.flatMap(item=>item.row.sourceFindingIds || (item.row.findingId ? [item.row.findingId] : [])))]
         write(group[0].row, displayColumn, choice)
         rows.push(group[0].row)
         continue
@@ -193,6 +194,7 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
   let consecutiveFailures = 0
   let lastFailure = ''
   let quotaSpent = false
+  let hadFailures = false
 
   try {
     for (const [index, page] of pages.entries()) {
@@ -215,7 +217,7 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
           consecutiveFailures = 0
         } catch (error: any) {
           if (controller.signal.aborted) return true
-          pageFailed = true
+          pageFailed = true; hadFailures = true
           const message = error?.message || 'The agent failed.'
           consecutiveFailures = message === lastFailure ? consecutiveFailures + 1 : 1
           lastFailure = message
@@ -271,11 +273,12 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
 
     if (controller.signal.aborted && !overBudget && !quotaSpent) return finish('aborted', 'Stopped.')
     if (!entries.length && quotaSpent) return finish('failed', lastFailure)
+    if (!entries.length && hadFailures) return finish('failed', 'Some checks could not finish. Completed checks are saved; retry the unfinished work.')
     if (!entries.length) return finish(overBudget ? 'budget' : 'completed', overBudget ? `Stopped: the token limit was reached before any finding was written (${options.budgetTokens?.toLocaleString()} tokens).` : `No problems found on ${pages.length} page${pages.length === 1 ? '' : 's'}, so nothing was handed over.`)
     if (overBudget) emit({ type: 'status', message: `The token limit (${options.budgetTokens?.toLocaleString()}) was reached. Handing over what was found so far (${perPage.length} of ${pages.length} pages).` })
     if (quotaSpent) emit({ type: 'status', message: `The free requests ran out. Handing over what was found so far (${perPage.length} of ${pages.length} pages).` })
 
-    emit({ type: 'status', message: `Handing over ${entries.length} finding${entries.length === 1 ? '' : 's'} from ${perPage.length} page${perPage.length === 1 ? '' : 's'} for approval…` })
+    emit({ type: 'status', message: `Handing over ${entries.length} finding${entries.length === 1 ? '' : 's'} from ${perPage.length} page${perPage.length === 1 ? '' : 's'} in the organizer…` })
     const result = await handOverRows(context, {
       projectName: pages.length === 1 ? pages[0].name : `${perPage.length} pages`,
       pageUrl: pages[0].url,
@@ -284,10 +287,10 @@ export async function runQaBatch(deps: { context: QaContext; provider: AgentProv
       maxRows: MAX_BATCH_ROWS,
     })
     emit({ type: 'tool-result', name: 'finalize_rows', isError: !!result.isError, text: result.text, images: 0 })
-    summary.finalized = !result.isError && /^Approved\. Copied \d+ row/.test(result.text)
+    summary.finalized = !result.isError && /^(Approved\. Copied \d+ row|Saved \d+ finding)/.test(result.text)
     const note = entries.length > MAX_BATCH_ROWS ? ` Only the first ${MAX_BATCH_ROWS} findings were handed over.` : ''
     // Rows handed over after the limit was reached are still a completed hand-over; the status line above said so.
-    return finish('completed', summary.finalized ? `${result.text}${note}\n${perPage.join('\n')}` : `The rows were not copied. ${result.text}`)
+    return finish('completed', summary.finalized ? `${result.text}${note}\n${perPage.join('\n')}` : `${context.organizer ? 'The findings were not finalized.' : 'The rows were not copied.'} ${result.text}`)
   } catch (error: any) {
     return finish('failed', `The review failed: ${error?.message || 'unknown error'}`)
   } finally {

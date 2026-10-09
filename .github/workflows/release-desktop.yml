@@ -61,7 +61,7 @@ jobs:
           }
       - run: npm ci
       - name: Run regression tests
-        run: npm test
+        run: npm test -- --maxWorkers=4
       - name: Verify desktop, authentication and QA workflows in Electron
         shell: pwsh
         run: |
@@ -88,6 +88,8 @@ jobs:
           npm run test:qa-flow:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:qa-ui:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:qa-window:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:qa-browser:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

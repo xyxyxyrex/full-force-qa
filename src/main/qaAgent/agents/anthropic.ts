@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { summarize, imagePlaceholder, isAbortError, KEEP_IMAGE_TURNS, toolSchemas } from './common'
+import { executeToolCalls, summarize, imagePlaceholder, isAbortError, KEEP_IMAGE_TURNS, toolSchemas } from './common'
 import { AgentError, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
 
 // Claude through the Anthropic API: a streaming tool loop (see the claude-api guide). The
@@ -60,12 +60,14 @@ export function createAnthropicProvider(config: AnthropicConfig): AgentProvider 
     async run(run: ProviderRun): Promise<ProviderResult> {
       const client = new Anthropic({ apiKey: config.apiKey, ...(config.baseURL ? { baseURL: config.baseURL } : {}) })
       const tools: Anthropic.Tool[] = toolSchemas(run.tools).map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.schema as Anthropic.Tool.InputSchema }))
-      const messages: Anthropic.MessageParam[] = [...(run.history ?? []).map((turn): Anthropic.MessageParam => ({ role: turn.role, content: turn.text })), { role: 'user', content: run.task }]
-      let lastText = ''
+      const messages: Anthropic.MessageParam[] = (run.resume as { messages?: Anthropic.MessageParam[] } | undefined)?.messages || [...(run.history ?? []).map((turn): Anthropic.MessageParam => ({ role: turn.role, content: turn.text })), { role: 'user', content: run.task }]
+      let lastText = (run.resume as { lastText?: string } | undefined)?.lastText || ''
 
       for (let turn = 0; turn < run.maxTurns; turn++) {
         if (run.signal.aborted) return { stopped: 'aborted', text: lastText }
         trimOldImages(messages)
+        run.checkpoint?.({ messages: structuredClone(messages), lastText, turn })
+        run.emit({ type: 'activity', phase: 'waiting', startedAt: Date.now() })
         let message: Anthropic.Message
         try {
           const stream = client.messages.stream(
@@ -104,23 +106,31 @@ export function createAnthropicProvider(config: AnthropicConfig): AgentProvider 
         if (message.stop_reason !== 'tool_use') return { stopped: 'finished', text: lastText }
 
         const results: Anthropic.ToolResultBlockParam[] = []
-        for (const block of message.content) {
-          if (block.type !== 'tool_use') continue
-          run.emit({ type: 'tool', name: block.name, args: block.input })
-          const result = await run.call(block.name, block.input)
-          run.emit({ type: 'tool-result', name: block.name, isError: !!result.isError, text: summarize(result.text), images: result.images?.length ?? 0 })
-          results.push({
+        const pending = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
+        const byId = new Map<string, Anthropic.ToolResultBlockParam>()
+        const activeImages = new Set(messages.flatMap(m => Array.isArray(m.content) ? m.content.flatMap(b => b.type === 'tool_result' && Array.isArray(b.content) ? b.content.flatMap(p => p.type === 'image' && p.source.type === 'base64' ? [p.source.data] : []) : []) : []))
+        await executeToolCalls(pending, block => block.name, async block => {
+          if (run.signal.aborted) return
+          run.emit({ type: 'tool', name: block.name, args: block.input, callId: block.id })
+          const result = await run.call(block.name, block.input, block.id)
+          run.emit({ type: 'tool-result', name: block.name, callId: block.id, isError: !!result.isError, text: summarize(result.text), images: result.images?.length ?? 0 })
+          byId.set(block.id, {
             type: 'tool_result',
             tool_use_id: block.id,
             is_error: !!result.isError,
             content: [
               { type: 'text', text: result.text },
-              ...(result.images || []).flatMap((image): Anthropic.ImageBlockParam[] => (image.mimeType === 'image/webp' || image.mimeType === 'image/jpeg' || image.mimeType === 'image/png'
-                ? [{ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') } }]
-                : [])),
+              ...(result.images || []).flatMap((image): Array<Anthropic.ImageBlockParam | Anthropic.TextBlockParam> => {
+                if (!['image/webp', 'image/jpeg', 'image/png'].includes(image.mimeType)) return []
+                const data = image.data.toString('base64')
+                if (activeImages.has(data)) return [{ type: 'text', text: image.caption + ' (identical image already attached)' }]
+                activeImages.add(data)
+                return [{ type: 'image', source: { type: 'base64', media_type: image.mimeType as 'image/webp' | 'image/jpeg' | 'image/png', data } }]
+              }),
             ],
           })
-        }
+        })
+        for (const block of pending) { const result = byId.get(block.id); if (!result) return { stopped: 'aborted', text: lastText }; results.push(result) }
         messages.push({ role: 'user', content: results })
       }
       return { stopped: 'max-turns', text: lastText }

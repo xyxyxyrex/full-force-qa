@@ -2,7 +2,7 @@
 
 Parity is an Electron desktop application for quality assurance engineers, web developers, and designers reviewing website implementations. It combines authenticated Chromium previews, direct visual editing, Figma comparison, SEO and grammar audits, automated visual findings, annotations, and expiring browser-based review links in one QA workspace.
 
-**v1.5.0 was Parity's first public release. v1.5.3 adds staging server sign-in, functional QA checks, review/chat history, and free-model support with lighter runs.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
+**v1.5.0 was Parity's first public release. v1.5.4 adds a detachable agent chat, searchable model discovery, live model switching, formatted answers, recoverable retries, and a project findings organizer with configurable remarks.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
 
 ## Links
 
@@ -25,6 +25,7 @@ Projects contain four primary workspaces (`Live`, `Edit`, `Audit`, and `Automate
 - **Shared ticket queue**: Fetch Monday tickets or enter Opsmosis and generic tickets manually. Filter by provider, source group/status and private QA status, review extracted resource links, and link multiple page projects to a ticket. Local pending changes and revision conflicts survive restarts.
 - **Independent Parity accounts**: Sign in with Google through Supabase Auth. Existing users can restore their Monday workspace with fresh Monday identity verification. Notes, settings, folders, projects and tickets stay private to the active account; disconnecting Monday does not sign out of Parity. See [account setup and restoration](docs/independent-accounts-and-tickets.md).
 - **Product feedback**: The title-bar button beside Settings accepts bug reports, feature ideas, and general feedback from signed-in users. Submissions are stored privately in Supabase; administrators can review and update them in the `public.parity_feedback` table. The form sends the report, account email, app version, platform, and selected workspace area, without attaching page content or screenshots.
+- **AI-assisted QA**: Select a provider and model in Settings → Agents, then open the chat with `Ctrl+Shift+Q`. Detach it into a native movable, resizable window using the header icon; dock it again without losing the running audit or unsent message. Findings save locally into a project organizer and the managed **AI Findings** worksheet. Configure remark tone, technicality, detail, and optional formatting in Agents settings. Sharing evidence requires approval; copying rows is optional. See [QA agent setup and workflow](docs/qa-agent.md).
 - **Command palette**: Press `Ctrl+Shift+F` to search commands, workspace records and the active page. Enter `>` for commands. See [search scope and keyboard controls](docs/COMMAND_PALETTE.md).
 - **Folder tabs**: Tabs display the current folder and preserve navigation when switching between them.
 - **Figma connection**: Maintains a reusable in-app browser session and an encrypted REST API token for Live and Automate workflows.

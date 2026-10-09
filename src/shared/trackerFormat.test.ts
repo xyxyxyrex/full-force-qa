@@ -248,8 +248,8 @@ describe('short remarks and sections', () => {
   })
 
   it('sends back a remark that rambles, and says what to do', () => {
-    const result = row({ Section: 'Hero', Remarks: 'The heading on the live page is rendered at a font size of 28px with a line height of 34px, whereas the design appears to show a considerably larger heading of roughly 32px with a line height of about 38px, and it also sits lower. '.repeat(2) })
-    expect(!result.ok && result.error).toMatch(/Row 1: Remarks is \d+ characters\. Remarks are one short line that tells the developer what to change/)
+    const result = buildRows(STANDARD_TRACKER, [{ Section: 'Hero', Remarks: 'The heading on the live page is rendered at a font size of 28px with a line height of 34px, whereas the design appears to show a considerably larger heading of roughly 32px with a line height of about 38px, and it also sits lower. '.repeat(2) }], {remarkStyle:{tone:'direct',technicality:1,detail:0,formatting:false}})
+    expect(!result.ok && result.error).toMatch(/Row 1: Remarks is \d+ characters\. Write one issue per remark/)
     expect(!result.ok && result.error).toMatch(/Shorten it to 200 characters or fewer/)
   })
 
@@ -267,8 +267,8 @@ describe('short remarks and sections', () => {
 
   it('tells the agent the same thing in the column guide', () => {
     const guide = trackerColumnGuide(STANDARD_TRACKER)
-    expect(guide.Remarks).toMatch(/One short line telling the developer what to change/)
-    expect(guide.Remarks).toMatch(/No breakpoint/)
+    expect(guide.Remarks).toMatch(/Use one or two complete sentences/)
+    expect(guide.Remarks).toMatch(/Breakpoints belong in Display/)
     expect(guide.Section).toMatch(/Header, Navbar, Hero, Footer/)
     expect(guide.Section).toMatch(/Never an element selector/)
   })

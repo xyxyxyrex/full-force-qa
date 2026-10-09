@@ -18,6 +18,9 @@ import type { AuditCaptureContext } from '../../shared/auditExport'
 import CommandPalette from './components/CommandPalette'
 import QaApprovalCard from './components/QaApprovalCard'
 import QaChat from './components/QaChat'
+import { qaChat } from './components/qaChatStore'
+import { handleChatWindowAction } from './components/qaChat/windowBridge'
+import QaTrackerModal from './components/qaChat/QaTrackerModal'
 import QaHistory, { type HistoryTab } from './components/QaHistory'
 import type { ApprovalRequest } from '../../shared/qaAgent'
 import { usePaletteProvider, rankItemsAsync, type PaletteItem } from './palette/registry'
@@ -72,6 +75,23 @@ export default function App() {
   const [accountReady, setAccountReady] = useState(false)
   const accountGeneration = useRef(0)
   const [qaChatOpen, setQaChatOpen] = useState(false)
+  const [qaChatDetached, setQaChatDetached] = useState(false)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const sync = () => window.electronAPI.qaWindowSync?.({ chat: qaChat.getState(), theme: settings.theme })
+    const unsubscribe = qaChat.subscribe(() => { if (!timer) timer = setTimeout(() => { timer = undefined; sync() }, 40) })
+    const actions = window.electronAPI.onQaWindowAction?.(handleChatWindowAction)
+    const changed = window.electronAPI.onQaWindowChanged?.(detached => { setQaChatDetached(detached); setQaChatOpen(true); sync() })
+    void window.electronAPI.qaWindowStatus?.().then(setQaChatDetached)
+    sync()
+    return () => { unsubscribe(); actions?.(); changed?.(); if (timer) clearTimeout(timer) }
+  }, [settings.theme])
+  const [qaTrackerProject, setQaTrackerProject] = useState<string|null>(null)
+  useEffect(()=>{
+    const open=(event:Event)=>{const key=(event as CustomEvent<{projectKey?:string}>).detail?.projectKey;if(key)setQaTrackerProject(key)}
+    window.addEventListener('parity:open-ai-tracker',open)
+    return()=>window.removeEventListener('parity:open-ai-tracker',open)
+  },[])
   const [qaHistoryTab, setQaHistoryTab] = useState<HistoryTab | null>(null)
   // The chat's History button and /history open past reviews and chats.
   useEffect(() => {
@@ -81,17 +101,17 @@ export default function App() {
   }, [])
   // Other screens (the Multi-capture dialog) open the chat when they start a review.
   useEffect(() => {
-    const open = () => setQaChatOpen(true)
+    const open = () => { setQaChatOpen(true); if (qaChatDetached) void window.electronAPI.qaWindowDetach() }
     window.addEventListener('parity:open-qa-chat', open)
     return () => window.removeEventListener('parity:open-qa-chat', open)
-  }, [])
+  }, [qaChatDetached])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'q') { event.preventDefault(); setQaChatOpen((open) => !open) }
+      if (event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'q') { event.preventDefault(); if (qaChatDetached) void window.electronAPI.qaWindowDetach(); else setQaChatOpen((open) => !open) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [qaChatDetached])
   // Rows an agent hands over wait here until the person approves or rejects them.
   const [qaApproval, setQaApproval] = useState<ApprovalRequest | null>(null)
   useEffect(() => window.electronAPI.onQaApprovalRequest(setQaApproval), [])
@@ -179,6 +199,7 @@ export default function App() {
     const unsubscribe = window.electronAPI.onAccountChanged(onConnected)
     window.addEventListener('parity:open-account', openSettings)
     window.addEventListener('parity:open-integrations', openSettings)
+    window.addEventListener('parity:settings-section', openSettings)
     const onStateDirty = (event: Event) => {
       const detail = (event as CustomEvent).detail
       if (detail && typeof detail === 'object') queueAccountStateSave(detail)
@@ -194,6 +215,7 @@ export default function App() {
       window.removeEventListener('online', reconnect)
       window.removeEventListener('parity:open-account', openSettings)
       window.removeEventListener('parity:open-integrations', openSettings)
+      window.removeEventListener('parity:settings-section', openSettings)
       window.removeEventListener('parity:account-state-dirty', onStateDirty)
     }
   }, [syncPrivateAccount])
@@ -939,7 +961,7 @@ export default function App() {
           <button
             type="button"
             className={`app-qa-btn ${qaChatOpen ? 'active' : ''}`}
-            onClick={() => setQaChatOpen((open) => !open)}
+            onClick={() => { if (qaChatDetached) void window.electronAPI.qaWindowDetach(); else setQaChatOpen((open) => !open) }}
             title="QA agent chat (Ctrl+Shift+Q)"
             aria-label="QA agent chat"
             aria-pressed={qaChatOpen}
@@ -1010,7 +1032,7 @@ export default function App() {
                 onNavigateCapture={handleWorkspaceNavigate}
                 onCaptureNewProject={(url, folderId) => handleCaptureFromWorkspace(activeTab.id, url, folderId)}
                 onOpenExistingProject={handleOpenExistingFromWorkspace}
-                rightDock={qaChatOpen ? <QaChat onClose={() => setQaChatOpen(false)} /> : undefined}
+                rightDock={qaChatOpen && !qaChatDetached ? <QaChat onClose={() => setQaChatOpen(false)} /> : undefined}
                 pendingCaptureUrl={activeTab.pendingCaptureUrl}
                 onDismissPendingCapture={() => setTabs((current) => current.map((tab) => tab.id === activeTab.id && tab.pendingCaptureUrl ? { ...tab, pendingCaptureUrl: undefined } : tab))}
               />
@@ -1057,8 +1079,9 @@ export default function App() {
           applyTheme(newSettings.theme)
         }}
       />
-      {qaChatOpen && activeTab?.view !== 'editor' && <div className="qa-chat-float"><QaChat onClose={() => setQaChatOpen(false)} /></div>}
+      {qaChatOpen && !qaChatDetached && activeTab?.view !== 'editor' && <div className="qa-chat-float"><QaChat onClose={() => setQaChatOpen(false)} /></div>}
       {qaHistoryTab && <QaHistory initialTab={qaHistoryTab} onClose={() => setQaHistoryTab(null)} />}
+      {qaTrackerProject&&<QaTrackerModal projectKey={qaTrackerProject} onClose={()=>setQaTrackerProject(null)}/>}
       {qaApproval && <QaApprovalCard
         request={qaApproval}
         onDecide={(approved, note, excludedRows) => {

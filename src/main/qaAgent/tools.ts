@@ -15,6 +15,8 @@ import type { RunStore } from './runStore'
 import { DEFAULT_WIDTH, defineTool, fail, loadRun, requireContext, type ToolDefinition, type ToolImage, type ToolResult } from './toolBasics'
 import { BROWSER_TOOLS } from './browserTools'
 import type { QaBrowser } from './qaBrowserTypes'
+import { readResultTool } from './execution'
+import type { RemarkStyle } from '../../shared/remarkStyle'
 
 export type { ToolDefinition, ToolImage, ToolResult }
 
@@ -51,6 +53,11 @@ export interface QaContext {
   runs: RunStore
   capture(options: LiveCaptureOptions): Promise<LiveCaptureResult>
   trackerFormat(): TrackerFormat | null
+  remarkStyle?(): RemarkStyle
+  organizer?: {
+    save(runId: string, breakpoint: Breakpoint, rows: DraftRow[], area: 'visual' | 'functional'): Promise<DraftRow[]>
+    finalize(entries: HandOverEntry[]): Promise<string[]>
+  }
   readLocalFile(path: string): Promise<Buffer>
   approve(request: ApprovalRequest): Promise<ApprovalDecision>
   copyToClipboard(text: string, html: string): void
@@ -60,6 +67,8 @@ export interface QaContext {
   browser?: QaBrowser
   /** Whether the person lets the agent submit forms and send API requests on the site under review. */
   allowSend?(): boolean
+  dispatchTool?(name: string, args: unknown, work: () => Promise<ToolResult>): Promise<ToolResult>
+  readResult?(id: string, offset: number): { text: string; total: number; nextOffset: number | null }
 }
 
 
@@ -76,6 +85,8 @@ const evidenceSchema = z.object({
   caption: z.string().max(200).optional(),
 })
 const rowSchema = z.object({
+  findingId: z.string().uuid().optional(),
+  sourceFindingIds: z.array(z.string().uuid()).max(120).optional().describe('Keep the IDs returned by save_draft. When merging breakpoints, include every source finding ID.'),
   cells: z.record(z.string(), z.coerce.string()).describe('Cell text keyed by tracker column name.'),
   evidence: evidenceSchema.optional(),
 })
@@ -133,7 +144,7 @@ const getContext = defineTool({
       openPage: reported ? { url: reported.pageUrl, workspace: reported.workspaceTab, breakpointInView: reported.breakpoint, viewport: reported.viewport } : null,
       designsAreFor: reported ? (pageIdOf(reported.pageUrl) ?? reported.pageUrl) : null,
       designs: { desktop: describeSlot(slots.desktop), tablet: describeSlot(slots.tablet), mobile: describeSlot(slots.mobile) },
-      tracker: format ? { columns: format.columns, screenshotColumn: screenshotColumn(format), columnGuide: trackerColumnGuide(format), exampleRows: format.examples } : null,
+      tracker: format ? { columns: format.columns, screenshotColumn: screenshotColumn(format), columnGuide: trackerColumnGuide(format, context.remarkStyle?.()), exampleRows: format.examples } : null,
       evidenceUploads: evidenceReason ? { available: false, reason: evidenceReason } : { available: true },
       latestRun: latest ? { runId: latest.id, page: latest.pageUrl } : null,
       notes,
@@ -382,15 +393,17 @@ const saveDraft = defineTool({
     if (!run.ok) return fail(run.error)
     const format = context.trackerFormat()
     if (format && args.rows.length) {
-      const checked = buildRows(format, args.rows.map((row) => row.cells))
+      const checked = buildRows(format, args.rows.map((row) => row.cells), { remarkStyle: context.remarkStyle?.() })
       if (!checked.ok) return fail(checked.error)
     }
     // A browser screenshot named as evidence must exist, or the finding would have no picture.
     const missing = [...new Set(args.rows.flatMap((row) => (row.evidence?.screenshot && !context.runs.readBrowserShot(args.runId, row.evidence.screenshot) ? [row.evidence.screenshot] : [])))]
     if (missing.length) return fail(`Run ${args.runId} has no browser screenshot ${missing.join(', ')}. Name a screenshot from a browser result of this run.`)
     const area = args.area ?? 'visual'
-    context.runs.saveDraft(args.runId, args.breakpoint, args.rows, area)
-    return { text: `Saved ${args.rows.length} ${area === 'functional' ? 'functional ' : ''}draft row(s) for ${args.breakpoint} in run ${args.runId}.` }
+    const safeRows = args.rows.map(row => ({ ...row, cells: Object.fromEntries(Object.entries(row.cells).map(([key,value])=>[key, /priority|severity|impact/i.test(key) ? '' : value])) }))
+    const rows = context.organizer ? await context.organizer.save(args.runId, args.breakpoint, safeRows, area) : safeRows
+    context.runs.saveDraft(args.runId, args.breakpoint, rows, area)
+    return { text: `Saved ${rows.length} ${area === 'functional' ? 'functional ' : ''}draft row(s) for ${args.breakpoint} in run ${args.runId}.${context.organizer ? `\nFinding IDs: ${JSON.stringify(rows.map(row => ({ findingId: row.findingId, sourceFindingIds: row.sourceFindingIds })))}` : ''}` }
   },
 })
 
@@ -434,6 +447,7 @@ export async function renderRowEvidence(runs: RunStore, runId: string, row: z.in
 export type DraftRow = z.infer<typeof rowSchema>
 
 export interface HandOverEntry {
+  proof?: { data: Buffer; caption: string }
   /** The run whose captures this row's evidence is cut from. */
   runId: string
   row: DraftRow
@@ -450,6 +464,7 @@ export function evidenceLabel(format: TrackerFormat, row: string[], fallback: st
 }
 
 export interface HandOverInput {
+  copyRows?: boolean
   projectName: string
   pageUrl: string
   /** The run whose folder receives the evidence pictures and the copy of the rows. */
@@ -462,16 +477,24 @@ export interface HandOverInput {
 
 /** Shows the rows for approval; on approval uploads the evidence, copies the rows and saves a copy. */
 export async function handOverRows(context: QaContext, input: HandOverInput): Promise<ToolResult> {
+  if (context.organizer) {
+    const format = context.trackerFormat()
+    if (!format) return fail('The tracker format is not set.')
+    const built = buildRows(format, input.entries.map(entry=>entry.row.cells), { maxRows: input.maxRows, remarkStyle: context.remarkStyle?.() })
+    if (!built.ok) return fail(built.error)
+    const ids = await context.organizer.finalize(input.entries.map(entry=>({...entry,row:{...entry.row,cells:Object.fromEntries(Object.entries(entry.row.cells).map(([key,value])=>[key,/priority|severity|impact/i.test(key)?'':value]))}})))
+    return { text: `Saved ${ids.length} finding(s) in the project organizer. Review them in Findings or open the QA Master Tracker.\nFinding IDs: ${JSON.stringify(ids)}` }
+  }
   const format = context.trackerFormat()
   if (!format) return fail('The tracker format is not set. In Parity: Settings → AI Agents → paste the tracker header row and a few example rows.')
-  const built = buildRows(format, input.entries.map((entry) => entry.row.cells), input.maxRows ? { maxRows: input.maxRows } : undefined)
+  const built = buildRows(format, input.entries.map((entry) => entry.row.cells), { maxRows: input.maxRows, remarkStyle: context.remarkStyle?.(), manual:input.copyRows===false })
   if (!built.ok) return fail(built.error)
 
   const output = context.runs.outputDir(input.outputRunId)
   const stamp = String(context.now())
   const evidenceFiles: Array<{ rowIndex: number; data: Buffer; caption: string; file: string }> = []
   for (const [index, entry] of input.entries.entries()) {
-    const rendered = await renderRowEvidence(context.runs, entry.runId, entry.row, index)
+    const rendered = entry.proof || await renderRowEvidence(context.runs, entry.runId, entry.row, index)
     if (!rendered) continue
     const file = join(output, `evidence-${stamp}-row-${String(index + 1).padStart(2, '0')}.webp`)
     writeFileSync(file, rendered.data)
@@ -498,6 +521,7 @@ export async function handOverRows(context: QaContext, input: HandOverInput): Pr
   const shownRows = built.rows.map((row) => row.map((cell) => (/^'[=+\-@]/.test(cell) ? cell.slice(1) : cell)))
   // Every hand-over is kept in the run, whatever the decision, so it can be looked at again later.
   const record: QaHandOverRecord = {
+    ...(input.entries.some(entry=>entry.row.findingId)?{findingIds:input.entries.map(entry=>entry.row.findingId||'')}:{}),
     version: 1, stamp, createdAt: context.now(), status: 'pending', projectName: input.projectName, pageUrl: input.pageUrl,
     columns: format.columns, rows: shownRows, evidence: evidenceFiles.map((item) => ({ rowIndex: item.rowIndex, file: basename(item.file), caption: item.caption })),
     ...(pages.some(Boolean) ? { rowPages: pages.map((page) => page ?? { name: input.projectName, url: input.pageUrl }) } : {}),
@@ -505,6 +529,7 @@ export async function handOverRows(context: QaContext, input: HandOverInput): Pr
   const saveRecord = () => { try { writeFileSync(join(output, `handover-${stamp}.json`), JSON.stringify(record, null, 2), 'utf8') } catch { /* history is a convenience; the hand-over goes on */ } }
   saveRecord()
   const decision = await context.approve({
+    ...(input.copyRows===false?{action:'share' as const}:{}),
     id: randomUUID(), runId: input.outputRunId, projectName: input.projectName, pageUrl: input.pageUrl,
     // The card shows what the agent wrote; the apostrophe that keeps a cell from being read as a formula is only for the clipboard.
     columns: format.columns, rows: shownRows, severityCounts, evidence: thumbnails, warnings, uploadsEvidence: willUpload,
@@ -550,20 +575,20 @@ export async function handOverRows(context: QaContext, input: HandOverInput): Pr
   }
 
   const tsv = buildTsv(rows)
-  context.copyToClipboard(tsv, buildHtml(rows))
+  if (input.copyRows !== false) context.copyToClipboard(tsv, buildHtml(rows))
   const tsvPath = join(output, `rows-${stamp}.tsv`)
   writeFileSync(tsvPath, tsv, 'utf8')
-  record.copiedRows = rows.length
+  record.copiedRows = input.copyRows === false ? 0 : rows.length
   saveRecord()
   return {
-    text: [`Approved. Copied ${rows.length} row(s) to the clipboard in tracker column order; paste them into the sheet.`, ...outcome, ...warnings.filter((w) => !w.startsWith('Evidence images were not uploaded')), `A copy of the rows is saved at ${tsvPath}.`].join('\n'),
+    text: [input.copyRows === false ? `Approved. Shared evidence for ${rows.length} finding(s).` : `Approved. Copied ${rows.length} row(s) to the clipboard in tracker column order; paste them into the sheet.`, ...outcome, ...warnings.filter((w) => !w.startsWith('Evidence images were not uploaded')), `A copy of the rows is saved at ${tsvPath}.`].join('\n'),
   }
 }
 
 const finalizeRows = defineTool({
   name: 'finalize_rows',
-  title: 'Hand over the rows',
-  description: 'Shows the drafted rows to the person in Parity for approval. If they approve, the evidence images are uploaded (when set up) and the rows are copied to the clipboard in tracker column order, ready to paste into the sheet. Waits for the decision.',
+  title: 'Organize the findings',
+  description: 'Saves and consolidates the final findings in the project organizer. Include sourceFindingIds from save_draft when merging rows. Saving locally needs no approval and does not upload evidence or change the clipboard.',
   input: z.object({
     runId: runIdSchema,
     rows: z.array(rowSchema).min(1).max(60),
@@ -583,7 +608,7 @@ const finalizeRows = defineTool({
   },
 })
 
-export const QA_TOOLS = [getContext, setDesign, captureLive, getOverview, getSection, saveDraft, finalizeRows, ...BROWSER_TOOLS] as const
+export const QA_TOOLS = [getContext, setDesign, captureLive, getOverview, getSection, saveDraft, finalizeRows, readResultTool, ...BROWSER_TOOLS] as const
 
 export type QaToolName = (typeof QA_TOOLS)[number]['name']
 
@@ -598,7 +623,8 @@ export async function callTool(name: string, rawArgs: unknown, context: QaContex
   const parsed = tool.input.safeParse(rawArgs ?? {})
   if (!parsed.success) return fail(`Invalid input for ${name}: ${parsed.error.issues.map((issue) => `${issue.path.join('.') || 'input'} ${issue.message}`).join('; ')}`)
   try {
-    return await tool.run(parsed.data, context)
+    const work = () => tool.run(parsed.data, context)
+    return context.dispatchTool ? await context.dispatchTool(name, parsed.data, work) : await work()
   } catch (error: any) {
     return fail(`${name} failed: ${error?.message || 'unknown error'}`)
   }

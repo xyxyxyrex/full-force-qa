@@ -38,4 +38,15 @@ export function isAbortError(error: unknown): boolean {
   return name === 'AbortError' || name === 'APIUserAbortError' || (error as { code?: string })?.code === 'ABORT_ERR'
 }
 
+/** Parallelize only immutable reads; retain barriers and result order for other calls. */
+export async function executeToolCalls<T>(calls: T[], name: (call: T) => string, work: (call: T) => Promise<void>) {
+  const reads = new Set(['get_section', 'get_overview', 'read_result'])
+  for (let i = 0; i < calls.length;) {
+    if (!reads.has(name(calls[i]))) { await work(calls[i++]); continue }
+    const group: T[] = []
+    while (i < calls.length && group.length < 3 && reads.has(name(calls[i]))) group.push(calls[i++])
+    await Promise.all(group.map(work))
+  }
+}
+
 export type { ToolResult, ToolImage }

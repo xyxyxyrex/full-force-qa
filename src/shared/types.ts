@@ -1,8 +1,9 @@
 import type { PixelComparisonResponse, ResultState } from './automation'
 import type { InspectorApi } from './inspector'
 import type { Breakpoint } from './designScale'
-import type { AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBatchStartOptions, QaBridgeStatus, QaChatListItem, QaChatSendOptions, QaHistoryPicture, QaRunDetail, QaRunListItem, QaStoredChat, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaTarget, QaToolCallResult, ReportedContext } from './qaAgent'
+import type { QaExecutionSnapshot, AgentModelList, AgentId, AgentSettings, AgentsOverview, ApprovalDecision, ApprovalRequest, DesignListResult, DesignPutOptions, DesignPutResponse, DesignUpdateOptions, DesignUpdateResponse, QaBatchStartOptions, QaBridgeStatus, QaChatListItem, QaChatSendOptions, QaHistoryPicture, QaRunDetail, QaRunListItem, QaStoredChat, QaRunEvent, QaRunStartOptions, QaRunStartResult, QaTarget, QaToolCallResult, ReportedContext } from './qaAgent'
 import type { TrackerFormat } from './trackerFormat'
+import type { FindingUpdate, OrganizerResult, OrganizerSnapshot } from './qaOrganizer'
 import type {
   AuditCaptureContext,
   AuditExportProgress,
@@ -449,16 +450,35 @@ export interface ElectronAPI extends InspectorApi {
   saveProject: (project: Project, ownerKey?: string | null) => Promise<void>
   deleteProject: (id: string, ownerKey?: string | null) => Promise<void>
   qaReportContext: (context: ReportedContext | null) => void
+  qaWindowDetach: () => Promise<boolean>
+  qaWindowDock: () => Promise<boolean>
+  qaWindowStatus: () => Promise<boolean>
+  qaWindowReady: () => Promise<import('./qaChatWindow').QaChatWindowSnapshot | null>
+  qaWindowSync: (snapshot: import('./qaChatWindow').QaChatWindowSnapshot) => void
+  qaWindowAction: (action: import('./qaChatWindow').QaChatWindowAction) => void
+  onQaWindowChanged: (callback: (detached: boolean) => void) => () => void
+  onQaWindowSnapshot: (callback: (snapshot: import('./qaChatWindow').QaChatWindowSnapshot) => void) => () => void
+  onQaWindowAction: (callback: (action: import('./qaChatWindow').QaChatWindowAction) => void) => () => void
   qaCallTool: (name: string, args?: unknown) => Promise<QaToolCallResult>
   qaApprovalDecision: (id: string, decision: ApprovalDecision) => Promise<boolean>
   onQaApprovalRequest: (callback: (request: ApprovalRequest) => void) => () => void
   qaAgentsOverview: () => Promise<AgentsOverview | null>
+  qaFindingsList: (projectKey?: string) => Promise<OrganizerSnapshot | null>
+  qaFindingsUpdate: (projectKey: string, revision: number, changes: FindingUpdate[]) => Promise<OrganizerResult>
+  qaFindingsPicture: (projectKey: string, id: string, index?: number) => Promise<{ src: string; caption: string } | null>
+  qaFindingsImport: (projectKey: string) => Promise<OrganizerResult>
+  qaFindingsCopy: (projectKey: string, ids: string[]) => Promise<{ success: boolean; error?: string; count?: number }>
+  qaFindingsShare: (projectKey: string, ids: string[]) => Promise<{ success: boolean; error?: string }>
+  onQaFindingsChanged: (callback: (event: { projectKey: string }) => void) => () => void
   qaAgentsSettings: () => Promise<AgentSettings | null>
   qaAgentsSaveSettings: (patch: Partial<Omit<AgentSettings, 'models'>> & { models?: Partial<AgentSettings['models']> }) => Promise<AgentsOverview | null>
   qaAgentsSetKey: (id: AgentId, key: string) => Promise<AgentsOverview | { error: string } | null>
   qaAgentsClearKey: (id: AgentId) => Promise<AgentsOverview | null>
-  /** `recommended` is a sensible first choice for a free key, picked for the person when they have none. */
-  qaAgentsModels: (id: AgentId) => Promise<{ models: string[]; error?: string; recommended?: string }>
+  /** `recommended` is a suggested choice; discovery never saves it automatically. */
+  qaAgentsModels: (id: AgentId) => Promise<AgentModelList>
+  qaExecutionStatus: () => Promise<QaExecutionSnapshot | null>
+  qaExecutionRetry: (id: string) => Promise<QaRunStartResult>
+  qaExecutionResult: (id: string, offset?: number) => Promise<{ text: string; total: number; nextOffset: number | null } | null>
   qaRunStart: (options?: QaRunStartOptions) => Promise<QaRunStartResult>
   qaRunStop: () => Promise<boolean>
   qaBatchStart: (options: QaBatchStartOptions) => Promise<QaRunStartResult>

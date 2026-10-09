@@ -62,6 +62,8 @@ import { breakpointForFrameWidth, breakpointToFollow } from "../../../shared/des
 import type { Breakpoint } from "../../../shared/designScale";
 import type { DesignSlots as DesignSlotsState } from "../../../shared/qaAgent";
 import "./EditorWorkspace.css";
+import ManagedQaWorkbook from './qaChat/ManagedQaWorkbook';
+import { useAuditFindings } from './qaChat/useAuditFindings';
 
 const defaultQaSheetData: Sheet[] = [
   {
@@ -1671,6 +1673,11 @@ export default function EditorWorkspace({
     bottomSheetOpenStorageKey,
   );
   const [bottomSheetHeight, setBottomSheetHeight] = useState(520);
+  useEffect(()=>{
+    const expand=()=>setBottomSheetOpen(false);
+    window.addEventListener('parity:open-ai-tracker',expand);
+    return()=>window.removeEventListener('parity:open-ai-tracker',expand);
+  },[setBottomSheetOpen]);
   const [bottomSheetMaximized, setBottomSheetMaximized] = useState(false);
   const panelDragRef = useRef<{
     side: "left" | "right" | "bottom" | "figma";
@@ -1690,6 +1697,7 @@ export default function EditorWorkspace({
     return window.electronAPI.onFigmaAuthChanged?.(setFigmaAuthStatus);
   }, []);
   const mockSheetStorageKey = `qa_${activeProjectId}_mock_sheet`;
+  const aiFindings = useAuditFindings(activeProjectId);
   const [mockSheetData, setMockSheetData] = useState<Sheet[]>(() => {
     try {
       const saved = localStorage.getItem(mockSheetStorageKey);
@@ -1701,6 +1709,11 @@ export default function EditorWorkspace({
       return cloneQaSheetData();
     }
   });
+  useEffect(()=>{
+    const sync=()=>{try{const saved=JSON.parse(localStorage.getItem(mockSheetStorageKey)||'null');if(Array.isArray(saved)&&saved.length)setMockSheetData(current=>JSON.stringify(current)===JSON.stringify(saved)?current:cloneQaSheetData(saved))}catch{}}
+    window.addEventListener('parity:manual-tracker-changed',sync)
+    return()=>window.removeEventListener('parity:manual-tracker-changed',sync)
+  },[mockSheetStorageKey]);
 
   useEffect(() => {
     try {
@@ -1721,6 +1734,7 @@ export default function EditorWorkspace({
       const cloned = cloneQaSheetData(nextData);
       setMockSheetData(cloned);
       localStorage.setItem(mockSheetStorageKey, JSON.stringify(cloned));
+      window.dispatchEvent(new Event('parity:manual-tracker-changed'));
     },
     [mockSheetStorageKey],
   );
@@ -12082,7 +12096,7 @@ export default function EditorWorkspace({
 
                   <div className="bottom-sheet-body">
                     {activeSheetTab === "mock" ? (
-                      <Workbook
+                      aiFindings.snapshot ? <ManagedQaWorkbook snapshot={aiFindings.snapshot} update={aiFindings.update} manualSheets={mockSheetData} onManualChange={handleMockSheetChange}/> : <Workbook
                         data={mockSheetData}
                         showToolbar={true}
                         onChange={handleMockSheetChange}

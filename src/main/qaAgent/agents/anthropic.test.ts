@@ -97,8 +97,8 @@ describe('anthropic provider', () => {
     ])
 
     expect(events.filter((e) => e.type === 'text')).toEqual([{ type: 'text', text: 'Capturing now.', delta: true }, { type: 'text', text: 'All done.', delta: true }])
-    expect(events).toContainEqual({ type: 'tool', name: 'capture_live', args: { breakpoint: 'desktop', runId: 'abc' } })
-    expect(events).toContainEqual({ type: 'tool-result', name: 'capture_live', isError: false, text: 'result of capture_live', images: 1 })
+    expect(events).toContainEqual({ type: 'tool', callId: 'toolu_1', name: 'capture_live', args: { breakpoint: 'desktop', runId: 'abc' } })
+    expect(events).toContainEqual({ type: 'tool-result', callId: 'toolu_1', name: 'capture_live', isError: false, text: 'result of capture_live', images: 1 })
     expect(events.filter((e) => e.type === 'usage')).toEqual([{ type: 'usage', inputTokens: 500, outputTokens: 40 }, { type: 'usage', inputTokens: 900, outputTokens: 10 }])
   })
 

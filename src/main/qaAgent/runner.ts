@@ -9,11 +9,11 @@ import { callTool, type QaContext, type ToolResult } from './tools'
 
 // Runs a QA review: one fresh conversation per breakpoint (so pictures never pile up in one
 // context), then, if asked, one that tests links, buttons and forms in the agent's browser, then
-// one short text-only conversation that merges the drafts and hands the rows over for approval.
+// one short text-only conversation that merges the drafts and hands the rows over in the organizer.
 // The model only ever drafts; the person approves in Parity.
 
-const BREAKPOINT_TOOLS = ['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft']
-const MERGE_TOOLS = ['get_context', 'finalize_rows']
+const BREAKPOINT_TOOLS = ['read_result', 'get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft']
+const MERGE_TOOLS = ['read_result', 'get_context', 'finalize_rows']
 const MAX_TURNS_PER_BREAKPOINT = 80
 const MAX_TURNS_MERGE = 8
 
@@ -105,7 +105,7 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
   const finalize = async (args: unknown): Promise<ToolResult> => {
     finalizeCalled = true
     const result = await callTool('finalize_rows', args, context)
-    if (!result.isError && /^Approved\. Copied \d+ row/.test(result.text)) summary.finalized = true
+    if (!result.isError && /^(Approved\. Copied \d+ row|Saved \d+ finding)/.test(result.text)) summary.finalized = true
     return result
   }
   const makeCall = (allowed: string[]) => async (name: string, args: unknown): Promise<ToolResult> => {
@@ -155,10 +155,10 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
 
     // With one breakpoint and no testing there is nothing to merge; hand the rows over directly.
     if (breakpoints.length === 1 && !Object.keys(tested).length) {
-      emit({ type: 'status', message: `Handing over ${rows.length} row(s) for approval…` })
+      emit({ type: 'status', message: `Handing over ${rows.length} row(s) in the organizer…` })
       const result = await finalize({ runId: run.id, rows })
       emit({ type: 'tool-result', name: 'finalize_rows', isError: !!result.isError, text: result.text, images: 0 })
-      return finish('completed', summary.finalized ? result.text : `The rows were not copied. ${result.text}`)
+      return finish('completed', summary.finalized ? result.text : `${context.organizer ? 'The findings were not finalized.' : 'The rows were not copied.'} ${result.text}`)
     }
 
     emit({ type: 'status', message: `Merging ${rows.length} drafted row(s) from ${breakpoints.length} breakpoint${breakpoints.length === 1 ? '' : 's'}${Object.keys(tested).length ? ' and the functional test' : ''}…` })
@@ -174,7 +174,7 @@ export async function runQa(deps: { context: QaContext; provider: AgentProvider 
       const result = await finalize({ runId: run.id, rows })
       return finish('completed', result.text)
     }
-    return finish('completed', summary.finalized ? (merged.text || 'The rows were copied.') : 'The rows were handed over but not approved, so nothing was copied.')
+    return finish('completed', summary.finalized ? (merged.text || 'The findings were saved.') : 'The findings remain saved as drafts.')
   } catch (error: any) {
     return finish('failed', `The review failed: ${error?.message || 'unknown error'}`)
   } finally {

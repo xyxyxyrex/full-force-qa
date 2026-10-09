@@ -93,7 +93,7 @@ describe('runQa with one breakpoint', () => {
     const run = calls.runs[0]
     expect(run.system).toContain(QA_RUBRIC.slice(0, 80))
     expect(run.system).toContain('only the desktop breakpoint')
-    expect(run.tools).toEqual(['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft'])
+    expect(run.tools).toEqual(['read_result', 'get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft'])
     expect(fake.approvals).toHaveLength(1)
     expect(fake.clipboard[0].text).toBe('Home\tHeading is smaller than the design\t\t\t')
     expect(events.at(-1)).toMatchObject({ type: 'done' })
@@ -164,7 +164,7 @@ describe('runQa with several breakpoints', () => {
     expect(calls.runs).toHaveLength(3)
     expect(calls.runs[0].task).toContain('desktop breakpoint')
     expect(calls.runs[1].task).toContain('tablet breakpoint')
-    expect(calls.runs[2].tools).toEqual(['get_context', 'finalize_rows'])
+    expect(calls.runs[2].tools).toEqual(['read_result', 'get_context', 'finalize_rows'])
     expect(calls.runs[2].system).toContain('Tracker columns: Page | Issue | Expected | Screenshot | Severity')
     expect(fake.clipboard[0].text.split('\n')).toHaveLength(2)
   })
@@ -213,7 +213,7 @@ describe('runQa with functional testing', () => {
       return finished()
     })
     const summary = await start(p, { functional: true }).promise
-    expect(calls.runs.map((run) => run.tools)).toEqual([['get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft'], FUNCTIONAL_TOOLS, ['get_context', 'finalize_rows']])
+    expect(calls.runs.map((run) => run.tools)).toEqual([['read_result', 'get_context', 'capture_live', 'get_overview', 'get_section', 'save_draft'], FUNCTIONAL_TOOLS, ['read_result', 'get_context', 'finalize_rows']])
     expect(calls.runs[1].system).toContain(QA_FUNCTIONAL.slice(0, 80))
     expect(calls.runs[1].task).toContain('at desktop:')
     expect(calls.runs[1].task).not.toContain('Display is set for you')

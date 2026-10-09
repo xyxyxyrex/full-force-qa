@@ -139,7 +139,7 @@ describe('runQaBatch', () => {
 
     expect(runs).toHaveLength(4) // 2 pages × 2 breakpoints
     expect(runs.every((r) => r.system.includes(QA_RUBRIC_STANDALONE.slice(0, 100)))).toBe(true)
-    expect(runs.every((r) => r.tools.join() === 'get_context,capture_live,get_overview,get_section,save_draft')).toBe(true)
+    expect(runs.every((r) => r.tools.join() === 'read_result,get_context,capture_live,get_overview,get_section,save_draft')).toBe(true)
 
     // One approval, with every page's findings in order, grouped by page.
     expect(fake.approvals).toHaveLength(1)

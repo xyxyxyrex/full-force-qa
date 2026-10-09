@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { AgentId, AgentInfo, AgentsOverview, QaBridgeStatus } from '../../../shared/qaAgent'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AgentId, AgentsOverview, QaBridgeStatus } from '../../../shared/qaAgent'
 import type { TrackerFormat } from '../../../shared/trackerFormat'
+import AgentIcon, { AGENT_NAMES } from './agents/AgentIcon'
+import AgentConfiguration from './agents/AgentConfiguration'
+import AgentsSkeleton from './agents/AgentsSkeleton'
+import RemarkStyleSettings from './agents/RemarkStyleSettings'
+import { useModelDiscovery } from './agents/useModelDiscovery'
 import './AgentsPanel.css'
 
 const cleanError = (cause: unknown) => (cause instanceof Error ? cause.message : 'Something went wrong.').replace(/^Error invoking remote method '[^']+': Error:\s*/, '')
-
-const KIND_NOTE: Record<AgentInfo['kind'], string> = {
-  subscription: 'Uses the app you are already signed in to, so your plan pays for it.',
-  api: 'Uses your own API key and is billed by the provider.',
-  free: 'Free: no AI plan or card needed. A free key allows only so many requests a minute and a day, so runs are lighter: one breakpoint unless you name more, fewer steps, and no link and form test unless you ask (/review --test).',
-  local: 'Runs on a model on this computer, or on any server that speaks the OpenAI API (add its key if it needs one). It must read pictures and use tools.',
-}
 
 type CliStatus = { installed: boolean; path: string; onPath: boolean; platform: string }
 
@@ -18,8 +16,23 @@ export default function AgentsPanel() {
   const [overview, setOverview] = useState<AgentsOverview | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
-  const [keyDrafts, setKeyDrafts] = useState<Partial<Record<AgentId, string>>>({})
-  const [models, setModels] = useState<Partial<Record<AgentId, { list: string[]; error?: string; picked?: string }>>>({})
+  const [viewedAgent, setViewedAgent] = useState<AgentId | null>(null)
+  const discovery = useModelDiscovery()
+  const alive = useRef(true)
+  const mutations = useRef<Promise<unknown>>(Promise.resolve())
+  const refreshVersion = useRef(0)
+  const [auxErrors, setAuxErrors] = useState<Record<string, string>>({})
+  // Serialize persistence so slower overview responses cannot overwrite newer settings.
+  const mutate = async (work: () => Promise<AgentsOverview | null>) => {
+    const task = mutations.current.catch(() => {}).then(async () => {
+      refreshVersion.current++
+      const next = await work()
+      if (!next) throw new Error('Could not save these settings. Please try again.')
+      if (alive.current) setOverview(next)
+    })
+    mutations.current = task
+    await task
+  }
   const [bridge, setBridge] = useState<QaBridgeStatus | null>(null)
   const [tracker, setTracker] = useState<TrackerFormat | null>(null)
   const [trackerText, setTrackerText] = useState('')
@@ -29,113 +42,63 @@ export default function AgentsPanel() {
   const [copied, setCopied] = useState('')
 
   const refresh = useCallback(async () => {
-    setBusy('refresh')
-    try { setOverview(await window.electronAPI.qaAgentsOverview()) } catch (cause) { setError(cleanError(cause)) } finally { setBusy('') }
+    const version = ++refreshVersion.current
+    setBusy('refresh'); setError('')
+    try { const next = await window.electronAPI.qaAgentsOverview(); if (!next) throw new Error('Could not load agent settings. Please try again.'); if (alive.current && version === refreshVersion.current) setOverview(next) }
+    catch (cause) { if (alive.current && version === refreshVersion.current) setError(cleanError(cause)) }
+    finally { if (alive.current) setBusy('') }
   }, [])
 
+  const loadAux = useCallback((name: string) => {
+    setAuxErrors(previous => ({ ...previous, [name]: '' }))
+    const work = name === 'bridge' ? window.electronAPI.qaBridgeStatus().then(value => { if (alive.current) setBridge(value) })
+      : name === 'tracker' ? window.electronAPI.qaTrackerFormatGet().then(value => { if (alive.current) setTracker(value) })
+      : window.electronAPI.qaCliStatus().then(value => { if (alive.current) setCli(value) })
+    void work.catch(() => { if (alive.current) setAuxErrors(previous => ({ ...previous, [name]: 'Could not load this section.' })) })
+  }, [])
   useEffect(() => {
+    alive.current = true
     void refresh()
-    void window.electronAPI.qaBridgeStatus().then(setBridge)
-    void window.electronAPI.qaTrackerFormatGet().then(setTracker)
-    void window.electronAPI.qaCliStatus().then(setCli)
-    void window.electronAPI.accountStatus().then((status) => setSignedIn(status.signedIn)).catch(() => setSignedIn(null))
-    return window.electronAPI.onQaBridgeStatus(setBridge)
-  }, [refresh])
+    loadAux('bridge'); loadAux('tracker'); loadAux('cli')
+    void window.electronAPI.accountStatus().then(status => { if (alive.current) setSignedIn(status.signedIn) }).catch(() => {})
+    const off = window.electronAPI.onQaBridgeStatus(setBridge)
+    return () => { alive.current = false; refreshVersion.current++; off() }
+  }, [refresh, loadAux])
+  const auxiliary = (name: string, loaded: boolean) => auxErrors[name]
+    ? <p className="agents-warn" role="alert">{auxErrors[name]} <button className="agents-link" onClick={() => loadAux(name)}>Retry</button></p>
+    : !loaded ? <div className="agents-skeleton-line field" role="status" aria-label="Loading section"/> : null
 
   const guard = async (name: string, work: () => Promise<void>) => {
     setBusy(name); setError('')
     try { await work() } catch (cause) { setError(cleanError(cause)) } finally { setBusy('') }
   }
-  const save = (patch: Parameters<typeof window.electronAPI.qaAgentsSaveSettings>[0]) => guard('save', async () => { const next = await window.electronAPI.qaAgentsSaveSettings(patch); if (next) setOverview(next) })
+  const save = (patch: Parameters<typeof window.electronAPI.qaAgentsSaveSettings>[0]) => guard('save', () => mutate(() => window.electronAPI.qaAgentsSaveSettings(patch)))
   const copy = (label: string, text: string) => { void navigator.clipboard.writeText(text).then(() => { setCopied(label); window.setTimeout(() => setCopied(''), 1500) }) }
 
-  if (!overview) return <section className="agents-panel"><p className="agents-muted">{error || 'Loading…'}</p></section>
+  if (!overview) return error ? <section className="agents-panel"><p className="agents-alert" role="alert">{error}</p><button className="agents-button" onClick={() => void refresh()}>Retry</button></section> : <AgentsSkeleton />
   const { settings, agents, keyStorage } = overview
+  const activeAgent = viewedAgent || settings.defaultAgent
 
   return (
     <section className="agents-panel">
       <header className="agents-header">
         <div>
           <h3>AI agents</h3>
-          <p>Choose the agent that QAs your pages: how they look (against the Figma designs when you have them), how they work, and the SEO basics. It only drafts rows; you approve them before anything is copied.</p>
+          <p>Choose the agent that QAs your pages: how they look (against the Figma designs when you have them), how they work, and the SEO basics. It saves draft findings in your organizer. Review and edit them before sharing evidence.</p>
           <p className="agents-free-hint">No Claude, ChatGPT or Google plan? <b>Gemini</b> and <b>OpenRouter</b> give free keys: lighter runs, but no cost.</p>
         </div>
         <button type="button" className="agents-button" onClick={() => void refresh()} disabled={busy === 'refresh'}>{busy === 'refresh' ? 'Checking…' : 'Refresh'}</button>
       </header>
       {error && <div className="agents-alert" role="alert">{error}</div>}
 
-      <div className="agents-list">
-        {agents.map((agent) => {
-          const selected = settings.defaultAgent === agent.id
-          const list = models[agent.id]
-          return (
-            <div key={agent.id} className={`agents-card ${selected ? 'selected' : ''}`}>
-              <label className="agents-card-head">
-                <input type="radio" name="default-agent" checked={selected} onChange={() => void save({ defaultAgent: agent.id })} />
-                <span className="agents-card-title">{agent.label}</span>
-                {agent.lite && <span className="agents-badge" title="Runs are kept within the free tier's limits">free tier</span>}
-                <span className={`agents-dot ${agent.ready ? 'ready' : 'idle'}`} aria-label={agent.ready ? 'Ready' : 'Not ready'} />
-              </label>
-              <p className="agents-detail">{agent.detail}</p>
-              <p className="agents-muted">{KIND_NOTE[agent.kind]}</p>
-
-              {agent.needsKey && (
-                <div className="agents-row">
-                  {agent.hasKey ? (
-                    <>
-                      <span className="agents-muted">API key saved</span>
-                      <button type="button" className="agents-link" onClick={() => void guard('key', async () => { const next = await window.electronAPI.qaAgentsClearKey(agent.id); if (next) setOverview(next) })}>Remove</button>
-                    </>
-                  ) : (
-                    <>
-                      <input type="password" autoComplete="off" spellCheck={false} placeholder={agent.keyOptional ? 'API key (only if the server needs one)' : agent.kind === 'free' ? 'Paste your free API key' : 'Paste your API key'} value={keyDrafts[agent.id] || ''} onChange={(event) => setKeyDrafts({ ...keyDrafts, [agent.id]: event.target.value })} />
-                      <button type="button" className="agents-button" disabled={!keyDrafts[agent.id]} onClick={() => void guard('key', async () => {
-                        const result = await window.electronAPI.qaAgentsSetKey(agent.id, keyDrafts[agent.id] || '')
-                        if (result && 'error' in result) setError(result.error)
-                        else if (result) { setOverview(result); setKeyDrafts({ ...keyDrafts, [agent.id]: '' }) }
-                      })}>Save key</button>
-                      {agent.keyUrl && <button type="button" className="agents-link" onClick={() => void window.electronAPI.openExternal(agent.keyUrl!)}>Get a free key</button>}
-                    </>
-                  )}
-                </div>
-              )}
-
-              {agent.id === 'local' && (
-                <label className="agents-field"><span>Server address</span>
-                  <input type="text" defaultValue={settings.localBaseUrl} spellCheck={false} onBlur={(event) => { if (event.target.value.trim() !== settings.localBaseUrl) void save({ localBaseUrl: event.target.value }) }} />
-                </label>
-              )}
-
-              <div className="agents-row">
-                <label className="agents-field grow"><span>{agent.kind === 'subscription' ? 'Model (optional)' : 'Model'}</span>
-                  {/* Keyed by the saved model, so a model picked for the person shows up in the box. */}
-                  <input key={`${agent.id}:${settings.models[agent.id]}`} type="text" list={`models-${agent.id}`} defaultValue={settings.models[agent.id]} placeholder={agent.kind === 'subscription' ? "the app's default" : agent.kind === 'free' ? 'list the models first' : 'choose a model'} spellCheck={false}
-                    onBlur={(event) => { if (event.target.value.trim() !== settings.models[agent.id]) void save({ models: { [agent.id]: event.target.value } }) }} />
-                  <datalist id={`models-${agent.id}`}>{(list?.list || []).map((name) => <option key={name} value={name} />)}</datalist>
-                </label>
-                {(agent.kind !== 'subscription' || agent.id === 'antigravity') && (
-                  <button type="button" className="agents-button" onClick={() => void guard('models', async () => {
-                    const result = await window.electronAPI.qaAgentsModels(agent.id)
-                    // A free key works straight away: with no model chosen yet, the recommended one is picked.
-                    const picked = !settings.models[agent.id] && result.recommended ? result.recommended : undefined
-                    setModels({ ...models, [agent.id]: { list: result.models, error: result.error, picked } })
-                    // And when the default agent cannot run (no plan, nothing signed in), this one becomes the default.
-                    const defaultReady = agents.find((other) => other.id === settings.defaultAgent)?.ready
-                    if (picked) { const next = await window.electronAPI.qaAgentsSaveSettings({ models: { [agent.id]: picked }, ...(defaultReady ? {} : { defaultAgent: agent.id }) }); if (next) setOverview(next) }
-                  })}>List models</button>
-                )}
-              </div>
-              {list?.error && <p className="agents-warn">{list.error}</p>}
-              {list && !list.error && <p className="agents-muted">{list.list.length} {agent.id === 'openrouter' ? 'free models that read pictures and use tools' : 'models'} found. {list.picked ? `Picked ${list.picked} for you; choose another in the box above if you like.` : 'Pick one in the box above.'}</p>}
-              {agent.id === 'gemini-api' && (
-                <label className="agents-switch">
-                  <input type="checkbox" checked={settings.geminiBilling} onChange={(event) => void save({ geminiBilling: event.target.checked })} />
-                  <span>Billing is on for this key's Google project (full runs, no free-tier limits)</span>
-                </label>
-              )}
-            </div>
-          )
-        })}
+      <div className="agents-setup">
+        <nav className="agents-provider-list" aria-label="Agent providers">
+          {agents.map(agent => <button type="button" key={agent.id} data-agent={agent.id} className={`agents-provider ${activeAgent === agent.id ? 'selected' : ''}`} aria-pressed={activeAgent === agent.id} onClick={() => setViewedAgent(agent.id)}>
+            <AgentIcon id={agent.id}/><span className="agents-provider-text"><strong>{AGENT_NAMES[agent.id]}</strong><small>{agent.ready ? 'Ready' : 'Needs setup'}</small></span>
+            {settings.defaultAgent === agent.id && <span className="agents-badge">Default</span>}
+          </button>)}
+        </nav>
+        <div className="agents-config-stack">{agents.map(agent => <AgentConfiguration key={agent.id} agent={agent} settings={settings} active={activeAgent === agent.id} discovery={discovery.results[agent.id]} load={discovery.load} invalidate={discovery.invalidate} mutate={mutate}/>)}</div>
       </div>
       {keyStorage !== 'secure' && <p className="agents-warn">{keyStorage === 'weak' ? 'This computer has no system keyring, so API keys are only lightly protected. Prefer an agent that uses your signed-in app.' : 'This computer has no secure place to keep an API key, so keys cannot be saved. Use an agent that uses your signed-in app.'}</p>}
 
@@ -188,13 +151,15 @@ export default function AgentsPanel() {
           </label>
         </div>
         {settings.evidenceUploads && signedIn === false && (
-          <p className="agents-warn">Uploading needs your Parity account. <button type="button" className="agents-link" onClick={() => window.dispatchEvent(new Event('parity:open-account'))}>Sign in</button>. Without it, rows are still copied and the screenshot column stays empty.</p>
+          <p className="agents-warn">Uploading needs your Parity account. <button type="button" className="agents-link" onClick={() => window.dispatchEvent(new Event('parity:open-account'))}>Sign in</button>. Local evidence remains viewable, and you can still organize or copy findings.</p>
         )}
       </div>
 
+      <RemarkStyleSettings value={settings.remarkStyle} save={style=>mutate(()=>window.electronAPI.qaAgentsSaveSettings({remarkStyle:style}))}/>
       <div className="agents-group">
         <h4>Tracker format</h4>
-        <p className="agents-muted">Parity uses the standard tracker (Page Link, Section, Screenshot, Remarks, Priority and the rest) until you paste a different one. To change it, copy the header row and two or three example rows from the Google Sheet and paste them here. The agent fills only QA's columns and copies the tone of your examples.</p>
+        {auxiliary('tracker', !!tracker)}
+        <p className="agents-muted">Parity uses the standard tracker (Page Link, Section, Screenshot, Remarks, Priority and the rest) until you paste a different one. To change it, copy the header row and two or three example rows from the Google Sheet and paste them here. The agent fills only QA's columns. Remark style controls the wording; examples define column usage.</p>
         {tracker && <div className="agents-chips" aria-label="Current tracker columns">{tracker.columns.map((name) => <span key={name}>{name}</span>)}</div>}
         <textarea rows={4} spellCheck={false} placeholder={'Page\tIssue\tExpected\tScreenshot\tSeverity\nHome\tHeading too small\t32px\thttps://…\tHigh'} value={trackerText} onChange={(event) => { setTrackerText(event.target.value); setTrackerError('') }} />
         {trackerError && <p className="agents-warn">{trackerError}</p>}
@@ -209,6 +174,7 @@ export default function AgentsPanel() {
 
       <div className="agents-group">
         <h4>Local bridge</h4>
+        {auxiliary('bridge', !!bridge)}
         <p className="agents-muted">Lets agent apps and the <code>parity</code> command use the same tools as the in-app console. It only accepts connections from this computer and needs a key. It is off unless you turn it on (a review that uses an agent app turns it on just for that run).</p>
         {bridge && (
           <>
@@ -236,6 +202,7 @@ export default function AgentsPanel() {
 
       <div className="agents-group">
         <h4>The <code>parity</code> command</h4>
+        {auxiliary('cli', !!cli)}
         <p className="agents-muted">A terminal command for the same tools: <code>parity context</code>, <code>parity capture desktop</code>, <code>parity section …</code>. Any agent that can run shell commands can use it. Run <code>parity --help</code> for the list.</p>
         {cli && (
           <div className="agents-row">

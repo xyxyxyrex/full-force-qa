@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createOpenAiCompatibleProvider, isDailyLimit, retryDelayMs, trimCarriedImages } from './openaiCompatible'
 import { QuotaError, type AgentEvent, type ProviderRun } from './types'
 
-interface Scripted { status?: number; body: unknown; delayMs?: number; headers?: Record<string, string> }
+interface Scripted { status?: number; body: unknown; delayMs?: number; headers?: Record<string, string>; sse?: string }
 let server: Server
 let baseUrl: string
 let queue: Scripted[]
@@ -19,8 +19,8 @@ beforeEach(async () => {
       requests.push({ url: req.url || '', headers: req.headers, body: JSON.parse(raw) })
       const next = queue.shift() ?? { status: 500, body: { error: { message: 'no scripted response' } } }
       if (next.delayMs) await new Promise((r) => setTimeout(r, next.delayMs))
-      res.writeHead(next.status ?? 200, { 'Content-Type': 'application/json', ...next.headers })
-      res.end(JSON.stringify(next.body))
+      res.writeHead(next.status ?? 200, { 'Content-Type': next.sse ? 'text/event-stream' : 'application/json', ...next.headers })
+      res.end(next.sse || JSON.stringify(next.body))
     })
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -44,6 +44,49 @@ const makeRun = (over: Partial<ProviderRun> = {}) => {
 const provider = (over: Partial<Parameters<typeof createOpenAiCompatibleProvider>[0]> = {}) => createOpenAiCompatibleProvider({ id: 'openai-api', label: 'OpenAI', baseUrl, apiKey: 'sk-test', model: 'gpt-test', ...over })
 
 describe('openai-compatible provider', () => {
+  it('streams a reply without duplicating its final answer', async () => {
+    queue.push({body:null,sse:'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\ndata: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n'})
+    const {run,events}=makeRun()
+    expect(await provider().run(run)).toEqual({stopped:'finished',text:'Hello world'})
+    expect(events.filter(e=>e.type==='text')).toEqual([{type:'text',text:'Hello ',delta:true},{type:'text',text:'world',delta:true}])
+    expect(events.filter(e=>e.type==='usage')).toEqual([{type:'usage',inputTokens:10,outputTokens:2}])
+  })
+  it('falls back only after an explicit streaming rejection', async () => {
+    queue.push({status:400,body:{error:{message:'streaming is not supported'}}},reply({content:'done'}))
+    await provider().run(makeRun().run)
+    expect(requests[0].body.stream).toBe(true);expect(requests[1].body.stream).toBeUndefined()
+  })
+  it('resumes the next completion with finished tool results rather than replaying tools', async () => {
+    queue.push(reply({content:'Inspecting',tool_calls:[toolCall('c1','get_context',{})]},'tool_calls'),{status:401,body:{error:{message:'bad key'}}})
+    let checkpoint:unknown
+    const first=makeRun({checkpoint:value=>{checkpoint=value}})
+    await expect(provider().run(first.run)).rejects.toThrow('rejected')
+    expect(first.calls).toHaveLength(1)
+    queue.push(reply({content:'Finished'}))
+    const next=makeRun({resume:checkpoint})
+    await provider().run(next.run)
+    expect(next.calls).toHaveLength(0)
+    expect(requests.at(-1)!.body.messages.filter((m:any)=>m.role==='tool')).toHaveLength(1)
+    expect(requests.at(-1)!.body.messages.filter((m:any)=>m.role==='user' && m.content==='Check desktop.')).toHaveLength(1)
+  })
+  it('never executes an incomplete streamed tool request', async () => {
+    queue.push({body:null,sse:'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"get_context","arguments":"{"}}]}}]}\n\n'})
+    const {run,calls}=makeRun()
+    await expect(provider().run(run)).rejects.toThrow('ended early')
+    expect(calls).toHaveLength(0)
+  })
+  it('reduces repeated image payload bytes while retaining both tool results', async () => {
+    queue.push(reply({tool_calls:[toolCall('a','get_context',{})]},'tool_calls'),reply({tool_calls:[toolCall('b','get_context',{})]},'tool_calls'),reply({content:'done'}))
+    const image={data:Buffer.alloc(12000,18),mimeType:'image/jpeg' as const,caption:'Same evidence'}
+    const {run}=makeRun({call:async()=>({text:'All measured values retained',images:[image]})})
+    await provider().run(run)
+    const payload=requests[2].body
+    const images=payload.messages.flatMap((m:any)=>Array.isArray(m.content)?m.content.filter((p:any)=>p.type==='image_url'):[])
+    expect(images).toHaveLength(1)
+    expect(payload.messages.filter((m:any)=>m.role==='tool')).toHaveLength(2)
+    const repeated={...payload,messages:[...payload.messages,{role:'user',content:images}]}
+    expect(JSON.stringify(payload).length).toBeLessThan(JSON.stringify(repeated).length-15000)
+  })
   it('runs the tool loop and returns pictures in a follow-up user message', async () => {
     queue.push(
       reply({ content: 'Capturing.', tool_calls: [toolCall('call_1', 'capture_live', { breakpoint: 'desktop' })] }, 'tool_calls', { prompt_tokens: 400, completion_tokens: 30 }),
@@ -65,11 +108,11 @@ describe('openai-compatible provider', () => {
 
     const second = requests[1].body.messages
     expect(second[2]).toMatchObject({ role: 'assistant', content: 'Capturing.', tool_calls: [{ id: 'call_1' }] })
-    expect(second[3]).toEqual({ role: 'tool', tool_call_id: 'call_1', content: 'result of capture_live\n(1 picture(s) follow in the next message.)' })
+    expect(second[3]).toEqual({ role: 'tool', tool_call_id: 'call_1', content: 'result of capture_live\n(1 picture(s) follow or are already attached above.)' })
     expect(second[4]).toEqual({ role: 'user', content: [{ type: 'text', text: 'capture_live: Overview' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${Buffer.from('JPEG').toString('base64')}` } }] })
     expect(second[4].carriesImages).toBeUndefined()
     expect(events.filter((e) => e.type === 'usage')[0]).toEqual({ type: 'usage', inputTokens: 400, outputTokens: 30 })
-    expect(events).toContainEqual({ type: 'tool-result', name: 'capture_live', isError: false, text: 'result of capture_live', images: 1 })
+    expect(events).toContainEqual({ type: 'tool-result', callId: 'call_1', name: 'capture_live', isError: false, text: 'result of capture_live', images: 1 })
   })
 
   it('sends no Authorization header without a key (local servers)', async () => {
@@ -210,7 +253,7 @@ describe('free tiers and rate limits', () => {
     await quick({ lite: true, headers: { 'X-Title': 'Parity' } }).run(makeRun().run)
     expect(requests[0].headers['x-title']).toBe('Parity')
     const pictures = requests[3].body.messages.filter((m: any) => Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url'))
-    expect(pictures).toHaveLength(2)
+    expect(pictures).toHaveLength(1) // identical evidence is attached once and remains available
     expect(quick({ lite: true }).lite).toBe(true)
     expect(quick().lite).toBe(false)
   })

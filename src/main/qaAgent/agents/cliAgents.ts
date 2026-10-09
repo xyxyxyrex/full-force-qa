@@ -111,12 +111,12 @@ export const claudeCodeSpec: CliSpec = {
     if (message.type === 'assistant') {
       for (const block of message.message?.content ?? []) {
         if (block.type === 'text' && block.text) { state.text = block.text; emit({ type: 'text', text: block.text }) }
-        if (block.type === 'tool_use') emit({ type: 'tool', name: String(block.name).replace(/^mcp__parity__/, ''), args: block.input })
+        if (block.type === 'tool_use') emit({ type: 'tool', name: String(block.name).replace(/^mcp__parity__/, ''), args: block.input, callId: block.id })
       }
     } else if (message.type === 'user') {
       for (const block of message.message?.content ?? []) {
         if (block.type !== 'tool_result') continue
-        emit({ type: 'tool-result', name: 'tool', isError: !!block.is_error, text: summarize(textOf(block.content)), images: countImages(block.content) })
+        emit({ type: 'tool-result', name: 'tool', callId: block.tool_use_id, isError: !!block.is_error, text: summarize(textOf(block.content)), images: countImages(block.content) })
       }
     } else if (message.type === 'result') {
       state.finished = true
@@ -163,10 +163,10 @@ export const codexSpec: CliSpec = {
       state.text = item.text
       emit({ type: 'text', text: item.text })
     } else if (event.type === 'item.started' && item?.type === 'mcp_tool_call') {
-      emit({ type: 'tool', name: String(item.tool ?? item.name ?? 'tool'), args: item.arguments })
+      emit({ type: 'tool', name: String(item.tool ?? item.name ?? 'tool'), args: item.arguments, callId: item.id })
     } else if (event.type === 'item.completed' && item?.type === 'mcp_tool_call') {
       const content = item.result?.content ?? item.result
-      emit({ type: 'tool-result', name: String(item.tool ?? item.name ?? 'tool'), isError: item.status === 'failed' || !!item.error, text: summarize(textOf(content) || String(item.error?.message ?? '')), images: countImages(content) })
+      emit({ type: 'tool-result', name: String(item.tool ?? item.name ?? 'tool'), callId: item.id, isError: item.status === 'failed' || !!item.error, text: summarize(textOf(content) || String(item.error?.message ?? '')), images: countImages(content) })
     } else if (event.type === 'turn.completed') {
       state.finished = true
       if (event.usage) emit({ type: 'usage', inputTokens: Number(event.usage.input_tokens) || 0, outputTokens: Number(event.usage.output_tokens) || 0 })
@@ -326,12 +326,12 @@ export const antigravitySpec: CliSpec = {
       } else if (step.step_type === 'tool') {
         const info = step.tool_info
         if (isAgySchemaRead(info)) { if (step.state !== 'ACTIVE') state.toolsFinished++; return }
-        if (step.state === 'ACTIVE') emit({ type: 'tool', name: agyToolName(info), args: info?.name === 'call_mcp_tool' ? info.parameters?.Arguments : info?.parameters })
+        if (step.state === 'ACTIVE') emit({ type: 'tool', callId: `agy-${step.step_index}`, name: agyToolName(info), args: info?.name === 'call_mcp_tool' ? info.parameters?.Arguments : info?.parameters })
         else {
           state.toolsFinished++
           const failed = step.state === 'ERROR' || !!info?.error
           if (failed) state.lastToolError = String(info?.error?.message ?? '').slice(0, 600)
-          emit({ type: 'tool-result', name: agyToolName(info), isError: failed, text: summarize(String(failed ? info?.error?.message ?? 'The tool failed.' : info?.output ?? 'done')), images: 0 })
+          emit({ type: 'tool-result', callId: `agy-${step.step_index}`, name: agyToolName(info), isError: failed, text: summarize(String(failed ? info?.error?.message ?? 'The tool failed.' : info?.output ?? 'done')), images: 0 })
         }
       }
     } else if (event.event === 'result') {

@@ -13,6 +13,7 @@ export const RUN_ID_PATTERN = /^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,40}-[0-9a-f]{4}$/
 const DAY = 24 * 60 * 60 * 1000
 
 export interface RunMeta {
+  ownerKey?: string
   id: string
   projectKey: string
   projectName: string
@@ -66,11 +67,11 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
   }
 
   return {
-    create(input: { projectKey: string; projectName: string; pageUrl: string }): RunMeta {
+    create(input: { projectKey: string; projectName: string; pageUrl: string; ownerKey?: string }): RunMeta {
       const stamp = new Date(now()).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
       const slug = (input.projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24).replace(/-$/, '')) || 'run'
       const id = `${stamp}-${slug}-${randomBytes(2).toString('hex')}`
-      const meta: RunMeta = { id, projectKey: input.projectKey, projectName: input.projectName.slice(0, 120), pageUrl: input.pageUrl, createdAt: now(), touchedAt: now() }
+      const meta: RunMeta = { id, projectKey: input.projectKey, projectName: input.projectName.slice(0, 120), pageUrl: input.pageUrl, ownerKey: input.ownerKey, createdAt: now(), touchedAt: now() }
       mkdirSync(dir(id), { recursive: true })
       atomicWrite(join(dir(id), 'run.json'), JSON.stringify(meta, null, 2))
       return meta

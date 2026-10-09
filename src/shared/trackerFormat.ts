@@ -1,5 +1,6 @@
 // The master tracker's layout, and turning drafted issues into rows ready to paste into it.
 // Everything here is pure so it can be tested without Electron.
+import { remarkGuide, remarkLimit, type RemarkStyle } from './remarkStyle'
 
 export interface TrackerFormat {
   version: 1
@@ -128,7 +129,7 @@ export function matchChoice(options: string[], value: string): string | null {
 }
 
 /** What to write in each column, guessed from its header, so the agent fills only QA's columns. */
-export function trackerColumnGuide(format: TrackerFormat): Record<string, string> {
+export function trackerColumnGuide(format: TrackerFormat, style?: RemarkStyle): Record<string, string> {
   const shot = screenshotColumn(format)
   const guide: Record<string, string> = {}
   format.columns.forEach((name, index) => {
@@ -141,7 +142,7 @@ export function trackerColumnGuide(format: TrackerFormat): Record<string, string
     else if (/^page\b.*(link|url)|^url$|^link$/i.test(name)) guide[name] = 'The URL of the page that was checked (openPage.url from get_context).'
     else if (/^section$/i.test(name)) guide[name] = 'The section as a person would name it, one to three words: Header, Navbar, Hero, Footer, or the section\'s own heading (for example "Treatment options"). Never an element selector, and not the breakpoint.'
     else if (PRIORITY_HEADER.test(name)) guide[name] = 'Leave empty. Parity does not set a priority; the team does.'
-    else if (/^(remarks|issue|description|finding|comment)s?$/i.test(name)) guide[name] = 'One short line telling the developer what to change, like "font size should be 16px", "wrong image" or "remove this duplicated section". About 15 words at most. No breakpoint (Display has it), no design-versus-live narration, no "≈". One issue per row. Give a number only when the design clearly shows it; otherwise say it plainly ("reduce section size", "follow figma").'
+    else if (/^(remarks|issue|description|finding|comment)s?$/i.test(name)) guide[name] = remarkGuide(style)
     else if (/^(display|status)$/i.test(name)) guide[name] = shared.size === 1 ? `Use "${[...shared][0]}", as in the example rows.` : 'Leave empty unless the example rows show a value to use.'
   })
   return guide
@@ -212,7 +213,7 @@ const CELL_LIMITS = [
 export type RowsResult = { ok: true; rows: string[][]; warnings: string[] } | { ok: false; error: string }
 
 /** Maps issue objects (keyed by column name) to cell arrays in column order. */
-export function buildRows(format: TrackerFormat, issues: IssueRow[], options: { maxRows?: number } = {}): RowsResult {
+export function buildRows(format: TrackerFormat, issues: IssueRow[], options: { maxRows?: number; remarkStyle?: RemarkStyle; manual?:boolean } = {}): RowsResult {
   const maxRows = options.maxRows ?? MAX_ROWS
   if (!Array.isArray(issues) || !issues.length) return { ok: false, error: 'There are no rows to copy.' }
   if (issues.length > maxRows) return { ok: false, error: `At most ${maxRows} rows can be copied at once.` }
@@ -225,14 +226,15 @@ export function buildRows(format: TrackerFormat, issues: IssueRow[], options: { 
       const column = byLowerName.get(key.trim().toLowerCase())
       if (!column) return { ok: false, error: `Row ${index + 1} uses a column that is not in the tracker: "${key}". The columns are: ${format.columns.join(', ')}.` }
       // Priority is the team's call: whatever the agent wrote there is dropped.
-      if (PRIORITY_HEADER.test(column)) { cells[column] = ''; continue }
+      if (PRIORITY_HEADER.test(column) && !options.manual) { cells[column] = ''; continue }
       const text = cleanCell(value)
-      const limit = CELL_LIMITS.find((rule) => rule.column.test(column))
+      const rule = CELL_LIMITS.find((rule) => rule.column.test(column))
+      const limit = rule && options.manual ? {...rule,max:MAX_CELL_LENGTH,advice:'Keep this text within the supported cell size.'} : rule && /^remarks$/i.test(column) ? { ...rule, max: remarkLimit(options.remarkStyle), advice: remarkGuide(options.remarkStyle) } : rule
       if (limit && text.length > limit.max) return { ok: false, error: `Row ${index + 1}: ${column} is ${text.length} characters. ${limit.advice} Shorten it to ${limit.max} characters or fewer and call the tool again.` }
-      const options = format.choices?.[column]
-      if (options && text.trim()) {
-        const choice = matchChoice(options, text)
-        if (!choice) return { ok: false, error: `Row ${index + 1}: "${text}" is not an option for ${column}. Use exactly one of: ${options.join(' | ')}.` }
+      const choices = format.choices?.[column]
+      if (choices && text.trim()) {
+        const choice = matchChoice(choices, text)
+        if (!choice) return { ok: false, error: `Row ${index + 1}: "${text}" is not an option for ${column}. Use exactly one of: ${choices.join(' | ')}.` }
         cells[column] = choice
       } else cells[column] = text
     }

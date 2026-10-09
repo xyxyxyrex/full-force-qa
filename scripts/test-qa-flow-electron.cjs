@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('qaTest', {
   send: (channel, ...args) => ipcRenderer.send(channel, ...args),
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   onApproval: (callback) => { ipcRenderer.on('qa:approval-request', (_event, request) => callback(request)) },
+  onRun: (callback) => { ipcRenderer.on('qa:run:event', (_event, event) => callback(event)) },
 })`)
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
   const child = spawn(require('electron'), [__filename, '--smoke', dir], { env, windowsHide: true, stdio: 'inherit' })
@@ -31,11 +32,34 @@ async function smoke() {
   const dir = process.argv[process.argv.indexOf('--smoke') + 1]
   app.on('window-all-closed', () => {})
   app.setPath('userData', path.join(dir, 'profile')); await app.whenReady()
+  const portProbe = http.createServer()
+  await new Promise(resolve => portProbe.listen(0, '127.0.0.1', resolve))
+  const bridgePort = portProbe.address().port
+  await new Promise(resolve => portProbe.close(resolve))
+  const qaConfigFolder = path.join(app.getPath('userData'), 'qa-agent')
+  fs.mkdirSync(qaConfigFolder, {recursive:true})
+  fs.writeFileSync(path.join(qaConfigFolder, 'config.json'), JSON.stringify({enabled:false,port:bridgePort}))
   const { registerQaAgent } = require(path.join(dir, 'qa.cjs')), { createDesignStore } = require(path.join(dir, 'designs.cjs')), { callTool } = require(path.join(dir, 'tools.cjs'))
 
   const lazy = await sharp({ create: { width: 400, height: 200, channels: 3, background: '#990099' } }).png().toBuffer()
+  let modelRequests = 0
+  let modelFailure = true
+  const modelBodies = []
   const html = fs.readFileSync(path.join(__dirname, 'fixtures/qa-capture/index.html'))
   const server = http.createServer((req, res) => {
+    if (req.url === '/v1/chat/completions') {
+      modelRequests++
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', () => {
+        const parsed = JSON.parse(body); modelBodies.push(parsed)
+        if (parsed.model.startsWith('fixture-hold')) return // Abort must close the old request.
+        const busy = parsed.model === 'fixture-busy'
+        res.writeHead(busy ? 429 : modelFailure ? 401 : 200, {'Content-Type':'application/json', ...(busy ? {'Retry-After':'10'} : {})})
+        res.end(JSON.stringify(busy ? {error:{message:'temporarily busy'}} : modelFailure ? {error:{message:'fixture key rejected'}} : {choices:[{message:{role:'assistant',content:'Fixture answer'},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:3}}))
+      })
+      return
+    }
     if (req.url === '/lazy.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(lazy) }
     if (req.url === '/missing.png') { res.writeHead(404); return res.end() }
     res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(html)
@@ -110,28 +134,42 @@ async function smoke() {
   ]
 
   console.log('  step 5');
-  // 5. Approval: rejecting copies nothing and returns the note; approving copies the rows.
+  // 5. Findings save automatically; finalization never touches the clipboard or waits for approval.
   clipboard.writeText('untouched')
-  await run(main, `window.__decision = { approved: false, note: 'Heading size matches the design' }`)
-  const rejected = await call(main, 'finalize_rows', { runId, rows })
-  assert.match(rejected.text, /did not approve/); assert.match(rejected.text, /Heading size matches the design/)
-  assert.equal(clipboard.readText(), 'untouched', 'rejected rows are not copied')
-  const request = (await run(main, 'window.__approvals'))[0]
-  assert.equal(request.rows.length, 2); assert.equal(request.evidence.length, 1); assert.deepEqual(request.severityCounts, {}, 'priority is never filled, so there are no counts')
-
+  const savedFindings = await call(main,'save_draft',{runId,breakpoint:'desktop',rows})
+  assert.equal(savedFindings.isError,false,savedFindings.text);assert.match(savedFindings.text,/Finding IDs/)
+  let organized = await run(main, `qaTest.invoke('qa:findings:list')`)
+  assert.equal(organized.findings.filter(f=>!f.mergedInto).length,2)
+  assert.ok(organized.findings[0].evidence,'annotated evidence is retained locally')
+  const finalized = await call(main,'finalize_rows',{runId,rows})
+  assert.match(finalized.text,/Saved 2 finding/);assert.equal(clipboard.readText(),'untouched')
+  assert.equal((await run(main,'window.__approvals')).length,0,'saving local findings does not show approval')
+  await call(main,'finalize_rows',{runId,rows})
+  organized = await run(main, `qaTest.invoke('qa:findings:list')`)
+  assert.equal(organized.findings.filter(f=>!f.mergedInto).length,2,'finalization is idempotent')
+  assert.equal(await run(other, `qaTest.invoke('qa:findings:list')`),null)
+  const itemId=organized.findings[0].id
+  const changed=await run(main, `qaTest.invoke('qa:findings:update','proj-1',${organized.revision},[{id:${JSON.stringify(itemId)},cells:{Issue:'Human remark, with punctuation',Severity:'High'},review:'accepted'}])`)
+  assert.equal(changed.success,true)
+  const stale=await run(main, `qaTest.invoke('qa:findings:update','proj-1',${organized.revision},[{id:${JSON.stringify(itemId)},review:'dismissed'}])`)
+  assert.equal(stale.success,false);assert.match(stale.error,/changed/)
+  await call(main,'save_draft',{runId,breakpoint:'desktop',rows})
+  organized=await run(main, `qaTest.invoke('qa:findings:list')`)
+  assert.equal(organized.findings.find(f=>f.id===itemId).cells.Issue,'Human remark, with punctuation')
+  assert.equal((await run(main,`qaTest.invoke('qa:findings:picture','proj-1',${JSON.stringify(itemId)})`)).src.startsWith('data:image/webp;base64,'),true)
+  const selectedIds=organized.findings.filter(f=>!f.mergedInto).map(f=>f.id)
+  await run(main, `qaTest.invoke('qa:findings:copy','proj-1',${JSON.stringify(selectedIds)})`)
+  assert.match(clipboard.readText(),/Human remark, with punctuation/);assert.match(clipboard.readText(),/High/,'human priority is preserved when copying')
+  clipboard.writeText('untouched-share')
+  await run(main, `window.__decision = { approved: false, note: 'Not ready to share' }`)
+  const rejected=await run(main,`qaTest.invoke('qa:findings:share','proj-1',${JSON.stringify(selectedIds)})`)
+  assert.equal(rejected.success,false);assert.match(rejected.error,/Not ready to share/)
   await run(main, `window.__decision = { approved: true }`)
-  const approved = await call(main, 'finalize_rows', { runId, rows })
-  assert.equal(approved.isError, false, approved.text); assert.match(approved.text, /Copied 2 row\(s\)/)
-  const copied = clipboard.readText()
-  assert.equal(copied.split('\n')[0], 'Alopecia\tHeading is smaller than the design\t32px\t\t', 'rows are copied in tracker column order, without the agent\'s priority')
-  assert.equal(copied.split('\n')[1], "Alopecia\t'- Button label differs\t\t\t", 'formula-looking cells are neutralised')
-  assert.match(clipboard.readHTML(), /<table>/)
-  // Leaving a row out, through the real decision channel; indexes that do not exist are ignored.
-  await run(main, `window.__decision = { approved: true, excludedRows: [0, 99, -1, 'x'] }`)
-  const leftOut = await call(main, 'finalize_rows', { runId, rows })
-  assert.match(leftOut.text, /Copied 1 row\(s\)/); assert.match(leftOut.text, /left out 1 row\(s\): 1\./)
-  assert.equal(clipboard.readText(), "Alopecia\t'- Button label differs\t\t\t", 'only the kept row is copied')
-  await run(main, `window.__decision = { approved: true }`)
+  const shared=await run(main,`qaTest.invoke('qa:findings:share','proj-1',${JSON.stringify(selectedIds)})`)
+  assert.equal(shared.success,true,shared.error);assert.equal(clipboard.readText(),'untouched-share','sharing does not automatically copy')
+  const imported=await run(main,`qaTest.invoke('qa:findings:import','proj-1')`)
+  assert.equal(imported.success,true,imported.error)
+  assert.equal(imported.snapshot.findings.filter(f=>!f.mergedInto).length,2,'importing past drafts and shared handovers does not duplicate existing findings')
 
   console.log('  step 6');
   console.log('  step bridge');
@@ -139,7 +177,7 @@ async function smoke() {
   assert.equal((await run(main, `qaTest.invoke('qa:bridge:status')`)).running, false, 'the bridge is off by default')
   assert.equal(await run(other, `qaTest.invoke('qa:bridge:set-enabled', true)`), null, 'another window cannot turn the bridge on')
   const on = await run(main, `qaTest.invoke('qa:bridge:set-enabled', true)`)
-  assert.equal(on.running, true, on.error); assert.match(on.keyHint, /^••••.{4}$/); assert.equal(on.port, 29849)
+  assert.equal(on.running, true, on.error); assert.match(on.keyHint, /^••••.{4}$/); assert.equal(on.port, bridgePort)
   const key = fs.readFileSync(on.keyFile, 'utf8').trim()
   assert.equal(key.length, 43, 'the key is stored in its file')
   assert.equal(JSON.parse(fs.readFileSync(path.join(path.dirname(on.keyFile), 'bridge.json'), 'utf8')).port, on.port, 'the port is published for the parity command')
@@ -158,15 +196,74 @@ async function smoke() {
   await assert.rejects(api('/api/status'), undefined, 'nothing listens once the bridge is off')
   assert.equal(fs.existsSync(path.join(path.dirname(on.keyFile), 'bridge.json')), false, 'the port file is removed')
 
+  // Main owns retry descriptors: setup failure can recover, attempts retain identity and usage.
+  await run(main, `qaTest.invoke('qa:agents:save-settings', {localBaseUrl:${JSON.stringify(base+'/v1')},models:{local:''}})`)
+  const setupFailed = await run(main, `qaTest.invoke('qa:chat:send','Check the fixture',{agent:'local',chatId:'chat-retry-fixture'})`)
+  assert.equal(setupFailed.started,false);assert.ok(setupFailed.retryId)
+  assert.equal((await run(other, `qaTest.invoke('qa:execution:retry',${JSON.stringify(setupFailed.retryId)})`)).started,false, 'another window cannot retry')
+  await run(main, `qaTest.invoke('qa:agents:save-settings', {models:{local:'fixture-model'}})`)
+  assert.equal((await run(main, `qaTest.invoke('qa:execution:retry',${JSON.stringify(setupFailed.retryId)})`)).started,true)
+  await until(async()=>!(await run(main, `qaTest.invoke('qa:run:active')`)), 'the failed API request')
+  assert.equal(modelRequests,1)
+  modelFailure=false
+  assert.equal((await run(main, `qaTest.invoke('qa:execution:retry',${JSON.stringify(setupFailed.retryId)})`)).started,true)
+  await until(async()=>!(await run(main, `qaTest.invoke('qa:run:active')`)), 'the successful retry')
+  const snapshot = await run(main, `qaTest.invoke('qa:execution:status')`)
+  assert.equal(snapshot.executionId,setupFailed.retryId);assert.equal(snapshot.attempt,3);assert.equal(snapshot.tokens,23)
+  assert.equal(modelRequests,2)
+  assert.equal(await run(other, `qaTest.invoke('qa:execution:status')`),null)
+  assert.equal(await run(other, `qaTest.invoke('qa:execution:result','forbidden',0)`),null)
+  await run(main, `qaTest.send('qa:report-context',${JSON.stringify({...context,pageUrl:base+'/changed/'})})`)
+  await sleep(100)
+  assert.equal((await run(main, `qaTest.invoke('qa:execution:retry',${JSON.stringify(setupFailed.retryId)})`)).started,false, 'a changed page invalidates retry')
+  await run(main, `qaTest.send('qa:report-context',${JSON.stringify(context)})`);await sleep(100)
+
+  // Settings changes hot-swap unfinished work in the same chat, including a retry countdown.
+  await run(main, `window.__runEvents=[]; qaTest.onRun(e=>window.__runEvents.push(e))`)
+  await run(main, `qaTest.invoke('qa:agents:save-settings', {defaultAgent:'local',models:{local:'fixture-busy'}})`)
+  await run(main, `qaTest.invoke('qa:chat:send','Continue the same conversation',{chatId:'chat-retry-fixture'})`)
+  await until(async()=>(await run(main, `qaTest.invoke('qa:execution:status')`)).phase==='retrying', 'a provider retry countdown')
+  const swapping = await run(main, `qaTest.invoke('qa:execution:status')`)
+  await run(main, `qaTest.invoke('qa:agents:save-settings', {models:{local:'fixture-replacement'}})`)
+  await until(async()=>!(await run(main, `qaTest.invoke('qa:run:active')`)), 'the replacement model to finish')
+  const replaced = await run(main, `qaTest.invoke('qa:execution:status')`)
+  assert.equal(replaced.executionId, swapping.executionId, 'the request keeps its identity')
+  assert.equal(replaced.attempt,2, 'a model change starts a new attempt')
+  assert.deepEqual(modelBodies.slice(-2).map(body=>body.model), ['fixture-busy','fixture-replacement'], 'the old retry is cancelled')
+  assert.match(JSON.stringify(modelBodies.at(-1).messages), /Check the fixture/, 'the replacement retains earlier conversation')
+  assert.equal(modelBodies.at(-1).messages.filter(message=>message.role==='user' && message.content==='Continue the same conversation').length,1)
+  assert.ok((await run(main, 'window.__runEvents')).some(e=>e.type==='started' && /fixture-replacement/.test(e.label)), 'the header identifies the actual model')
+
+  // Changing providers after failure must use the new default on Retry, without reopening.
+  modelFailure=true
+  await run(main, `qaTest.invoke('qa:chat:send','A recoverable failure',{chatId:'chat-retry-fixture'})`)
+  await until(async()=>!(await run(main, `qaTest.invoke('qa:run:active')`)), 'another failed request')
+  const failed = await run(main, `qaTest.invoke('qa:execution:status')`)
+  await run(main, `qaTest.invoke('qa:agents:save-settings', {defaultAgent:'openai-api',models:{'openai-api':'fixture-openai'}})`)
+  const switchedFailure = await run(main, `qaTest.invoke('qa:execution:retry',${JSON.stringify(failed.executionId)})`)
+  assert.equal(switchedFailure.started,false)
+  assert.match(switchedFailure.error,/OpenAI API key/, 'Retry selects the new provider, rather than the failed provider')
+  modelFailure=false
+
+  // Stop wins over any queued switch and does not restart the held provider.
+  await run(main, `qaTest.invoke('qa:agents:save-settings', {defaultAgent:'local',models:{local:'fixture-hold'}})`)
+  await run(main, `qaTest.invoke('qa:chat:send','Stop this held request',{chatId:'chat-retry-fixture'})`)
+  await until(async()=>modelBodies.at(-1)?.model==='fixture-hold', 'the held request')
+  await run(main, `Promise.all([qaTest.invoke('qa:agents:save-settings',{models:{local:'fixture-hold-next'}}),qaTest.invoke('qa:run:stop')])`)
+  await until(async()=>!(await run(main, `qaTest.invoke('qa:run:active')`)), 'Stop to cancel the request')
+  const stoppedAt = modelRequests
+  await sleep(150)
+  assert.equal(modelRequests,stoppedAt, 'Stop does not leave another attempt queued')
+
   // 6. Decisions only count from the app window and only for the pending request; one request at a time.
   await run(main, `window.__hold = true; window.__approvals.length = 0`)
   // Called in-process: the window that would carry an IPC reply is about to be closed.
-  const pending = callTool('finalize_rows', { runId, rows }, qa.context())
+  const pending = callTool('finalize_rows', { runId, rows }, { ...qa.context(), organizer: undefined })
   await until(async () => (await run(main, 'window.__approvals.length')) === 1, 'the approval request to arrive')
   const pendingId = (await run(main, 'window.__approvals[0].id'))
   assert.equal(await run(other, `qaTest.invoke('qa:approval-decision', ${JSON.stringify(pendingId)}, { approved: true })`), false, 'another window cannot approve')
   assert.equal(await run(main, `qaTest.invoke('qa:approval-decision', 'wrong-id', { approved: true })`), false, 'a wrong id is ignored')
-  const second = await callTool('finalize_rows', { runId, rows }, qa.context())
+  const second = await callTool('finalize_rows', { runId, rows }, { ...qa.context(), organizer: undefined })
   assert.match(second.text, /already waiting for approval/)
   clipboard.writeText('before-close')
   console.log('  step 7');

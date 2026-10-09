@@ -9,7 +9,7 @@ import { callTool, type QaContext } from './tools'
 
 // Every tool except the one that changes which designs are stored: looking, testing in the agent's
 // own browser, and writing rows.
-export const CHAT_TOOLS = ['get_context', 'capture_live', 'get_overview', 'get_section', ...BROWSER_TOOL_NAMES, 'save_draft', 'finalize_rows']
+export const CHAT_TOOLS = ['read_result', 'get_context', 'capture_live', 'get_overview', 'get_section', ...BROWSER_TOOL_NAMES, 'save_draft', 'finalize_rows']
 export const MAX_CHAT_TURNS = 60
 export const MAX_CHAT_HISTORY = 40
 

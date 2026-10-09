@@ -9,6 +9,15 @@
 .qa-chat-actions button{min-width:24px;padding:3px 9px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-elevated);color:var(--text-primary);font:inherit;font-size:12px;cursor:pointer}
 .qa-chat-actions button:hover:not(:disabled){border-color:var(--accent-color)}
 .qa-chat-actions button:disabled{opacity:.5;cursor:default}
+.qa-chat-window-toggle{display:grid;place-items:center;padding:4px 6px!important}
+.qa-chat-window-error{padding:8px 12px;color:var(--text-primary);background:var(--bg-elevated);font-size:12px}
+.qa-chat-window-error button,.qa-window-loading button{margin-left:8px;border:1px solid var(--border-color);background:var(--bg-elevated);color:var(--text-primary);border-radius:5px;padding:3px 8px;cursor:pointer}
+.qa-detached-window{height:100vh;display:flex;flex-direction:column;background:var(--bg-app);color:var(--text-primary);overflow:hidden}
+.qa-detached-window>.qa-chat{flex:1;height:auto;min-height:0}
+.qa-window-titlebar{height:38px;flex:none;display:flex;align-items:center;gap:8px;padding:0 145px 0 14px;background:var(--header-bg);border-bottom:1px solid var(--border-color);font-size:12px;font-weight:600;-webkit-app-region:drag;user-select:none}
+.qa-window-titlebar span{font-weight:400;color:var(--text-muted)}
+.qa-window-loading{padding:20px;font-size:13px}
+.qa-chat-actions button:focus-visible,.qa-window-loading button:focus-visible{outline:2px solid var(--accent-color);outline-offset:2px}
 .qa-chat-metabar{padding:5px 12px;border-bottom:1px solid var(--border-color);font-size:11px;color:var(--text-secondary)}
 .qa-chat-meter{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:help}
 .qa-chat-meter b{color:var(--text-primary)}
@@ -18,7 +27,7 @@
 .qa-chat-body{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
 .qa-chat-msg{display:flex;flex-direction:column;min-width:0}
 .qa-chat-msg.user{align-items:flex-end}
-.qa-chat-bubble{max-width:88%;padding:7px 11px;border-radius:12px 12px 3px 12px;background:var(--accent-color);color:#fff;white-space:pre-wrap;overflow-wrap:anywhere}
+.qa-chat-bubble{max-width:88%;padding:7px 11px;border-radius:12px 12px 3px 12px;background:var(--accent-color);color:var(--button-text);white-space:pre-wrap;overflow-wrap:anywhere}
 .qa-chat-text{overflow-wrap:anywhere}
 .qa-chat-text p{margin:0 0 8px}
 .qa-chat-text ul,.qa-chat-text ol{margin:0 0 8px;padding-left:20px}
@@ -28,13 +37,13 @@
 .qa-chat-text > :last-child{margin-bottom:0}
 .qa-chat-note{padding:4px 0;color:var(--text-muted);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .qa-chat-note.usage{font-size:11px}
-.qa-chat-note.error{padding:7px 10px;border:1px solid #c0504d66;border-radius:6px;background:#c0504d1a;color:#f2a5a5}
+.qa-chat-note.error{padding:7px 10px;border:1px solid color-mix(in srgb,var(--brand-diff) 55%,var(--border-color));border-radius:6px;background:color-mix(in srgb,var(--brand-diff) 10%,var(--bg-card));color:var(--text-primary)}
 .qa-chat-tool{border:1px solid var(--border-color);border-radius:6px;background:var(--bg-elevated);font-size:12px}
 .qa-chat-tool summary{display:flex;align-items:center;gap:7px;padding:5px 9px;cursor:pointer;list-style:none;min-width:0}
 .qa-chat-tool summary::-webkit-details-marker{display:none}
 .qa-chat-tool-icon{width:12px;flex:none;text-align:center}
-.qa-chat-tool.ok .qa-chat-tool-icon{color:#7bc99a}
-.qa-chat-tool.bad .qa-chat-tool-icon{color:#f2a5a5}
+.qa-chat-tool.ok .qa-chat-tool-icon{color:var(--brand-match)}
+.qa-chat-tool.bad .qa-chat-tool-icon{color:var(--brand-diff)}
 .qa-chat-tool.pending .qa-chat-tool-icon{width:10px;height:10px;border:2px solid var(--text-muted);border-top-color:transparent;border-radius:50%;animation:qa-chat-spin .8s linear infinite}
 @keyframes qa-chat-spin{to{transform:rotate(360deg)}}
 .qa-chat-tool-name{font-weight:600;flex:none}
@@ -79,3 +88,49 @@
 .qa-target-warn{padding:6px 9px;border:1px solid #d9a13a88;border-radius:6px;background:#d9a13a17;color:#e8c27a}
 .qa-target-note{color:var(--text-muted)}
 .qa-target-none{margin:0;color:var(--text-muted)}
+
+.qa-chat-metabar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.qa-chat-activity{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.qa-activity-dot{width:5px;height:5px;border-radius:50%;background:var(--accent-color);animation:qa-chat-pulse 1.5s ease-in-out infinite}
+.qa-chat-text :is(h1,h2,h3,h4){font-size:14px;line-height:1.4;margin:14px 0 6px;color:var(--text-primary)}
+.qa-chat-text h1{font-size:17px}.qa-chat-text h2{font-size:15px}
+.qa-chat-text :is(p,ul,ol){margin:7px 0}.qa-chat-text li>p{margin:3px 0}
+.qa-chat-text a{color:var(--accent-color);text-decoration:underline;overflow-wrap:anywhere}
+.qa-chat-text blockquote{border-left:2px solid var(--accent-color);margin:10px 0;padding-left:12px;color:var(--text-secondary)}
+.qa-markdown-table{overflow:auto;max-width:100%;margin:10px 0}
+.qa-markdown-table table{border-collapse:collapse;font-size:12px;width:100%}
+.qa-markdown-table :is(th,td){padding:7px 9px;text-align:left;border:1px solid var(--border-color)}
+.qa-markdown-table th{background:var(--bg-elevated)}
+.qa-code-block{position:relative;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-input);margin:10px 0;overflow:hidden}
+.qa-code-block pre{overflow:auto;max-width:100%;padding:32px 10px 10px;margin:0}
+.qa-code-block>button{position:absolute;right:6px;top:4px;font-size:10px}
+.qa-chat :is(.qa-answer-copy,.qa-retry,.qa-tool-full-result,.qa-code-block>button,.qa-chat-findings button,.qa-jump-latest){border:1px solid var(--border-color);border-radius:5px;background:var(--bg-input);color:var(--text-secondary);padding:4px 8px;cursor:pointer;font:inherit;font-size:11px}
+.qa-answer-copy{margin-top:5px;opacity:.7}.qa-answer-copy:hover{opacity:1}
+.qa-tool-group{border:1px solid var(--border-color);border-radius:7px;margin:8px 0;background:var(--bg-card)}
+.qa-tool-group>summary{cursor:pointer;font-size:11px;color:var(--text-secondary);padding:8px 10px}
+.qa-tool-group .qa-chat-tool{margin:0;border-width:0 0 1px;border-radius:0;background:transparent}
+.qa-chat-tool.cancelled{color:var(--text-muted)}
+.qa-chat-tool-body>small{display:block;color:var(--text-muted);margin-bottom:8px}
+.qa-retry-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.qa-retry-actions button{display:inline-flex;align-items:center;gap:5px}
+.qa-retry svg{width:13px;height:13px;stroke-width:1.5}
+.qa-retry-actions small{font-size:11px;flex-basis:100%;color:var(--text-muted)}
+.qa-retry-actions button:disabled{cursor:default;opacity:.45}
+.qa-chat-findings{border:1px solid var(--border-color);border-radius:8px;padding:9px;margin:8px 0;background:var(--bg-card)}
+.qa-chat-findings summary{cursor:pointer;font-size:12px;font-weight:600}
+.qa-chat-findings summary small{display:block;font-weight:400;font-size:10px;color:var(--text-muted);overflow-wrap:anywhere}
+.qa-chat-findings .qa-finding{padding:10px}.qa-chat-findings .qa-finding-title{font-size:12px}
+.qa-chat-findings .qa-findings{padding:0;margin:10px 0;list-style:none}
+.qa-chat-findings .qa-lightbox{z-index:100100}
+.qa-chat-composer{position:relative;align-items:flex-end}
+.qa-command-toggle{border:1px solid var(--border-color);border-radius:6px;flex:none;width:28px;height:30px;background:var(--bg-input);color:var(--text-secondary);cursor:pointer;font-size:15px}
+.qa-command-menu{position:absolute;bottom:calc(100% + 4px);left:8px;right:8px;z-index:5;padding:5px;max-height:240px;overflow:auto;border:1px solid var(--border-hover);border-radius:8px;background:var(--modal-bg);box-shadow:0 4px 18px color-mix(in srgb,var(--bg-app) 70%,transparent)}
+.qa-command-menu button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:8px;border:0;border-radius:5px;background:transparent;color:var(--text-primary);cursor:pointer;text-align:left;font:inherit;font-size:12px}
+.qa-command-menu button[aria-selected=true]{background:var(--accent-light)}
+.qa-command-menu small{font-size:10px;color:var(--text-muted)}
+.qa-chat :is(button,a,textarea):focus-visible{outline:2px solid var(--accent-color);outline-offset:2px}
+.qa-jump-latest{align-self:center;margin:4px 0;flex:none}
+@media(prefers-reduced-motion:reduce){.qa-activity-dot,.qa-chat-tool.pending .qa-chat-tool-icon{animation:none}}
+
+.qa-chat-title>strong{white-space:nowrap;flex:none}
+.qa-retry-actions>button{border:1px solid var(--border-color);border-radius:5px;background:var(--bg-input);color:var(--text-secondary);padding:4px 8px;cursor:pointer;font:inherit;font-size:11px}

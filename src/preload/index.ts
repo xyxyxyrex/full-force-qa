@@ -4,6 +4,27 @@ import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPubli
 import type { AuditCaptureContext, AuditExportProgress, AuditExportScanRequest, AuditMediaRequest } from '../shared/auditExport'
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  qaWindowDetach: () => ipcRenderer.invoke('qa:window:detach'),
+  qaWindowDock: () => ipcRenderer.invoke('qa:window:dock'),
+  qaWindowStatus: () => ipcRenderer.invoke('qa:window:status'),
+  qaWindowReady: () => ipcRenderer.invoke('qa:window:ready'),
+  qaWindowSync: (snapshot: import('../shared/qaChatWindow').QaChatWindowSnapshot) => ipcRenderer.send('qa:window:sync', snapshot),
+  qaWindowAction: (action: import('../shared/qaChatWindow').QaChatWindowAction) => ipcRenderer.send('qa:window:action', action),
+  onQaWindowChanged: (callback: (value: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: boolean) => callback(value)
+    ipcRenderer.on('qa:window:changed', handler)
+    return () => ipcRenderer.removeListener('qa:window:changed', handler)
+  },
+  onQaWindowSnapshot: (callback: (value: import('../shared/qaChatWindow').QaChatWindowSnapshot) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: import('../shared/qaChatWindow').QaChatWindowSnapshot) => callback(value)
+    ipcRenderer.on('qa:window:snapshot', handler)
+    return () => ipcRenderer.removeListener('qa:window:snapshot', handler)
+  },
+  onQaWindowAction: (callback: (value: import('../shared/qaChatWindow').QaChatWindowAction) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: import('../shared/qaChatWindow').QaChatWindowAction) => callback(value)
+    ipcRenderer.on('qa:window:action', handler)
+    return () => ipcRenderer.removeListener('qa:window:action', handler)
+  },
   siteAuthPending: () => ipcRenderer.invoke('site-auth:pending'),
   siteAuthRespond: (id: string, value: import('../shared/httpAuth').SiteCredentials | null) => ipcRenderer.invoke('site-auth:respond', id, value),
   onSiteAuthRequest: (callback: (request: import('../shared/httpAuth').SiteAuthRequest | null) => void) => {
@@ -138,11 +159,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener('qa:approval-request', handler) }
   },
   qaAgentsOverview: () => ipcRenderer.invoke('qa:agents:overview'),
+  qaFindingsList: (projectKey?: string) => ipcRenderer.invoke('qa:findings:list', projectKey),
+  qaFindingsUpdate: (projectKey: string, revision: number, changes: unknown) => ipcRenderer.invoke('qa:findings:update', projectKey, revision, changes),
+  qaFindingsPicture: (projectKey: string, id: string, index?:number) => ipcRenderer.invoke('qa:findings:picture', projectKey, id, index),
+  qaFindingsImport: (projectKey: string) => ipcRenderer.invoke('qa:findings:import', projectKey),
+  qaFindingsCopy: (projectKey: string, ids: string[]) => ipcRenderer.invoke('qa:findings:copy', projectKey, ids),
+  qaFindingsShare: (projectKey: string, ids: string[]) => ipcRenderer.invoke('qa:findings:share', projectKey, ids),
+  onQaFindingsChanged: (callback: (event: { projectKey: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { projectKey: string }) => callback(payload)
+    ipcRenderer.on('qa:findings:changed', handler)
+    return () => ipcRenderer.removeListener('qa:findings:changed', handler)
+  },
   qaAgentsSettings: () => ipcRenderer.invoke('qa:agents:settings'),
   qaAgentsSaveSettings: (patch: unknown) => ipcRenderer.invoke('qa:agents:save-settings', patch),
   qaAgentsSetKey: (id: string, key: string) => ipcRenderer.invoke('qa:agents:set-key', id, key),
   qaAgentsClearKey: (id: string) => ipcRenderer.invoke('qa:agents:clear-key', id),
   qaAgentsModels: (id: string) => ipcRenderer.invoke('qa:agents:models', id),
+  qaExecutionStatus: () => ipcRenderer.invoke('qa:execution:status'),
+  qaExecutionRetry: (id: string) => ipcRenderer.invoke('qa:execution:retry', id),
+  qaExecutionResult: (id: string, offset?: number) => ipcRenderer.invoke('qa:execution:result', id, offset),
   qaRunStart: (options?: unknown) => ipcRenderer.invoke('qa:run:start', options),
   qaRunStop: () => ipcRenderer.invoke('qa:run:stop'),
   qaBatchStart: (options: unknown) => ipcRenderer.invoke('qa:batch:start', options),

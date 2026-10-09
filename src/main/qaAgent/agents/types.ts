@@ -1,17 +1,10 @@
 import type { ToolResult } from '../tools'
+import type { QaRunEvent } from '../../../shared/qaAgent'
 
 // What an AI backend has to be able to do. Every backend (an API, an agent CLI such as
 // Codex or Claude Code, or a local model) is one adapter behind this interface.
 
-export type AgentEvent =
-  | { type: 'status'; message: string }
-  /** `delta` marks a small piece of a message that is still streaming, to be joined with the previous piece. */
-  | { type: 'text'; text: string; delta?: boolean }
-  | { type: 'tool'; name: string; args: unknown }
-  | { type: 'tool-result'; name: string; isError: boolean; text: string; images: number }
-  | { type: 'usage'; inputTokens: number; outputTokens: number }
-  | { type: 'error'; message: string }
-  | { type: 'done'; message: string }
+export type AgentEvent = Exclude<QaRunEvent, { type: 'started' | 'finished' }>
 
 /** One earlier message of a chat. Only text is kept: pictures are fetched again with the tools. */
 export interface ChatTurn {
@@ -29,8 +22,11 @@ export interface ProviderRun {
   maxTurns: number
   signal: AbortSignal
   /** Runs one of the allowed tools; used by API adapters (agent CLIs reach the tools over the bridge). */
-  call(name: string, args: unknown): Promise<ToolResult>
+  call(name: string, args: unknown, callId?: string): Promise<ToolResult>
   emit(event: AgentEvent): void
+  /** Complete provider requests only; partial streams never become a checkpoint. */
+  resume?: unknown
+  checkpoint?(state: unknown): void
 }
 
 export type StopReason = 'finished' | 'max-turns' | 'refused' | 'aborted' | 'failed'

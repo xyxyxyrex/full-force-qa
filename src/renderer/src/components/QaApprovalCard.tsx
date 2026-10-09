@@ -94,8 +94,8 @@ export default function QaApprovalCard({ request, onDecide }: Props) {
 
         <p className="qa-approval-effect">
           {keptCount === 0
-            ? 'Every finding is left out, so there is nothing to copy. Put one back, or reject.'
-            : request.uploadsEvidence
+            ? 'Every finding is left out. Put one back, or reject.'
+            : request.action==='share' ? request.uploadsEvidence ? 'Approving uploads the selected evidence and adds its links to your saved findings.' : 'Uploads are unavailable. The evidence stays saved locally.' : request.uploadsEvidence
               ? 'Approving uploads the pictures (their links go in the screenshot column) and copies the rows. Paste them into the sheet.'
               : 'Approving copies the rows to your clipboard. Paste them into the sheet.'}
         </p>
@@ -106,7 +106,7 @@ export default function QaApprovalCard({ request, onDecide }: Props) {
             <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={1} maxLength={500} aria-label="Note to the agent if you reject" placeholder="If you reject: tell the agent what to change (optional), e.g. Finding 3 is not a real issue" />
           </label>
           <button type="button" className="qa-approval-secondary" onClick={() => decide(false)} disabled={busy}>Reject</button>
-          <button type="button" className="qa-approval-primary" onClick={() => decide(true)} disabled={busy || keptCount === 0}>{excluded.size ? `Approve & copy ${keptCount}` : 'Approve & copy'}</button>
+          <button type="button" className="qa-approval-primary" onClick={() => decide(true)} disabled={busy || keptCount === 0}>{request.action==='share'?'Approve & share':excluded.size ? `Approve & copy ${keptCount}` : 'Approve & copy'}</button>
         </footer>
       </div>
 

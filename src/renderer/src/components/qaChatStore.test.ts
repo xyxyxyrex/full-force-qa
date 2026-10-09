@@ -7,6 +7,44 @@ const kinds = () => qaChat.getState().messages.map((m) => m.kind)
 beforeEach(() => qaChat.reset())
 
 describe('qaChatStore', () => {
+  it('keeps an unsent message and active view through streaming and model switches', () => {
+    qaChat.setDraft('Not sent yet', 'findings')
+    feed({ type: 'started', agent: 'gemini-api', label: 'Gemini' }, { type: 'text', text: 'Live reply', delta: true }, { type: 'agent-selected', agent: 'codex', label: 'Codex' }, { type: 'finished' })
+    expect(qaChat.getState().draft).toEqual({ input: 'Not sent yet', tab: 'findings' })
+    qaChat.clear()
+    expect(qaChat.getState().draft).toEqual({ input: '', tab: 'chat' })
+  })
+  it('updates the saved selection live while retaining the transcript and token counts', () => {
+    qaChat.addUserMessage('Keep this conversation')
+    feed({ type: 'started', agent: 'gemini-api', label: 'Gemini' }, { type: 'usage', inputTokens: 10, outputTokens: 2 },
+      { type: 'agent-selected', agent: 'codex', model: 'gpt-5.6-sol', label: 'Codex · gpt-5.6-sol' })
+    expect(qaChat.getState().agentLabel).toBe('Gemini') // The retiring attempt is still running.
+    feed({ type: 'finished' })
+    expect(qaChat.getState()).toMatchObject({ agentLabel: 'Codex · gpt-5.6-sol', session: { input: 10, output: 2 } })
+    expect(qaChat.getState().messages[0]).toMatchObject({ text: 'Keep this conversation' })
+    qaChat.restore({ version: 1, id: 'chat-old', title: 'Old chat', createdAt: 1, updatedAt: 1, messages: [], agentLabel: 'Old Gemini' })
+    expect(qaChat.getState().agentLabel).toBe('Codex · gpt-5.6-sol')
+    qaChat.clear()
+    expect(qaChat.getState().agentLabel).toBe('Codex · gpt-5.6-sol')
+  })
+  it('matches out-of-order results by call and attempt rather than tool name', () => {
+    feed({ type:'tool',name:'get_section',args:{section:'S1'},callId:'c1',attemptId:'a'}, { type:'tool',name:'get_section',args:{section:'S2'},callId:'c2',attemptId:'a'},
+      {type:'tool-result',name:'get_section',callId:'c2',attemptId:'a',text:'Second',images:0,isError:false})
+    expect(qaChat.getState().messages[0]).toMatchObject({pending:true})
+    expect(qaChat.getState().messages[1]).toMatchObject({pending:false,result:'Second'})
+    feed({type:'finished'})
+    expect(qaChat.getState().messages[0]).toMatchObject({cancelled:true})
+  })
+  it('does not duplicate a streamed reply when the final text repeats it', () => {
+    feed({type:'text',text:'Hello ',delta:true},{type:'text',text:'world',delta:true},{type:'text',text:'Hello world'})
+    expect(qaChat.getState().messages).toHaveLength(1)
+  })
+  it('updates a saved finding set so evidence cannot refer to an older draft', () => {
+    const event={type:'findings' as const,runId:'r',pageUrl:'https://example.test',breakpoint:'desktop',area:'visual'}
+    feed({...event,rows:[{cells:{Issue:'old'}}]},{...event,rows:[{cells:{Issue:'new'}}]})
+    expect(qaChat.getState().messages).toHaveLength(1)
+    expect(qaChat.getState().messages[0]).toMatchObject({rows:[{cells:{Issue:'new'}}]})
+  })
   it('joins streamed pieces into one assistant message, and starts a new one after a tool call', () => {
     feed(
       { type: 'started', agent: 'a', label: 'Agent' },

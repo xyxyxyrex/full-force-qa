@@ -1,3 +1,6 @@
+import type { AgentModelList } from '../../../shared/qaAgent'
+import { normalizeRemarkStyle } from '../../../shared/remarkStyle'
+import { discoverCliModels } from './modelDiscovery'
 import Anthropic from '@anthropic-ai/sdk'
 import { AGENT_IDS, isAgentId, type AgentEffort, type AgentId, type AgentInfo, type AgentSettings } from '../../../shared/qaAgent'
 import { ANTHROPIC_DEFAULT_MODEL, createAnthropicProvider } from './anthropic'
@@ -33,6 +36,7 @@ const OPENROUTER_DAILY_HINT = 'OpenRouter allows 50 free requests a day (1,000 a
 const GEMINI_DAILY_HINT = 'Gemini\'s free requests come back at midnight Pacific time. Until then, pick another model or agent in Settings → AI Agents, or turn on billing for the key\'s Google project.'
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  remarkStyle: normalizeRemarkStyle(null),
   defaultAgent: 'claude-code',
   models: { 'claude-code': '', codex: '', antigravity: '', 'anthropic-api': ANTHROPIC_DEFAULT_MODEL, 'openai-api': '', 'gemini-api': '', openrouter: '', local: '' },
   effort: 'medium',
@@ -77,6 +81,7 @@ export function normalizeSettings(raw: unknown): AgentSettings {
     } catch { /* keep the default */ }
   }
   return {
+    remarkStyle: normalizeRemarkStyle(source.remarkStyle),
     // Gemini CLI was replaced by Antigravity CLI; a saved choice of it moves over.
     defaultAgent: source.defaultAgent === 'gemini-cli' ? 'antigravity' : isAgentId(source.defaultAgent) ? source.defaultAgent : DEFAULT_AGENT_SETTINGS.defaultAgent,
     models,
@@ -197,14 +202,15 @@ export function recommendedModel(id: AgentId, models: string[]): string | undefi
 }
 
 /** The models an API or local server offers, for the picker. Never throws. */
-export async function listModels(id: AgentId, deps: Pick<RegistryDeps, 'settings' | 'getKey' | 'cliPath'>, overrides: { anthropicBaseURL?: string; openrouterBaseURL?: string } = {}): Promise<{ models: string[]; error?: string; recommended?: string }> {
+export async function listModels(id: AgentId, deps: Pick<RegistryDeps, 'settings' | 'getKey' | 'cliPath'>, overrides: { anthropicBaseURL?: string; openrouterBaseURL?: string } = {}): Promise<AgentModelList> {
   const listed = await readModels(id, deps, overrides)
   const recommended = listed.error ? undefined : recommendedModel(id, listed.models)
   return recommended ? { ...listed, recommended } : listed
 }
 
-async function readModels(id: AgentId, deps: Pick<RegistryDeps, 'settings' | 'getKey' | 'cliPath'>, overrides: { anthropicBaseURL?: string; openrouterBaseURL?: string }): Promise<{ models: string[]; error?: string }> {
+async function readModels(id: AgentId, deps: Pick<RegistryDeps, 'settings' | 'getKey' | 'cliPath'>, overrides: { anthropicBaseURL?: string; openrouterBaseURL?: string }): Promise<AgentModelList> {
   try {
+    if (id === 'codex' || id === 'claude-code') return await discoverCliModels(id, { binary: deps.cliPath?.(id) })
     if (id === 'antigravity') return await listAntigravityModels(deps.cliPath?.(id))
     if (id === 'anthropic-api') {
       const apiKey = deps.getKey(id)

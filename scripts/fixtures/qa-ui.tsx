@@ -6,6 +6,8 @@ import DesignSlots from '../../src/renderer/src/components/DesignSlots'
 import QaApprovalCard from '../../src/renderer/src/components/QaApprovalCard'
 import QaChat from '../../src/renderer/src/components/QaChat'
 import QaHistory from '../../src/renderer/src/components/QaHistory'
+import QaTrackerModal from '../../src/renderer/src/components/qaChat/QaTrackerModal'
+import { useEffect } from 'react'
 
 // Stand-in for the app's bridge to the main process, so the real components can be rendered and
 // driven without the rest of Parity.
@@ -20,7 +22,7 @@ const agents = [
   { id: 'openrouter', label: 'OpenRouter (free models)', kind: 'free', ready: false, detail: 'List the models and choose one.', model: '', needsKey: true, hasKey: true, lite: false, keyUrl: 'https://openrouter.ai/settings/keys' },
   { id: 'local', label: 'Local or custom server (Ollama, LM Studio, any OpenAI-compatible API)', kind: 'local', ready: false, detail: 'Choose a model that can read pictures and use tools.', model: '', needsKey: true, keyOptional: true, hasKey: false },
 ].map((agent) => ({ lite: false, ...agent }))
-const settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90, allowSend: false, functionalChecks: true, geminiBilling: false }
+let settings = { defaultAgent: 'claude-code', models: Object.fromEntries(agents.map((a) => [a.id, a.model])), effort: 'medium', localBaseUrl: 'http://localhost:11434/v1', budgetTokens: 0, evidenceUploads: true, evidenceDays: 90, allowSend: false, functionalChecks: true, geminiBilling: false }
 const bridge = { enabled: true, running: true, port: 29849, error: '', keyHint: '••••a1b2', mcpUrl: 'http://127.0.0.1:29849/mcp', keyFile: '/home/user/.config/Parity/qa-agent/token', lastRequestAt: 1, recent: [{ at: Date.now(), method: 'POST', path: '/mcp', status: 200, ms: 12, tool: 'capture_live' }, { at: Date.now() - 4000, method: 'GET', path: '/api/status', status: 401, ms: 1 }] }
 const slot = (breakpoint: string, fileName: string, frameWidth: number, scale: number) => ({ breakpoint, fileName, pixelWidth: frameWidth * scale, pixelHeight: 6000, scale, frameWidth, frameHeight: 3000, detection: 'dimensions', confidence: 'high', sha256: fileName, addedAt: 1 })
 const alopeciaTarget = {
@@ -30,19 +32,46 @@ const alopeciaTarget = {
 }
 ;(window as any).__target = alopeciaTarget
 ;(window as any).__targets = { alopecia: alopeciaTarget, contact: { projectName: '[Svenson] Alopecia', pageUrl: 'https://svenson.test/contact/', pageId: '/contact', slots: {}, thumbnails: {} } }
+let firstOverview = true
 const calls: string[] = []
 let runListener: ((event: unknown) => void) | null = null
+const findingListeners=new Set<(event:{projectKey:string})=>void>()
+let findingSnapshot:any={projectKey:'proj-1',projectName:'Fixture project',revision:1,columns:['Page Link','Section','Screenshot','Remarks','Priority (QA/PM)','Display','Status'],choices:{Status:['IN PROGRESS (DEV)','APPROVED (QA)','ENHANCEMENT (QA)']},findings:[
+  {id:'finding-a',projectKey:'proj-1',projectName:'Fixture project',pageUrl:'https://fixture.test/home/',cells:{Section:'Hero',Remarks:'Increase the heading to **32px**, matching the design.',Display:'Desktop'},sources:[{runId:'audit-one',breakpoint:'desktop',area:'visual'}],sourceKeys:[],review:'draft',edited:[],createdAt:1,updatedAt:1,evidence:{file:'fixture',caption:'Heading evidence'}},
+  {id:'finding-b',projectKey:'proj-1',projectName:'Fixture project',pageUrl:'https://fixture.test/home/',cells:{Section:'Contact',Remarks:'Add a success message after sending.',Status:'ENHANCEMENT (QA)',Display:'Mobile'},sources:[{runId:'audit-one',breakpoint:'mobile',area:'functional'}],sourceKeys:[],review:'draft',edited:[],createdAt:2,updatedAt:2},
+  {id:'finding-c',projectKey:'proj-1',projectName:'Fixture project',pageUrl:'https://fixture.test/about/',cells:{Section:'Footer',Remarks:'Fix the broken link.',Display:'Desktop'},sources:[{runId:'audit-two',breakpoint:'desktop',area:'functional'}],sourceKeys:[],review:'accepted',edited:[],createdAt:3,updatedAt:3},
+]}
+;(window as any).__addFinding=()=>{findingSnapshot.findings.push({...structuredClone(findingSnapshot.findings[0]),id:'finding-streamed',cells:{Section:'Navbar',Remarks:'Close the menu after navigation.'}});findingSnapshot.revision++;findingListeners.forEach(fn=>fn({projectKey:'proj-1'}))}
 ;(window as any).__calls = calls
 ;(window as any).__emit = (event: unknown) => runListener?.(event)
 ;(window as any).electronAPI = {
   accountStatus: async () => ({ signedIn: false, needsSetup: false }),
-  qaAgentsOverview: async () => ({ settings, agents, keyStorage: 'secure' }),
-  qaAgentsSaveSettings: async (patch: any) => { calls.push(`save ${JSON.stringify(patch)}`); return { settings, agents, keyStorage: 'secure' } },
-  qaAgentsSetKey: async () => ({ settings, agents, keyStorage: 'secure' }),
-  qaAgentsClearKey: async () => ({ settings, agents, keyStorage: 'secure' }),
-  qaAgentsModels: async (id: string) => (id === 'openrouter' ? { models: ['vendor/vision:free', 'older/vision:free'], recommended: 'vendor/vision:free' } : { models: ['gpt-test', 'gpt-test-mini'] }),
+  onAccountChanged: () => () => {},
+  getProjects: async () => [{id:'proj-1',googleSheetUrl:'https://docs.google.com/spreadsheets/d/test/edit'}],
+  qaFindingsList: async () => structuredClone(findingSnapshot),
+  onQaFindingsChanged: (fn:(event:{projectKey:string})=>void) => {findingListeners.add(fn);return()=>findingListeners.delete(fn)},
+  qaFindingsUpdate: async (_key:string,revision:number,changes:any[]) => {
+    calls.push(`findings-update ${JSON.stringify(changes)}`)
+    if((window as any).__findingSaveError||revision!==findingSnapshot.revision)return{success:false,error:'Findings changed while editing. Refresh and retry.'}
+    changes.forEach(change=>{const item=findingSnapshot.findings.find((f:any)=>f.id===change.id);if(change.review)item.review=change.review;Object.assign(item.cells,change.cells||{})});findingSnapshot.revision++;findingListeners.forEach(fn=>fn({projectKey:'proj-1'}));return{success:true,snapshot:structuredClone(findingSnapshot)}
+  },
+  qaFindingsPicture: async () => ({src:evidencePicture('Organizer'),caption:'Annotated heading'}),
+  qaFindingsImport: async () => {calls.push('findings-import');return{success:true,snapshot:structuredClone(findingSnapshot)}},
+  qaFindingsCopy: async (_key:string,ids:string[]) => {calls.push(`findings-copy ${ids.join(',')}`);return{success:true,count:ids.length}},
+  qaFindingsShare: async () => {calls.push('findings-share');return{success:true}},
+  qaAgentsSettings: async () => structuredClone(settings),
+  qaAgentsOverview: async () => { if (firstOverview && new URLSearchParams(location.search).get('view') === 'agents') { firstOverview = false; await new Promise(r => { (window as any).__releaseOverview = r }) } if ((window as any).__overviewError) throw new Error('Could not load agent settings.'); return structuredClone({ settings, agents, keyStorage: 'secure' }) },
+  qaAgentsSaveSettings: async (patch: any) => { calls.push(`save ${JSON.stringify(patch)}`); if ((window as any).__saveError) throw new Error('Could not save settings.'); settings = { ...settings, ...patch, models: { ...settings.models, ...patch.models } }; runListener?.({ type: 'agent-selected', agent: settings.defaultAgent, model: settings.models[settings.defaultAgent], label: `${settings.defaultAgent} · ${settings.models[settings.defaultAgent] || 'App default'}` }); return structuredClone({ settings, agents, keyStorage: 'secure' }) },
+  qaAgentsSetKey: async (id: string) => { const agent = agents.find(a => a.id === id); if (agent) agent.hasKey = true; return structuredClone({ settings, agents, keyStorage: 'secure' }) },
+  qaAgentsClearKey: async (id: string) => { const agent = agents.find(a => a.id === id); if (agent) agent.hasKey = false; return structuredClone({ settings, agents, keyStorage: 'secure' }) },
+  qaAgentsModels: async (id: string) => {
+    calls.push(`models ${id}`)
+    const result = (window as any).__modelResult || (id === 'openrouter' ? { models: ['vendor/vision:free', 'older/vision:free'], recommended: 'vendor/vision:free' } : { models: ['gpt-test', 'gpt-test-mini'], options: [{ id: 'gpt-test', label: 'Test model' }, { id: 'gpt-test-mini', label: 'Test mini' }] })
+    await new Promise(r => setTimeout(r, (window as any).__modelDelay || 200))
+    return result
+  },
   openExternal: async (url: string) => { calls.push(`external ${url}`) },
-  qaBridgeStatus: async () => bridge,
+  qaBridgeStatus: async () => { if (new URLSearchParams(location.search).has('failAux') && !(window as any).__auxRecovered) throw new Error('offline'); return bridge },
   qaBridgeSetEnabled: async () => bridge,
   qaBridgeResetKey: async () => bridge,
   onQaBridgeStatus: () => () => {},
@@ -56,6 +85,9 @@ let runListener: ((event: unknown) => void) | null = null
   onQaRunEvent: (callback: (event: unknown) => void) => { runListener = callback; return () => { runListener = null } },
   qaRunStart: async (options: unknown) => { calls.push(`run ${JSON.stringify(options)}`); return { started: true } },
   qaRunStop: async () => { calls.push('stop'); return true },
+  qaExecutionStatus: async () => null,
+  qaExecutionRetry: async (id: string) => { calls.push(`retry ${id}`); return { started: true } },
+  qaExecutionResult: async (_id: string, offset: number) => ({text:offset ? 'Remaining output' : 'Saved output',total:28,nextOffset:offset ? null : 16}),
   qaChatSend: async (text: string, options?: { chatId?: string }) => { calls.push(`chat ${text}`); (window as any).__lastChatId = options?.chatId; return { started: true } },
   qaChatsSave: async (chat: any) => { calls.push(`chats-save ${chat.id} ${chat.messages.length}`); return true },
   qaChatsList: async () => [{ id: 'chat-saved-0001', title: 'How big is the hero heading?', createdAt: 1791100000000, updatedAt: 1791100000000, messageCount: 4, tokens: 18250 }],
@@ -126,10 +158,13 @@ const historyDetail: any = {
 }
 
 function Fixture() {
+  const [tracker,setTracker]=useState(false)
+  useEffect(()=>{const open=()=>setTracker(true);window.addEventListener('parity:open-ai-tracker',open);return()=>window.removeEventListener('parity:open-ai-tracker',open)},[])
   const [view, setView] = useState(new URLSearchParams(location.search).get('view') || 'agents')
   ;(window as any).__setView = setView
   return (
     <main style={{ padding: 24, minHeight: '100vh', boxSizing: 'border-box' }}>
+      {tracker&&<QaTrackerModal projectKey="proj-1" onClose={()=>setTracker(false)}/>}
       {view === 'agents' && <div style={{ maxWidth: 720 }}><AgentsPanel /></div>}
       {view === 'slots' && <div style={{ maxWidth: 360, border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}><DesignSlots
         slots={{

@@ -59,6 +59,7 @@ import { deleteProject, deleteWorkspaceHtml, getProjectOwner, getProjects, loadW
 import { createSnapshot, getSnapshots, deleteSnapshot } from './snapshotManager.scroll-capture.v2'
 import { createDesignStore } from './designStore'
 import { registerQaAgent } from './qaAgent'
+import { registerQaChatWindow } from './qaChatWindow'
 import { isBreakpoint } from '../shared/designScale'
 import { measureResponseBody, resourceSizeFromHeaders } from './resourceFileSize'
 import type { DesignPutOptions, DesignUpdateOptions } from '../shared/qaAgent'
@@ -502,6 +503,7 @@ const MONDAY_REDIRECT_PORT = 51847 // arbitrary high port for localhost callback
 const MONDAY_REDIRECT_URI = `http://localhost:${MONDAY_REDIRECT_PORT}/oauth/callback`
 
 let mainWindow: BrowserWindow | null = null
+let qaChatWindow: ReturnType<typeof registerQaChatWindow> | null = null
 
 function createWindow(): void {
   // Completely remove default File, Edit, View, Window, Help application menu bar
@@ -560,6 +562,7 @@ function createWindow(): void {
   })
 
   qaAgent?.attachMainWindow(mainWindow)
+  qaChatWindow?.attachMainWindow(mainWindow)
   mainWindow.on('closed', clearSiteAuthentication)
 
   // The app window never navigates away from itself. Without this, an image dropped
@@ -938,10 +941,11 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('app:set-title-bar-overlay', async (_event, symbolColor: string): Promise<void> => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
+  ipcMain.handle('app:set-title-bar-overlay', async (event, symbolColor: string): Promise<void> => {
+    const window = [mainWindow, qaChatWindow?.getWindow()].find(window => window && !window.isDestroyed() && event.senderFrame === window.webContents.mainFrame)
+    if (!window) return
     try {
-      mainWindow.setTitleBarOverlay({
+      window.setTitleBarOverlay({
         color: '#00000000',
         symbolColor: typeof symbolColor === 'string' && symbolColor.trim() ? symbolColor : '#edefee',
         height: 38
@@ -1664,7 +1668,8 @@ app.whenReady().then(async () => {
   registerTicketHandlers()
   registerAuditExportHandlers()
   registerComparisonHandlers()
-  qaAgent = registerQaAgent({ getMainWindow: () => mainWindow, getDesignStore })
+  qaChatWindow = registerQaChatWindow({ getMainWindow: () => mainWindow, preload: join(__dirname, '../preload/index.js'), rendererFile: join(__dirname, '../renderer/index.html'), rendererUrl: process.env.ELECTRON_RENDERER_URL })
+  qaAgent = registerQaAgent({ getMainWindow: () => mainWindow, getChatWindow: () => qaChatWindow?.getWindow() || null, getDesignStore })
   createWindow()
   initializeAppUpdater(() => mainWindow)
 })

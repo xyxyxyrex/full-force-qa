@@ -1,6 +1,6 @@
 {
   "name": "parity",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
@@ -29,6 +29,7 @@
     "test:qa-capture:electron": "node scripts/test-qa-capture-electron.cjs",
     "test:qa-flow:electron": "node scripts/test-qa-flow-electron.cjs",
     "test:qa-ui:electron": "node scripts/test-qa-ui-electron.cjs",
+    "test:qa-window:electron": "node scripts/test-qa-window-electron.cjs",
     "test:viewer:electron": "node scripts/test-viewer-evidence-electron.cjs",
     "test:qa-browser:electron": "node scripts/test-qa-browser-electron.cjs",
     "test:page-checks:electron": "node scripts/test-page-checks-electron.cjs",
@@ -52,6 +53,8 @@
     "pngjs": "^7.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "sharp": "^0.35.3"
   },
   "devDependencies": {

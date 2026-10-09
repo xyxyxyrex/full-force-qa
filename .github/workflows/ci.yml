@@ -25,7 +25,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm test -- --maxWorkers=4
       - run: npm run build
       - run: npm run test:feedback:edge
       - run: npm run test:feedback:electron
@@ -36,6 +36,7 @@ jobs:
       - run: npm run test:qa-capture:electron
       - run: npm run test:qa-flow:electron
       - run: npm run test:qa-ui:electron
+      - run: npm run test:qa-window:electron
       - run: npm run test:qa-browser:electron
       - run: npm run test:page-checks:electron
       - run: npm run test:viewer:electron

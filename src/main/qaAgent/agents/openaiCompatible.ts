@@ -1,4 +1,5 @@
-import { imagePlaceholder, isAbortError, KEEP_IMAGE_TURNS, summarize, toolSchemas } from './common'
+import { readCompletionStream } from './stream'
+import { imagePlaceholder, executeToolCalls, isAbortError, KEEP_IMAGE_TURNS, summarize, toolSchemas } from './common'
 import { AgentError, QuotaError, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
 
 // Any server that speaks the Chat Completions API: OpenAI itself, Gemini, OpenRouter, and local
@@ -84,7 +85,7 @@ export function trimCarriedImages(messages: Message[], keepTurns = KEEP_IMAGE_TU
   let seen = 0
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
-    if (message.role !== 'user' || !message.carriesImages || !Array.isArray(message.content)) continue
+    if (message.role !== 'user' || !message.carriesImages || !Array.isArray(message.content) || !message.content.some(part => part.type === 'image_url')) continue
     seen++
     if (seen <= keepTurns) continue
     message.content = message.content.map((part) => (part.type === 'image_url' ? { type: 'text' as const, text: imagePlaceholder({ caption: 'earlier picture' }) } : part))
@@ -115,13 +116,15 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
     lite: !!config.lite,
     async run(run: ProviderRun): Promise<ProviderResult> {
       const tools = toolSchemas(run.tools).map((tool) => ({ type: 'function' as const, function: { name: tool.name, description: tool.description, parameters: tool.schema } }))
-      const messages: Message[] = [{ role: 'system', content: run.system }, ...(run.history ?? []).map((turn): Message => (turn.role === 'user' ? { role: 'user', content: turn.text } : { role: 'assistant', content: turn.text })), { role: 'user', content: run.task }]
-      let lastText = ''
+      const messages: Message[] = (run.resume as { messages?: Message[] } | undefined)?.messages || [{ role: 'system', content: run.system }, ...(run.history ?? []).map((turn): Message => (turn.role === 'user' ? { role: 'user', content: turn.text } : { role: 'assistant', content: turn.text })), { role: 'user', content: run.task }]
+      let lastText = (run.resume as { lastText?: string } | undefined)?.lastText || ''
+      let streaming = true
 
       /** One completion, waiting out rate limits. Null when the person stopped the run. */
       const complete = async (): Promise<any | null> => {
-        const payload = JSON.stringify({ model: config.model, messages: messages.map((message) => { const { carriesImages: _carries, ...wire } = message as Message & { carriesImages?: boolean }; return wire }), tools, tool_choice: 'auto' })
+        run.emit({ type: 'activity', phase: 'waiting', startedAt: Date.now() })
         for (let attempt = 0; ; attempt++) {
+        const payload = JSON.stringify({ model: config.model, messages: messages.map((message) => { const { carriesImages: _carries, ...wire } = message as Message & { carriesImages?: boolean }; return wire }), tools, tool_choice: 'auto', ...(streaming ? { stream: true, stream_options: { include_usage: true } } : {}) })
           let response: Response
           let text: string
           try {
@@ -131,9 +134,11 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
               body: payload,
               signal: AbortSignal.any([run.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
             })
+            if (response.ok && /text\/event-stream/i.test(response.headers.get('content-type') || '')) return await readCompletionStream(response, text => run.emit({ type: 'text', text, delta: true }))
             text = await response.text()
           } catch (error: any) {
             if (run.signal.aborted) return null
+            if (error?.status && error?.body) { if (error.status === 429 && isDailyLimit(error.body)) throw dailyLimitError(config); throw describeFailure(config, error.status, error.body) }
             if (isAbortError(error) || error?.name === 'TimeoutError') throw new AgentError(`${config.label} did not answer within 5 minutes.`)
             if (error?.cause?.code === 'ECONNREFUSED' || /fetch failed/i.test(error?.message || '')) throw new AgentError(`Could not reach ${config.label} at ${config.baseUrl}. Is it running?`)
             throw new AgentError(error?.message || `${config.label} did not return a usable answer.`)
@@ -146,6 +151,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
             if (!body) throw new AgentError(`${config.label} did not return a usable answer.`)
             return body
           }
+          if (streaming && [400, 422, 501].includes(status) && /stream/i.test(text) && /unsupported|not support|not allowed|unknown|unrecognized/i.test(text)) { streaming = false; attempt--; continue }
           if (status === 429 && isDailyLimit(text)) throw dailyLimitError(config)
           if (![429, 502, 503, 529].includes(status) || attempt >= MAX_RETRIES) throw describeFailure(config, status, text)
           const asked = retryDelayMs(response.headers, text)
@@ -153,7 +159,9 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
           if (asked !== null && asked > maxWait) throw status === 429 ? new AgentError(`${config.label} asks to wait about ${Math.ceil(asked / 60_000)} minute(s) before the next request${config.lite ? ' (free tier limit)' : ''}. Try again later, or pick another agent in Settings → AI Agents.`) : describeFailure(config, status, text)
           const wait = Math.min(asked ?? BACKOFF_MS[attempt], maxWait)
           run.emit({ type: 'status', message: `${config.label} is ${status === 429 ? `rate limiting${config.lite ? ' (free tier)' : ''}` : 'busy'}. Waiting ${Math.max(1, Math.round(wait / 1000))}s, then trying again (${attempt + 1} of ${MAX_RETRIES})…` })
+          run.emit({ type: 'activity', phase: 'retrying', startedAt: Date.now(), retryAt: Date.now() + wait })
           await pause(wait, run.signal)
+          run.emit({ type: 'activity', phase: 'waiting', startedAt: Date.now() })
           if (run.signal.aborted) return null
         }
       }
@@ -161,6 +169,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
       for (let turn = 0; turn < run.maxTurns; turn++) {
         if (run.signal.aborted) return { stopped: 'aborted', text: lastText }
         trimCarriedImages(messages, config.lite ? LITE_KEEP_IMAGE_TURNS : KEEP_IMAGE_TURNS)
+        run.checkpoint?.({ messages: structuredClone(messages), lastText, turn })
         const body = await complete()
         if (!body) return { stopped: 'aborted', text: lastText }
 
@@ -169,8 +178,9 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
         const message = choice?.message
         if (!message) throw new AgentError(`${config.label} returned no answer.`)
         const text = typeof message.content === 'string' ? message.content.trim() : ''
-        if (text) { lastText = text; run.emit({ type: 'text', text }) }
+        if (text) { lastText = text; if (!body.streamed) run.emit({ type: 'text', text }) }
         const calls: ToolCall[] = Array.isArray(message.tool_calls) ? message.tool_calls : []
+        if (calls.some(call => !call || typeof call.id !== 'string' || !call.id || typeof call.function?.name !== 'string' || !call.function.name)) throw new AgentError('The provider returned an incomplete tool call. Retry this message.')
 
         if (choice.finish_reason === 'content_filter') {
           run.emit({ type: 'error', message: `${config.label} declined this request. Try a different model in Settings → AI Agents.` })
@@ -186,19 +196,31 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
 
         messages.push({ role: 'assistant', content: message.content ?? null, tool_calls: calls })
         const carried: Part[] = []
-        for (const call of calls) {
+        const outputs = new Map<string, { text: string; images: Part[] }>()
+        const activeImages = new Set(messages.flatMap(m => m.role === 'user' && Array.isArray(m.content) ? m.content.flatMap(p => p.type === 'image_url' ? [p.image_url.url] : []) : []))
+        await executeToolCalls(calls, call => call.function?.name, async call => {
+          if (run.signal.aborted) return
           const name = call.function?.name
           let args: unknown
           let parseProblem = ''
-          try { args = typeof call.function.arguments === 'string' ? JSON.parse(call.function.arguments || '{}') : call.function.arguments ?? {} } catch { parseProblem = 'The arguments were not valid JSON. Send a JSON object that matches the tool\'s input schema.' }
-          run.emit({ type: 'tool', name, args })
-          const result = parseProblem ? { text: parseProblem, isError: true } : await run.call(name, args)
+          try { args = typeof call.function.arguments === 'string' ? JSON.parse(call.function.arguments || '{}') : call.function.arguments ?? {} } catch { parseProblem = "The arguments were not valid JSON. Send a JSON object matching the tool schema." }
+          run.emit({ type: 'tool', name, args, callId: call.id })
+          const result = parseProblem ? { text: parseProblem, isError: true } : await run.call(name, args, call.id)
           const images = 'images' in result && result.images ? result.images : []
-          run.emit({ type: 'tool-result', name, isError: !!result.isError, text: summarize(result.text), images: images.length })
-          messages.push({ role: 'tool', tool_call_id: call.id, content: images.length ? `${result.text}\n(${images.length} picture(s) follow in the next message.)` : result.text })
+          run.emit({ type: 'tool-result', name, callId: call.id, isError: !!result.isError, text: summarize(result.text), images: images.length })
+          const parts: Part[] = []
           for (const image of images) {
-            carried.push({ type: 'text', text: `${name}: ${image.caption}` }, { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` } })
+            const url = `data:${image.mimeType};base64,${image.data.toString('base64')}`
+            if (activeImages.has(url)) parts.push({ type: 'text', text: `${name}: ${image.caption} (identical image already attached above)` })
+            else { activeImages.add(url); parts.push({ type: 'text', text: `${name}: ${image.caption}` }, { type: 'image_url', image_url: { url } }) }
           }
+          outputs.set(call.id, { text: images.length ? `${result.text}\n(${images.length} picture(s) follow or are already attached above.)` : result.text, images: parts })
+        })
+        for (const call of calls) {
+          const output = outputs.get(call.id)
+          if (!output) return { stopped: 'aborted', text: lastText }
+          messages.push({ role: 'tool', tool_call_id: call.id, content: output.text })
+          carried.push(...output.images)
         }
         if (carried.length) messages.push({ role: 'user', content: carried, carriesImages: true })
       }

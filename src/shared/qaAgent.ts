@@ -1,4 +1,5 @@
 import type { Breakpoint, DesignScaleDetection } from './designScale'
+import type { RemarkStyle } from './remarkStyle'
 
 export type { Breakpoint } from './designScale'
 
@@ -67,6 +68,7 @@ export interface ApprovalEvidence {
 
 /** Rows an agent wants to hand over; the person sees them and approves or rejects. */
 export interface ApprovalRequest {
+  action?: 'share'
   id: string
   runId: string
   projectName: string
@@ -139,6 +141,7 @@ export interface QaStoredChat {
 
 /** One hand-over of rows for approval, kept in the run folder so it can be looked at again (Past reviews). */
 export interface QaHandOverRecord {
+  findingIds?: string[]
   version: 1
   stamp: string
   createdAt: number
@@ -195,11 +198,25 @@ export interface QaBridgeStatus {
 export const AGENT_IDS = ['claude-code', 'codex', 'antigravity', 'anthropic-api', 'openai-api', 'gemini-api', 'openrouter', 'local'] as const
 export type AgentId = (typeof AGENT_IDS)[number]
 
+export interface AgentModelOption {
+  id: string
+  label: string
+  description?: string
+}
+
+export interface AgentModelList {
+  models: string[]
+  options?: AgentModelOption[]
+  error?: string
+  recommended?: string
+}
+
 export const isAgentId = (value: unknown): value is AgentId => typeof value === 'string' && (AGENT_IDS as readonly string[]).includes(value)
 
 export type AgentEffort = 'low' | 'medium' | 'high'
 
 export interface AgentSettings {
+  remarkStyle?: RemarkStyle
   defaultAgent: AgentId
   /** Model per agent. Empty means the agent's own default (agent CLIs) or "choose one" (APIs). */
   models: Record<AgentId, string>
@@ -274,7 +291,7 @@ export interface QaBatchStartOptions {
   functional?: boolean
 }
 
-export type QaRunStartResult = { started: true } | { started: false; error: string }
+export type QaRunStartResult = { started: true } | { started: false; error: string; retryId?: string }
 
 /** What a review would use right now: the open page and the designs stored for that page. */
 export interface QaTarget {
@@ -292,13 +309,33 @@ export interface QaChatSendOptions {
   chatId?: string
 }
 
-export type QaRunEvent =
+export type QaActivityPhase = 'waiting' | 'tools' | 'retrying' | 'approval' | 'idle'
+export interface QaExecutionSnapshot {
+  executionId: string
+  attemptId: string
+  attempt: number
+  startedAt: number
+  phase: QaActivityPhase
+  phaseStartedAt: number
+  retryAt?: number
+  running: boolean
+  tokens: number
+  retryId?: string
+  retryBlocked?: string
+}
+export interface QaEventMeta { executionId?: string; attemptId?: string; timestamp?: number; messageId?: string }
+export type QaRunEvent = QaEventMeta & (
+  | { type: 'agent-selected'; agent: AgentId; label: string; model: string }
   | { type: 'status'; message: string }
   | { type: 'text'; text: string; delta?: boolean }
-  | { type: 'tool'; name: string; args: unknown }
-  | { type: 'tool-result'; name: string; isError: boolean; text: string; images: number }
+  | { type: 'tool'; name: string; args: unknown; callId?: string; title?: string }
+  | { type: 'tool-result'; name: string; isError: boolean; text: string; images: number; callId?: string; retryId?: string; resultId?: string; cancelled?: boolean }
   | { type: 'usage'; inputTokens: number; outputTokens: number }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; category?: string; retryId?: string; retryBlocked?: string; detail?: string }
   | { type: 'done'; message: string }
   | { type: 'started'; agent: string; label: string; budgetTokens?: number }
   | { type: 'finished' }
+  | { type: 'activity'; phase: QaActivityPhase; startedAt: number; retryAt?: number }
+  | { type: 'execution'; snapshot: QaExecutionSnapshot }
+  | { type: 'findings'; runId: string; pageUrl: string; breakpoint: string; area: string; rows: Array<{ cells: Record<string, string>; evidence?: unknown }> }
+)

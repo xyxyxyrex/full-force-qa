@@ -1,11 +1,23 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BREAKPOINTS, isBreakpoint, type Breakpoint } from '../../../shared/designScale'
-import { isAgentId, type AgentId, type QaTarget } from '../../../shared/qaAgent'
+import { type QaTarget } from '../../../shared/qaAgent'
 import { formatTokens, qaChat, tokenTotal, useQaChat, type ChatMessage } from './qaChatStore'
+import RichText from './qaChat/RichText'
+export { default as RichText } from './qaChat/RichText'
+import Activity from './qaChat/Activity'
+import RetryButton from './qaChat/RetryButton'
+import Findings from './qaChat/Findings'
+import AuditOrganizer from './qaChat/AuditOrganizer'
+import { useAuditFindings } from './qaChat/useAuditFindings'
+import { commandSuggestions, parseReviewArgs, parseQaCommand, qaCommandHelp } from '../../../shared/qaCommands'
 import './QaChat.css'
 
 const cleanError = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)).replace(/^Error invoking remote method '[^']+': Error:\s*/, '')
-const argsPreview = (value: unknown) => { const text = value === undefined ? '' : JSON.stringify(value) ?? ''; return text.length > 90 ? `${text.slice(0, 87)}…` : text }
+const TOOL_LABELS: Record<string, string> = { get_context: 'Read page context', capture_live: 'Capture page', get_overview: 'Inspect overview', get_section: 'Inspect section', save_draft: 'Save findings', finalize_rows: 'Prepare approval', read_result: 'Read saved output', browser_open: 'Open page', browser_click: 'Click element', browser_type: 'Fill field', browser_snapshot: 'Inspect page', check_contrast: 'Check contrast', check_layout: 'Check layout', check_text: 'Check copy', seo_check: 'Check SEO' }
+const toolTarget = (value: unknown) => {
+  const args = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  return [args.breakpoint, args.section, args.ref, args.url].filter(item => typeof item === 'string').join(' · ').slice(0, 90)
+}
 
 const SUGGESTIONS = [
   { label: 'Review this page', send: '/review' },
@@ -14,67 +26,25 @@ const SUGGESTIONS = [
   { label: 'SEO check', send: 'Run the SEO checks on this page and tell me what to fix before launch.' },
 ]
 
-const HELP = [
-  '/review [desktop] [tablet] [mobile] [--no-design] [--visual-only] [--test]\n                                       review the open page and hand the rows over for approval.\n                                       With no design stored for the page (or --no-design) the agent judges the page on its own.\n                                       It then tests links, buttons, menus and forms, unless --visual-only (or turned off in Settings).\n                                       A free model reviews one breakpoint and skips the test unless you name more or add --test.',
-  '/stop                                 stop what the agent is doing',
-  '/new                                  start a new chat (the current one is kept in History)',
-  '/history                              past chats and past reviews, with their screenshots',
-  '/agents                               which agents are ready',
-  '/help                                 show this list',
-  'Anything else is sent to the agent as a message.',
-].join('\n')
-
-// Just enough formatting for an answer: paragraphs, lists, **bold**, `code` and code fences.
-function inline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={index}>{part.slice(2, -2)}</strong>
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return <code key={index}>{part.slice(1, -1)}</code>
-    return <Fragment key={index}>{part}</Fragment>
-  })
-}
-
-export function RichText({ text }: { text: string }) {
-  const blocks = useMemo(() => {
-    const out: ReactNode[] = []
-    const lines = text.replace(/\r\n?/g, '\n').split('\n')
-    let i = 0
-    while (i < lines.length) {
-      const line = lines[i]
-      if (line.trim().startsWith('```')) {
-        const code: string[] = []
-        i++
-        while (i < lines.length && !lines[i].trim().startsWith('```')) code.push(lines[i++])
-        i++
-        out.push(<pre key={out.length}>{code.join('\n')}</pre>)
-      } else if (/^\s*([-*•]|\d+[.)])\s+/.test(line)) {
-        const ordered = /^\s*\d+[.)]\s+/.test(line)
-        const items: string[] = []
-        while (i < lines.length && /^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*•]|\d+[.)])\s+/, ''))
-        const list = items.map((item, index) => <li key={index}>{inline(item)}</li>)
-        out.push(ordered ? <ol key={out.length}>{list}</ol> : <ul key={out.length}>{list}</ul>)
-      } else if (!line.trim()) {
-        i++
-      } else {
-        const paragraph: string[] = []
-        while (i < lines.length && lines[i].trim() && !lines[i].trim().startsWith('```') && !/^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) paragraph.push(lines[i++])
-        out.push(<p key={out.length}>{paragraph.flatMap((l, index) => (index ? [<br key={`b${index}`} />, ...inline(l)] : inline(l)))}</p>)
-      }
-    }
-    return out
-  }, [text])
-  return <>{blocks}</>
-}
-
 function ToolCard({ message }: { message: Extract<ChatMessage, { kind: 'tool' }> }) {
-  const state = message.pending ? 'pending' : message.isError ? 'bad' : 'ok'
+  const [full, setFull] = useState('')
+  const [nextOffset, setNextOffset] = useState<number | null>(0)
+  const [loadError, setLoadError] = useState('')
+  const state = message.pending ? 'pending' : message.cancelled ? 'cancelled' : message.isError ? 'bad' : 'ok'
   return (
     <details className={`qa-chat-tool ${state}`}>
       <summary>
         <span className="qa-chat-tool-icon" aria-hidden="true">{message.pending ? '' : message.isError ? '✗' : '✓'}</span>
-        <span className="qa-chat-tool-name">{message.name}</span>
-        <span className="qa-chat-tool-args">{argsPreview(message.args)}</span>
+        <span className="qa-chat-tool-name">{TOOL_LABELS[message.name] || message.name.replace(/_/g, ' ')}</span>
+        <span className="qa-chat-tool-args">{toolTarget(message.args)}</span>
       </summary>
       <div className="qa-chat-tool-body">
+        <small>{message.pending ? 'Running' : message.cancelled ? 'Cancelled' : message.isError ? 'Failed' : 'Succeeded'}{message.timestamp && message.finishedAt ? ` \u00b7 ${((message.finishedAt - message.timestamp) / 1000).toFixed(1)}s` : ''}</small>
+        <RetryButton id={message.retryId}/>
+        {message.resultId && message.executionId && <button type="button" className="qa-tool-full-result" onClick={() => {
+          void window.electronAPI.qaExecutionResult(`${message.executionId}/${message.resultId}`, nextOffset || 0).then(result => { if (result) { setFull(previous => previous + result.text); setNextOffset(result.nextOffset) } else setLoadError('This saved output is no longer available.') }).catch(() => setLoadError('Could not load this saved output. Try again.'))
+        }} disabled={nextOffset === null}>{full ? nextOffset === null ? 'Full output loaded' : 'Load more output' : 'View saved output'}</button>}
+        {full && <pre>{full}</pre>}{loadError && <small role="alert">{loadError}</small>}
         {message.args !== undefined && <pre>{JSON.stringify(message.args, null, 2)}</pre>}
         {message.result !== undefined && <pre>{message.result}{message.images ? `\n(${message.images} picture${message.images === 1 ? '' : 's'} sent to the agent)` : ''}</pre>}
       </div>
@@ -85,11 +55,12 @@ function ToolCard({ message }: { message: Extract<ChatMessage, { kind: 'tool' }>
 function Message({ message }: { message: ChatMessage }) {
   switch (message.kind) {
     case 'user': return <div className="qa-chat-msg user"><div className="qa-chat-bubble">{message.text}</div></div>
-    case 'assistant': return <div className="qa-chat-msg assistant"><div className="qa-chat-text"><RichText text={message.text} /></div></div>
+    case 'assistant': return <div className="qa-chat-msg assistant"><div className="qa-chat-text"><RichText text={message.text} /><button className="qa-answer-copy" type="button" onClick={() => void navigator.clipboard.writeText(message.text).catch(() => {})}>Copy answer</button></div></div>
     case 'tool': return <div className="qa-chat-msg"><ToolCard message={message} /></div>
-    case 'error': return <div className="qa-chat-msg"><div className="qa-chat-note error" role="alert">{message.text}</div></div>
+    case 'error': return <div className="qa-chat-msg"><div className="qa-chat-note error" role="alert">{message.text}<RetryButton id={message.retryId} blocked={message.retryBlocked} settings={/key|quota|budget|model|sign.?in|Settings/i.test(message.text)}/>{message.detail && <details><summary>Technical details</summary><pre>{message.detail}</pre></details>}</div></div>
+    case 'findings': return <Findings key={message.timestamp || message.id} message={message}/>
     case 'usage': return <div className="qa-chat-msg"><div className="qa-chat-note usage">{message.text}</div></div>
-    default: return <div className="qa-chat-msg"><div className={`qa-chat-note${message.text.includes('\n') ? ' mono' : ''}`}>{message.text}</div></div>
+    default: return <div className="qa-chat-msg"><div className="qa-chat-note"><RichText text={message.text}/></div></div>
   }
 }
 
@@ -156,12 +127,29 @@ export function ReviewTarget() {
   )
 }
 
-interface Props { onClose: () => void }
+interface Props { onClose: () => void; detached?: boolean }
 
-export default function QaChat({ onClose }: Props) {
+export default function QaChat({ onClose, detached = false }: Props) {
   const chat = useQaChat()
-  const [input, setInput] = useState('')
+  const organizer = useAuditFindings()
+  const { input, tab } = chat.draft
+  const setInput = (value: string) => qaChat.setDraft(value, qaChat.getState().draft.tab)
+  const setTab = (value: 'chat' | 'findings') => qaChat.setDraft(qaChat.getState().draft.input, value)
+  const [windowBusy, setWindowBusy] = useState(false)
+  const [windowError, setWindowError] = useState('')
+  const changeWindow = async () => {
+    if (windowBusy) return
+    setWindowBusy(true); setWindowError('')
+    try { if (!(await (detached ? window.electronAPI.qaWindowDock() : window.electronAPI.qaWindowDetach()))) throw new Error('Could not open the agent window. Try again.') }
+    catch (error) { setWindowError(cleanError(error)) }
+    finally { setWindowBusy(false) }
+  }
   const [busy, setBusy] = useState(false)
+  const [commandsOpen, setCommandsOpen] = useState(false)
+  const [commandIndex, setCommandIndex] = useState(0)
+  const [showLatest, setShowLatest] = useState(false)
+  const suggestions = commandSuggestions(input)
+  useEffect(() => { setCommandIndex(0) }, [input])
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -180,26 +168,8 @@ export default function QaChat({ onClose }: Props) {
   const running = chat.running || busy
 
   const startReview = async (words: string[]) => {
-    let agent: AgentId | undefined
-    let standalone = false
-    let visualOnly = false
-    let test = false
-    const breakpoints: Breakpoint[] = []
-    for (let i = 0; i < words.length; i++) {
-      if (words[i] === '--no-design') standalone = true
-      else if (words[i] === '--visual-only') visualOnly = true
-      else if (words[i] === '--test') test = true
-      else if (words[i] === '--agent') {
-        const value = words[++i]
-        if (!isAgentId(value)) throw new Error(`Unknown agent "${value || ''}". Type /agents to see the ids.`)
-        agent = value
-      } else if (isBreakpoint(words[i])) breakpoints.push(words[i] as Breakpoint)
-      else throw new Error(`Unknown option "${words[i]}". Breakpoints are: ${BREAKPOINTS.join(', ')}.`)
-    }
-    if (test && visualOnly) throw new Error('--test and --visual-only cannot go together.')
-    // Testing follows the setting (off for a free model) unless this review asks otherwise.
-    const result = await window.electronAPI.qaRunStart({ agent, breakpoints: breakpoints.length ? breakpoints : undefined, ...(standalone ? { standalone } : {}), ...(visualOnly ? { functional: false } : test ? { functional: true } : {}) })
-    if (!result.started) throw new Error(result.error)
+    const result = await window.electronAPI.qaRunStart(parseReviewArgs(words))
+    if (!result.started) throw Object.assign(new Error(result.error), { retryId: result.retryId })
   }
 
   const submit = async (raw: string) => {
@@ -209,10 +179,12 @@ export default function QaChat({ onClose }: Props) {
     historyIndex.current = -1
     stuck.current = true
     setInput('')
-    const [head, ...rest] = text.split(/\s+/)
+    let head: string; let rest: string[]
+    try { const command = parseQaCommand(text); [head, ...rest] = command ? [command.command, ...command.args] : text.split(/\s+/) } catch (cause) { qaChat.addError(cleanError(cause)); return }
+    setCommandsOpen(false)
     setBusy(true)
     try {
-      if (head === '/help') { qaChat.addUserMessage(text); qaChat.addStatus(HELP) }
+      if (head === '/help') { qaChat.addUserMessage(text); qaChat.addStatus(qaCommandHelp()) }
       else if (head === '/history') window.dispatchEvent(new CustomEvent('parity:open-qa-history', { detail: { tab: rest[0] === 'chats' ? 'chats' : 'reviews' } }))
       else if (head === '/new') {
         if (chat.running) throw new Error('Stop the agent first.')
@@ -224,17 +196,17 @@ export default function QaChat({ onClose }: Props) {
         qaChat.addUserMessage(text)
         const overview = await window.electronAPI.qaAgentsOverview()
         if (!overview) throw new Error('Could not read the agent list.')
-        qaChat.addStatus(overview.agents.map((agent) => `${agent.id === overview.settings.defaultAgent ? '*' : ' '} ${agent.id.padEnd(14)} ${agent.ready ? 'ready    ' : 'not ready'}  ${agent.detail}`).join('\n') + '\n(* = default. Change it in Settings → AI Agents.)')
+        qaChat.addStatus('### Agents\n\n' + overview.agents.map(agent => `- **${agent.id}** ${agent.ready ? 'ready' : 'not ready'}${agent.id === overview.settings.defaultAgent ? ' · default' : ''} — ${agent.detail}`).join('\n'))
       } else if (head === '/review') {
         qaChat.addUserMessage(text)
         await startReview(rest)
       } else {
         qaChat.addUserMessage(text)
         const result = await window.electronAPI.qaChatSend(text, { chatId: qaChat.getState().chatId ?? undefined })
-        if (!result.started) throw new Error(result.error)
+        if (!result.started) throw Object.assign(new Error(result.error), { retryId: result.retryId })
       }
     } catch (cause) {
-      qaChat.addError(cleanError(cause))
+      qaChat.handle({ type: 'error', message: cleanError(cause), retryId: (cause as { retryId?: string })?.retryId })
     } finally {
       setBusy(false)
       window.setTimeout(() => field.current?.focus(), 0)
@@ -247,42 +219,65 @@ export default function QaChat({ onClose }: Props) {
         <div className="qa-chat-title">
           <strong>QA agent</strong>
           {chat.agentLabel && <span className="qa-chat-agent" title={chat.agentLabel}>{chat.agentLabel}</span>}
-          {chat.running && <span className="qa-chat-running" role="status"><span /> Working</span>}
+
         </div>
         <div className="qa-chat-actions">
+          <button type="button" className="qa-chat-window-toggle" onClick={() => void changeWindow()} disabled={windowBusy} aria-label={detached ? 'Dock agent chat' : 'Detach agent chat'} title={detached ? 'Dock chat back in Parity' : 'Detach into a movable, resizable window'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">{detached ? <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16M7 12h4m-2-2 2 2-2 2"/></> : <><path d="M14 3h7v7m0-7-9 9"/><path d="M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></>}</svg></button>
           <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('parity:open-qa-history', { detail: { tab: 'chats' } }))} title="Past chats and reviews">History</button>
           <button type="button" onClick={() => void submit('/new')} disabled={chat.running} title="New chat">New chat</button>
           <button type="button" onClick={onClose} aria-label="Close the QA chat" title="Close (Ctrl+Shift+Q)">×</button>
         </div>
       </header>
-      <div className="qa-chat-metabar"><TokenMeter /></div>
+      {windowError && <div className="qa-chat-window-error" role="alert">{windowError}<button type="button" onClick={() => void changeWindow()}>Retry</button></div>}
+      <div className="qa-chat-metabar"><TokenMeter /><Activity execution={chat.execution} running={running}/></div>
+      <div className="qa-agent-tabs" role="tablist" aria-label="QA agent views"><button role="tab" id="qa-tab-chat" aria-selected={tab==='chat'} aria-controls="qa-panel-chat" onClick={()=>setTab('chat')} onKeyDown={e=>{if(e.key==='ArrowRight'){setTab('findings');document.getElementById('qa-tab-findings')?.focus()}}}>Chat</button><button role="tab" id="qa-tab-findings" aria-selected={tab==='findings'} aria-controls="qa-panel-findings" onClick={()=>setTab('findings')} onKeyDown={e=>{if(e.key==='ArrowLeft'){setTab('chat');document.getElementById('qa-tab-chat')?.focus()}}}>Findings <span>{organizer.snapshot?.findings.filter(item=>!item.mergedInto).length||0}</span></button></div>
+      {tab==='findings'&&<div id="qa-panel-findings" role="tabpanel" aria-labelledby="qa-tab-findings" className="qa-findings-panel"><AuditOrganizer {...organizer}/></div>}
+      <div id="qa-panel-chat" role="tabpanel" aria-labelledby="qa-tab-chat" className="qa-chat-tab-panel" hidden={tab!=='chat'}>
       <ReviewTarget />
 
       <div
         className="qa-chat-body" ref={scroller}
-        onScroll={(event) => { const el = event.currentTarget; stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }}
+        onScroll={(event) => { const el = event.currentTarget; stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; setShowLatest(!stuck.current) }}
       >
         {chat.messages.length === 0 ? (
           <div className="qa-chat-empty">
             <h3>Ask about this page</h3>
-            <p>I check the live staging page (against your Figma designs when you have them), test its links and forms, measure contrast, layout, copy and SEO, and draft rows for the tracker. You approve them before anything is copied.</p>
+            <p>I check the live staging page (against your Figma designs when you have them), test its links and forms, measure contrast, layout, copy and SEO, and save drafts in your organizer. Review them in Findings, or open the tracker to edit them.</p>
             <div className="qa-chat-suggestions">
               {SUGGESTIONS.map((suggestion) => <button key={suggestion.label} type="button" disabled={running} onClick={() => void submit(suggestion.send)}>{suggestion.label}</button>)}
             </div>
             <p className="qa-chat-hint">Type /help for commands.</p>
           </div>
-        ) : chat.messages.map((message) => <Message key={message.id} message={message} />)}
-        {chat.running && <div className="qa-chat-typing" aria-hidden="true"><span /><span /><span /></div>}
+        ) : (() => {
+          const groups: React.ReactNode[] = []
+          for (let i = 0; i < chat.messages.length;) {
+            const message = chat.messages[i]
+            if (message.kind !== 'tool') { groups.push(<Message key={message.id} message={message}/>); i++; continue }
+            const tools: Array<Extract<ChatMessage, {kind:'tool'}>> = []
+            while (i < chat.messages.length && chat.messages[i].kind === 'tool') tools.push(chat.messages[i++] as Extract<ChatMessage, {kind:'tool'}>)
+            groups.push(<details className="qa-tool-group" key={message.id}><summary>{tools.filter(tool => tool.pending).length ? 'Running' : 'Tool activity'} · {tools.length} tool{tools.length === 1 ? '' : 's'}{tools.some(tool => tool.isError) ? ' · failed step' : ''}</summary>{tools.map(tool => <Message key={tool.id} message={tool}/>)}</details>)
+          }
+          return groups
+        })()}
       </div>
 
+      {showLatest && <button type="button" className="qa-jump-latest" onClick={() => { stuck.current = true; setShowLatest(false); scroller.current?.scrollTo({top:scroller.current.scrollHeight}) }}>Jump to latest</button>}
       <form className="qa-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(input) }}>
+        {commandsOpen && suggestions.length > 0 && <div className="qa-command-menu" role="listbox" id="qa-command-list" aria-label="Slash commands">{suggestions.map((item, index) => <button role="option" aria-selected={index === commandIndex} id={`qa-command-${index}`} type="button" key={item.value} onMouseDown={event => event.preventDefault()} onClick={() => { setInput(item.value); setCommandsOpen(false); field.current?.focus() }}><strong>{item.label}</strong><small>{item.description}</small></button>)}</div>}
+        <button type="button" className="qa-command-toggle" aria-label="Show slash commands" title="Commands" onClick={() => { if (!input.startsWith('/')) setInput('/'); setCommandsOpen(!commandsOpen); field.current?.focus() }}>/</button>
         <textarea
           ref={field} value={input} rows={1} spellCheck autoComplete="off"
           placeholder={chat.running ? 'The agent is working… you can type, then send when it is done' : 'Ask about this page, or /review'}
           aria-label="Message the QA agent"
-          onChange={(event) => setInput(event.target.value)}
+          onChange={(event) => { setInput(event.target.value); setCommandsOpen(event.target.value.startsWith('/')) }}
+          aria-controls={commandsOpen ? 'qa-command-list' : undefined} aria-expanded={commandsOpen && suggestions.length > 0} aria-activedescendant={commandsOpen ? `qa-command-${commandIndex}` : undefined}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!chat.running) void submit(input) }
+            if (commandsOpen && suggestions.length && !event.nativeEvent.isComposing) {
+              if (['ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); setCommandIndex(index => Math.max(0, Math.min(suggestions.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))); return }
+              if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); setInput(suggestions[commandIndex].value); setCommandsOpen(false); return }
+              if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setCommandsOpen(false); return }
+            }
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!chat.running || input.trim() === '/stop') void submit(input) }
             else if (event.key === 'ArrowUp' && !input && history.current.length) { event.preventDefault(); historyIndex.current = Math.min(history.current.length - 1, historyIndex.current + 1); setInput(history.current[historyIndex.current] ?? '') }
             else if (event.key === 'ArrowDown' && historyIndex.current >= 0) { event.preventDefault(); historyIndex.current -= 1; setInput(history.current[historyIndex.current] ?? '') }
             else if (event.key === 'Escape' && chat.running) { event.preventDefault(); void window.electronAPI.qaRunStop() }
@@ -292,6 +287,7 @@ export default function QaChat({ onClose }: Props) {
           ? <button type="button" className="qa-chat-send stop" onClick={() => void window.electronAPI.qaRunStop()} aria-label="Stop">■ Stop</button>
           : <button type="submit" className="qa-chat-send" disabled={!input.trim() || busy} aria-label="Send">Send</button>}
       </form>
+      </div>
     </section>
   )
 }

@@ -199,6 +199,6 @@ describe('listModels', () => {
     expect(await listModels('anthropic-api', { settings: DEFAULT_AGENT_SETTINGS, getKey: () => null })).toEqual({ models: [], error: 'Add your API key first.' })
     const closed = normalizeSettings({ localBaseUrl: 'http://127.0.0.1:1/v1' })
     expect((await listModels('local', { settings: closed, getKey: () => null })).error).toContain('Is the server running?')
-    expect(await listModels('claude-code', { settings: DEFAULT_AGENT_SETTINGS, getKey: () => null })).toEqual({ models: [] })
+    expect(await listModels('claude-code', { settings: DEFAULT_AGENT_SETTINGS, getKey: () => null, cliPath: () => '/parity-missing-cli' })).toMatchObject({ models: [], error: expect.stringContaining('App default') })
   })
 })
