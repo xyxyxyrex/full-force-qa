@@ -23,6 +23,13 @@ async function smoke() {
   const win = new BrowserWindow({ show: false, width: 1100, height: 900, webPreferences: { offscreen: true, backgroundThrottling: false, contextIsolation: false } })
   const sleep = ms => new Promise(r => setTimeout(r, ms))
   const run = code => win.webContents.executeJavaScript(code).catch(error=>{throw new Error(`Renderer expression failed: ${code.slice(0,300)}\n${error.message}`)})
+  // Hosted Windows runners may disable animation at the OS level. Keep the
+  // CDP override attached so navigation/detach cannot restore that preference.
+  const motion = async value => {
+    if (!win.webContents.debugger.isAttached()) await win.webContents.debugger.attach('1.3')
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value }] })
+    assert.equal(await run(`matchMedia('(prefers-reduced-motion: reduce)').matches`), value === 'reduce')
+  }
   const shot = async name => { await sleep(350); fs.writeFileSync(path.join(dir, name + '.png'), (await win.webContents.capturePage()).toPNG()) }
   const open = async view => { await win.loadFile(path.join(dir, 'ui.html'), { query: { view } }); await sleep(500) }
   const text = selector => run(`document.querySelector(${JSON.stringify(selector)})?.innerText ?? ''`)
@@ -35,10 +42,9 @@ async function smoke() {
   // Settings: real components, delayed discovery, and persisted settings.
   await open('agents')
   assert.equal(await run(`!!document.querySelector('.agents-skeleton[aria-busy=true]')`), true, 'initial skeleton is visible')
-  await win.webContents.debugger.attach('1.3')
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+  await motion('reduce')
   assert.equal(await run(`getComputedStyle(document.querySelector('.agents-skeleton-line')).animationName`), 'none', 'skeleton respects reduced motion')
-  win.webContents.debugger.detach()
+  await motion('no-preference')
   await run('window.__releaseOverview()')
   await until(`document.querySelectorAll('.agents-provider').length === 8`)
   const provider = async id => { await click(`[data-agent="${id}"]`); await sleep(80) }
@@ -380,12 +386,10 @@ async function smoke() {
       assert.match(await text('.qa-response-pending-label'), /Thinking/);
       assert.equal(await run(`document.querySelectorAll('.qa-response-skeleton i').length`),3,'waiting shows a response skeleton');
       assert.equal(await run(`getComputedStyle(document.querySelector('.qa-response-pending-label span')).animationName`),'qa-response-pulse');
-      await win.webContents.debugger.attach('1.3');
-      await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+      await motion('reduce');
       assert.equal(await run(`getComputedStyle(document.querySelector('.qa-response-skeleton i')).animationName`),'none');
       assert.equal(await run(`getComputedStyle(document.querySelector('.qa-response-pending-label span')).animationName`),'none');
-      await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
-      win.webContents.debugger.detach();
+      await motion('no-preference');
       await shot('chat-thinking');
     }
     if(e.type==='text') assert.equal(await run(`!!document.querySelector('.qa-response-skeleton')`),false,'real streamed text replaces the skeleton');
@@ -473,11 +477,10 @@ async function smoke() {
   await shot('chat-hover-copy');
   await run(`window.__setView('none')`);await sleep(60);await run(`window.__setView('chat')`);await sleep(80);
   assert.equal(await run(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent`),paragraph,'reopening does not replay the typing effect');
-  await win.webContents.debugger.attach('1.3');
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await motion('reduce');
   await run(`window.__emit({type:'text',text:'This reduced-motion reply is shown immediately.'})`);await sleep(40);
   assert.equal(await run(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent`),'This reduced-motion reply is shown immediately.');
-  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});win.webContents.debugger.detach();
+  await motion('no-preference');
   await run(`window.__emit({type:'text',text:'Streaming',delta:true})`);
   for(let i=0;i<20;i++)await run(`window.__emit({type:'text',text:' fast',delta:true})`);
   await until(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent===${JSON.stringify('Streaming'+' fast'.repeat(20))}`);

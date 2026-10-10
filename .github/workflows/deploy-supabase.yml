@@ -68,5 +68,6 @@ jobs:
           fi
           for entrypoint in "${functions[@]}"; do
             function_name="$(basename "$(dirname "$entrypoint")")"
-            supabase functions deploy "$function_name" --project-ref "$SUPABASE_PROJECT_ID"
+            # Bundle server-side: CI runners need not pull the edge-runtime Docker image.
+            supabase functions deploy "$function_name" --project-ref "$SUPABASE_PROJECT_ID" --use-api
           done
