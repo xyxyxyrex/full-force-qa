@@ -10,7 +10,7 @@ import '../../src/renderer/src/theme/themes.css'
 function Host() {
   const [detached, setDetached] = useState(false)
   useEffect(() => {
-    const sync = () => window.electronAPI.qaWindowSync({ chat: qaChat.getState(), theme: document.documentElement.getAttribute('data-theme') || 'parity' })
+    const sync = () => window.electronAPI.qaWindowSync({ chat: qaChat.getState(), theme: document.documentElement.getAttribute('data-theme') || 'parity',ownerKey:null })
     const off = qaChat.subscribe(sync)
     const actions = window.electronAPI.onQaWindowAction(handleChatWindowAction)
     const changed = window.electronAPI.onQaWindowChanged(value => { setDetached(value); sync() })

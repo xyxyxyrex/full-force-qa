@@ -23,6 +23,7 @@ interface Props {
 }
 
 export interface CaptureProjectDetails {
+  captureActivity?: Omit<import('../../../shared/parityWorkspace').CaptureActivity,'projectId'>
   name: string
   adminUrl: string
   stagingUrl: string
@@ -431,6 +432,7 @@ export default function CaptureScreen({
           return
         }
         onCapture(res.html, normStaging, normAdmin, {
+          captureActivity:res.captureActivity,
           name: name.trim(),
           adminUrl: normAdmin,
           stagingUrl: normStaging,

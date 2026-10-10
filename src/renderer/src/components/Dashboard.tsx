@@ -132,6 +132,13 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   const saveScopedProject = (project: Project) => { project.localOwnerKey = viewOwner; return window.electronAPI.saveProject(project, viewOwner) }
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
+  const [workspaceError,setWorkspaceError]=useState('')
+  const commitDashboardChanges=async(operations:import('../../../shared/parityWorkspace').WorkspaceOperation[])=>{
+    if(!viewOwner)return false
+    setWorkspaceError('')
+    try{const snapshot=await window.electronAPI.workspaceMutate(operations,viewOwner);if(viewOwner!==localStorage.getItem('parity_account_owner_key'))throw new Error('The account changed. Reopen Dashboard.');setFolders(snapshot.folders);setProjects(snapshot.projects);return true}
+    catch(error){setWorkspaceError((error instanceof Error?error.message:'Could not save changes.').replace(/^Error invoking remote method '[^']+': Error:\s*/,''));return false}
+  }
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('recent')
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
@@ -176,7 +183,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   useEffect(() => {
     localStorage.setItem('qa_project_folders', JSON.stringify(folders))
     window.dispatchEvent(new CustomEvent('qa_folders_updated', { detail: folders }))
-    window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { folders } }))
+    if(!viewOwner)window.dispatchEvent(new CustomEvent('parity:account-state-dirty', { detail: { folders } }))
   }, [folders])
 
   useEffect(() => {
@@ -278,6 +285,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   // Save Edit
   const handleSaveEdit = async () => {
     if (!editingProject) return
+    if(viewOwner&&editName.trim()&&editName.trim()!==editingProject.name){if(!await commitDashboardChanges([{type:'rename',kind:'project',id:editingProject.id,name:editName.trim()}]))return}
     const updated: Project = {
       ...editingProject,
       name: editName.trim() || editingProject.name,
@@ -297,6 +305,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
 
   // Move to Trash (Soft Delete)
   const handleMoveToTrash = async (project: Project) => {
+    if(viewOwner){if(await commitDashboardChanges([{type:'trash',id:project.id}]))setDeleteConfirmProject(null);return}
     const updated: Project = { ...project, inTrash: true, deletedAt: Date.now() }
     await saveScopedProject(updated)
     notifyProjectsChanged()
@@ -307,6 +316,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   // Restore from Trash
   const handleRestore = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation()
+    if(viewOwner){await commitDashboardChanges([{type:'restore',id:project.id}]);return}
     const updated: Project = { ...project, inTrash: false }
     delete updated.deletedAt
     await saveScopedProject(updated)
@@ -341,6 +351,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   }
 
   const moveProjectToFolder = async (project: Project, folderId?: string) => {
+    if(viewOwner){if(await commitDashboardChanges([{type:'move',kind:'project',id:project.id,folderId}]))setProjectContextMenu(null);return}
     const updated = { ...project, folderId: folderId || undefined }
     await saveScopedProject(updated)
     notifyProjectsChanged()
@@ -376,6 +387,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
 
   const moveFolderToFolder = (folderId: string, parentId?: string) => {
     if (!canMoveFolder(folders, folderId, parentId)) return
+    if(viewOwner){void commitDashboardChanges([{type:'move',kind:'folder',id:folderId,folderId:parentId}]).then(saved=>{if(saved)setFolderContextMenu(null)});return}
     setFolders((current) => current.map((folder) => folder.id === folderId
       ? { ...folder, parentId: parentId || undefined }
       : folder))
@@ -393,6 +405,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   const moveBrowserSelectionToFolder = async (keys: string[], folderId?: string) => {
     const folderIds = keys.filter((key) => key.startsWith('folder:')).map((key) => key.slice(7))
     if (!folderIds.every((id) => canMoveFolder(folders, id, folderId))) return
+    if(viewOwner){const operations=keys.map(key=>({type:'move' as const,kind:key.startsWith('folder:')?'folder' as const:'project' as const,id:key.slice(key.indexOf(':')+1),folderId}));if(await commitDashboardChanges(operations))setSelectedBrowserItems(new Set());return}
 
     if (folderIds.length) {
       const movedFolders = new Set(folderIds)
@@ -469,6 +482,12 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
     if (!folderEditor) return
     const name = folderEditor.name.trim()
     if (!name) return
+    if(viewOwner){
+      const id=folderEditor.mode==='rename'?folderEditor.folderId!:crypto.randomUUID()
+      const operations:import('../../../shared/parityWorkspace').WorkspaceOperation[]=folderEditor.mode==='rename'?[{type:'rename',kind:'folder',id,name}]:[{type:'create-folder',id,name,parentId:folderEditor.parentId||undefined}]
+      if(folderEditor.projectId&&folderEditor.mode!=='rename')operations.push({type:'move',kind:'project',id:folderEditor.projectId,folderId:id})
+      if(await commitDashboardChanges(operations))setFolderEditor(null);return
+    }
     if (folderEditor.mode === 'rename' && folderEditor.folderId) {
       setFolders((current) => current.map((folder) => folder.id === folderEditor.folderId ? { ...folder, name } : folder))
     } else {
@@ -490,6 +509,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   const deleteFolder = async (folder: ProjectFolder) => {
     setDeletingFolder(true)
     setFolderDeleteError('')
+    if(viewOwner){try{if(await commitDashboardChanges([{type:'delete-folder',id:folder.id}])){if(currentFolderId===folder.id)setCurrentFolderId(folder.parentId||null);setFolderDeleteConfirm(null)}}finally{setDeletingFolder(false)}return}
     try {
       const affected = projects.filter((project) => project.folderId === folder.id)
       const updated = affected.map((project) => ({ ...project, folderId: folder.parentId || undefined }))
@@ -721,6 +741,12 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
     if (!window.confirm(warnings.join('\n\n'))) return
 
     const folderParents = new Map(selectedFolders.map((folder) => [folder.id, folder.parentId]))
+    if(viewOwner){
+      const operations:import('../../../shared/parityWorkspace').WorkspaceOperation[]=[...localProjects.map(p=>({type:'trash' as const,id:p.id})),...selectedFolders.map(f=>({type:'delete-folder' as const,id:f.id}))]
+      if(operations.length&&!await commitDashboardChanges(operations))return
+      for(const id of activeMondayIds)await toggleActiveTicket(id)
+      setSelectedBrowserItems(new Set());return
+    }
     const projectUpdates = new Map<string, Project>()
     for (const project of localProjects) projectUpdates.set(project.id, { ...project, inTrash: true, deletedAt: Date.now() })
     for (const project of projects) {
@@ -859,6 +885,7 @@ export default function Dashboard({ onNewProject, onOpenProject, onOpenSettings,
   return (
     <div className="dashboard" onContextMenu={openDashboardContextMenu}>
       <div className="dashboard-inner">
+        {workspaceError&&<div className="folder-delete-error" role="alert">{workspaceError}<button type="button" onClick={()=>setWorkspaceError('')}>Dismiss</button></div>}
         {/* Header */}
         <div className="dashboard-header">
           <div className="dashboard-title-row">

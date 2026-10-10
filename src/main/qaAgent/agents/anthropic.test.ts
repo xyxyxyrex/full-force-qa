@@ -7,7 +7,7 @@ import type { AgentEvent, ProviderRun } from './types'
 import type { ToolResult } from '../tools'
 
 type Block = { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: string; input: unknown }
-interface Scripted { blocks: Block[]; stop: string; inputTokens?: number; outputTokens?: number; status?: number; delayMs?: number }
+interface Scripted { blocks: Block[]; stop: string; inputTokens?: number; outputTokens?: number; status?: number; delayMs?: number; headers?: Record<string, string> }
 
 let server: Server
 let baseURL: string
@@ -26,10 +26,10 @@ beforeEach(async () => {
       const next = queue.shift()
       if (!next) { res.writeHead(500); return res.end('{"type":"error","error":{"type":"api_error","message":"no scripted response"}}') }
       if (next.status && next.status >= 400) {
-        res.writeHead(next.status, { 'Content-Type': 'application/json' })
+        res.writeHead(next.status, { 'Content-Type': 'application/json', ...next.headers })
         return res.end(JSON.stringify({ type: 'error', error: { type: next.status === 401 ? 'authentication_error' : 'api_error', message: 'nope' } }))
       }
-      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', ...next.headers })
       sse(res, 'message_start', { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: next.inputTokens ?? 100, output_tokens: 1 } } })
       if (next.delayMs) await new Promise((r) => setTimeout(r, next.delayMs))
       next.blocks.forEach((block, index) => {
@@ -68,6 +68,24 @@ const makeRun = (over: Partial<ProviderRun> = {}) => {
 const provider = (over: Partial<Parameters<typeof createAnthropicProvider>[0]> = {}) => createAnthropicProvider({ apiKey: 'sk-test', model: 'claude-opus-5-5', effort: 'medium', baseURL, ...over })
 
 describe('anthropic provider', () => {
+  it('retains observed API headroom on both successful and rate-limited responses', async () => {
+    const headers = { 'anthropic-ratelimit-input-tokens-remaining': '0', 'anthropic-ratelimit-input-tokens-limit': '1000' }
+    queue.push({ blocks: [{ type: 'text', text: 'Done.' }], stop: 'end_turn', headers })
+    const first = makeRun()
+    await provider().run(first.run)
+    expect(first.events.filter(event => event.type === 'quota-observed')).toEqual([expect.objectContaining({ quota: expect.objectContaining({ windows: [expect.objectContaining({ remaining: 0, limit: 1000 })] }) })])
+    // The SDK can retry 429s; feed each response the same headers.
+    queue.push(...Array.from({ length: 3 }, () => ({ blocks: [], stop: 'end_turn', status: 429, headers: { ...headers, 'retry-after': '0' } })))
+    const failed = makeRun()
+    await expect(provider().run(failed.run)).rejects.toThrow('rate limiting')
+    expect(failed.events.filter(event => event.type === 'quota-observed')).toEqual([expect.objectContaining({ quota: expect.objectContaining({ windows: [expect.objectContaining({ remaining: 0 })] }) })])
+  })
+  it('includes user attachments directly in the request', async () => {
+    queue.push({ blocks: [{ type: 'text', text: 'I see the screenshot.' }], stop: 'end_turn' })
+    const { run } = makeRun({ images: [{ data: Buffer.from('IMAGE'), mimeType: 'image/webp', caption: 'Screenshot' }] })
+    await provider().run(run)
+    expect(requests[0].body.messages[0].content).toContainEqual({ type: 'image', source: { type: 'base64', media_type: 'image/webp', data: 'SU1BR0U=' } })
+  })
   it('runs the tool loop: sends tools, executes calls, returns pictures to the model', async () => {
     queue.push(
       { blocks: [{ type: 'text', text: 'Capturing now.' }, { type: 'tool_use', id: 'toolu_1', name: 'capture_live', input: { breakpoint: 'desktop', runId: 'abc' } }], stop: 'tool_use', inputTokens: 500, outputTokens: 40 },

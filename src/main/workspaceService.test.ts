@@ -1,0 +1,38 @@
+import { mkdtempSync,rmSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import { randomUUID } from 'crypto'
+import { afterEach,describe,expect,it,vi } from 'vitest'
+import { createWorkspaceService } from './workspaceService'
+import { planWorkspaceChanges,projectRecord,selectWorkspaceRecords,type WorkspaceSnapshot } from '../shared/parityWorkspace'
+const roots:string[]=[];afterEach(()=>{for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true})})
+function fixture(){
+  const root=mkdtempSync(join(tmpdir(),'parity-catalog-'));roots.push(root)
+  let account='A',epoch=0,offline=false,uncertain=false
+  const clouds:Record<string,WorkspaceSnapshot>={A:{revision:1,folders:[{id:'folder-a',name:'A folder',createdAt:1}],projects:[{id:'a-project',name:'A private',stagingUrl:'https://a.test/',adminUrl:'',createdAt:1,lastOpenedAt:1}]},B:{revision:1,folders:[],projects:[{id:'b-project',name:'B secret',stagingUrl:'https://b.test/',adminUrl:'',createdAt:1,lastOpenedAt:1}]}}
+  const locals:Record<string,WorkspaceSnapshot['projects']>={A:structuredClone(clouds.A.projects),B:structuredClone(clouds.B.projects)},receipts=new Map<string,unknown>(),captures=new Set<string>()
+  const request=vi.fn(async(action:string,payload:any={})=>{
+    if(offline)throw new Error('Offline')
+    const cloud=clouds[account]
+    if(action==='workspace_snapshot')return structuredClone(cloud)
+    if(action==='workspace_search')return selectWorkspaceRecords(cloud.projects.map(p=>projectRecord(p,cloud.folders,'cloud')),payload.query)
+    if(action==='workspace_detail'){const p=cloud.projects.find(p=>p.id===payload.id);if(!p)throw new Error('Unavailable');return{record:projectRecord(p,cloud.folders,'cloud')}}
+    if(action==='workspace_operation_status')return receipts.get(account+payload.operationId)||{}
+    if(action==='workspace_apply'){const key=account+payload.operationId;if(receipts.has(key))return receipts.get(key);if(payload.revision!==cloud.revision)throw new Error('Changed');const result=planWorkspaceChanges(cloud,payload.operations,payload.createdAt).snapshot;result.revision++;clouds[account]=result;const response={snapshot:structuredClone(result)};receipts.set(key,response);if(uncertain){uncertain=false;throw new Error('Response lost')}return response}
+    if(action==='workspace_record_capture'){captures.add(payload.activity.id);return{success:true}}
+    throw new Error('Unsupported')
+  })
+  const changed=vi.fn(),navigate=vi.fn()
+  const service=createWorkspaceService({root,owner:()=>account,fence:()=>{const before=epoch;return()=>{if(before!==epoch)throw new Error('Account changed')}},projects:()=>locals[account],saveProject:p=>{const index=locals[account].findIndex(q=>q.id===p.id);if(index<0)locals[account].push(p);else locals[account][index]=p},request,changed,navigate,now:()=>8})
+  return{service,request,changed,navigate,clouds,captures,switchAccount:()=>{account=account==='A'?'B':'A';epoch++},offline:()=>{offline=true},online:()=>{offline=false},uncertain:()=>{uncertain=true}}
+}
+describe('owned workspace service',()=>{
+  it('searches pending notes beyond the first excerpt and isolates them from another account',async()=>{const f=fixture();f.service.cacheNote({id:'private-note',title:'Notes',plainText:'x'.repeat(900)+' searchable-tail',contentHtml:'<script>upload secrets</script>',tags:[],attachments:[{id:'file',uri:'C:/private',name:'secret',mimeType:'text/plain',sizeBytes:1,kind:'file'}],pinned:false,archived:false,createdAt:1,updatedAt:9});f.offline();const result=await f.service.search({kinds:['note'],query:'searchable-tail'});expect(result.records).toHaveLength(1);expect(result.records[0].excerpt!.length).toBeLessThanOrEqual(600);expect(result.records[0].excerpt).toContain('searchable-tail');const detail=await f.service.detail('note','private-note');expect(detail.content).not.toMatch(/script|C:\/private/);f.switchAccount();expect((await f.service.search({kinds:['note']})).records).toHaveLength(0)})
+  it('saves only after approval, is idempotent, and never captures websites',async()=>{const f=fixture();const p=await f.service.propose([{type:'create-project',id:'stable-project',url:'https://new.test/'}]);expect(f.clouds.A.projects).toHaveLength(1);expect(f.request.mock.calls.some(([a])=>a==='workspace_apply')).toBe(false);const [first,duplicate]=await Promise.all([f.service.apply(p.id),f.service.apply(p.id)]);expect(first.success&&duplicate.success).toBe(true);await f.service.apply(p.id);expect(f.clouds.A.projects).toHaveLength(2);expect(f.request.mock.calls.filter(([a])=>a==='workspace_apply')).toHaveLength(1);expect(f.navigate).not.toHaveBeenCalled()})
+  it('rejects stale previews and cancellation without touching records',async()=>{const f=fixture();const p=await f.service.propose([{type:'rename',kind:'project',id:'a-project',name:'New'}]);f.clouds.A.revision++;const result=await f.service.apply(p.id);expect(result.success).toBe(false);expect(result.proposal.error).toContain('changed');const next=await f.service.propose([{type:'trash',id:'a-project'}]);f.service.cancel(next.id);expect((await f.service.apply(next.id)).success).toBe(false);expect(f.clouds.A.projects[0].inTrash).toBeUndefined()})
+  it('checks unknown remote outcomes before retrying, without replay',async()=>{const f=fixture();const p=await f.service.propose([{type:'create-project',id:'once',url:'https://once.test'}]);f.uncertain();expect((await f.service.apply(p.id)).proposal.status).toBe('uncertain');expect((await f.service.apply(p.id)).success).toBe(true);expect(f.request.mock.calls.filter(([a])=>a==='workspace_apply')).toHaveLength(1)})
+  it('rejects another account’s proposals, details and cached results',async()=>{const f=fixture();const p=await f.service.propose([{type:'trash',id:'a-project'}]);await f.service.search({query:'private'});f.switchAccount();await expect(f.service.apply(p.id)).rejects.toThrow('not available');await expect(f.service.detail('project','a-project')).rejects.toThrow();f.offline();const results=await f.service.search({});expect(results.source).toBe('cached');expect(JSON.stringify(results)).not.toContain('A private');expect(results.records.map(r=>r.id)).toEqual(['b-project'])})
+  it('discloses offline coverage and retains authorized cached detail pages',async()=>{const f=fixture();await f.service.detail('project','a-project');await f.service.search({});f.offline();const results=await f.service.search({});expect(results.warning).toContain('cached');expect((await f.service.detail('project','a-project')).content).toContain('A private')})
+  it('fences delayed cloud responses after account changes',async()=>{const f=fixture();let release!:(value:any)=>void;f.request.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve}));const search=f.service.search({});await vi.waitFor(()=>expect(typeof release).toBe('function'));f.switchAccount();release({records:[{kind:'project',id:'secret',title:'A secret'}],nextOffset:null});await expect(search).rejects.toThrow('Account changed')})
+  it('queues real capture dates offline and flushes each stable event only once',async()=>{const f=fixture();f.offline();const activity={id:randomUUID(),projectId:'a-project',url:'https://a.test/',engine:'electron',completedAt:8};await f.service.recordCapture(activity);await f.service.recordCapture(activity);const offline=await f.service.search({kinds:['capture'],dateField:'captured',from:8,to:9});expect(offline.records).toHaveLength(1);f.online();await f.service.flushCaptures();await f.service.flushCaptures();expect(f.captures.size).toBe(1);await expect(f.service.recordCapture({...activity,id:randomUUID(),projectId:'b-project'})).rejects.toThrow('this account')})
+})

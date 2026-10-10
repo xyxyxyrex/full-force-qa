@@ -25,6 +25,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run typecheck
       - run: npm test -- --maxWorkers=4
       - run: npm run build
       - run: npm run test:feedback:edge
@@ -37,6 +38,7 @@ jobs:
       - run: npm run test:qa-flow:electron
       - run: npm run test:qa-ui:electron
       - run: npm run test:qa-window:electron
+      - run: npm run test:accounts:electron
       - run: npm run test:qa-browser:electron
       - run: npm run test:page-checks:electron
       - run: npm run test:viewer:electron
@@ -92,6 +94,8 @@ jobs:
         run: supabase db start
       - name: Apply migrations from a clean database
         run: supabase db reset
+      - name: Verify workspace ownership and reviewed mutation transactions
+        run: psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 -f scripts/fixtures/workspace-database.sql
       - name: Stop local database
         if: always()
         run: supabase stop --no-backup

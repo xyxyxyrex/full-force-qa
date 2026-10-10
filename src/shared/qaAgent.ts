@@ -68,7 +68,8 @@ export interface ApprovalEvidence {
 
 /** Rows an agent wants to hand over; the person sees them and approves or rejects. */
 export interface ApprovalRequest {
-  action?: 'share'
+  action?: 'share' | 'network'
+  network?: {tool:string;args:unknown;destination:string}
   id: string
   runId: string
   projectName: string
@@ -129,6 +130,7 @@ export interface QaChatListItem {
 
 /** A saved chat: what was shown, the token counts, and what the agent remembers. */
 export interface QaStoredChat {
+  selection?: ChatAgentSelection | null
   version: 1
   id: string
   title: string
@@ -265,6 +267,7 @@ export interface AgentsOverview {
 }
 
 export interface QaRunStartOptions {
+  chatId?: string
   agent?: AgentId
   breakpoints?: Breakpoint[]
   /** Review the page on its own, without comparing it to a design. */
@@ -304,6 +307,7 @@ export interface QaTarget {
 }
 
 export interface QaChatSendOptions {
+  attachmentIds?: string[]
   agent?: AgentId
   /** The chat this message belongs to; the agent remembers that chat's earlier messages. */
   chatId?: string
@@ -323,14 +327,22 @@ export interface QaExecutionSnapshot {
   retryId?: string
   retryBlocked?: string
 }
+export interface ChatAgentSelection { agent: AgentId; model: string }
 export interface QaEventMeta { executionId?: string; attemptId?: string; timestamp?: number; messageId?: string }
 export type QaRunEvent = QaEventMeta & (
+  | {type:'approval-cleared';id:string}
+  | { type: 'agents-config-changed' }
+  | { type: 'workspace-proposal'; proposal: import('./parityWorkspace').WorkspaceProposal }
+  | { type: 'workspace-result'; records: import('./parityWorkspace').WorkspaceRecord[]; nextOffset: number | null; warning?: string; dateLabel?: string }
+  | { type: 'chat-selection'; chatId: string | null; selection: ChatAgentSelection | null; label: string; switching?: boolean }
+  | { type: 'account-reset' }
   | { type: 'agent-selected'; agent: AgentId; label: string; model: string }
   | { type: 'status'; message: string }
   | { type: 'text'; text: string; delta?: boolean }
   | { type: 'tool'; name: string; args: unknown; callId?: string; title?: string }
   | { type: 'tool-result'; name: string; isError: boolean; text: string; images: number; callId?: string; retryId?: string; resultId?: string; cancelled?: boolean }
   | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | { type: 'quota-observed'; quota: import('./agentUsage').AgentQuota }
   | { type: 'error'; message: string; category?: string; retryId?: string; retryBlocked?: string; detail?: string }
   | { type: 'done'; message: string }
   | { type: 'started'; agent: string; label: string; budgetTokens?: number }

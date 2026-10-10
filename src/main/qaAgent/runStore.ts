@@ -31,6 +31,7 @@ const draftFile = (breakpoint: Breakpoint, area: DraftArea) => `${area === 'func
 export type LiveRecord = Omit<LiveCaptureResult, 'png'> & { capturedAt: number; design: DesignSlotMeta | null }
 
 export interface PruneOptions {
+  ownerKey?: string
   maxAgeDays?: number
   maxRuns?: number
   maxBytes?: number
@@ -203,6 +204,7 @@ export function createRunStore(root: string, now: () => number = () => Date.now(
       const entries = readdirSync(root)
         .filter((name) => RUN_ID_PATTERN.test(name))
         .map((name) => ({ name, meta: readMeta(name) }))
+        .filter(entry=>!options.ownerKey||entry.meta?.ownerKey===options.ownerKey)
         .map((entry) => ({ name: entry.name, touchedAt: entry.meta?.touchedAt ?? 0, pinned: entry.meta?.pinned === true, bytes: folderSize(join(root, entry.name)) }))
         .sort((a, b) => b.touchedAt - a.touchedAt)
       const removed: string[] = []

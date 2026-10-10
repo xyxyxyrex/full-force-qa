@@ -12,6 +12,14 @@ const store = () => createChatStore(join(root, 'chats'), () => ++clock)
 const message = (text: string) => ({ id: 1, kind: 'user', text })
 
 describe('saved chats', () => {
+  it('reopens image references in both the visible transcript and provider history', () => {
+    const attachment = { id: 'a1111111-1111-4111-8111-111111111111', name: 'Screenshot.webp', mimeType: 'image/webp' as const, width: 40, height: 20, bytes: 100 }
+    const chats = store()
+    chats.save({ id: 'chat-with-images', messages: [{ kind: 'user', text: 'Inspect this', attachments: [attachment] }] }, [{ role: 'user', text: 'Inspect this', attachments: [attachment] }])
+    const reopened = store().load('chat-with-images')!
+    expect(reopened.messages[0]).toMatchObject({ attachments: [attachment] })
+    expect(reopened.history[0].attachments).toEqual([attachment])
+  })
   it('saves what the chat shows and what the agent remembers, and lists chats newest first', () => {
     const chats = store()
     chats.save({ id: 'chat-aaaaaaaa', title: 'How big is the hero heading?', messages: [message('How big is the hero heading?'), { id: 2, kind: 'assistant', text: '28px' }], session: { input: 1000, output: 50, requests: 1 } }, [{ role: 'user', text: 'How big is the hero heading?' }, { role: 'assistant', text: '28px' }])

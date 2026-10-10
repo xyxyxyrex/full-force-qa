@@ -25,12 +25,43 @@ const turn = (provider: AgentProvider, message: string, over: Partial<Parameters
 }
 
 describe('runChatTurn', () => {
+  it('lets CLI agents inspect owned images through the bridge without unused inline payloads', async () => {
+    const image = { id: 'a1111111-1111-4111-8111-111111111111', name: 'Screenshot.webp', width: 40, height: 20, bytes: 10, mimeType: 'image/webp' as const }
+    let reads = 0
+    fake.context.chatImages = async () => { reads++; return [{ data: Buffer.from('IMAGE'), mimeType: 'image/webp', caption: image.name }] }
+    const { provider } = fakeProvider(async run => {
+      expect(run.images).toBeUndefined()
+      expect(run.attachments).toEqual([image])
+      expect(run.task).toContain(image.id)
+      expect(reads).toBe(0)
+      expect((await run.call('read_chat_images', { ids: [image.id] })).images).toHaveLength(1)
+      return { stopped: 'finished', text: 'Inspected through the bridge.' }
+    })
+    provider.needsBridge = true
+    await turn(provider, 'Inspect this screenshot.', { attachments: [image] }).promise
+    expect(reads).toBe(1)
+  })
+  it('passes attached images to the provider while saving references rather than binary payloads', async () => {
+    const image = { id: 'a1111111-1111-4111-8111-111111111111', name: 'Screenshot.webp', width: 40, height: 20, bytes: 10, mimeType: 'image/webp' as const }
+    fake.context.chatImages = async ids => { expect(ids).toEqual([image.id]); return [{ data: Buffer.from('IMAGE'), mimeType: 'image/webp', caption: image.name }] }
+    const { provider, runs } = fakeProvider(async run => {
+      expect((await run.call('read_chat_images', { ids: [image.id] })).images).toHaveLength(1)
+      return { stopped: 'finished', text: 'The screenshot shows a heading.' }
+    })
+    const result = await turn(provider, 'What is wrong here?', { attachments: [image] }).promise
+    expect(runs[0].images?.[0].data.toString()).toBe('IMAGE')
+    expect(runs[0].task).toContain(image.id)
+    expect(result.history[0]).toEqual({ role: 'user', text: 'What is wrong here?', attachments: [image] })
+    expect(JSON.stringify(result.history)).not.toContain('base64')
+    await turn(provider, 'What about its spacing?', { history: result.history }).promise
+    expect(runs[1].history?.[0].images?.[0].data.toString()).toBe('IMAGE')
+  })
   it('sends the message with the earlier chat and the chat prompt, and remembers the answer', async () => {
     const { provider, runs } = fakeProvider(() => ({ stopped: 'finished', text: 'It is 28px.' }))
     const history = [{ role: 'user' as const, text: 'hi' }, { role: 'assistant' as const, text: 'hello' }]
     const result = await turn(provider, 'How big is the heading?', { history }).promise
     expect(runs[0]).toMatchObject({ task: 'How big is the heading?', history, tools: CHAT_TOOLS })
-    expect(runs[0].system).toContain('You are Parity\'s QA agent')
+    expect(runs[0].system).toContain('Parity’s assistant'); expect(runs[0].system).toContain('qa-review'); expect(runs[0].system.length).toBeLessThan(QA_AGENT_PROMPT.length)
     expect(result.history).toEqual([...history, { role: 'user', text: 'How big is the heading?' }, { role: 'assistant', text: 'It is 28px.' }])
     expect(result.stopped).toBe('finished')
   })

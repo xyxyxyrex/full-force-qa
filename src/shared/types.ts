@@ -12,6 +12,7 @@ import type {
   AuditExportScanResult
 } from './auditExport'
 export interface CaptureResult {
+  captureActivity?: Omit<import('./parityWorkspace').CaptureActivity,'projectId'>
   success: boolean
   html?: string
   auditContext?: AuditCaptureContext
@@ -404,6 +405,21 @@ export interface ResourceFileSizeResult {
 }
 
 export interface ElectronAPI extends InspectorApi {
+  workspaceSearch: (query: import('./parityWorkspace').WorkspaceQuery) => Promise<import('./parityWorkspace').WorkspaceSearch>
+  workspaceSnapshot: (refresh?: boolean) => Promise<import('./parityWorkspace').WorkspaceSnapshot>
+  workspaceMutate: (operations: import('./parityWorkspace').WorkspaceOperation[],owner:string) => Promise<import('./parityWorkspace').WorkspaceSnapshot>
+  workspacePropose: (operations: import('./parityWorkspace').WorkspaceOperation[], title: string) => Promise<import('./parityWorkspace').WorkspaceProposal>
+  workspaceApply: (id: string) => Promise<import('./parityWorkspace').WorkspaceApplyResult>
+  workspaceCancel: (id: string) => Promise<import('./parityWorkspace').WorkspaceProposal>
+  workspaceRefresh: (id: string) => Promise<import('./parityWorkspace').WorkspaceProposal>
+  workspaceProposal: (id: string) => Promise<import('./parityWorkspace').WorkspaceProposal>
+  workspaceOpen: (target: import('./parityWorkspace').WorkspaceNavigation) => Promise<unknown>
+  workspaceLocation: (location: {workspace: string;folderId?: string;projectId?: string}) => void
+  recordCaptureActivity: (activity: import('./parityWorkspace').CaptureActivity, owner: string | null) => Promise<void>
+  onWorkspaceChanged: (callback: (value: {ownerKey: string; snapshot: import('./parityWorkspace').WorkspaceSnapshot}) => void) => () => void
+  onWorkspaceNavigate: (callback: (value: {ownerKey: string;target: import('./parityWorkspace').WorkspaceNavigation}) => void) => () => void
+  qaChatSelection: (chatId: string, selection: import('./qaAgent').ChatAgentSelection | null) => Promise<{selection:import('./qaAgent').ChatAgentSelection|null;label:string}>
+  qaWorkspaceCommand: (input:string) => Promise<{text?:string;search?:import('./parityWorkspace').WorkspaceSearch;proposal?:import('./parityWorkspace').WorkspaceProposal}>
   siteAuthPending: () => Promise<import('./httpAuth').SiteAuthRequest | null>
   siteAuthRespond: (id: string, value: import('./httpAuth').SiteCredentials | null) => Promise<boolean>
   onSiteAuthRequest: (callback: (request: import('./httpAuth').SiteAuthRequest | null) => void) => () => void
@@ -483,10 +499,13 @@ export interface ElectronAPI extends InspectorApi {
   qaRunStop: () => Promise<boolean>
   qaBatchStart: (options: QaBatchStartOptions) => Promise<QaRunStartResult>
   qaChatSend: (text: string, options?: QaChatSendOptions) => Promise<QaRunStartResult>
+  qaAgentQuota: (input: { chatId?: string | null; agent?: import('./qaAgent').AgentId; refresh?: boolean; ownerKey: string | null }) => Promise<import('./agentUsage').AgentQuota>
+  qaChatImagesAdd: (input: { chatId: string; ownerKey: string | null; files: import('./chatImages').ChatImageUpload[] }) => Promise<import('./chatImages').ChatImage[]>
+  qaChatImagesPicture: (chatId: string, id: string, full?: boolean) => Promise<{ src: string; caption: string }>
   qaChatReset: () => Promise<boolean>
   qaChatsList: () => Promise<QaChatListItem[]>
   qaChatsOpen: (id: string) => Promise<QaStoredChat | null>
-  qaChatsSave: (chat: { id: string; title?: string; agentLabel?: string; messages: unknown[]; session?: { input: number; output: number; requests: number } }) => Promise<boolean>
+  qaChatsSave: (chat: { id: string; ownerKey: string | null; title?: string; agentLabel?: string; messages: unknown[]; session?: { input: number; output: number; requests: number } }) => Promise<boolean>
   qaChatsDelete: (id: string) => Promise<boolean>
   qaHistoryList: () => Promise<QaRunListItem[]>
   qaHistoryDetail: (id: string) => Promise<QaRunDetail | null>

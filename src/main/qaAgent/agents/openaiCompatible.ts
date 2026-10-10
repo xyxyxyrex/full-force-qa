@@ -1,6 +1,9 @@
 import { readCompletionStream } from './stream'
 import { imagePlaceholder, executeToolCalls, isAbortError, KEEP_IMAGE_TURNS, summarize, toolSchemas } from './common'
 import { AgentError, QuotaError, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
+import type { ToolImage } from '../toolBasics'
+import { quotaFromHeaders } from './quota'
+import { isAgentId } from '../../../shared/qaAgent'
 
 // Any server that speaks the Chat Completions API: OpenAI itself, Gemini, OpenRouter, and local
 // servers such as Ollama or LM Studio. Chat Completions cannot carry pictures inside a tool result,
@@ -33,7 +36,16 @@ type Message =
   | { role: 'user'; content: string | Part[]; carriesImages?: boolean }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string }
-interface ToolCall { id: string; type: 'function'; function: { name: string; arguments: string | Record<string, unknown> } }
+interface ToolCall {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string | Record<string, unknown> }
+  /** Opaque provider metadata, including Gemini's per-call thought signature. */
+  extra_content?: Record<string, unknown>
+}
+const userMessage = (text: string, images?: ToolImage[]): Message => images?.length
+  ? { role: 'user', carriesImages: true, content: [{ type: 'text', text }, ...images.flatMap((image): Part[] => [{ type: 'text', text: image.caption }, { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` } }])] }
+  : { role: 'user', content: text }
 
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000
 const MAX_RETRIES = 3
@@ -98,6 +110,7 @@ function dailyLimitError(config: OpenAiCompatibleConfig): AgentError {
 
 function describeFailure(config: OpenAiCompatibleConfig, status: number, body: string): AgentError {
   const detail = errorOf(body).message
+  if (status === 400 && /thought[_ ]signature/i.test(detail)) return new AgentError(`${config.label} could not continue an earlier tool response because its verification signature is missing or invalid. Send a new message to try again; completed actions have been kept.`)
   if (status === 401 || status === 403) return new AgentError(`${config.label} rejected the API key. Check it in Settings → AI Agents.`)
   if (status === 404) return new AgentError(`${config.label} does not know the model "${config.model}"${detail ? ` (${detail})` : ''}. Pick another in Settings → AI Agents.`)
   if (status === 429) return new AgentError(`${config.label} is still rate limiting this key${config.lite ? ' (free tier)' : ''}. Wait a few minutes and run again${config.lite ? ', or pick another free model' : ''}.`)
@@ -116,7 +129,7 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
     lite: !!config.lite,
     async run(run: ProviderRun): Promise<ProviderResult> {
       const tools = toolSchemas(run.tools).map((tool) => ({ type: 'function' as const, function: { name: tool.name, description: tool.description, parameters: tool.schema } }))
-      const messages: Message[] = (run.resume as { messages?: Message[] } | undefined)?.messages || [{ role: 'system', content: run.system }, ...(run.history ?? []).map((turn): Message => (turn.role === 'user' ? { role: 'user', content: turn.text } : { role: 'assistant', content: turn.text })), { role: 'user', content: run.task }]
+      const messages: Message[] = (run.resume as { messages?: Message[] } | undefined)?.messages || [{ role: 'system', content: run.system }, ...(run.history ?? []).map((turn): Message => (turn.role === 'user' ? userMessage(turn.text, turn.images) : { role: 'assistant', content: turn.text })), userMessage(run.task, run.images)]
       let lastText = (run.resume as { lastText?: string } | undefined)?.lastText || ''
       let streaming = true
 
@@ -134,6 +147,8 @@ export function createOpenAiCompatibleProvider(config: OpenAiCompatibleConfig): 
               body: payload,
               signal: AbortSignal.any([run.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
             })
+            const quota = isAgentId(config.id) ? quotaFromHeaders(config.id, config.model, response.headers) : null
+            if (quota) run.emit({ type: 'quota-observed', quota })
             if (response.ok && /text\/event-stream/i.test(response.headers.get('content-type') || '')) return await readCompletionStream(response, text => run.emit({ type: 'text', text, delta: true }))
             text = await response.text()
           } catch (error: any) {

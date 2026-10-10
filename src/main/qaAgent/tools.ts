@@ -17,6 +17,10 @@ import { BROWSER_TOOLS } from './browserTools'
 import type { QaBrowser } from './qaBrowserTypes'
 import { readResultTool } from './execution'
 import type { RemarkStyle } from '../../shared/remarkStyle'
+import type { WorkspaceService } from '../workspaceService'
+import type { WorkspaceProposal } from '../../shared/parityWorkspace'
+import { WORKSPACE_TOOLS } from './workspaceTools'
+import { readChatImages } from './chatImageTool'
 
 export type { ToolDefinition, ToolImage, ToolResult }
 
@@ -37,6 +41,14 @@ export interface EvidenceUploader {
 }
 
 export interface QaContext {
+  chatImages?(ids: string[]): Promise<ToolImage[]>
+  workspace?: WorkspaceService
+  workspaceProposal?(proposal: WorkspaceProposal): void
+  appContext?(): unknown
+  assertAccess?(): void
+  agentAccess?: boolean
+  allowedTools?: Set<string>
+  authorizeTool?(name:string,args:unknown):Promise<void>
   now(): number
   reportedContext(): ReportedContext | null
   /**
@@ -608,7 +620,7 @@ const finalizeRows = defineTool({
   },
 })
 
-export const QA_TOOLS = [getContext, setDesign, captureLive, getOverview, getSection, saveDraft, finalizeRows, readResultTool, ...BROWSER_TOOLS] as const
+export const QA_TOOLS = [getContext, setDesign, captureLive, getOverview, getSection, saveDraft, finalizeRows, readResultTool, readChatImages, ...BROWSER_TOOLS, ...WORKSPACE_TOOLS] as const
 
 export type QaToolName = (typeof QA_TOOLS)[number]['name']
 
@@ -623,7 +635,10 @@ export async function callTool(name: string, rawArgs: unknown, context: QaContex
   const parsed = tool.input.safeParse(rawArgs ?? {})
   if (!parsed.success) return fail(`Invalid input for ${name}: ${parsed.error.issues.map((issue) => `${issue.path.join('.') || 'input'} ${issue.message}`).join('; ')}`)
   try {
-    const work = () => tool.run(parsed.data, context)
+    context.assertAccess?.()
+    if (context.agentAccess && !tool.agentAllowed) return fail('This tool is available only through Parity’s user interface.')
+    if(context.allowedTools&&!context.allowedTools.has(name))return fail('This tool is not permitted in the active request.')
+    const work = async () => { context.assertAccess?.(); await context.authorizeTool?.(name,parsed.data);context.assertAccess?.(); const result=await tool.run(parsed.data, context); context.assertAccess?.(); return result }
     return context.dispatchTool ? await context.dispatchTool(name, parsed.data, work) : await work()
   } catch (error: any) {
     return fail(`${name} failed: ${error?.message || 'unknown error'}`)

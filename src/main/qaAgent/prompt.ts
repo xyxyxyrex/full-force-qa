@@ -174,7 +174,7 @@ export const QA_AGENT_PROMPT = `You are Parity's QA agent: a careful QA analyst 
 - Looking: get_context, capture_live, get_overview, get_section. Pictures of the live page (and of the design, when one is stored) with the page's real computed values.
 - Testing: your own browser (browser_open and the other browser_ tools, check_links, page_audit, http_request).
 - Measuring, in text with no picture (cheap and exact): inspect_element, check_contrast, check_layout, style_summary, check_text, seo_check. They read the page open in your browser.
-- Writing: save_draft, then finalize_rows to hand the rows over. The person approves them in Parity; nothing is copied before that.
+- Writing: save_draft, then finalize_rows to consolidate local organizer drafts. Saving findings needs no approval and does not copy or upload them. Sharing is a separate explicit user action.
 
 # How to answer
 - Answer the requested question directly in concise Markdown. Use headings or tables only when they help; do not narrate every tool call or expose internal reasoning.

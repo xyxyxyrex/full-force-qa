@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain, screen, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import type { QaChatWindowAction, QaChatWindowSnapshot } from '../shared/qaChatWindow'
+import { accountOwner,onAccountChanged } from './account'
 
 interface Options { getMainWindow: () => BrowserWindow | null; preload: string; rendererFile: string; rendererUrl?: string }
 
@@ -7,6 +8,8 @@ export function registerQaChatWindow(options: Options) {
   let detached: BrowserWindow | null = null
   let snapshot: QaChatWindowSnapshot | null = null
   let bounds: Electron.Rectangle | undefined
+  let generation=0
+  onAccountChanged(()=>{generation++;snapshot={chat:null,theme:snapshot?.theme||'parity',ownerKey:accountOwner(),generation};if(detached&&!detached.isDestroyed())detached.webContents.send('qa:window:snapshot',snapshot)})
   const host = () => { const window = options.getMainWindow(); return window && !window.isDestroyed() ? window : null }
   const fromHost = (event: IpcMainEvent | IpcMainInvokeEvent) => !!host() && event.senderFrame === host()!.webContents.mainFrame
   const fromDetached = (event: IpcMainEvent | IpcMainInvokeEvent) => !!detached && !detached.isDestroyed() && event.senderFrame === detached.webContents.mainFrame
@@ -15,13 +18,13 @@ export function registerQaChatWindow(options: Options) {
 
   ipcMain.handle('qa:window:status', event => fromHost(event) || fromDetached(event) ? !!detached : false)
   ipcMain.on('qa:window:sync', (event, next: QaChatWindowSnapshot) => {
-    if (!fromHost(event) || !next || typeof next.theme !== 'string' || !next.chat || typeof next.chat !== 'object') return
-    snapshot = next
+    if (!fromHost(event) || !next || next.ownerKey!==accountOwner() || typeof next.theme !== 'string' || !next.chat || typeof next.chat !== 'object') return
+    snapshot = {...next,generation}
     if (detached && !detached.isDestroyed()) detached.webContents.send('qa:window:snapshot', snapshot)
   })
   ipcMain.handle('qa:window:ready', event => fromDetached(event) ? snapshot : null)
   ipcMain.on('qa:window:action', (event, action: QaChatWindowAction) => {
-    if (!fromDetached(event) || !action || !['user', 'status', 'error', 'clear', 'event', 'draft', 'open'].includes(action.type)) return
+    if (!fromDetached(event) || !action || action.ownerKey!==accountOwner() || action.generation!==generation || !['user', 'status', 'error', 'info', 'clear', 'event', 'draft', 'open','ensure-chat'].includes(action.type)) return
     host()?.webContents.send('qa:window:action', action)
     if (action.type === 'open') focusHost()
   })
@@ -39,7 +42,7 @@ export function registerQaChatWindow(options: Options) {
       width, height, minWidth: 420, minHeight: 420,
       x: Math.max(area.x, Math.min(bounds?.x ?? area.x + area.width - width - 24, area.x + area.width - width)),
       y: Math.max(area.y, Math.min(bounds?.y ?? area.y + 40, area.y + area.height - height)),
-      title: 'QA agent — Parity', show: false, resizable: true, minimizable: true, maximizable: true,
+      title: 'Chat — Parity', show: false, resizable: true, minimizable: true, maximizable: true,
       autoHideMenuBar: true, backgroundColor: '#202124', titleBarStyle: 'hidden',
       titleBarOverlay: { color: '#00000000', symbolColor: '#edefee', height: 38 },
       webPreferences: { preload: options.preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webSecurity: true },

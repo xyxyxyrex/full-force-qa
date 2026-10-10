@@ -1,5 +1,38 @@
 # QA agent
 
+## Workspace assistance
+
+Use `/usage` for token totals recorded in this chat (including retries and model switches), not a billing estimate. `/quota` checks the selected chat provider; `/quota codex --refresh` chooses a provider explicitly and bypasses the 30-second cache. Reports include their source/time and a **Check again** button. Codex uses its read-only `account/rateLimits/read` endpoint. OpenRouter reads the current API key's allowance, not total account credits. Antigravity runs its standalone `agy -p /usage` command. Claude Code subscription notices and API rate-limit headers are shown when observed during actual work; expired readings are discarded. Missing quota stays unavailable with provider-specific guidance (Gemini API uses AI Studio). These commands send no model prompts, do not start reviews, and work in docked/detached chat. Stop/Escape cancels a pending check. Account/config-scoped snapshots never contain tokens, email addresses or raw CLI diagnostics.
+
+The assistant can explain Dashboard, Edit, Layout, Live, Audit, Automate, designs, findings, tracker, notes, tickets, and storage. It works from Dashboard as well as an open website. Relevant records come from the signed-in account’s Supabase catalog and its own local cache; searches show cached coverage when offline. Notes and tickets are searchable context, while project/folder management shows a preview with **Apply** and **Cancel**.
+
+The provider/model picker above the composer overrides this conversation only. **Use Settings default** removes the override. Active model switches keep checkpoints, saved findings, and remark policy; docked and detached windows share the same choice.
+
+Attach images through **+ → Attach images**, paste, or drag files into the composer. Up to four PNG, JPEG, WebP, or GIF files of 10 MB each can accompany a message. Click a preview to open the original in a lightbox. Files stay in the account-scoped local chat store; sending passes optimized, static images to the selected provider. GIF analysis uses its first frame. API models receive images directly; CLI agents inspect them through the scoped `read_chat_images` tool. Saved chats retain attachment references; deleting/pruning a chat removes its images. Use a model that supports images. Chat attachments do not replace the Figma designs used by `/review`.
+
+Examples:
+
+```text
+/search client
+/captures 10/09/26
+/create folder "Launch" --folder "Home / Client"
+/create project https://example.com,https://example.com/about --folder "Launch"
+/move project "project ID" "Home / Client / Launch"
+/rename folder "folder ID" "Release"
+/trash "project ID"
+/restore "project ID"
+/about automate
+/agent
+```
+
+`/projects`, `/folders`, `/findings`, `/notes`, `/tickets`, `/open`, and `/context` supplement the existing review/history/help commands. Quoted names and in-account suggestions help resolve targets; ambiguous names require an ID or folder breadcrumb. Creating projects saves URLs without loading websites. Opening a saved project runs capture. Folder deletion moves direct projects/subfolders to its parent or Home; the assistant cannot permanently delete projects.
+
+Capture searches use recorded successful captures, including native Electron, agent QA captures, and Firefox/WebKit comparisons. `MM/DD/YY` resolves in the local timezone. Created, captured, and last-opened dates are distinct; older projects may have no capture history.
+
+All catalog reads and changes resolve ownership from verified Supabase authentication. Models receive typed tools, never database credentials or arbitrary storage/file access. Retrieved page/note/ticket content is untrusted. Changes need a user-applied proposal ID; actions that could send private retrieved content through browser/HTTP tools require a separate **Allow once** review. In-app CLI agents receive revocable execution capabilities; the persistent external QA bridge does not expose the private workspace catalog. Account changes clear histories/drafts from both views and invalidate queued work and stale replies.
+
+Backend prerequisites: apply `20261009090000_parity_workspace_agent.sql`, then deploy `parity-account-v2`. The migration adds private capture activity, catalog revision tracking, and idempotent operation receipts. New catalog-dependent actions remain unavailable until that backend is deployed; old project records and manual tracker sheets remain readable.
+
 An AI agent that does the first pass of QA on a staging page. It checks how the page **looks** (against the Figma exports when you have them, on its own when you do not), how it **works** (links, menus, buttons, forms, console and network errors, in a browser of its own) and the **SEO and accessibility basics**, adds a few **suggestions** of its own, saves drafts in a project organizer and the built-in QA Master Tracker. **You review findings in Parity; copying rows is optional, and sharing evidence requires approval.** A design is never required, and the agent does not ask for one.
 
 ## The workflow
@@ -196,3 +229,5 @@ The QA agent has Chat and Findings tabs. Audits save local drafts as they are fo
 Copy selected rows is optional and exports plain text safely. Share evidence asks for approval and can upload annotated pictures when enabled and signed in; it does not copy automatically. Evidence remains viewable locally without uploads, independently of run cleanup. Import past findings reads matching saved drafts and handovers. Stable source IDs keep retries and breakpoint consolidation from duplicating items; human edits and review decisions are protected.
 
 Settings -> Agents -> Remark style controls Direct, Professional, or Friendly tone, plain/balanced/technical terminology, brief/standard/detailed explanations, and optional bold/inline-code formatting. The default is Professional, Balanced, Standard, plain text. The live example does not contact a model. Limits are 200, 600, and 1,200 characters for generated remarks; manual remarks support the normal cell limit. Style is frozen for each request, including retries and model changes, and existing findings are not rewritten. Organizer records and evidence are local, account-scoped files; no Supabase migration is needed.
+
+Local designs are account-scoped. Legacy designs migrate only when managed project records establish one unambiguous owner; ambiguous and unowned originals remain retained separately.

@@ -11,8 +11,12 @@ export default function DetachedChat() {
   const [error, setError] = useState('')
   useEffect(() => {
     let alive = true; let received = false; let theme = ''
+    let generation=-1
     const accept = (snapshot: QaChatWindowSnapshot | null) => {
       if (!alive || !snapshot) return
+      if((snapshot.generation||0)<generation)return
+      generation=snapshot.generation||0
+      if(snapshot.chat===null){qaChat.reset();setReady(false);return}
       received = true
       if (theme !== snapshot.theme) {
         theme = snapshot.theme; applyTheme(theme as AppTheme)
@@ -31,7 +35,7 @@ export default function DetachedChat() {
     window.addEventListener('keydown', key)
     return () => { alive = false; off(); window.removeEventListener('keydown', key); window.removeEventListener('parity:open-qa-history', history); window.removeEventListener('parity:open-ai-tracker', tracker); window.removeEventListener('parity:settings-section', settings) }
   }, [])
-  return <main className="qa-detached-window"><div className="qa-window-titlebar">QA agent <span>Parity</span></div>{ready ? <QaChat detached onClose={() => window.close()}/> : <div className="qa-window-loading" role="status">{error || 'Reconnecting to your chat…'}<button type="button" onClick={() => void window.electronAPI.qaWindowDock()}>Dock in Parity</button></div>}</main>
+  return <main className="qa-detached-window"><div className="qa-window-titlebar">Chat <span>Parity</span></div>{ready ? <QaChat detached onClose={() => window.close()}/> : <div className="qa-window-loading" role="status">{error || 'Reconnecting to your chat…'}<button type="button" onClick={() => void window.electronAPI.qaWindowDock()}>Dock in Parity</button></div>}</main>
 }
 
 applyTheme(loadSettings().theme)

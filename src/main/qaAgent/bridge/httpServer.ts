@@ -5,6 +5,7 @@ import { BRIDGE_VERSION, callTool, findTool, QA_TOOLS, type QaContext } from '..
 import { checkRequest, MAX_BODY_BYTES } from './guards'
 import { QA_AGENT_PROMPT } from '../prompt'
 import { stylePrompt } from '../../../shared/remarkStyle'
+import { PARITY_ASSISTANT_POLICY } from '../../../shared/parityGuide'
 import { createQaMcpHandler } from './mcp'
 
 // The local bridge: `/mcp` for MCP clients (Claude Code, Codex, Antigravity CLI, …) and
@@ -22,6 +23,7 @@ export interface BridgeLogEntry {
 export interface BridgeOptions {
   getContext: () => QaContext
   getToken: () => string
+  resolveToken?: (token: string) => QaContext | null
   onRequest?: (entry: BridgeLogEntry) => void
 }
 
@@ -47,7 +49,6 @@ async function readJsonBody(req: IncomingMessage): Promise<{ ok: true; value: un
 export function createBridgeServer(options: BridgeOptions) {
   let server: Server | null = null
   let listeningPort: number | null = null
-  const mcp = toNodeHandler(createQaMcpHandler(options.getContext), { maxRequestBodySize: MAX_BODY_BYTES })
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const started = Date.now()
@@ -55,12 +56,15 @@ export function createBridgeServer(options: BridgeOptions) {
     let path = '/'
     try { path = new URL(req.url || '/', 'http://bridge').pathname } catch { /* treated as unknown below */ }
     let tool: string | undefined
+    const supplied = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '')?.[1] || ''
+    const scoped = options.resolveToken?.(supplied)
+    const requestContext = scoped || options.getContext()
     const done = (status: number) => options.onRequest?.({ at: started, method, path, status, ms: Date.now() - started, tool })
 
     const verdict = checkRequest(
       { method, path, host: req.headers.host, origin: req.headers.origin as string | undefined, contentType: req.headers['content-type'], authorization: req.headers.authorization },
       listeningPort ?? 0,
-      options.getToken(),
+      scoped ? supplied : options.getToken(),
     )
     if (!verdict.ok) {
       if (verdict.status === 401) res.setHeader('WWW-Authenticate', 'Bearer')
@@ -69,21 +73,23 @@ export function createBridgeServer(options: BridgeOptions) {
     }
 
     try {
+      requestContext.assertAccess?.()
       if (path === '/mcp') {
+        const mcp = toNodeHandler(createQaMcpHandler(() => requestContext), { maxRequestBodySize: MAX_BODY_BYTES })
         await mcp(req, res)
         return done(res.statusCode)
       }
       if (path === '/api/status') {
-        const reported = options.getContext().reportedContext()
+        const reported = requestContext.reportedContext()
         sendJson(res, 200, { ok: true, bridgeVersion: BRIDGE_VERSION, projectOpen: !!reported, project: reported?.project.name ?? null, page: reported?.pageUrl ?? null })
         return done(200)
       }
       if (path === '/api/prompt') {
-        sendJson(res, 200, { prompt: stylePrompt(QA_AGENT_PROMPT, options.getContext().remarkStyle?.()) })
+        sendJson(res, 200, { prompt: stylePrompt(PARITY_ASSISTANT_POLICY+'\n'+QA_AGENT_PROMPT, requestContext.remarkStyle?.()) })
         return done(200)
       }
       if (path === '/api/tools') {
-        sendJson(res, 200, { tools: QA_TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, readOnly: t.readOnly, agentAllowed: t.agentAllowed, inputSchema: z.toJSONSchema(t.input) })) })
+        sendJson(res, 200, { tools: QA_TOOLS.filter(t=>(!requestContext.agentAccess||t.agentAllowed)&&(!requestContext.allowedTools||requestContext.allowedTools.has(t.name))).map((t) => ({ name: t.name, title: t.title, description: t.description, readOnly: t.readOnly, agentAllowed: t.agentAllowed, inputSchema: z.toJSONSchema(t.input) })) })
         return done(200)
       }
       tool = path.slice('/api/tools/'.length)
@@ -97,7 +103,7 @@ export function createBridgeServer(options: BridgeOptions) {
         return done(body.status)
       }
       const args = body.value && typeof body.value === 'object' ? (body.value as { args?: unknown }).args : undefined
-      const result = await callTool(tool, args ?? {}, options.getContext())
+      const result = await callTool(tool, args ?? {}, requestContext)
       sendJson(res, 200, {
         text: result.text,
         isError: !!result.isError,

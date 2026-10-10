@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
-import { transform } from 'esbuild'
+import { build } from 'esbuild'
 
 let code: string
 beforeAll(async () => {
   const source = readFileSync('supabase/functions/parity-account-v2/index.ts', 'utf8').replace(/import \{ createClient \} from [^\n]+/, 'const createClient = () => mockAdmin')
-  code = (await transform(source, { loader: 'ts', format: 'cjs' })).code
+  code = (await build({stdin:{contents:source,resolveDir:'supabase/functions/parity-account-v2',loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false})).outputFiles[0].text
 })
 function endpoint({ verified = true, valid = true }: { verified?: boolean; valid?: boolean } = {}) {
   let handler!: (request: Request) => Promise<Response>
@@ -17,11 +17,12 @@ function endpoint({ verified = true, valid = true }: { verified?: boolean; valid
     from: vi.fn(() => lookup), rpc: vi.fn(async (name: string) => ({ data: name === 'initialize_parity_account' ? row : 'saved' })),
   }
   const fetch = vi.fn(async () => new Response(JSON.stringify({ data: { me: { id: '7' } } })))
-  runInNewContext(code, { mockAdmin, fetch, Response, TextEncoder, AbortSignal, Deno: { env: { get: () => 'configured' }, serve: (fn: typeof handler) => { handler = fn } } })
+  runInNewContext(code, { mockAdmin, fetch, Response, TextEncoder, AbortSignal,URL,structuredClone,crypto:globalThis.crypto, Deno: { env: { get: () => 'configured' }, serve: (fn: typeof handler) => { handler = fn } } })
   const call = (body: object) => handler(new Request('https://local.test', { method: 'POST', headers: { authorization: 'Bearer verified-token' }, body: JSON.stringify(body) }))
   return { call, mockAdmin, lookup, fetch }
 }
 describe('versioned account endpoint isolation', () => {
+  it('passes only verified ownership to catalog RPCs, ignoring forged owner IDs',async()=>{const {call,mockAdmin}=endpoint();expect((await call({action:'workspace_snapshot',owner:'parity:other-user',owner_key:'parity:other-user'})).status).toBe(200);expect(mockAdmin.rpc).toHaveBeenCalledWith('parity_workspace_snapshot',{p_owner_key:'parity:owner-a'})})
   it.each([{ valid: false }, { verified: false }])('rejects expired or unverified identities before looking up ownership (%j)', async options => {
     const { call, mockAdmin } = endpoint(options)
     expect((await call({ action: 'status' })).status).toBe(401)

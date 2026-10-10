@@ -23,6 +23,16 @@ export async function readCompletionStream(response: Response, onText: (text: st
       if (part.id) call.id = part.id
       if (part.function?.name) call.function.name += part.function.name
       if (part.function?.arguments) call.function.arguments += part.function.arguments
+      // Gemini's OpenAI-compatible endpoint attaches opaque thought signatures here.
+      // They can arrive after the argument fragments and must be echoed unchanged on
+      // the next request. A later metadata delta must not erase an earlier signature.
+      if (part.extra_content && typeof part.extra_content === 'object' && !Array.isArray(part.extra_content)) {
+        call.extra_content = {
+          ...call.extra_content, ...part.extra_content,
+          ...(part.extra_content.google && typeof part.extra_content.google === 'object' && !Array.isArray(part.extra_content.google)
+            ? { google: { ...call.extra_content?.google, ...part.extra_content.google } } : {}),
+        }
+      }
       calls.set(index, call)
     }
     if (choice.finish_reason) finish = choice.finish_reason

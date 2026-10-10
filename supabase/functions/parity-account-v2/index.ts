@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4'
+import { workspaceAction } from '../_shared/workspace.ts'
 
 const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type' }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers })
@@ -64,6 +65,10 @@ Deno.serve(async request => {
     if (accountError) throw accountError
     if (!account) return json({ needsSetup: true, email: user.email })
     const owner = account.owner_key
+    if (action.startsWith('workspace_')) {
+      const result = await workspaceAction(admin, owner, action, body)
+      return result === null ? json({ error: 'Unsupported workspace operation.' }, 400) : json(result)
+    }
     if (action === 'status') return json({ user: userView(account) })
     if (action === 'bootstrap') {
       const documents = async (table: string, id: string) => {

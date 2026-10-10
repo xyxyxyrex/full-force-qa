@@ -2,21 +2,47 @@ import type { PixelComparisonResponse } from '../shared/automation'
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppUpdateStatus, CaptureResult, FigmaConnectionStatus, MondayPublicConfig, NoteDocument, ParityAccountState, Project } from '../shared/types'
 import type { AuditCaptureContext, AuditExportProgress, AuditExportScanRequest, AuditMediaRequest } from '../shared/auditExport'
+let accountGeneration = 0
+ipcRenderer.on('account:changed', () => { accountGeneration++ })
+const ownedInvoke = async (channel: string, ...args: unknown[]) => {
+  const generation = accountGeneration
+  const result = await ipcRenderer.invoke(channel, ...args)
+  if (generation !== accountGeneration) throw new Error('The account changed. Try again.')
+  return result
+}
+let chatScope:{ownerKey:string|null;generation:number}={ownerKey:null,generation:0}
+const acceptChatScope=(value:import('../shared/qaChatWindow').QaChatWindowSnapshot|null)=>{if(value&&(value.generation||0)>=chatScope.generation)chatScope={ownerKey:value.ownerKey,generation:value.generation||0};return value}
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  qaAgentQuota: (input: import('../shared/types').ElectronAPI['qaAgentQuota'] extends (input: infer I) => unknown ? I : never) => ownedInvoke('qa:agents:quota', input),
+  workspaceSearch: (query: unknown) => ownedInvoke('workspace:search',query),
+  workspaceSnapshot: (refresh?: boolean) => ownedInvoke('workspace:snapshot',refresh),
+  workspaceMutate: (operations:unknown,owner:string) => ownedInvoke('workspace:mutate',operations,owner),
+  workspacePropose: (operations: unknown,title: string) => ownedInvoke('workspace:propose',operations,title),
+  workspaceApply: (id:string) => ownedInvoke('workspace:apply',id),
+  workspaceCancel: (id:string) => ownedInvoke('workspace:cancel',id),
+  workspaceRefresh: (id:string) => ownedInvoke('workspace:refresh',id),
+  workspaceProposal: (id:string) => ownedInvoke('workspace:proposal',id),
+  workspaceOpen: (target:unknown) => ownedInvoke('workspace:open',target),
+  workspaceLocation: (location:unknown) => ipcRenderer.send('workspace:location',location),
+  recordCaptureActivity: (activity:unknown,owner:string|null) => ownedInvoke('workspace:record-capture',activity,owner),
+  onWorkspaceChanged: (callback:(value:any)=>void) => {const handler=(_event:Electron.IpcRendererEvent,value:any)=>callback(value);ipcRenderer.on('workspace:changed',handler);return()=>ipcRenderer.removeListener('workspace:changed',handler)},
+  onWorkspaceNavigate: (callback:(value:any)=>void) => {const handler=(_event:Electron.IpcRendererEvent,value:any)=>callback(value);ipcRenderer.on('workspace:navigate',handler);return()=>ipcRenderer.removeListener('workspace:navigate',handler)},
+  qaChatSelection: (id:string,selection:unknown) => ownedInvoke('qa:chat:selection',id,selection),
+  qaWorkspaceCommand: (input:string) => ownedInvoke('qa:workspace-command',input),
   qaWindowDetach: () => ipcRenderer.invoke('qa:window:detach'),
   qaWindowDock: () => ipcRenderer.invoke('qa:window:dock'),
   qaWindowStatus: () => ipcRenderer.invoke('qa:window:status'),
-  qaWindowReady: () => ipcRenderer.invoke('qa:window:ready'),
+  qaWindowReady: () => ipcRenderer.invoke('qa:window:ready').then(acceptChatScope),
   qaWindowSync: (snapshot: import('../shared/qaChatWindow').QaChatWindowSnapshot) => ipcRenderer.send('qa:window:sync', snapshot),
-  qaWindowAction: (action: import('../shared/qaChatWindow').QaChatWindowAction) => ipcRenderer.send('qa:window:action', action),
+  qaWindowAction: (action: import('../shared/qaChatWindow').QaChatWindowAction) => ipcRenderer.send('qa:window:action', {...action,...chatScope}),
   onQaWindowChanged: (callback: (value: boolean) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, value: boolean) => callback(value)
     ipcRenderer.on('qa:window:changed', handler)
     return () => ipcRenderer.removeListener('qa:window:changed', handler)
   },
   onQaWindowSnapshot: (callback: (value: import('../shared/qaChatWindow').QaChatWindowSnapshot) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, value: import('../shared/qaChatWindow').QaChatWindowSnapshot) => callback(value)
+    const handler = (_event: Electron.IpcRendererEvent, value: import('../shared/qaChatWindow').QaChatWindowSnapshot) => {acceptChatScope(value);callback(value)}
     ipcRenderer.on('qa:window:snapshot', handler)
     return () => ipcRenderer.removeListener('qa:window:snapshot', handler)
   },
@@ -93,7 +119,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('account:changed', handler)
     return () => ipcRenderer.removeListener('account:changed', handler)
   },
-  ticketsList: () => ipcRenderer.invoke('tickets:list'),
+  ticketsList: () => ownedInvoke('tickets:list'),
   ticketsSave: (ticket: import('../shared/types').Ticket, ownerKey: string) => ipcRenderer.invoke('tickets:save', ticket, ownerKey),
   ticketsSync: () => ipcRenderer.invoke('tickets:sync'),
   ticketsImportMonday: (tickets: import('../shared/types').Ticket[], connectionId: string, ownerKey: string) => ipcRenderer.invoke('tickets:import-monday', tickets, connectionId, ownerKey),
@@ -118,7 +144,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('monday:graphql', query, variables)
   },
   accountBootstrap() {
-    return ipcRenderer.invoke('account:bootstrap')
+    return ownedInvoke('account:bootstrap')
   },
   accountSaveState(data: Partial<ParityAccountState>, ownerKey: string) {
     return ipcRenderer.invoke('account:save-state', data, ownerKey)
@@ -142,7 +168,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('capture:start', url)
   },
   getProjects(): Promise<Project[]> {
-    return ipcRenderer.invoke('projects:list')
+    return ownedInvoke('projects:list')
   },
   saveProject(project: Project, ownerKey?: string | null): Promise<void> {
     return ipcRenderer.invoke('projects:save', project, ownerKey)
@@ -159,12 +185,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => { ipcRenderer.removeListener('qa:approval-request', handler) }
   },
   qaAgentsOverview: () => ipcRenderer.invoke('qa:agents:overview'),
-  qaFindingsList: (projectKey?: string) => ipcRenderer.invoke('qa:findings:list', projectKey),
-  qaFindingsUpdate: (projectKey: string, revision: number, changes: unknown) => ipcRenderer.invoke('qa:findings:update', projectKey, revision, changes),
-  qaFindingsPicture: (projectKey: string, id: string, index?:number) => ipcRenderer.invoke('qa:findings:picture', projectKey, id, index),
-  qaFindingsImport: (projectKey: string) => ipcRenderer.invoke('qa:findings:import', projectKey),
-  qaFindingsCopy: (projectKey: string, ids: string[]) => ipcRenderer.invoke('qa:findings:copy', projectKey, ids),
-  qaFindingsShare: (projectKey: string, ids: string[]) => ipcRenderer.invoke('qa:findings:share', projectKey, ids),
+  qaFindingsList: (projectKey?: string) => ownedInvoke('qa:findings:list', projectKey),
+  qaFindingsUpdate: (projectKey: string, revision: number, changes: unknown) => ownedInvoke('qa:findings:update', projectKey, revision, changes),
+  qaFindingsPicture: (projectKey: string, id: string, index?:number) => ownedInvoke('qa:findings:picture', projectKey, id, index),
+  qaFindingsImport: (projectKey: string) => ownedInvoke('qa:findings:import', projectKey),
+  qaFindingsCopy: (projectKey: string, ids: string[]) => ownedInvoke('qa:findings:copy', projectKey, ids),
+  qaFindingsShare: (projectKey: string, ids: string[]) => ownedInvoke('qa:findings:share', projectKey, ids),
   onQaFindingsChanged: (callback: (event: { projectKey: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: { projectKey: string }) => callback(payload)
     ipcRenderer.on('qa:findings:changed', handler)
@@ -175,28 +201,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   qaAgentsSetKey: (id: string, key: string) => ipcRenderer.invoke('qa:agents:set-key', id, key),
   qaAgentsClearKey: (id: string) => ipcRenderer.invoke('qa:agents:clear-key', id),
   qaAgentsModels: (id: string) => ipcRenderer.invoke('qa:agents:models', id),
-  qaExecutionStatus: () => ipcRenderer.invoke('qa:execution:status'),
-  qaExecutionRetry: (id: string) => ipcRenderer.invoke('qa:execution:retry', id),
-  qaExecutionResult: (id: string, offset?: number) => ipcRenderer.invoke('qa:execution:result', id, offset),
+  qaExecutionStatus: () => ownedInvoke('qa:execution:status'),
+  qaExecutionRetry: (id: string) => ownedInvoke('qa:execution:retry', id),
+  qaExecutionResult: (id: string, offset?: number) => ownedInvoke('qa:execution:result', id, offset),
   qaRunStart: (options?: unknown) => ipcRenderer.invoke('qa:run:start', options),
   qaRunStop: () => ipcRenderer.invoke('qa:run:stop'),
   qaBatchStart: (options: unknown) => ipcRenderer.invoke('qa:batch:start', options),
-  qaChatSend: (text: string, options?: unknown) => ipcRenderer.invoke('qa:chat:send', text, options),
-  qaChatReset: () => ipcRenderer.invoke('qa:chat:reset'),
-  qaChatsList: () => ipcRenderer.invoke('qa:chats:list'),
-  qaChatsOpen: (id: string) => ipcRenderer.invoke('qa:chats:open', id),
-  qaChatsSave: (chat: unknown) => ipcRenderer.invoke('qa:chats:save', chat),
-  qaChatsDelete: (id: string) => ipcRenderer.invoke('qa:chats:delete', id),
-  qaHistoryList: () => ipcRenderer.invoke('qa:history:list'),
-  qaHistoryDetail: (id: string) => ipcRenderer.invoke('qa:history:detail', id),
-  qaHistoryPicture: (id: string, ref: unknown) => ipcRenderer.invoke('qa:history:picture', id, ref),
-  qaHistoryCopy: (id: string, stamp: string) => ipcRenderer.invoke('qa:history:copy', id, stamp),
-  qaHistoryOpenFolder: (id: string) => ipcRenderer.invoke('qa:history:open-folder', id),
-  qaHistoryPin: (id: string, pinned: boolean) => ipcRenderer.invoke('qa:history:pin', id, pinned),
-  qaHistoryDelete: (id: string) => ipcRenderer.invoke('qa:history:delete', id),
-  designsImage: (projectKey: string, breakpoint: string) => ipcRenderer.invoke('designs:image', projectKey, breakpoint),
-  qaTarget: () => ipcRenderer.invoke('qa:target:get'),
-  qaRunActive: () => ipcRenderer.invoke('qa:run:active'),
+  qaChatSend: (text: string, options?: unknown) => ownedInvoke('qa:chat:send', text, options),
+  qaChatImagesAdd: (input: unknown) => ownedInvoke('qa:chat-images:add', input),
+  qaChatImagesPicture: (chatId: string, id: string, full?: boolean) => ownedInvoke('qa:chat-images:picture', chatId, id, full),
+  qaChatReset: () => ownedInvoke('qa:chat:reset'),
+  qaChatsList: () => ownedInvoke('qa:chats:list'),
+  qaChatsOpen: (id: string) => ownedInvoke('qa:chats:open', id),
+  qaChatsSave: (chat: unknown) => ownedInvoke('qa:chats:save', chat),
+  qaChatsDelete: (id: string) => ownedInvoke('qa:chats:delete', id),
+  qaHistoryList: () => ownedInvoke('qa:history:list'),
+  qaHistoryDetail: (id: string) => ownedInvoke('qa:history:detail', id),
+  qaHistoryPicture: (id: string, ref: unknown) => ownedInvoke('qa:history:picture', id, ref),
+  qaHistoryCopy: (id: string, stamp: string) => ownedInvoke('qa:history:copy', id, stamp),
+  qaHistoryOpenFolder: (id: string) => ownedInvoke('qa:history:open-folder', id),
+  qaHistoryPin: (id: string, pinned: boolean) => ownedInvoke('qa:history:pin', id, pinned),
+  qaHistoryDelete: (id: string) => ownedInvoke('qa:history:delete', id),
+  designsImage: (projectKey: string, breakpoint: string) => ownedInvoke('designs:image', projectKey, breakpoint),
+  qaTarget: () => ownedInvoke('qa:target:get'),
+  qaRunActive: () => ownedInvoke('qa:run:active'),
   onQaRunEvent: (callback: (event: import('../shared/qaAgent').QaRunEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: import('../shared/qaAgent').QaRunEvent) => callback(payload)
     ipcRenderer.on('qa:run:event', handler)
@@ -215,10 +243,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   qaTrackerFormatGet: () => ipcRenderer.invoke('qa:tracker-format:get'),
   qaTrackerFormatSave: (text: string) => ipcRenderer.invoke('qa:tracker-format:save', text),
   qaTrackerFormatClear: () => ipcRenderer.invoke('qa:tracker-format:clear'),
-  designsList: (projectKey: string) => ipcRenderer.invoke('designs:list', projectKey),
-  designsPut: (projectKey: string, bytes: Uint8Array, options?: import('../shared/qaAgent').DesignPutOptions) => ipcRenderer.invoke('designs:put', projectKey, bytes, options),
-  designsUpdate: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint, options: import('../shared/qaAgent').DesignUpdateOptions) => ipcRenderer.invoke('designs:update', projectKey, breakpoint, options),
-  designsRemove: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint) => ipcRenderer.invoke('designs:remove', projectKey, breakpoint),
+  designsList: (projectKey: string) => ownedInvoke('designs:list', projectKey),
+  designsPut: (projectKey: string, bytes: Uint8Array, options?: import('../shared/qaAgent').DesignPutOptions) => ownedInvoke('designs:put', projectKey, bytes, options),
+  designsUpdate: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint, options: import('../shared/qaAgent').DesignUpdateOptions) => ownedInvoke('designs:update', projectKey, breakpoint, options),
+  designsRemove: (projectKey: string, breakpoint: import('../shared/designScale').Breakpoint) => ownedInvoke('designs:remove', projectKey, breakpoint),
   loadWorkspaceHtml(tabId: string): Promise<string | null> {
     return ipcRenderer.invoke('workspace-html:load', tabId)
   },

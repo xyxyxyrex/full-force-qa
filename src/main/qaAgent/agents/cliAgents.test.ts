@@ -49,6 +49,14 @@ const makeRun = (over: Partial<ProviderRun> = {}) => {
 }
 const provider = (spec: CliSpec, binary: string, model?: string, homeDir?: string) => createCliProvider(spec, { binary, model, homeDir, getBridge: () => BRIDGE })
 
+describe('Claude Code quota notices', () => {
+  it('observes structured rate-limit events without adding text or usage counts', () => {
+    const events: AgentEvent[] = []
+    claudeCodeSpec.parse(JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning', rateLimitType: 'five_hour', resetsAt: 2000000000 } }), event => events.push(event), {} as any)
+    expect(events).toEqual([expect.objectContaining({ type: 'quota-observed', quota: expect.objectContaining({ windows: [expect.objectContaining({ status: 'allowed_warning', resetsAt: 2000000000000 })] }) })])
+  })
+})
+
 describe.skipIf(process.platform === 'win32')('Claude Code adapter', () => {
   const lines = [
     JSON.stringify({ type: 'system', subtype: 'init' }),

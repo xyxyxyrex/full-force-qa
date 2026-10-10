@@ -41,6 +41,7 @@ export default function QaApprovalCard({ request, onDecide }: Props) {
   const page = shortLink(request.pageUrl)
   const countLabel = excluded.size ? `${keptCount} of ${rowCount} findings` : `${rowCount} finding${rowCount === 1 ? '' : 's'}`
 
+  if(request.action==='network'&&request.network)return <div className="qa-approval-backdrop" role="dialog" aria-modal="true" aria-labelledby="qa-network-title"><div className="qa-approval"><header><div><span className="qa-approval-eyebrow">Parity assistant</span><h2 id="qa-network-title">Allow this network action?</h2><small>{request.network.destination}</small></div></header><div className="qa-approval-body"><p>This chat has read private workspace records. Check the destination and the exact data before continuing.</p><strong>{request.network.tool.replace(/_/g,' ')}</strong><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:320,overflow:'auto'}}>{JSON.stringify(request.network.args,null,2)}</pre></div><footer><button type="button" onClick={()=>decide(false)} disabled={busy}>Cancel</button><button type="button" className="qa-approval-primary" onClick={()=>decide(true)} disabled={busy}>Allow once</button></footer></div></div>
   return (
     <div className="qa-approval-backdrop" role="dialog" aria-modal="true" aria-labelledby="qa-approval-title">
       <div className="qa-approval">

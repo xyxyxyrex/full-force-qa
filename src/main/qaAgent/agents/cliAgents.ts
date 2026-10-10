@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import { summarize, withHistory } from './common'
 import { AgentError, type AgentEvent, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
+import { parseClaudeQuota } from './quota'
 
 // Agent CLIs the person is already logged into (Claude Code, Codex, Antigravity CLI), so their
 // subscription pays for the review. Each one runs headless in a private temporary folder with
@@ -108,6 +109,11 @@ export const claudeCodeSpec: CliSpec = {
   parse(line, emit, state) {
     const message = tryJson(line)
     if (!message) return
+    if (message.type === 'rate_limit_event') {
+      const quota = parseClaudeQuota(message.rate_limit_info)
+      if (quota) emit({ type: 'quota-observed', quota })
+      return
+    }
     if (message.type === 'assistant') {
       for (const block of message.message?.content ?? []) {
         if (block.type === 'text' && block.text) { state.text = block.text; emit({ type: 'text', text: block.text }) }
@@ -387,7 +393,7 @@ export function createCliProvider(spec: CliSpec, options: CliProviderOptions): A
     label: spec.label,
     needsBridge: true,
     async run(chat: ProviderRun): Promise<ProviderResult> {
-      const run = { ...chat, task: withHistory(chat.task, chat.history) }
+      const run = { ...chat, task: withHistory(chat.task, chat.history) + (chat.images?.length || chat.attachments?.length || chat.history?.some(turn => turn.attachments?.length) ? '\nImages are not inline in this CLI prompt. Call read_chat_images with the attachment IDs in the chat to inspect them before answering image-related questions. Do not claim to have seen an image until that tool succeeds.' : '') }
       const bridge = options.getBridge()
       const dir = mkdtempSync(join(tmpdir(), AGENT_FOLDER_PREFIX))
       try { chmodSync(dir, 0o700) } catch { /* not supported on this system */ }

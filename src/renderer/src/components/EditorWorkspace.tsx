@@ -11232,7 +11232,7 @@ export default function EditorWorkspace({
                       // as a large, non-interactive white area.
                       display: "flex",
                     }}
-                    allowpopups="true"
+                    allowpopups={true}
                   />
                 </div>
                 {workspaceTab === "live" && comparisonEngine !== "chromium" && canvasFrame && (
@@ -11558,7 +11558,7 @@ export default function EditorWorkspace({
                                   background: "#1e1e1e",
                                 }}
                                 useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-                                allowpopups="true"
+                                allowpopups={true}
                               />
                             ) : figmaImage ? (
                               <img

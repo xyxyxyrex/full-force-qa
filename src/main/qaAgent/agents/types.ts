@@ -1,4 +1,4 @@
-import type { ToolResult } from '../tools'
+import type { ToolResult, ToolImage } from '../tools'
 import type { QaRunEvent } from '../../../shared/qaAgent'
 
 // What an AI backend has to be able to do. Every backend (an API, an agent CLI such as
@@ -6,8 +6,9 @@ import type { QaRunEvent } from '../../../shared/qaAgent'
 
 export type AgentEvent = Exclude<QaRunEvent, { type: 'started' | 'finished' }>
 
-/** One earlier message of a chat. Only text is kept: pictures are fetched again with the tools. */
+/** Saved text and owned attachment references; binary images are hydrated only for provider requests. */
 export interface ChatTurn {
+  attachments?: import('../../../shared/chatImages').ChatImage[]
   role: 'user' | 'assistant'
   text: string
 }
@@ -16,7 +17,9 @@ export interface ProviderRun {
   system: string
   task: string
   /** Earlier messages of this chat, oldest first. The task is the newest message. */
-  history?: ChatTurn[]
+  history?: Array<ChatTurn & { images?: ToolImage[] }>
+  images?: ToolImage[]
+  attachments?: import('../../../shared/chatImages').ChatImage[]
   /** The tool names this conversation may use. */
   tools: string[]
   maxTurns: number

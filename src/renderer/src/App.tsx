@@ -78,14 +78,14 @@ export default function App() {
   const [qaChatDetached, setQaChatDetached] = useState(false)
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
-    const sync = () => window.electronAPI.qaWindowSync?.({ chat: qaChat.getState(), theme: settings.theme })
+    const sync = () => window.electronAPI.qaWindowSync?.({ chat: qaChat.getState(), theme: settings.theme,ownerKey:viewOwner })
     const unsubscribe = qaChat.subscribe(() => { if (!timer) timer = setTimeout(() => { timer = undefined; sync() }, 40) })
     const actions = window.electronAPI.onQaWindowAction?.(handleChatWindowAction)
     const changed = window.electronAPI.onQaWindowChanged?.(detached => { setQaChatDetached(detached); setQaChatOpen(true); sync() })
     void window.electronAPI.qaWindowStatus?.().then(setQaChatDetached)
     sync()
     return () => { unsubscribe(); actions?.(); changed?.(); if (timer) clearTimeout(timer) }
-  }, [settings.theme])
+  }, [settings.theme,viewOwner])
   const [qaTrackerProject, setQaTrackerProject] = useState<string|null>(null)
   useEffect(()=>{
     const open=(event:Event)=>{const key=(event as CustomEvent<{projectKey?:string}>).detail?.projectKey;if(key)setQaTrackerProject(key)}
@@ -114,6 +114,7 @@ export default function App() {
   }, [qaChatDetached])
   // Rows an agent hands over wait here until the person approves or rejects them.
   const [qaApproval, setQaApproval] = useState<ApprovalRequest | null>(null)
+  useEffect(()=>window.electronAPI.onQaRunEvent(event=>{if(event.type==='approval-cleared')setQaApproval(value=>value?.id===event.id?null:value)}),[])
   useEffect(() => window.electronAPI.onQaApprovalRequest(setQaApproval), [])
   // A file dropped anywhere but on a drop target must not open in the window.
   useEffect(() => {
@@ -189,6 +190,7 @@ export default function App() {
 
   useEffect(() => {
     const onConnected = () => {
+      setQaApproval(null);setQaHistoryTab(null);setQaTrackerProject(null);qaChat.reset()
       setPaletteNotes(null, [])
       setAccountReady(false)
       setAccountStateSyncReady(false, true)
@@ -380,6 +382,7 @@ export default function App() {
 
   useEffect(() => {
     const resetOpenWorkspaces = () => {
+      setQaApproval(null);setQaHistoryTab(null);setQaTrackerProject(null)
       setTabs((current) => {
         for (const tab of current) {
           sessionStorage.removeItem(`fullforce_snapshot_html_${tab.id}`)
@@ -587,6 +590,7 @@ export default function App() {
         }
 
     await saveScopedProject(project)
+    if(details.captureActivity)void window.electronAPI.recordCaptureActivity({...details.captureActivity,projectId:project.id},viewOwner).catch(()=>{})
     window.dispatchEvent(new CustomEvent('qa_projects_updated'))
     const tabId = activeTabId
     try {
@@ -695,6 +699,7 @@ export default function App() {
     }
 
     const previewOnly = !!activeTab.activeProject && !sameWorkspacePage(targetUrl, activeTab.activeProject.stagingUrl)
+    if(!previewOnly&&activeTab.activeProject&&result.captureActivity)void window.electronAPI.recordCaptureActivity({...result.captureActivity,projectId:activeTab.activeProject.id},ownerAtStart).catch(()=>{})
     if (!previewOnly) {
       await window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html)
       if (result.auditContext) await window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext)
@@ -745,6 +750,7 @@ export default function App() {
       localOwnerKey: ownerAtStart,
     }
     await window.electronAPI.saveProject(project, ownerAtStart)
+    if(result.captureActivity)void window.electronAPI.recordCaptureActivity({...result.captureActivity,projectId:project.id},ownerAtStart).catch(()=>{})
     const tabId = `tab-${crypto.randomUUID()}`
     try {
       await window.electronAPI.saveWorkspaceHtml(tabId, result.html)
@@ -809,6 +815,7 @@ export default function App() {
         return
       }
       if (!activeTab.previewOnly) {
+        if(activeTab.activeProject&&result.captureActivity)void window.electronAPI.recordCaptureActivity({...result.captureActivity,projectId:activeTab.activeProject.id},viewOwner).catch(()=>{})
         void window.electronAPI.saveWorkspaceHtml(activeTab.id, result.html).catch(() => {})
         if (result.auditContext) void window.electronAPI.saveWorkspaceAuditContext(activeTab.id, result.auditContext).catch(() => {})
       }
@@ -853,6 +860,29 @@ export default function App() {
     setTabs(current => [...current, { id, title: view === 'notes' ? 'Notes' : 'Dashboard', view, snapshotHtml: null, captureUrl: '', snapshotKey: 0, activeProject: null, prefillAdmin: '', prefillStaging: '', skipAutoCapture: false, ...values }])
     setActiveTabId(id)
   }
+  useEffect(()=>{
+    window.electronAPI.workspaceLocation?.({workspace:activeTab?.view==='editor'?activeTab.workspaceTab==='editBeta'?'edit':activeTab.workspaceTab||'edit':activeTab?.view||'dashboard',folderId:activeTab?.dashboardFolderId||undefined,projectId:activeTab?.activeProject?.id})
+  },[activeTab?.id,activeTab?.view,activeTab?.workspaceTab,activeTab?.dashboardFolderId,activeTab?.activeProject?.id])
+  useEffect(()=>window.electronAPI.onWorkspaceChanged?.(value=>{
+    if(value.ownerKey!==localStorage.getItem('parity_account_owner_key'))return
+    localStorage.setItem('qa_project_folders',JSON.stringify(value.snapshot.folders))
+    window.dispatchEvent(new CustomEvent('qa_folders_updated',{detail:value.snapshot.folders}));window.dispatchEvent(new Event('qa_projects_updated'))
+  }),[])
+  useEffect(()=>window.electronAPI.onWorkspaceNavigate?.(value=>{
+    if(value.ownerKey!==localStorage.getItem('parity_account_owner_key'))return
+    const {target}=value
+    if(target.kind==='note'){openSearchTab('notes',{initialNoteId:target.id});return}
+    if(target.kind==='ticket'){openSearchTab('dashboard',{initialTicketId:target.id});return}
+    if(target.kind==='folder'){openSearchTab('dashboard',{dashboardFolderId:target.id});return}
+    if(target.kind==='finding'){setQaTrackerProject(target.projectId||null);return}
+    const id=target.kind==='capture'?target.projectId:target.id
+    void window.electronAPI.getProjects().then(projects=>{
+      if(value.ownerKey!==localStorage.getItem('parity_account_owner_key'))return
+      const project=projects.find(p=>p.id===id);if(!project){qaChat.addError('This project is no longer available. Refresh the workspace search.');return}
+      if(target.capture){const tabId=`tab-${crypto.randomUUID()}`;setTabs(current=>[...current,{id:tabId,title:project.name,view:'capture',snapshotHtml:null,captureUrl:project.stagingUrl,snapshotKey:0,activeProject:project,prefillAdmin:project.adminUrl||'',prefillStaging:project.stagingUrl,skipAutoCapture:false}]);setActiveTabId(tabId)}
+      else handleOpenProject(project)
+    })
+  }),[activeTabId,tabs])
   usePaletteProvider({
     id: 'application', label: 'Workspace data',
     commands: () => [
@@ -1059,7 +1089,7 @@ export default function App() {
                     initialFigmaUrl={activeTab.activeProject?.figmaUrl || ''}
                     initialSheetUrl={activeTab.activeProject?.googleSheetUrl || ''}
                     isNewProject={!activeTab.activeProject}
-                    autoCapture={activeTab.skipAutoCapture ? false : !!(activeTab.activeProject && activeTab.activeProject.stagingUrl && activeTab.activeProject.adminUrl)}
+                    autoCapture={activeTab.skipAutoCapture ? false : !!(activeTab.activeProject && activeTab.activeProject.stagingUrl)}
                   />
                 )}
               </>

@@ -1,9 +1,10 @@
 {
   "name": "parity",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "Parity - Capture, compare, annotate, and share implementation reviews",
   "main": "./out/main/index.js",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dev": "node scripts/electron-dev.js electron-vite dev",
     "build": "node scripts/electron-dev.js electron-vite build",
     "build:viewer": "node scripts/build-viewer.js",

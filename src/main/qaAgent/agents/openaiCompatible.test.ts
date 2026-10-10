@@ -44,6 +44,57 @@ const makeRun = (over: Partial<ProviderRun> = {}) => {
 const provider = (over: Partial<Parameters<typeof createOpenAiCompatibleProvider>[0]> = {}) => createOpenAiCompatibleProvider({ id: 'openai-api', label: 'OpenAI', baseUrl, apiKey: 'sk-test', model: 'gpt-test', ...over })
 
 describe('openai-compatible provider', () => {
+  it('reports observed rate-limit headers without adding another API request', async () => {
+    queue.push({ ...reply({ content: 'Finished.' }), headers: { 'x-ratelimit-remaining-requests': '0', 'x-ratelimit-limit-requests': '100', 'x-ratelimit-reset-requests': '1m' } })
+    const { run, events } = makeRun()
+    await provider().run(run)
+    expect(events.filter(event => event.type === 'quota-observed')).toEqual([expect.objectContaining({ quota: expect.objectContaining({ agent: 'openai-api', source: 'observed', windows: [expect.objectContaining({ remaining: 0, limit: 100 })] }) })])
+    expect(requests).toHaveLength(1)
+  })
+  it('echoes streamed Gemini thought signatures through sequential tool turns', async () => {
+    const stream = (call: unknown) => ({ body: null, sse: [
+      { choices: [{ delta: { tool_calls: [call] }, finish_reason: 'tool_calls' }] }, '[DONE]',
+    ].map(frame => 'data: ' + (typeof frame === 'string' ? frame : JSON.stringify(frame)) + '\n\n').join('') })
+    const first = { ...toolCall('g1', 'get_context', {}), extra_content: { google: { thought_signature: 'opaque+/first=' } } }
+    const second = { ...toolCall('g2', 'capture_live', { breakpoint: 'desktop' }), extra_content: { google: { thought_signature: 'opaque+/second=' } } }
+    queue.push(stream({ ...first, index: 0 }), stream({ ...second, index: 0 }), reply({ content: 'Checked.' }))
+    const { run, calls } = makeRun()
+    expect(await provider({ id: 'gemini-api', label: 'Gemini' }).run(run)).toEqual({ stopped: 'finished', text: 'Checked.' })
+    expect(calls).toHaveLength(2)
+    expect(requests[1].body.messages.find((m: any) => m.role === 'assistant').tool_calls).toEqual([first])
+    expect(requests[2].body.messages.filter((m: any) => m.role === 'assistant').map((m: any) => m.tool_calls)).toEqual([[first], [second]])
+    expect(requests[2].body.messages.filter((m: any) => m.role === 'tool').map((m: any) => m.tool_call_id)).toEqual(['g1', 'g2'])
+  })
+  it('retains non-streamed Gemini signatures in checkpoints and retries without replaying tools', async () => {
+    const call = { ...toolCall('g1', 'get_context', {}), extra_content: { google: { thought_signature: 'opaque+/checkpoint=' } } }
+    queue.push(reply({ tool_calls: [call] }, 'tool_calls'), { status: 401, body: { error: { message: 'bad key' } } })
+    let checkpoint: unknown
+    const first = makeRun({ checkpoint: value => { checkpoint = value } })
+    await expect(provider({ id: 'gemini-api', label: 'Gemini' }).run(first.run)).rejects.toThrow('rejected')
+    expect(first.calls).toHaveLength(1)
+    // Match persisted JSON round trips rather than just keeping an in-memory object.
+    queue.push(reply({ content: 'Finished.' }))
+    const next = makeRun({ resume: JSON.parse(JSON.stringify(checkpoint)) })
+    await provider({ id: 'gemini-api', label: 'Gemini' }).run(next.run)
+    expect(next.calls).toHaveLength(0)
+    expect(requests.at(-1)!.body.messages.find((m: any) => m.role === 'assistant').tool_calls).toEqual([call])
+  })
+  it('explains old missing-signature checkpoints without retrying completed tools', async () => {
+    queue.push({ status: 400, body: { error: { message: 'Function call is missing a thought_signature in functionCall parts.' } } })
+    const { run, calls } = makeRun()
+    await expect(provider({ id: 'gemini-api', label: 'Gemini' }).run(run)).rejects.toThrow('Send a new message to try again')
+    expect(calls).toHaveLength(0)
+    expect(requests).toHaveLength(1)
+  })
+  it('sends current and previous user images as multimodal content', async () => {
+    queue.push(reply({ content: 'I see the images.' }))
+    const image = { data: Buffer.from('IMAGE'), mimeType: 'image/webp' as const, caption: 'Screenshot' }
+    await provider().run(makeRun({ images: [image], history: [{ role: 'user', text: 'Earlier image', images: [image] }] }).run)
+    const user = requests[0].body.messages.filter((message: any) => message.role === 'user')
+    expect(user).toHaveLength(2)
+    expect(user[1].content).toContainEqual({ type: 'image_url', image_url: { url: 'data:image/webp;base64,SU1BR0U=' } })
+    expect(user[0].content.some((part: any) => part.type === 'image_url')).toBe(true)
+  })
   it('streams a reply without duplicating its final answer', async () => {
     queue.push({body:null,sse:'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\ndata: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n'})
     const {run,events}=makeRun()

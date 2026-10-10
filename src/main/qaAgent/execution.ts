@@ -8,8 +8,8 @@ import { defineTool, type ToolResult } from './toolBasics'
 import type { QaContext } from './tools'
 
 const hash = (value: unknown) => createHash('sha256').update(Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')
-const IMMUTABLE = new Set(['get_overview', 'get_section', 'read_result'])
-const EFFECTS = new Set(['save_draft', 'finalize_rows', 'set_design'])
+const IMMUTABLE = new Set(['get_overview', 'get_section', 'read_result', 'read_chat_images'])
+const EFFECTS = new Set(['save_draft', 'finalize_rows', 'set_design','workspace_propose'])
 const ACTIONS = new Set(['browser_click', 'browser_type', 'browser_select', 'browser_press', 'http_request'])
 const PAGE_SIZE = 16_000
 export function failureCategory(text: string) {

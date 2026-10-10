@@ -17,7 +17,9 @@ export function toMcpResult(result: ToolResult) {
 export function createQaMcpHandler(getContext: () => QaContext, onError?: (error: Error) => void) {
   return createMcpHandler(() => {
     const server = new McpServer({ name: 'parity', version: String(BRIDGE_VERSION) })
+    const context=getContext()
     for (const tool of QA_TOOLS) {
+      if(context.agentAccess&&!tool.agentAllowed||context.allowedTools&&!context.allowedTools.has(tool.name))continue
       server.registerTool(
         tool.name,
         {

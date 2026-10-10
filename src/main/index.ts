@@ -45,7 +45,8 @@ configureParityIdentity()
 
 let designStore: ReturnType<typeof createDesignStore> | null = null
 let qaAgent: ReturnType<typeof registerQaAgent> | null = null
-const getDesignStore = () => (designStore ??= createDesignStore(join(app.getPath('userData'), 'designs')))
+let designScope:string|null|undefined
+const getDesignStore = () => {const owner=getProjectOwner();if(!designStore||owner!==designScope){designScope=owner;designStore=createDesignStore(owner?scopedDesignRoot(app.getPath('userData'),owner):join(app.getPath('userData'),'designs'))}return designStore}
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'parity-note', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true } }
@@ -72,7 +73,9 @@ import {
   installAppUpdate,
 } from './updater'
 import { createServer } from 'http'
-import { randomBytes, createHash } from 'crypto'
+import { randomBytes, randomUUID, createHash } from 'crypto'
+import { scopedDesignRoot } from './designAccountScope'
+const captureReceipts = new Map<string,{owner:string|null;activity:Omit<import('../shared/parityWorkspace').CaptureActivity,'projectId'>}>()
 import nspell from 'nspell'
 import { isAcceptedSpelling } from './spellingHeuristics'
 import { deleteLocalNoteAttachments, loadLocalNoteAttachment, openLocalNoteAttachment, saveLocalNoteAttachment } from './noteAttachments'
@@ -325,6 +328,8 @@ async function bootstrapParityAccount(): Promise<ParityAccountBootstrap> {
     )
 
     context.assert()
+    if(Array.isArray(result.state?.folders))qaAgent?.workspace.adopt(result.state.folders)
+    if(Array.isArray(result.notes))qaAgent?.workspace.adoptNotes(result.notes)
     return {
       connected: true,
       user: result.user,
@@ -1434,12 +1439,17 @@ function registerIpcHandlers(): void {
   // Capture: fetch + freeze a staging page
   ipcMain.handle('capture:start', async (_event, url: string): Promise<CaptureResult> => {
     try {
+      const fence=accountContext(),owner=accountOwner()
       try {
         await session.defaultSession.clearCache()
       } catch {}
       const rawHtml = await captureUrl(url)
       const frozenHtml = freezeSnapshot(rawHtml, url)
-      return { success: true, html: frozenHtml, auditContext: buildAuditCaptureContext(rawHtml, url) }
+      fence.assert()
+      const captureActivity={id:randomUUID(),url,engine:'electron',completedAt:Date.now()}
+      captureReceipts.set(captureActivity.id,{owner,activity:captureActivity})
+      if(captureReceipts.size>100)captureReceipts.delete(captureReceipts.keys().next().value!)
+      return { success: true, html: frozenHtml, auditContext: buildAuditCaptureContext(rawHtml, url),captureActivity }
     } catch (error) {
       const msg = (error as Error).message || ''
       const is404 = msg.includes('SESSION_EXPIRED_404') || msg.includes('404')
@@ -1484,6 +1494,7 @@ function registerIpcHandlers(): void {
     try {
       assertAccountOwner(expectedOwner)
       const result = await parityAccountRequest('save_state', { data })
+      if(Array.isArray(data.folders))qaAgent?.workspace.adopt(data.folders)
       return { success: true, updatedAt: result.updatedAt }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to save account settings.' }
@@ -1492,7 +1503,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle('account:save-note', async (_event, note: NoteDocument, expectedOwner: string) => {
     try {
       assertAccountOwner(expectedOwner)
+      qaAgent?.workspace.cacheNote(note,true)
       const result = await parityAccountRequest('save_note', { note })
+      assertAccountOwner(expectedOwner)
+      qaAgent?.workspace.cacheNote(note,false)
       return { success: true, updatedAt: result.updatedAt }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to save note.' }
@@ -1502,6 +1516,8 @@ function registerIpcHandlers(): void {
     try {
       assertAccountOwner(expectedOwner)
       await parityAccountRequest('delete_note', { noteId })
+      assertAccountOwner(expectedOwner)
+      qaAgent?.workspace.forgetNote(noteId)
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unable to delete note.' }
@@ -1667,9 +1683,11 @@ app.whenReady().then(async () => {
   registerInspectorHandlers()
   registerTicketHandlers()
   registerAuditExportHandlers()
-  registerComparisonHandlers()
+  registerComparisonHandlers(record=>{if(accountOwner())void qaAgent?.workspace.recordCapture({id:record.id,projectId:record.projectId,url:record.finalUrl||record.url,engine:record.engine,completedAt:Date.parse(record.capturedAt)}).catch(()=>{})})
   qaChatWindow = registerQaChatWindow({ getMainWindow: () => mainWindow, preload: join(__dirname, '../preload/index.js'), rendererFile: join(__dirname, '../renderer/index.html'), rendererUrl: process.env.ELECTRON_RENDERER_URL })
-  qaAgent = registerQaAgent({ getMainWindow: () => mainWindow, getChatWindow: () => qaChatWindow?.getWindow() || null, getDesignStore })
+  qaAgent = registerQaAgent({ getMainWindow: () => mainWindow, getChatWindow: () => qaChatWindow?.getWindow() || null, getDesignStore,
+    consumeCaptureReceipt:id=>{const receipt=captureReceipts.get(id);if(!receipt||receipt.owner!==accountOwner()||Date.now()-receipt.activity.completedAt>15*60*1000)throw new Error('This capture receipt is unavailable in the current account.');captureReceipts.delete(id);return receipt.activity},
+  })
   createWindow()
   initializeAppUpdater(() => mainWindow)
 })

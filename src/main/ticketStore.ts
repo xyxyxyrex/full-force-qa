@@ -44,3 +44,4 @@ export function registerTicketHandlers() {
     writeFileSync(`${file}.tmp`, JSON.stringify(state), 'utf8'); renameSync(`${file}.tmp`, file)
   })
 }
+export function cachedTickets() { try { return repository().list().records.map(record=>record.ticket) } catch { return [] } }

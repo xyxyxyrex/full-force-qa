@@ -10,7 +10,17 @@ import { isAgentId, type AgentId, type AgentsOverview, type AgentSettings, type 
 import { buildHtml, buildTsv, neutralizeFormula, screenshotColumn, isTrackerFormat, parseTrackerPaste, STANDARD_TRACKER, type TrackerFormat } from '../../shared/trackerFormat'
 import { normalizeRemarkStyle, plainRemark, stylePrompt, type RemarkStyle } from '../../shared/remarkStyle'
 import type { FindingUpdate, OrganizerResult } from '../../shared/qaOrganizer'
-import { getProjectOwner } from '../store'
+import { getProjectOwner, getProjects, saveProject } from '../store'
+import { accountContext, accountOwner, accountRequest, onAccountChanged } from '../account'
+import { createWorkspaceService, type WorkspaceService } from '../workspaceService'
+import { cachedTickets } from '../ticketStore'
+import { type WorkspaceQuery, type WorkspaceOperation, type WorkspaceRecord } from '../../shared/parityWorkspace'
+import { type ChatAgentSelection } from '../../shared/qaAgent'
+import { runWorkspaceCommand } from './workspaceCommands'
+import { needsPrivateDataApproval } from './workspaceSecurity'
+import { fenceQaContext } from './accountFence'
+import { createChatImageStore } from './chatImages'
+import type { ChatImage, ChatImageUpload } from '../../shared/chatImages'
 import { createOrganizerStore } from './organizerStore'
 import type { DesignStore } from '../designStore'
 import { createEvidenceUploader } from './evidenceUpload'
@@ -25,12 +35,13 @@ import { createQaBrowser } from './qaBrowser'
 import { accountAccessToken, accountAuthId, parityPublicConfig } from '../account'
 import { createProvider, describeAgents, listModels, normalizeSettings, usesFreeTier } from './agents/registry'
 import { agentSelection } from '../../shared/qaAgentSelection'
+import { createQuotaService, quotaScope } from './agents/quota'
 import { sweepStaleAgentFolders } from './agents/cliAgents'
 import type { AgentProvider, ChatTurn } from './agents/types'
 import { createBridgeServer, type BridgeLogEntry } from './bridge/httpServer'
 import { ensureToken, resetToken } from './bridge/token'
 import { QaExecution } from './execution'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { callTool, handOverRows, renderRowEvidence, type DraftRow, type QaContext, type ToolResult } from './tools'
 
 // Electron wiring for the QA tools: the page the window reports, the approval handshake,
@@ -44,6 +55,7 @@ const MAX_CHAT_MESSAGE = 4000
 const clamp = (value: unknown, max: number) => (typeof value === 'string' ? value.slice(0, max) : '')
 
 interface Options {
+  consumeCaptureReceipt?: (id:string) => Omit<import('../../shared/parityWorkspace').CaptureActivity,'projectId'>
   getMainWindow: () => BrowserWindow | null
   getChatWindow?: () => BrowserWindow | null
   getDesignStore: () => DesignStore
@@ -57,13 +69,34 @@ function toRendererResult(result: ToolResult): QaToolCallResult {
   }
 }
 
-export function registerQaAgent(options: Options): { context: () => QaContext; attachMainWindow: (window: BrowserWindow) => void } {
+export function registerQaAgent(options: Options): { context: () => QaContext; workspace: WorkspaceService; attachMainWindow: (window: BrowserWindow) => void } {
   const root = () => join(app.getPath('userData'), 'qa-agent')
+  const chatImages = createChatImageStore(join(root(), 'chat-images'))
   const trackerFile = () => join(root(), 'tracker-format.json')
   const ownerKey = () => getProjectOwner() || accountAuthId() || 'local'
   const runFiles = createRunStore(join(app.getPath('userData'), 'qa-runs'))
-  const runs: typeof runFiles = { ...runFiles, create: input => runFiles.create({ ...input, ownerKey: ownerKey() }) }
+  const ownedRun = (id:string) => { const meta=runFiles.get(id); if(!meta||meta.ownerKey!==ownerKey())throw new Error('This audit is unavailable in the current account.'); return meta }
+  const runs: typeof runFiles = new Proxy(runFiles,{get(target,key){
+    if(key==='create')return (input:Parameters<typeof runFiles.create>[0])=>target.create({...input,ownerKey:ownerKey()})
+    if(key==='get')return (id:string)=>{try{return ownedRun(id)}catch{return null}}
+    if(key==='list')return ()=>target.list().filter(meta=>meta.ownerKey===ownerKey())
+    if(key==='latest')return (projectKey:string)=>target.list().find(meta=>meta.ownerKey===ownerKey()&&meta.projectKey===projectKey)||null
+    if(key==='prune')return (input:import('./runStore').PruneOptions={})=>target.prune({...input,ownerKey:ownerKey()})
+    const value=Reflect.get(target,key);if(typeof value!=='function')return value
+    return (...args:any[])=>{if(typeof args[0]==='string')ownedRun(args[0]);return value.apply(target,args)}
+  }})
   const organizer = createOrganizerStore(join(root(), 'organizer'))
+  let appLocation: { workspace: string; folderId?: string; projectId?: string } = {workspace:'dashboard'}
+  const workspace = createWorkspaceService({
+    root:join(root(),'workspace'),owner:accountOwner,fence:()=>accountContext().assert,projects:getProjects,saveProject,request:accountRequest,
+    changed:snapshot=>{for(const window of [options.getMainWindow(),options.getChatWindow?.()])if(window&&!window.isDestroyed())window.webContents.send('workspace:changed',{ownerKey:accountOwner(),snapshot})},
+    navigate:target=>options.getMainWindow()?.webContents.send('workspace:navigate',{ownerKey:accountOwner(),target}),
+    localRecords:()=>[
+      ...getProjects().flatMap(project=>{try{return organizer.read(ownerKey(),project.id,project.name,readTrackerFormat()).findings.filter(f=>!f.mergedInto).map(f=>({kind:'finding' as const,id:f.id,projectId:project.id,title:f.cells.Section||'QA finding',breadcrumb:project.name,excerpt:plainRemark(f.cells.Remarks||f.cells.Issue||f.cells.Description||'').slice(0,600),url:f.pageUrl,createdAt:f.createdAt,updatedAt:f.updatedAt,inTrash:!!project.inTrash,source:'local' as const}))}catch{return[]}}),
+      ...cachedTickets().map(t=>({kind:'ticket' as const,id:t.id,title:t.title,breadcrumb:t.sourceGroup||'Tickets',excerpt:t.description.slice(0,600),source:'cached' as const})),
+    ],
+    detailLocal:(kind,id,projectId)=>{if(kind==='finding'){const project=getProjects().find(p=>p.id===projectId);if(!project)throw new Error('The finding’s project is unavailable.');const finding=organizer.read(ownerKey(),project.id,project.name,readTrackerFormat()).findings.find(f=>f.id===id);if(!finding)return;return{id:finding.id,projectId:project.id,pageUrl:finding.pageUrl,cells:finding.cells,review:finding.review,sources:finding.sources,evidence:(finding.evidenceSet||[finding.evidence]).filter(Boolean).map(e=>({caption:e!.caption}))}}if(kind==='ticket'){const t=cachedTickets().find(t=>t.id===id);if(t)return{id:t.id,title:t.title,description:t.description,progress:t.progress,sourceStatus:t.sourceStatus}}},
+  })
   const findingsChanged = (projectKey: string) => {
     const window = options.getMainWindow()
     if (window && !window.isDestroyed()) window.webContents.send('qa:findings:changed', { projectKey })
@@ -133,8 +166,9 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   const resolveApproval = (decision: ApprovalDecision) => {
     if (!pendingApproval) return
     clearTimeout(pendingApproval.timer)
-    const { resolve } = pendingApproval
+    const { resolve,id } = pendingApproval
     pendingApproval = null
+    const window=options.getMainWindow();if(window&&!window.isDestroyed())window.webContents.send('qa:run:event',{type:'approval-cleared',id})
     resolve(decision)
   }
 
@@ -155,6 +189,9 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
 
   let executionContext: QaContext | null = null
   const context: QaContext = {
+    workspace,
+    appContext:()=>({guideVersion:1,appVersion:app.getVersion(),...appLocation,project:reported?.project,page:reported?.pageUrl,capabilities:['search','help','open','propose changes'],signedIn:!!accountOwner()}),
+    workspaceProposal:proposal=>sendRunEvent({type:'workspace-proposal',proposal}),
     now: () => Date.now(),
     reportedContext: () => batchTarget ?? reported,
     setTarget: (target) => { batchTarget = target },
@@ -167,7 +204,7 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
       },
     },
     runs,
-    capture: (captureOptions) => captureLivePage(captureOptions),
+    capture: async(captureOptions)=>{const assert=accountContext().assert,target=batchTarget??reported;const result=await captureLivePage(captureOptions);assert();if(accountOwner()&&target&&getProjects().some(p=>p.id===target.project.id))void workspace.recordCapture({id:randomUUID(),projectId:target.project.id,url:result.finalUrl||captureOptions.url,engine:'electron-qa',completedAt:Date.now()}).catch(()=>{});return result},
     trackerFormat: readTrackerFormat,
     remarkStyle: () => normalizeRemarkStyle(readAgentSettings().remarkStyle),
     organizer: {
@@ -197,6 +234,7 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     const projectKey = clamp(v?.projectKey, 300)
     const pageUrl = clamp(v?.pageUrl, 2000)
     if (!projectKey || !/^https?:\/\//i.test(pageUrl)) { reported = null; return }
+    if(accountOwner()&&!getProjects().some(p=>p.id===v.project?.id&&p.id===projectKey)){reported=null;return}
     reported = {
       projectKey,
       project: { id: clamp(v.project?.id, 300), name: clamp(v.project?.name, 200) || projectKey, stagingUrl: clamp(v.project?.stagingUrl, 2000) },
@@ -211,19 +249,46 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   ipcMain.handle('qa:call-tool', async (event, name: unknown, args: unknown): Promise<QaToolCallResult> => {
     if (!fromQaWindow(event)) return { text: 'Not allowed.', isError: true, images: [] }
     if (typeof name !== 'string') return { text: 'A tool name is required.', isError: true, images: [] }
-    return toRendererResult(await callTool(name, args, executionContext || context))
+    return toRendererResult(await callTool(name, args, executionContext || fenceQaContext(context,accountContext().assert)))
+  })
+  ipcMain.on('workspace:location',(event,value)=>{if(!fromMainWindow(event)||!value||typeof value!=='object')return;appLocation={workspace:clamp(value.workspace,40)||'dashboard',folderId:clamp(value.folderId,200)||undefined,projectId:clamp(value.projectId,200)||undefined}})
+  ipcMain.handle('workspace:search',(event,query:WorkspaceQuery)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');return workspace.search(query||{})})
+  ipcMain.handle('workspace:snapshot',async(event,refresh=true)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');try{return await workspace.snapshot(refresh!==false)}catch{return workspace.snapshot(false)}})
+  ipcMain.handle('workspace:propose',async(event,operations:WorkspaceOperation[],title:string)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');const proposal=await workspace.propose(operations,title);sendRunEvent({type:'workspace-proposal',proposal});return proposal})
+  ipcMain.handle('workspace:apply',async(event,id:string)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');const result=await workspace.apply(id);sendRunEvent({type:'workspace-proposal',proposal:result.proposal});return result})
+  ipcMain.handle('workspace:cancel',(event,id:string)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');const proposal=workspace.cancel(id);sendRunEvent({type:'workspace-proposal',proposal});return proposal})
+  ipcMain.handle('workspace:refresh',async(event,id:string)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');const proposal=await workspace.refresh(id);sendRunEvent({type:'workspace-proposal',proposal:workspace.getProposal(id)});sendRunEvent({type:'workspace-proposal',proposal});return proposal})
+  ipcMain.handle('workspace:proposal',(event,id:string)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');return workspace.getProposal(id)})
+  ipcMain.handle('workspace:open',(event,target)=>{if(!fromQaWindow(event))throw new Error('Not allowed.');return workspace.open(target)})
+  ipcMain.handle('qa:workspace-command',async(event,input:unknown)=>{if(!fromQaWindow(event)||typeof input!=='string'||input.length>12000)throw new Error('Invalid command.');return runWorkspaceCommand(input,context)})
+  ipcMain.handle('workspace:mutate',async(event,operations:WorkspaceOperation[],expectedOwner:string)=>{
+    if(!fromMainWindow(event)||expectedOwner!==accountOwner())throw new Error('The account changed. Reopen this view.')
+    const proposal=await workspace.propose(operations,'Dashboard change'),result=await workspace.apply(proposal.id)
+    if(!result.success)throw new Error(result.proposal.error||'The changes could not be saved.')
+    return result.snapshot!
+  })
+  ipcMain.handle('workspace:record-capture',async(event,activity:unknown,expectedOwner:string|null)=>{
+    if(!fromMainWindow(event)||!expectedOwner||expectedOwner!==accountOwner())return
+    const a=activity as import('../../shared/parityWorkspace').CaptureActivity
+    if(!a||typeof a.id!=='string'||!/^[a-f\d-]{36}$/i.test(a.id)||typeof a.url!=='string'||!/^https?:\/\//i.test(a.url)||typeof a.engine!=='string'||!Number.isSafeInteger(a.completedAt)||a.completedAt>Date.now()+60000)throw new Error('Invalid capture record.')
+    if(!getProjects().some(p=>p.id===a.projectId))throw new Error('Capture project unavailable.')
+    const receipt=options.consumeCaptureReceipt?.(a.id)
+    if(!receipt)throw new Error('No successful capture receipt was supplied.')
+    await workspace.recordCapture({...receipt,projectId:a.projectId})
   })
 
   // What the chat shows as the review target: the same page and designs the agent's tools will use.
   let targetThumbs: { signature: string; thumbnails: QaTarget['thumbnails'] } | null = null
   ipcMain.handle('qa:target:get', async (event): Promise<QaTarget | null> => {
+    const assert=accountContext().assert
     const current = batchTarget ?? reported
     if (!fromQaWindow(event) || !current) return null
     const key = designKeyOf(current.projectKey, current.pageUrl)
     const slots = options.getDesignStore().list(key)
     // Thumbnails are only made again when the stored designs change.
     const signature = `${key}|${Object.values(slots).map((slot) => slot?.sha256).join(',')}`
-    if (targetThumbs?.signature !== signature) targetThumbs = { signature, thumbnails: (await options.getDesignStore().listWithThumbnails(key)).thumbnails }
+    if (targetThumbs?.signature !== signature) {const result=await options.getDesignStore().listWithThumbnails(key);assert();targetThumbs = { signature, thumbnails: result.thumbnails }}
+    assert()
     return { projectName: current.project.name, pageUrl: current.pageUrl, pageId: pageIdOf(current.pageUrl) ?? current.pageUrl, slots, thumbnails: targetThumbs.thumbnails }
   })
 
@@ -276,9 +341,11 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   const requestLog: BridgeLogEntry[] = []
   let bridgeError = ''
   let token = ''
+  const scopedTokens=new Map<string,{owner:string;context:QaContext}>()
   const bridge = createBridgeServer({
-    getContext: () => executionContext || context,
+    getContext: () => fenceQaContext({...context,workspace:undefined,agentAccess:true},accountContext().assert),
     getToken: () => token,
+    resolveToken:key=>{const value=scopedTokens.get(key);return value?.owner===ownerKey()?value.context:null},
     onRequest: (entry) => {
       requestLog.push(entry)
       if (requestLog.length > LOG_LIMIT) requestLog.shift()
@@ -375,12 +442,14 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
 
   ipcMain.handle('qa:agents:overview', async (event) => (fromQaWindow(event) ? overview() : null))
   function findingsTarget(projectKey: unknown) {
-    if (!reported || typeof projectKey !== 'string' || projectKey !== reported.projectKey) throw new Error('Open this project again to access its findings.')
-    return { owner: ownerKey(), key: projectKey, name: reported.project.name }
+    const project=getProjects().find(p=>p.id===projectKey)
+    if(project)return {owner:ownerKey(),key:project.id,name:project.name}
+    if(!accountOwner()&&reported&&projectKey===reported.projectKey)return {owner:ownerKey(),key:reported.projectKey,name:reported.project.name}
+    throw new Error('This project is unavailable in the current account.')
   }
   ipcMain.handle('qa:findings:list', (event, projectKey?: unknown) => {
-    if (!fromQaWindow(event) || !reported) return null
-    const target = findingsTarget(projectKey ?? reported.projectKey)
+    if (!fromQaWindow(event) || !projectKey&&!reported) return null
+    const target = findingsTarget(projectKey ?? reported?.projectKey)
     return organizer.read(target.owner, target.key, target.name, readTrackerFormat())
   })
   ipcMain.handle('qa:findings:update', (event, projectKey: unknown, revision: unknown, changes: unknown): OrganizerResult => {
@@ -465,6 +534,7 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     const incoming = (patch && typeof patch === 'object' ? patch : {}) as Partial<AgentSettings>
     const next = normalizeSettings({ ...current, ...incoming, models: { ...current.models, ...(incoming.models || {}) } })
     writeAgentSettings(next)
+    sendRunEvent({type:'agents-config-changed'})
     selectionChanged(next)
     return overview()
   })
@@ -475,11 +545,13 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     mkdirSync(root(), { recursive: true })
     writeFileSync(keyFile(id), safeStorage.encryptString(key.trim()), { mode: 0o600 })
     try { chmodSync(keyFile(id), 0o600) } catch { /* not supported here */ }
+    sendRunEvent({type:'agents-config-changed'})
     return overview()
   })
   ipcMain.handle('qa:agents:clear-key', async (event, id: unknown) => {
     if (!fromQaWindow(event) || !isAgentId(id)) return null
     rmSync(keyFile(id), { force: true })
+    sendRunEvent({type:'agents-config-changed'})
     return overview()
   })
   ipcMain.handle('qa:agents:models', async (event, id: unknown) => {
@@ -496,17 +568,38 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   let pendingSwitch: { execution: QaExecution; toolId?: string; signature: string } | null = null
   let activeToolId: string | undefined
   const executions = new Map<string, QaExecution>()
-  const executionFolder = () => join(root(), 'executions')
+  const accountFolder = () => join(root(),'accounts',createHash('sha256').update(ownerKey()).digest('hex'))
+  const executionFolder = () => join(accountFolder(), 'executions')
   const sendRunEvent = (event: QaRunEvent) => {
     const window = options.getMainWindow()
     if (window && !window.isDestroyed()) window.webContents.send('qa:run:event', event)
   }
-  type Request = { kind: 'review' | 'batch' | 'chat'; args?: any; message?: string; chatId?: string | null; history?: ChatTurn[]; agent: AgentId; followsDefault?: boolean; account?: string | null; remarkStyle?: RemarkStyle }
+  type Request = { kind: 'review' | 'batch' | 'chat'; args?: any; message?: string; attachments?: ChatImage[]; chatId?: string | null; history?: ChatTurn[]; agent: AgentId; followsDefault?: boolean; account?: string | null; owner?: string; remarkStyle?: RemarkStyle; privateRead?:boolean }
+  const chatSelections = new Map<string,ChatAgentSelection|null>()
+  const chatSelection = (id?:string|null) => id ? chatSelections.has(id) ? chatSelections.get(id)! : chats.load(id)?.selection || null : null
+  const selectedSettings = (settings:AgentSettings,chatId?:string|null) => {const chosen=chatSelection(chatId);return chosen ? {...settings,defaultAgent:chosen.agent,models:{...settings.models,[chosen.agent]:chosen.model}} : settings}
+  const quotas = createQuotaService()
+  app.on('before-quit', () => quotas.clear())
+  ipcMain.handle('qa:agents:quota', async (event, input: { chatId?: string | null; agent?: AgentId; refresh?: boolean; ownerKey: string | null }) => {
+    if (!fromQaWindow(event) || !input || input.ownerKey !== accountOwner()) throw new Error('The account changed. Check quota again.')
+    if (input.chatId != null && (typeof input.chatId !== 'string' || !CHAT_ID_PATTERN.test(input.chatId))) throw new Error('Invalid chat reference.')
+    if (input.agent !== undefined && !isAgentId(input.agent)) throw new Error('Choose a valid provider.')
+    const guard = accountContext().assert
+    const settings = selectedSettings(readAgentSettings(), input.chatId)
+    const agent = input.agent || settings.defaultAgent
+    const key = getKey(agent), scope = quotaScope(ownerKey(), agent, settings, key)
+    const result = await quotas.read(scope, agent, settings.models[agent], key, input.refresh === true)
+    guard()
+    const latest = selectedSettings(readAgentSettings(), input.chatId)
+    if ((!input.agent && latest.defaultAgent !== agent) || quotaScope(ownerKey(), agent, latest, getKey(agent)) !== scope) throw new Error('The provider settings changed during this check. Run /quota again.')
+    return result
+  })
   function selectionChanged(settings: AgentSettings) {
-    sendRunEvent({ type: 'agent-selected', ...agentSelection(settings) })
+    sendRunEvent({ type: 'agent-selected', ...agentSelection(selectedSettings(settings,currentChatId)) })
     if (!activeRun || !activeExecution || workFinished) return
     const request = activeExecution.state.request as Request
-    const selection = agentSelection(settings, request.followsDefault === false ? request.agent : settings.defaultAgent)
+    const effective=request.chatId?selectedSettings(settings,request.chatId):settings
+    const selection = agentSelection(effective, request.followsDefault === false ? request.agent : effective.defaultAgent)
     if (selection.signature === (pendingSwitch?.signature || activeSelection)) return
     // Keep only the latest choice, and wait for the old provider/tools to finish cancelling.
     pendingSwitch = { execution: activeExecution, toolId: activeToolId, signature: selection.signature }
@@ -533,18 +626,21 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     if (request.kind === 'review') await runQa({ context: ctx, provider }, { ...request.args, ...common })
     else if (request.kind === 'batch') await runQaBatch({ context: ctx, provider }, { ...request.args, ...common })
     else {
-      const result = await runChatTurn({ context: ctx, provider }, { message: request.message!, history: request.history || [], ...common })
+      const result = await runChatTurn({ context: ctx, provider }, { message: request.message!, attachments: request.attachments, history: request.history || [], ...common })
+      ctx.assertAccess?.()
       chatHistory = result.history
       if (request.chatId) chats.save({ id: request.chatId }, chatHistory)
     }
   }
   async function launch(agent: AgentId, settings: AgentSettings, request: Request, existing?: QaExecution, toolId?: string): Promise<QaRunStartResult> {
     if (activeRun) return { started: false, error: 'The agent is busy. Stop it first.' }
-    if (!existing) request = { ...request, account: accountAuthId(), remarkStyle: normalizeRemarkStyle(settings.remarkStyle) }
+    if(request.chatId){settings=selectedSettings(settings,request.chatId);agent=request.followsDefault===false?request.agent:settings.defaultAgent}
+    if (!existing) request = { ...request, agent, account: accountAuthId(), owner:ownerKey(), remarkStyle: normalizeRemarkStyle(settings.remarkStyle) }
     const execution = existing || new QaExecution(executionFolder(), fingerprint(settings), request)
     executions.set(execution.state.id, execution)
     if (executions.size > 20) { const oldest = executions.keys().next().value; if (oldest && oldest !== execution.state.id) executions.delete(oldest) }
     if (existing) {
+      if(request.owner!==ownerKey()||request.account!==accountAuthId())return {started:false,error:'This retry belongs to another account.'}
       const invalid = existing.validate(fingerprint(settings))
       if (invalid) return { started: false, error: invalid }
       if (settings.budgetTokens && existing.snapshot().tokens >= settings.budgetTokens) return { started: false, error: 'The token budget is reached. Increase it in Settings before retrying.' }
@@ -552,7 +648,8 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
       execution.persist()
     }
     let provider: AgentProvider
-    try { provider = createProvider(agent, { settings, getKey, getBridge: () => ({ mcpUrl: `http://127.0.0.1:${bridge.port()}/mcp`, token }) }) }
+    const runToken=randomUUID()+randomUUID()
+    try { provider = createProvider(agent, { settings, getKey, getBridge: () => ({ mcpUrl: `http://127.0.0.1:${bridge.port()}/mcp`, token:runToken }) }) }
     catch (error: any) {
       execution.begin(context, new AbortController().signal, () => {})
       execution.emit({ type: 'error', message: error?.message || 'That agent is not set up.' }); execution.finish(); activeExecution = execution
@@ -561,16 +658,47 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     const controller = new AbortController(); activeRun = controller; activeExecution = execution
     activeSelection = agentSelection(settings, agent).signature; activeToolId = toolId; workFinished = false
     const executionReported = reported ? structuredClone(reported) : null
-    const frozenContext: QaContext = { ...context, reportedContext: () => batchTarget || executionReported, organizer: organizerContext(ownerKey()), remarkStyle: () => normalizeRemarkStyle(request.remarkStyle) }
+    const accountFence=accountContext().assert
+    const allowedTools=new Set<string>()
+    const frozenContext: QaContext = fenceQaContext({ ...context,allowedTools, agentAccess:true, reportedContext: () => batchTarget || executionReported, organizer: organizerContext(ownerKey()), remarkStyle: () => normalizeRemarkStyle(request.remarkStyle) },()=>{accountFence();if(controller.signal.aborted)throw new Error('Stopped.')})
+    const markPrivate=()=>{request.privateRead=true;execution.state.request=request;execution.persist()}
+    if (request.kind === 'chat' && request.chatId) {
+      const idsInChat = new Set([...(request.attachments || []), ...(request.history || []).flatMap(turn => turn.attachments || [])].map(image => image.id))
+      if (idsInChat.size) markPrivate()
+      frozenContext.chatImages = async ids => {
+        frozenContext.assertAccess?.()
+        if (ids.length > 4 || ids.some(id => !idsInChat.has(id))) throw new Error('That image was not attached to this conversation.')
+        markPrivate()
+        const images = chatImages.images(request.owner!, request.chatId!, ids)
+        frozenContext.assertAccess?.()
+        return images
+      }
+    }
+    frozenContext.workspace={...workspace,search:async args=>{markPrivate();return workspace.search(args)},detail:async(...args)=>{markPrivate();return workspace.detail(...args)}}
+    frozenContext.authorizeTool=async(name,args)=>{
+      if(!request.privateRead||!needsPrivateDataApproval(name,args,executionReported?.pageUrl))return
+      frozenContext.assertAccess?.()
+      const data=JSON.stringify(args);if(data.length>16000)throw new Error('This network action is too large to review. Use a smaller request.')
+      const target=(args as any)?.url||browser.site||executionReported?.pageUrl||'Website under review'
+      const decision=await requestApproval({id:randomUUID(),action:'network',runId:execution.state.id,projectName:'Review network action',pageUrl:target,columns:['Action','Destination','Data'],rows:[[name,target,data]],severityCounts:{},evidence:[],warnings:['This chat has accessed private Parity records. Review the destination and data before allowing this network action.'],uploadsEvidence:false,network:{tool:name,args,destination:target}})
+      frozenContext.assertAccess?.();if(!decision.approved)throw new Error('The network action was cancelled. No private workspace data was sent.')
+    }
     const originalProvider = provider
-    provider = { ...originalProvider, run: run => originalProvider.run({ ...run, system: stylePrompt(run.system, request.remarkStyle), task: stylePrompt(run.task, request.remarkStyle) }) }
+    const runQuotaScope = quotaScope(request.owner!, agent, settings, getKey(agent))
+    provider = { ...originalProvider, run: run => {allowedTools.clear();run.tools.forEach(name=>allowedTools.add(name));return originalProvider.run({ ...run, system: stylePrompt(run.system, request.remarkStyle), task: stylePrompt(run.task, request.remarkStyle) })} }
     execution.begin(frozenContext, controller.signal, event => {
+      try {accountFence()} catch{return}
+      if (event.type === 'quota-observed') {
+        if (!controller.signal.aborted && event.quota.agent === agent && quotaScope(request.owner!, agent, settings, getKey(agent)) === runQuotaScope) quotas.observe(runQuotaScope, event.quota)
+        return
+      }
       sendRunEvent(event)
       if (event.type === 'usage' && settings.budgetTokens && execution.snapshot().tokens >= settings.budgetTokens) {
         controller.abort(); execution.emit({ type: 'error', category: 'budget', message: 'The token budget was reached. Completed findings are saved. Increase the limit to retry.' })
       }
     })
     executionContext = execution.wrapContext(frozenContext)
+    scopedTokens.set(runToken,{owner:ownerKey(),context:executionContext})
     executionContext.readResult = (ref, offset) => {
       const [id, resultId] = ref.split('/')
       if (id !== execution.state.id) throw new Error('That result belongs to another execution.')
@@ -583,19 +711,20 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
         if (provider.needsBridge && !bridge.running()) throw new Error(bridgeError || 'The local bridge could not start. Retry after checking the agent connection.')
         if (controller.signal.aborted) return
         execution.emit({ type: 'started', agent, label: agentSelection(settings, agent).label, budgetTokens: settings.budgetTokens || undefined })
-        if (toolId) await execution.retryTool(toolId, executionContext!)
+        if (toolId) {allowedTools.add(execution.state.calls[toolId]?.name||'');await execution.retryTool(toolId, executionContext!)}
         else await executeRequest(request, execution.wrapProvider(provider, JSON.stringify({ model: settings.models[agent], endpoint: settings.localBaseUrl })), controller.signal, executionContext!, execution)
       } catch (error: any) { if (!controller.signal.aborted) execution.emit({ type: 'error', message: error?.message || 'The agent could not finish. Try again.' }) }
       finally {
+        scopedTokens.delete(runToken)
         workFinished = true
         if (startedBridge && !readConfig().enabled) { await stopBridge(); pushStatus() }
         if (request.kind !== 'chat') browser.close()
         execution.finish(); activeRun = null; executionContext = null
         execution.emit({ type: 'finished' })
         const change = pendingSwitch; pendingSwitch = null; activeToolId = undefined
-        sendRunEvent({ type: 'agent-selected', ...agentSelection(readAgentSettings()) })
+        if(request.owner===ownerKey())sendRunEvent({ type: 'agent-selected', ...agentSelection(selectedSettings(readAgentSettings(),currentChatId)) })
         if (change?.execution === execution) {
-          const next = readAgentSettings()
+          const next = request.chatId?selectedSettings(readAgentSettings(),request.chatId):readAgentSettings()
           const nextAgent = request.followsDefault === false ? request.agent : next.defaultAgent
           const resumed = await launch(nextAgent, next, { ...request, agent: nextAgent }, execution, change.toolId)
           if (!resumed.started) sendRunEvent({ type: 'error', message: resumed.error, retryId: resumed.retryId || execution.state.id, retryBlocked: execution.snapshot().retryBlocked })
@@ -611,7 +740,7 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     const execution = executions.get(id) || QaExecution.load(executionFolder(), id)
     if (!execution) return { started: false, error: 'The retry checkpoint is no longer available. Start a fresh review.' }
     const request = execution.state.request as Request
-    const settings = readAgentSettings()
+    const settings = request.chatId?selectedSettings(readAgentSettings(),request.chatId):readAgentSettings()
     const agent = request.followsDefault === false ? request.agent : settings.defaultAgent
     return launch(agent, settings, { ...request, agent }, execution, toolId)
   })
@@ -626,12 +755,13 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   ipcMain.handle('qa:run:start', async (event, startOptions: unknown): Promise<QaRunStartResult> => {
     if (!fromQaWindow(event)) return { started: false, error: 'Not allowed.' }
     const requested = (startOptions && typeof startOptions === 'object' ? startOptions : {}) as QaRunStartOptions
-    const settings = readAgentSettings()
+    const chatId=typeof requested.chatId==='string'&&CHAT_ID_PATTERN.test(requested.chatId)?requested.chatId:null
+    const settings = selectedSettings(readAgentSettings(),chatId)
     const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
     const breakpoints = Array.isArray(requested.breakpoints) ? requested.breakpoints.filter(isBreakpoint) : undefined
     // A free tier skips the functional test unless it was asked for: it would not fit in the allowance.
     const functional = typeof requested.functional === 'boolean' ? requested.functional : settings.functionalChecks && !usesFreeTier(agent, settings)
-    return launch(agent, settings, { kind: 'review', agent, followsDefault: !isAgentId(requested.agent), args: { breakpoints, standalone: requested.standalone === true, functional } })
+    return launch(agent, settings, { kind: 'review', agent,chatId, followsDefault: !isAgentId(requested.agent), args: { breakpoints, standalone: requested.standalone === true, functional } })
   })
 
   // Several pages from a list the person pasted (the Multi-capture dialog), reviewed one after another
@@ -660,25 +790,50 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   // agent remembers the conversation; "new chat" clears it.
   let chatHistory: ChatTurn[] = []
   let currentChatId: string | null = null
-  const chats = createChatStore(join(root(), 'chats'))
+  const chatFiles = () => { const owner = ownerKey(); return createChatStore(join(accountFolder(),'chats'), Date.now, id => chatImages.removeChat(owner, id)) }
+  const chats = {list:()=>chatFiles().list(),load:(id:string)=>chatFiles().load(id),save:(...args:Parameters<ReturnType<typeof createChatStore>['save']>)=>chatFiles().save(...args),remove:(id:string)=>chatFiles().remove(id)}
+  ipcMain.handle('qa:chat:selection', (event,id:unknown,selection:unknown) => {
+    if(!fromQaWindow(event)||typeof id!=='string'||!CHAT_ID_PATTERN.test(id))throw new Error('Invalid chat reference.')
+    const chosen=selection as ChatAgentSelection|null
+    if(chosen!==null&&(!chosen||!isAgentId(chosen.agent)||typeof chosen.model!=='string'||chosen.model.length>200))throw new Error('Choose an available agent and model.')
+    if(activeRun&&(activeExecution?.state.request as Request).chatId!==id)throw new Error('Switch models in the active chat, or stop the current request first.')
+    chatSelections.set(id,chosen);chats.save({id,selection:chosen});currentChatId=id
+    const label=agentSelection(selectedSettings(readAgentSettings(),id)).label
+    sendRunEvent({type:'chat-selection',chatId:id,selection:chosen,label,switching:!!activeRun});selectionChanged(readAgentSettings());return {selection:chosen,label}
+  })
   const history = createRunHistory({ runs, trackerFormat: readTrackerFormat })
+  ipcMain.handle('qa:chat-images:add', async (event, input: { chatId: string; ownerKey: string | null; files: ChatImageUpload[] }) => {
+    if (!fromQaWindow(event) || !input || input.ownerKey !== accountOwner()) throw new Error('The account changed. Add the images again in this account.')
+    const guard = accountContext().assert, owner = ownerKey()
+    const added = await chatImages.add(owner, input.chatId, input.files, guard)
+    guard(); chats.save({ id: input.chatId })
+    return added
+  })
+  ipcMain.handle('qa:chat-images:picture', (event, chatId: string, id: string, full?: boolean) => {
+    if (!fromQaWindow(event)) throw new Error('Not allowed.')
+    return chatImages.picture(ownerKey(), chatId, id, full === true)
+  })
   ipcMain.handle('qa:chat:send', async (event, text: unknown, chatOptions: unknown): Promise<QaRunStartResult> => {
     if (!fromQaWindow(event)) return { started: false, error: 'Not allowed.' }
     const message = typeof text === 'string' ? text.trim().slice(0, MAX_CHAT_MESSAGE) : ''
-    if (!message) return { started: false, error: 'Type a message first.' }
     const requested = (chatOptions && typeof chatOptions === 'object' ? chatOptions : {}) as QaChatSendOptions
     // A message for another chat than the last one: the agent remembers that chat instead.
     const chatId = typeof requested.chatId === 'string' && CHAT_ID_PATTERN.test(requested.chatId) ? requested.chatId : null
+    let attachments: ChatImage[] = []
+    try { if (requested.attachmentIds?.length) { if (!chatId) throw new Error('Choose a chat before sending images.'); attachments = chatImages.references(ownerKey(), chatId, requested.attachmentIds) } }
+    catch (error) { return { started: false, error: error instanceof Error ? error.message : 'Could not load these images.' } }
+    if (!message && !attachments.length) return { started: false, error: 'Type a message or attach an image first.' }
     if (chatId !== currentChatId && !activeRun) { chatHistory = chatId ? chats.load(chatId)?.history ?? [] : []; currentChatId = chatId }
     const settings = readAgentSettings()
     const agent: AgentId = isAgentId(requested.agent) ? requested.agent : settings.defaultAgent
-    return launch(agent, settings, { kind: 'chat', agent, followsDefault: !isAgentId(requested.agent), message, history: structuredClone(chatHistory), chatId: currentChatId })
+    return launch(agent, settings, { kind: 'chat', agent, followsDefault: !isAgentId(requested.agent), message: message || 'Please inspect the attached images.', attachments, history: structuredClone(chatHistory), chatId: currentChatId })
   })
   ipcMain.handle('qa:chat:reset', (event) => {
     if (!fromQaWindow(event) || activeRun) return false
     chatHistory = []
     currentChatId = null
     browser.close()
+    selectionChanged(readAgentSettings())
     return true
   })
 
@@ -690,11 +845,13 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     if (!chat) return null
     chatHistory = chat.history
     currentChatId = chat.id
+    chatSelections.set(chat.id,chat.selection||null)
     const { history: _remembered, ...shown } = chat
     return shown
   })
   ipcMain.handle('qa:chats:save', (event, input: unknown): boolean => {
     if (!fromQaWindow(event) || !input || typeof input !== 'object') return false
+    if ((input as { ownerKey?: unknown }).ownerKey !== accountOwner()) return false
     const id = (input as { id?: unknown }).id
     return !!chats.save(input as Parameters<typeof chats.save>[0], id === currentChatId ? chatHistory : undefined)
   })
@@ -710,7 +867,8 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   ipcMain.handle('qa:history:detail', (event, id: unknown): QaRunDetail | null => (fromQaWindow(event) && typeof id === 'string' ? safely(() => history.detail(id), null) : null))
   ipcMain.handle('qa:history:picture', async (event, id: unknown, ref: unknown): Promise<string | null> => {
     if (!fromQaWindow(event) || typeof id !== 'string' || !ref || typeof ref !== 'object') return null
-    try { return await history.picture(id, ref as QaHistoryPicture) } catch { return null }
+    const assert=accountContext().assert
+    try { const picture=await history.picture(id, ref as QaHistoryPicture);assert();return picture } catch { return null }
   })
   ipcMain.handle('qa:history:copy', (event, id: unknown, stamp: unknown): number => {
     if (!fromQaWindow(event) || typeof id !== 'string' || typeof stamp !== 'string') return 0
@@ -732,10 +890,11 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
   ipcMain.handle('qa:history:delete', (event, id: unknown): boolean => (fromQaWindow(event) && typeof id === 'string' && !activeRun ? safely(() => runs.remove(id), false) : false))
   ipcMain.handle('qa:run:stop', (event) => {
     if (!fromQaWindow(event)) return false
+    const stoppedQuota = quotas.cancel()
     pendingSwitch = null
     activeRun?.abort()
     if (activeRun) resolveApproval({ approved: false, note: 'Stopped before approval.' })
-    return !!activeRun
+    return !!activeRun || stoppedQuota
   })
   ipcMain.handle('qa:run:active', (event) => (fromQaWindow(event) ? !!activeRun : false))
 
@@ -761,7 +920,14 @@ export function registerQaAgent(options: Options): { context: () => QaContext; a
     return { installed: true, path: file, onPath: onPath(dirname(file)), platform: process.platform }
   })
   if (readConfig().enabled) void startBridge().then(pushStatus)
+  onAccountChanged(()=>{
+    quotas.clear()
+    activeRun?.abort();pendingSwitch=null;resolveApproval({approved:false,note:'The account changed.'});browser.close();reported=null;batchTarget=null;targetThumbs=null
+    chatHistory=[];currentChatId=null;chatSelections.clear();executions.clear();appLocation={workspace:'dashboard'}
+    scopedTokens.clear();token='';resetToken(tokenFile());void stopBridge().then(()=>{if(readConfig().enabled)void startBridge()})
+    sendRunEvent({type:'account-reset'});activeExecution=null
+  })
 
   if (!existsSync(root())) { try { mkdirSync(root(), { recursive: true }) } catch { /* created on first save */ } }
-  return { context: () => context, attachMainWindow }
+  return { context: () => context, workspace, attachMainWindow }
 }

@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { executeToolCalls, summarize, imagePlaceholder, isAbortError, KEEP_IMAGE_TURNS, toolSchemas } from './common'
 import { AgentError, type AgentProvider, type ProviderResult, type ProviderRun } from './types'
+import type { ToolImage } from '../toolBasics'
+import { quotaFromHeaders } from './quota'
 
 // Claude through the Anthropic API: a streaming tool loop (see the claude-api guide). The
 // model draws conclusions from pictures; tools give it the pictures and values.
@@ -19,6 +21,9 @@ const MAX_OUTPUT_TOKENS = 32_000
 
 // Haiku models do not take the effort setting.
 const supportsEffort = (model: string) => !/haiku/i.test(model)
+const imageContent = (text: string, images?: ToolImage[]): string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => images?.length
+  ? [{ type: 'text', text }, ...images.flatMap((image): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => [{ type: 'text', text: image.caption }, { type: 'image', source: { type: 'base64', media_type: image.mimeType, data: image.data.toString('base64') } }])]
+  : text
 
 function friendly(error: unknown): AgentError {
   if (error instanceof Anthropic.AuthenticationError) return new AgentError('Anthropic rejected the API key. Check it in Settings → AI Agents.')
@@ -38,9 +43,10 @@ export function trimOldImages(messages: Anthropic.MessageParam[], keepTurns = KE
     const message = messages[i]
     if (message.role !== 'user' || !Array.isArray(message.content)) continue
     const results = message.content.filter((block): block is Anthropic.ToolResultBlockParam => block.type === 'tool_result')
-    if (!results.length) continue
+    if (!results.length && !message.content.some(block => block.type === 'image')) continue
     seen++
     if (seen <= keepTurns) continue
+    message.content = message.content.map(block => block.type === 'image' ? { type: 'text' as const, text: imagePlaceholder({ caption: 'earlier attachment; use read_chat_images to revisit it' }) } : block)
     for (const result of results) {
       if (!Array.isArray(result.content)) continue
       let captions = 0
@@ -60,7 +66,7 @@ export function createAnthropicProvider(config: AnthropicConfig): AgentProvider 
     async run(run: ProviderRun): Promise<ProviderResult> {
       const client = new Anthropic({ apiKey: config.apiKey, ...(config.baseURL ? { baseURL: config.baseURL } : {}) })
       const tools: Anthropic.Tool[] = toolSchemas(run.tools).map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.schema as Anthropic.Tool.InputSchema }))
-      const messages: Anthropic.MessageParam[] = (run.resume as { messages?: Anthropic.MessageParam[] } | undefined)?.messages || [...(run.history ?? []).map((turn): Anthropic.MessageParam => ({ role: turn.role, content: turn.text })), { role: 'user', content: run.task }]
+      const messages: Anthropic.MessageParam[] = (run.resume as { messages?: Anthropic.MessageParam[] } | undefined)?.messages || [...(run.history ?? []).map((turn): Anthropic.MessageParam => ({ role: turn.role, content: turn.role === 'user' ? imageContent(turn.text, turn.images) : turn.text })), { role: 'user', content: imageContent(run.task, run.images) }]
       let lastText = (run.resume as { lastText?: string } | undefined)?.lastText || ''
 
       for (let turn = 0; turn < run.maxTurns; turn++) {
@@ -83,8 +89,12 @@ export function createAnthropicProvider(config: AnthropicConfig): AgentProvider 
           )
           stream.on('text', (delta) => run.emit({ type: 'text', text: delta, delta: true }))
           message = await stream.finalMessage()
+          const quota = stream.response ? quotaFromHeaders('anthropic-api', config.model, stream.response.headers) : null
+          if (quota) run.emit({ type: 'quota-observed', quota })
         } catch (error) {
           if (isAbortError(error) || run.signal.aborted) return { stopped: 'aborted', text: lastText }
+          const quota = error instanceof Anthropic.APIError && error.headers ? quotaFromHeaders('anthropic-api', config.model, new Headers(error.headers)) : null
+          if (quota) run.emit({ type: 'quota-observed', quota })
           throw friendly(error)
         }
         run.emit({ type: 'usage', inputTokens: message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0), outputTokens: message.usage.output_tokens })
@@ -108,7 +118,7 @@ export function createAnthropicProvider(config: AnthropicConfig): AgentProvider 
         const results: Anthropic.ToolResultBlockParam[] = []
         const pending = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
         const byId = new Map<string, Anthropic.ToolResultBlockParam>()
-        const activeImages = new Set(messages.flatMap(m => Array.isArray(m.content) ? m.content.flatMap(b => b.type === 'tool_result' && Array.isArray(b.content) ? b.content.flatMap(p => p.type === 'image' && p.source.type === 'base64' ? [p.source.data] : []) : []) : []))
+        const activeImages = new Set(messages.flatMap(m => Array.isArray(m.content) ? m.content.flatMap(b => b.type === 'image' && b.source.type === 'base64' ? [b.source.data] : b.type === 'tool_result' && Array.isArray(b.content) ? b.content.flatMap(p => p.type === 'image' && p.source.type === 'base64' ? [p.source.data] : []) : []) : []))
         await executeToolCalls(pending, block => block.name, async block => {
           if (run.signal.aborted) return
           run.emit({ type: 'tool', name: block.name, args: block.input, callId: block.id })

@@ -1227,11 +1227,12 @@ export function installEditBetaBridge() {
         specificity: 1_000_000_000,
         order: ++order,
       });
-    if (best) {
+    const winner=best as {value:string;selector:string}|null;
+    if (winner) {
       const result: AuthoredCssDimension = {
-        value: best.value,
-        source: best.selector === "element.style" ? "inline" : "rule",
-        selector: best.selector,
+        value: winner.value,
+        source: winner.selector === "element.style" ? "inline" : "rule",
+        selector: winner.selector,
       };
       if (authoredDimensionCache.size > 40) authoredDimensionCache.clear();
       authoredDimensionCache.set(cacheKey, result);
@@ -7037,7 +7038,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
           }
           try {
             try {
-              const previewImage = await rendererCaptureWithTimeout(
+              const previewImage = await rendererCaptureWithTimeout<{toDataURL():string}>(
                 view.capturePage(),
                 5_000,
                 "Timed out preparing the capture preview.",
@@ -8091,7 +8092,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                           ref={figmaWebviewRef}
                           src={figmaUrl}
                           partition="persist:figma"
-                          allowpopups="true"
+                          allowpopups={true}
                           useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
                         />
                     ) : figmaImage ? (
@@ -8374,7 +8375,7 @@ const EditBetaWorkspace = forwardRef<EditBetaWorkspaceHandle, Props>(
                                   }
                                 }}
                                 src={sourceUrl}
-                                allowpopups="true"
+                                allowpopups={true}
                               />
                               {isActive && capturePreviewDataUrl && (
                                 <img

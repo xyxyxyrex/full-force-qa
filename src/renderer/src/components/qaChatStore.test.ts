@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { formatTokens, qaChat, tokenTotal } from './qaChatStore'
 
 const feed = (...events: Parameters<typeof qaChat.handle>[0][]) => events.forEach((event) => qaChat.handle(event))
@@ -7,6 +7,84 @@ const kinds = () => qaChat.getState().messages.map((m) => m.kind)
 beforeEach(() => qaChat.reset())
 
 describe('qaChatStore', () => {
+  it('inserts local command reports without splitting an active streamed answer or changing counts', () => {
+    feed({ type: 'started', agent: 'codex', label: 'Codex' }, { type: 'text', text: 'Checking ', delta: true }, { type: 'usage', inputTokens: 100, outputTokens: 20 })
+    qaChat.addInfo('/usage', 'Recorded tokens')
+    expect(qaChat.getState().responding).toBe(true)
+    feed({ type: 'text', text: 'the layout.', delta: true })
+    expect(qaChat.getState().messages.filter(message => message.kind === 'assistant')).toEqual([expect.objectContaining({ text: 'Checking the layout.' })])
+    expect(qaChat.getState().session).toEqual({ input: 100, output: 20, requests: 1 })
+    expect(qaChat.getState().messages.filter(message => message.kind === 'status')).toEqual([expect.objectContaining({ localCommand: '/usage', text: 'Recorded tokens' })])
+  })
+  it('keeps typing markers transient while saving and restoring the full reply', async () => {
+    vi.useFakeTimers()
+    const save = vi.fn().mockResolvedValue(true)
+    vi.stubGlobal('window', { localStorage: { getItem: () => null }, electronAPI: { qaChatsSave: save } })
+    try {
+      qaChat.addUserMessage('Review this paragraph')
+      feed({ type: 'text', text: 'The full received reply.' }, { type: 'finished' })
+      expect(qaChat.getState().messages[1].receivedAt).toBeDefined()
+      await vi.advanceTimersByTimeAsync(400)
+      const saved = save.mock.calls[0][0]
+      expect(saved.messages[1]).toMatchObject({ text: 'The full received reply.' })
+      expect(saved.messages[1].receivedAt).toBeUndefined()
+      qaChat.restore({ ...saved, version: 1, createdAt: 1, updatedAt: 1 })
+      expect(qaChat.getState().messages[1].receivedAt).toBeUndefined()
+    } finally {
+      qaChat.reset(); vi.unstubAllGlobals(); vi.useRealTimers()
+    }
+  })
+  it('retains draft images while typing and saves their references with the user’s message', () => {
+    const images = [{ id: 'a1111111-1111-4111-8111-111111111111', name: 'Screenshot.webp', mimeType: 'image/webp' as const, width: 40, height: 20, bytes: 100 }]
+    qaChat.setDraft('Look here', 'chat', images)
+    qaChat.setDraft('Look at the spacing', 'chat')
+    expect(qaChat.getState().draft.attachments).toEqual(images)
+    qaChat.addUserMessage('Look at the spacing', images)
+    expect(qaChat.getState().messages[0]).toMatchObject({ kind: 'user', attachments: images })
+    qaChat.setDraft('', 'chat', [])
+    expect(qaChat.getState().draft.attachments).toEqual([])
+    expect(qaChat.getState().messages[0]).toMatchObject({ attachments: images })
+    feed({ type: 'account-reset' })
+    expect(qaChat.getState().draft.attachments).toBeUndefined()
+  })
+  it('tracks streamed text separately from waiting, tool work, retries, and completion', () => {
+    feed({ type: 'started', agent: 'fixture', label: 'Fixture' })
+    expect(qaChat.getState().responding).toBe(false)
+    feed({ type: 'text', text: 'Live response', delta: true })
+    expect(qaChat.getState().responding).toBe(true)
+    feed({ type: 'tool', name: 'get_context', args: {} })
+    expect(qaChat.getState().responding).toBe(false)
+    feed({ type: 'text', text: 'Another chunk', delta: true })
+    expect(qaChat.getState().responding).toBe(true)
+    feed({ type: 'activity', phase: 'retrying', startedAt: Date.now() })
+    expect(qaChat.getState().responding).toBe(false)
+    feed({ type: 'text', text: 'Finished reply', delta: true }, { type: 'finished' })
+    expect(qaChat.getState()).toMatchObject({ running: false, responding: false })
+    qaChat.restore({ version: 1, id: 'chat-legacy', title: 'Older chat', createdAt: 1, updatedAt: 1, messages: [] })
+    expect(qaChat.getState().responding).toBe(false)
+  })
+  it('binds deferred transcript saves to the original owner and cancels them on account reset', async () => {
+    vi.useFakeTimers()
+    let owner = 'account-A'
+    const save = vi.fn().mockResolvedValue(true)
+    vi.stubGlobal('window', { localStorage: { getItem: () => owner }, electronAPI: { qaChatsSave: save } })
+    try {
+      qaChat.addUserMessage('Private account A message')
+      owner = 'account-B'
+      await vi.advanceTimersByTimeAsync(400)
+      expect(save.mock.calls[0][0].ownerKey).toBe('account-A')
+      save.mockClear()
+      qaChat.addUserMessage('Queued message')
+      feed({ type: 'account-reset' })
+      await vi.advanceTimersByTimeAsync(400)
+      expect(save).not.toHaveBeenCalled()
+      expect(qaChat.getState().messages).toEqual([])
+    } finally {
+      qaChat.reset()
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
+  })
   it('keeps an unsent message and active view through streaming and model switches', () => {
     qaChat.setDraft('Not sent yet', 'findings')
     feed({ type: 'started', agent: 'gemini-api', label: 'Gemini' }, { type: 'text', text: 'Live reply', delta: true }, { type: 'agent-selected', agent: 'codex', label: 'Codex' }, { type: 'finished' })

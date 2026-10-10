@@ -14,6 +14,8 @@ let client: SupabaseClient | undefined
 let user: ParityAccountUser | undefined
 let authId: string | undefined
 let epoch = 0
+const accountListeners = new Set<() => void>()
+export function onAccountChanged(listener: () => void) { accountListeners.add(listener); return () => { accountListeners.delete(listener) } }
 let restoring: Promise<void> | undefined
 let cancelGoogleLogin: ((reason: Error) => void) | undefined
 const oauthStorage = new Map<string, string>()
@@ -46,6 +48,7 @@ function authClient() {
 }
 function publish() {
   clearSiteAuthentication()
+  for (const listener of accountListeners) listener()
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send('account:changed')
 }
 async function persist() {
@@ -99,6 +102,7 @@ async function freshAccessToken(): Promise<{ accessToken: string; generation: nu
   return { accessToken: session.access_token, generation }
 }
 export async function accountAccessToken(): Promise<string> { return (await freshAccessToken()).accessToken }
+export class AccountRequestError extends Error { constructor(message:string,readonly status:number){super(message);this.name='AccountRequestError'} }
 // The public viewer site (parity-gfx.pages.dev). Bundles built without the define (tests) simply have none.
 const viewerUrl = () => process.env.VITE_EPHEMERAL_VIEWER_URL || (typeof __PARITY_VIEWER_URL__ === 'string' ? __PARITY_VIEWER_URL__ : '')
 export const parityPublicConfig = () => ({ ...config(), viewer: viewerUrl() })
@@ -111,7 +115,7 @@ export async function accountRequest(action: string, payload: Record<string, unk
   })
   const result = await response.json() as any
   if (generation !== epoch) throw new Error('The active account changed.')
-  if (!response.ok) throw new Error(result.error || `Account service returned ${response.status}.`)
+  if (!response.ok) throw new AccountRequestError(result.error || `Account service returned ${response.status}.`,response.status)
   if (result.needsSetup && !['status', 'initialize', 'submit_feedback'].includes(action)) throw new Error('Finish setting up your Parity workspace in Settings → Account.')
   return result
 }

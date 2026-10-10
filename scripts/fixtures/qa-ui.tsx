@@ -34,7 +34,10 @@ const alopeciaTarget = {
 ;(window as any).__targets = { alopecia: alopeciaTarget, contact: { projectName: '[Svenson] Alopecia', pageUrl: 'https://svenson.test/contact/', pageId: '/contact', slots: {}, thumbnails: {} } }
 let firstOverview = true
 const calls: string[] = []
+const chatImages = new Map<string, { chatId: string; name: string }>()
 let runListener: ((event: unknown) => void) | null = null
+const workspaceProposal:any={id:'a1111111-1111-4111-8111-111111111111',title:'Create linked projects',changes:[{label:'New website',after:'Create project in Home / Client · capture when opened'}],status:'pending',revision:1,createdAt:1}
+const workspaceRecords:any[]=[{kind:'project',id:'owned-project',title:'Captured client website',breadcrumb:'Home / Client',createdAt:1791500000000,url:'https://fixture.test/',source:'cloud'},{kind:'capture',id:'owned-capture',projectId:'owned-project',title:'Captured client website',breadcrumb:'Home / Client',capturedAt:1791500000000,source:'cloud'}]
 const findingListeners=new Set<(event:{projectKey:string})=>void>()
 let findingSnapshot:any={projectKey:'proj-1',projectName:'Fixture project',revision:1,columns:['Page Link','Section','Screenshot','Remarks','Priority (QA/PM)','Display','Status'],choices:{Status:['IN PROGRESS (DEV)','APPROVED (QA)','ENHANCEMENT (QA)']},findings:[
   {id:'finding-a',projectKey:'proj-1',projectName:'Fixture project',pageUrl:'https://fixture.test/home/',cells:{Section:'Hero',Remarks:'Increase the heading to **32px**, matching the design.',Display:'Desktop'},sources:[{runId:'audit-one',breakpoint:'desktop',area:'visual'}],sourceKeys:[],review:'draft',edited:[],createdAt:1,updatedAt:1,evidence:{file:'fixture',caption:'Heading evidence'}},
@@ -42,6 +45,7 @@ let findingSnapshot:any={projectKey:'proj-1',projectName:'Fixture project',revis
   {id:'finding-c',projectKey:'proj-1',projectName:'Fixture project',pageUrl:'https://fixture.test/about/',cells:{Section:'Footer',Remarks:'Fix the broken link.',Display:'Desktop'},sources:[{runId:'audit-two',breakpoint:'desktop',area:'functional'}],sourceKeys:[],review:'accepted',edited:[],createdAt:3,updatedAt:3},
 ]}
 ;(window as any).__addFinding=()=>{findingSnapshot.findings.push({...structuredClone(findingSnapshot.findings[0]),id:'finding-streamed',cells:{Section:'Navbar',Remarks:'Close the menu after navigation.'}});findingSnapshot.revision++;findingListeners.forEach(fn=>fn({projectKey:'proj-1'}))}
+;(window as any).__setFindingsEmpty=()=>{findingSnapshot.findings=[];findingSnapshot.revision++;findingListeners.forEach(fn=>fn({projectKey:'proj-1'}))}
 ;(window as any).__calls = calls
 ;(window as any).__emit = (event: unknown) => runListener?.(event)
 ;(window as any).electronAPI = {
@@ -60,6 +64,12 @@ let findingSnapshot:any={projectKey:'proj-1',projectName:'Fixture project',revis
   qaFindingsCopy: async (_key:string,ids:string[]) => {calls.push(`findings-copy ${ids.join(',')}`);return{success:true,count:ids.length}},
   qaFindingsShare: async () => {calls.push('findings-share');return{success:true}},
   qaAgentsSettings: async () => structuredClone(settings),
+  qaAgentQuota: async (input: any) => {
+    calls.push(`quota ${JSON.stringify(input)}`)
+    if ((window as any).__quotaDelay) await new Promise(resolve => { (window as any).__releaseQuota = resolve })
+    if ((window as any).__quotaError) throw new Error('Could not check quota. Check your connection and retry.')
+    return (window as any).__quotaResult || { agent: input.agent || settings.defaultAgent, model: settings.models[input.agent || settings.defaultAgent] || 'App default', checkedAt: Date.now(), source: 'live', windows: [{ label: '5-hour window', usedPercent: 25, resetsAt: Date.now() + 60000 }], note: 'Provider-reported allowance.' }
+  },
   qaAgentsOverview: async () => { if (firstOverview && new URLSearchParams(location.search).get('view') === 'agents') { firstOverview = false; await new Promise(r => { (window as any).__releaseOverview = r }) } if ((window as any).__overviewError) throw new Error('Could not load agent settings.'); return structuredClone({ settings, agents, keyStorage: 'secure' }) },
   qaAgentsSaveSettings: async (patch: any) => { calls.push(`save ${JSON.stringify(patch)}`); if ((window as any).__saveError) throw new Error('Could not save settings.'); settings = { ...settings, ...patch, models: { ...settings.models, ...patch.models } }; runListener?.({ type: 'agent-selected', agent: settings.defaultAgent, model: settings.models[settings.defaultAgent], label: `${settings.defaultAgent} · ${settings.models[settings.defaultAgent] || 'App default'}` }); return structuredClone({ settings, agents, keyStorage: 'secure' }) },
   qaAgentsSetKey: async (id: string) => { const agent = agents.find(a => a.id === id); if (agent) agent.hasKey = true; return structuredClone({ settings, agents, keyStorage: 'secure' }) },
@@ -88,7 +98,16 @@ let findingSnapshot:any={projectKey:'proj-1',projectName:'Fixture project',revis
   qaExecutionStatus: async () => null,
   qaExecutionRetry: async (id: string) => { calls.push(`retry ${id}`); return { started: true } },
   qaExecutionResult: async (_id: string, offset: number) => ({text:offset ? 'Remaining output' : 'Saved output',total:28,nextOffset:offset ? null : 16}),
-  qaChatSend: async (text: string, options?: { chatId?: string }) => { calls.push(`chat ${text}`); (window as any).__lastChatId = options?.chatId; return { started: true } },
+  qaChatSend: async (text: string, options?: { chatId?: string; attachmentIds?: string[] }) => { calls.push(`chat ${text}`); (window as any).__lastChatId = options?.chatId; (window as any).__lastChatOptions = options; return { started: true } },
+  qaChatImagesAdd: async (input: { chatId: string; files: Array<{ name: string }> }) => input.files.map(file => { const id = crypto.randomUUID(); chatImages.set(id, { chatId: input.chatId, name: file.name }); return { id, name: file.name, mimeType: 'image/webp', width: 640, height: 320, bytes: 1000 } }),
+  qaChatImagesPicture: async (chatId: string, id: string) => { const image = chatImages.get(id); if (!image || image.chatId !== chatId) throw new Error('Image unavailable'); return { src: swatch('#7359a2'), caption: image.name } },
+  qaChatSelection:async(id:string,selection:any)=>{calls.push(`chat-selection ${JSON.stringify(selection)}`);const label=selection?`${selection.agent} · ${selection.model||'App default'}`:`${settings.defaultAgent} · ${settings.models[settings.defaultAgent]||'App default'}`;runListener?.({type:'chat-selection',chatId:id,selection,label});return{selection,label}},
+  workspaceSearch:async()=>({records:structuredClone(workspaceRecords),nextOffset:null,source:'cloud'}),
+  qaWorkspaceCommand:async(input:string)=>{calls.push(`command ${input}`);if(input.startsWith('/create'))return{proposal:structuredClone(workspaceProposal)};return{search:{records:structuredClone(workspaceRecords),nextOffset:null,source:'cloud',dateLabel:input.includes('10/09/26')?'2026-10-09 (Asia/Taipei)':undefined}}},
+  workspaceProposal:async()=>structuredClone(workspaceProposal),
+  workspaceApply:async(id:string)=>{calls.push(`workspace-apply ${id}`);if((window as any).__workspaceFail){workspaceProposal.status='failed';workspaceProposal.error='Connection interrupted. Retry.';return{success:false,proposal:structuredClone(workspaceProposal)}}workspaceProposal.status='applied';workspaceProposal.error=undefined;return{success:true,proposal:structuredClone(workspaceProposal)}},
+  workspaceCancel:async()=>{workspaceProposal.status='cancelled';return structuredClone(workspaceProposal)},
+  workspaceOpen:async(target:any)=>{calls.push(`workspace-open ${target.kind}:${target.id}`);return{opened:true}},
   qaChatsSave: async (chat: any) => { calls.push(`chats-save ${chat.id} ${chat.messages.length}`); return true },
   qaChatsList: async () => [{ id: 'chat-saved-0001', title: 'How big is the hero heading?', createdAt: 1791100000000, updatedAt: 1791100000000, messageCount: 4, tokens: 18250 }],
   qaChatsOpen: async (id: string) => { calls.push(`chats-open ${id}`); return { version: 1, id, title: 'How big is the hero heading?', createdAt: 1, updatedAt: 1, agentLabel: 'Antigravity CLI', messages: [{ id: 1, kind: 'user', text: 'How big is the hero heading?' }, { id: 2, kind: 'assistant', text: 'It is **28px**.' }], session: { input: 18000, output: 250, requests: 2 } } },

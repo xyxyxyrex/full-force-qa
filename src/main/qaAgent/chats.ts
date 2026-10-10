@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { QaChatListItem, QaStoredChat } from '../../shared/qaAgent'
+import { isAgentId, type QaChatListItem, type QaStoredChat, type ChatAgentSelection } from '../../shared/qaAgent'
 import type { ChatTurn } from './agents/types'
 
 // Saved QA chats: what the chat panel showed and what the agent remembered, one file per chat,
@@ -17,7 +17,7 @@ type StoredFile = QaStoredChat & { history: ChatTurn[] }
 const clamp = (value: unknown, max: number) => (typeof value === 'string' ? value.slice(0, max) : '')
 const count = (value: unknown) => (Number.isFinite(Number(value)) && Number(value) >= 0 ? Math.round(Number(value)) : 0)
 
-export function createChatStore(root: string, now: () => number = () => Date.now()) {
+export function createChatStore(root: string, now: () => number = () => Date.now(), removed?: (id: string) => void) {
   const file = (id: string) => {
     if (!CHAT_ID_PATTERN.test(id)) throw new Error('That is not a valid chat id.')
     return join(root, `${id}.json`)
@@ -34,7 +34,7 @@ export function createChatStore(root: string, now: () => number = () => Date.now
     try { names = readdirSync(root).filter((name) => name.endsWith('.json')) } catch { return }
     if (names.length <= MAX_CHATS) return
     const byAge = names.map((name) => ({ name, at: statSync(join(root, name)).mtimeMs })).sort((a, b) => b.at - a.at)
-    for (const old of byAge.slice(MAX_CHATS)) rmSync(join(root, old.name), { force: true })
+    for (const old of byAge.slice(MAX_CHATS)) { rmSync(join(root, old.name), { force: true }); removed?.(old.name.slice(0, -5)) }
   }
 
   return {
@@ -54,7 +54,7 @@ export function createChatStore(root: string, now: () => number = () => Date.now
     },
 
     /** Saves what the chat shows; `history` is what the agent remembers, kept from before when not given. */
-    save(input: { id: unknown; title?: unknown; agentLabel?: unknown; messages?: unknown; session?: unknown }, history?: ChatTurn[]): StoredFile | null {
+    save(input: { id: unknown; title?: unknown; agentLabel?: unknown; messages?: unknown; session?: unknown; selection?: ChatAgentSelection | null }, history?: ChatTurn[]): StoredFile | null {
       const id = typeof input.id === 'string' && CHAT_ID_PATTERN.test(input.id) ? input.id : null
       if (!id) return null
       const previous = read(id)
@@ -68,6 +68,7 @@ export function createChatStore(root: string, now: () => number = () => Date.now
         createdAt: previous?.createdAt ?? now(),
         updatedAt: now(),
         agentLabel: clamp(input.agentLabel, 120) || previous?.agentLabel,
+        selection: input.selection === null ? null : input.selection && isAgentId(input.selection.agent) && typeof input.selection.model === 'string' ? {agent:input.selection.agent,model:input.selection.model.slice(0,200)} : previous?.selection,
         messages,
         session: session ? { input: count(session.input), output: count(session.output), requests: count(session.requests) } : previous?.session,
         history: (history ?? previous?.history ?? []).slice(-MAX_HISTORY),
@@ -84,7 +85,7 @@ export function createChatStore(root: string, now: () => number = () => Date.now
 
     remove(id: string): boolean {
       if (!CHAT_ID_PATTERN.test(id)) return false
-      try { rmSync(file(id)); return true } catch { return false }
+      try { rmSync(file(id)); removed?.(id); return true } catch { return false }
     },
   }
 }

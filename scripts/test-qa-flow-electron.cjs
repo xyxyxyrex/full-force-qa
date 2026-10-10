@@ -254,6 +254,44 @@ async function smoke() {
   const stoppedAt = modelRequests
   await sleep(150)
   assert.equal(modelRequests,stoppedAt, 'Stop does not leave another attempt queued')
+  // Composer selections are per-chat, hot-swap unfinished work, and never rewrite Settings.
+  await run(main, `qaTest.invoke('qa:agents:save-settings',{defaultAgent:'local',models:{local:'fixture-default'}})`)
+  await run(main, `qaTest.invoke('qa:chat:selection','chat-scope-fixture',{agent:'local',model:'fixture-busy'})`)
+  await run(main, `qaTest.invoke('qa:chat:send','Switch only this conversation',{chatId:'chat-scope-fixture'})`)
+  await until(async()=>(await run(main, `qaTest.invoke('qa:execution:status')`)).phase==='retrying', 'chat override countdown')
+  const perChatBefore=await run(main, `qaTest.invoke('qa:execution:status')`)
+  await run(main, `qaTest.invoke('qa:chat:selection','chat-scope-fixture',{agent:'local',model:'fixture-chat-replacement'})`)
+  await until(async()=>!(await run(main, `qaTest.invoke('qa:run:active')`)), 'chat-only replacement')
+  assert.equal((await run(main, `qaTest.invoke('qa:execution:status')`)).executionId,perChatBefore.executionId)
+  assert.equal((await run(main, `qaTest.invoke('qa:agents:settings')`)).models.local,'fixture-default')
+  assert.deepEqual(modelBodies.slice(-2).map(b=>b.model),['fixture-busy','fixture-chat-replacement'])
+  assert.deepEqual((await run(main, `qaTest.invoke('qa:chats:open','chat-scope-fixture')`)).selection,{agent:'local',model:'fixture-chat-replacement'})
+  assert.equal(await run(main, `qaTest.invoke('qa:chats:save',{id:'chat-wrong-owner',ownerKey:'other-account',messages:[{kind:'user',text:'private'}]})`), false)
+  assert.equal(await run(main, `qaTest.invoke('qa:chats:open','chat-wrong-owner')`), null, 'late saves cannot move another account\'s transcript into this account')
+  await run(main, `qaTest.invoke('qa:chat:send','Use Settings in a different chat',{chatId:'chat-other-fixture'})`)
+  await until(async()=>!(await run(main, `qaTest.invoke('qa:run:active')`)), 'independent default chat')
+  assert.equal(modelBodies.at(-1).model,'fixture-default')
+  assert.match((await run(main, `qaTest.invoke('qa:call-tool','parity_help',{topic:'storage'})`)).text,/Supabase/)
+  assert.match((await run(main, `qaTest.invoke('qa:call-tool','workspace_apply',{id:'guessed'})`)).text,/Unknown tool/)
+
+  // Attachment IPC sends real pixels to the provider and refuses another window/chat/owner.
+  const addImage=`qaTest.invoke('qa:chat-images:add',{chatId:'chat-image-fixture',ownerKey:null,files:[{name:'Screenshot.png',bytes:Uint8Array.from(atob(${JSON.stringify(lazy.toString('base64'))}),c=>c.charCodeAt(0))}]})`;
+  await assert.rejects(run(other,addImage),/account changed|Not allowed/i);
+  const attached=await run(main,addImage);
+  assert.equal(attached.length,1);
+  await assert.rejects(run(main,`qaTest.invoke('qa:chat-images:add',{chatId:'chat-image-fixture',ownerKey:'wrong-owner',files:[]})`),/account changed/i);
+  assert.match((await run(main,`qaTest.invoke('qa:chat-images:picture','chat-image-fixture',${JSON.stringify(attached[0].id)},true)`)).src,/^data:image\/png;base64,/);
+  await assert.rejects(run(main,`qaTest.invoke('qa:chat-images:picture','other-chat-fixture',${JSON.stringify(attached[0].id)})`),/unavailable/i);
+  const invalid=await run(main,`qaTest.invoke('qa:chat:send','Inspect image',{chatId:'other-chat-fixture',attachmentIds:[${JSON.stringify(attached[0].id)}]})`);
+  assert.equal(invalid.started,false);
+  await run(main,`qaTest.invoke('qa:chat:send','',{chatId:'chat-image-fixture',attachmentIds:[${JSON.stringify(attached[0].id)}]})`);
+  await until(async()=>!(await run(main,`qaTest.invoke('qa:run:active')`)),'image-only chat response');
+  assert.ok(modelBodies.at(-1).messages.some(m=>m.role==='user'&&Array.isArray(m.content)&&m.content.some(p=>p.type==='image_url'&&p.image_url.url.startsWith('data:image/webp;base64,'))));
+  await run(main,`qaTest.invoke('qa:chat:send','Describe the same image again',{chatId:'chat-image-fixture'})`);
+  await until(async()=>!(await run(main,`qaTest.invoke('qa:run:active')`)),'attachment follow-up');
+  assert.ok(modelBodies.at(-1).messages.some(m=>m.role==='user'&&Array.isArray(m.content)&&m.content.some(p=>p.type==='image_url')),'follow-ups retain actual image context');
+  await run(main,`qaTest.invoke('qa:chats:delete','chat-image-fixture')`);
+  await assert.rejects(run(main,`qaTest.invoke('qa:chat-images:picture','chat-image-fixture',${JSON.stringify(attached[0].id)})`),/unavailable/i);
 
   // 6. Decisions only count from the app window and only for the pending request; one request at a time.
   await run(main, `window.__hold = true; window.__approvals.length = 0`)

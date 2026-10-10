@@ -105,7 +105,7 @@ export async function closeComparisonWork() {
   await Promise.all([...sessions.keys()].map(id => closeSession(id, false)))
 }
 
-export function registerComparisonHandlers(): void {
+export function registerComparisonHandlers(onCaptured?: (record:BrowserComparison)=>void): void {
   process.env.PLAYWRIGHT_BROWSERS_PATH = runtimePath()
   const playwright = require('playwright') as typeof import('playwright')
   engines = { firefox: playwright.firefox, webkit: playwright.webkit }
@@ -266,6 +266,7 @@ export function registerComparisonHandlers(): void {
       atomicWrite(image(input.projectId, id, 'chromium'), chromium)
       atomicWrite(indexFile(input.projectId), JSON.stringify([record, ...records(input.projectId)]))
       emit(event.sender.id, selected, 'ready', `${selected} capture saved.`)
+      if(!response||response.status()<400)onCaptured?.(record)
       return readImage(input.projectId, id)
     } catch (error) {
       if (cancelled) throw new Error('Comparison was cancelled.')

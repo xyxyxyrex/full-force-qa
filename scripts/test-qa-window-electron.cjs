@@ -52,14 +52,40 @@ async function smoke() {
   const other = new BrowserWindow({ show: false, webPreferences: { preload, sandbox: false, contextIsolation: true } }); await other.loadURL('about:blank')
   assert.equal(await run(other, `electronAPI.qaWindowDetach()`), false)
   assert.equal(await run(other, `electronAPI.qaTarget()`), null)
+  assert.equal(await run(other, `electronAPI.qaAgentQuota({ownerKey:null,agent:'gemini-api'}).then(()=>false,()=>true)`), true, 'untrusted window cannot check account quota')
+  assert.equal(await run(detached, `electronAPI.qaAgentQuota({ownerKey:'forged-owner',agent:'gemini-api'}).then(()=>false,()=>true)`), true, 'quota rejects forged account scope')
+  const quota = await run(detached, `electronAPI.qaAgentQuota({ownerKey:null,agent:'gemini-api'})`)
+  assert.equal(quota.source,'unavailable'); assert.match(quota.note,/AI Studio/)
+  await run(detached,`electronAPI.qaWindowAction({type:'info',command:'/quota gemini-api',text:'Gemini account limits are available in AI Studio.'})`)
+  await until(()=>run(host,`__chat.getState().messages.some(message=>message.localCommand==='/quota gemini-api')`),'quota command report synchronizes to host')
   await run(other, `electronAPI.qaWindowAction({type:'clear'})`); await sleep(50)
   assert.match(await run(detached, 'document.body.innerText'), /Already answered/, 'untrusted window cannot clear transcript')
   console.log('QA window authorization verified')
+  const attachmentBytes=(await require('sharp')({create:{width:64,height:32,channels:3,background:'#7755aa'}}).png().toBuffer()).toString('base64');
+  await run(detached,`(()=>{const data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob(${JSON.stringify(attachmentBytes)}),c=>c.charCodeAt(0))],'Detached.png',{type:'image/png'}));document.querySelector('textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))})()`);
+  await until(()=>run(host,`__chat.getState().draft.attachments?.length===1`),'draft attachments mirror to the host');
+  await until(()=>run(detached,`!!document.querySelector('.qa-composer-attachments img')`),'detached thumbnail loads');
+  await click(detached,'.qa-composer-attachments .qa-chat-image-view');
+  await until(()=>run(detached,`!!document.querySelector('.qa-lightbox img')`),'detached attachment lightbox');
+  await run(detached,`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+  await click(detached,'.qa-chat-image-remove');
+  await until(()=>run(host,`__chat.getState().draft.attachments?.length===0`),'attachment removal mirrors to host');
+
+  await run(host,`electronAPI.qaWindowSync({ownerKey:'parity:another-account',chat:{messages:[{kind:'assistant',text:'Wrong account data'}]},theme:'parity'})`)
+  await sleep(80)
+  assert.doesNotMatch(await run(detached,'document.body.innerText'),/Wrong account data/,'foreign-account mirrors are rejected')
+  const chatId=await run(host,'__chat.getState().chatId')
+  await run(detached,`electronAPI.qaChatSelection(${JSON.stringify(chatId)},{agent:'codex',model:'fixture-model'})`)
+  await until(()=>run(host,`__chat.getState().selection?.agent==='codex'&&__chat.getState().selection?.model==='fixture-model'`),'chat model choice mirrors to host')
+  await until(()=>run(detached,`document.querySelector('.qa-composer-model-caption').textContent.includes('For this chat')`),'detached model override label')
+  assert.equal((await run(host,'electronAPI.qaAgentsSettings()')).models.codex,'','chat choice does not alter default model')
   host.webContents.send('qa:run:event', { type: 'started', agent: 'fixture', label: 'Fixture agent' })
+  await until(() => run(detached, `!!document.querySelector('.qa-response-skeleton')`), 'response skeleton mirrors to detached chat')
   host.webContents.send('qa:run:event', { type: 'text', text: 'Live ', delta: true })
   host.webContents.send('qa:run:event', { type: 'text', text: 'answer', delta: true })
   host.webContents.send('qa:run:event', { type: 'usage', inputTokens: 21, outputTokens: 5 })
   await until(() => run(detached, `document.body.innerText.includes('Live answer')`), 'stream in detached window')
+  assert.equal(await run(detached, `!!document.querySelector('.qa-response-skeleton')`), false, 'streamed text replaces the placeholder')
   await type(detached, 'Updated unsent message')
   await until(() => run(host, `__chat.getState().draft.input === 'Updated unsent message'`), 'draft mirror')
   await click(detached, '[id="qa-tab-findings"]')

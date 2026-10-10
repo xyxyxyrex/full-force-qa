@@ -14,5 +14,6 @@
     "resolveJsonModule": true,
     "declaration": true
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*"]
+  "include": ["src/renderer/**/*", "src/shared/**/*"],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }

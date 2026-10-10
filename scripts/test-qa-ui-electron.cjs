@@ -22,7 +22,7 @@ async function smoke() {
   app.setPath('userData', path.join(dir, 'profile')); app.disableHardwareAcceleration(); await app.whenReady()
   const win = new BrowserWindow({ show: false, width: 1100, height: 900, webPreferences: { offscreen: true, backgroundThrottling: false, contextIsolation: false } })
   const sleep = ms => new Promise(r => setTimeout(r, ms))
-  const run = code => win.webContents.executeJavaScript(code)
+  const run = code => win.webContents.executeJavaScript(code).catch(error=>{throw new Error(`Renderer expression failed: ${code.slice(0,300)}\n${error.message}`)})
   const shot = async name => { await sleep(350); fs.writeFileSync(path.join(dir, name + '.png'), (await win.webContents.capturePage()).toPNG()) }
   const open = async view => { await win.loadFile(path.join(dir, 'ui.html'), { query: { view } }); await sleep(500) }
   const text = selector => run(`document.querySelector(${JSON.stringify(selector)})?.innerText ?? ''`)
@@ -277,22 +277,57 @@ async function smoke() {
 
   // Chat
   await open('chat')
-  assert.match(await text('.qa-chat-agent'), /Claude Code/, 'the chat shows the current selection before a run')
+  assert.equal(await text('.qa-chat-title'), 'Chat');
+  assert.equal(await run(`document.querySelectorAll('.qa-chat-actions button svg').length`), 4, 'header actions use SVG icons');
+  assert.equal(await run(`!!document.querySelector('.qa-chat-agent')`), false, 'the header does not repeat the model');
+  assert.match(await text('.qa-provider-trigger'), /Claude Code/, 'the composer shows the current selection before a run')
   await run(`window.electronAPI.qaAgentsSaveSettings({defaultAgent:'codex',models:{codex:'gpt-5.6-sol'}})`)
-  assert.match(await text('.qa-chat-agent'), /codex.*gpt-5.6-sol/, 'settings update the open chat without reopening the project')
+  await until(`document.querySelector('.qa-composer-models .agents-model-trigger').textContent.includes('gpt-5.6-sol')`);
+  assert.match(await text('.qa-provider-trigger'), /Codex/, 'settings update the composer without reopening the project')
   assert.equal(await run(`document.querySelectorAll('.qa-chat-suggestions button').length`), 4, 'an empty chat offers starting points')
   assert.match(await text('.qa-chat-suggestions'), /Check copy, contrast and layout/, 'including the page checks')
   // The review target: which page, and which designs are stored for it.
   assert.match(await text('.qa-target-page'), /\/alopecia-page/, 'the open page is shown')
-  assert.equal(await run(`document.querySelectorAll('.qa-target-design:not(.missing) img').length`), 2, 'the stored designs are shown')
-  assert.match(await text('.qa-target-designs'), /alopecia-desktop@2x\.png/, 'with their file names')
-  assert.match(await text('.qa-target-designs'), /Tablet\s*no design/, 'a missing breakpoint says so')
-  assert.match(await text('.qa-target-note'), /No tablet design for this page/)
+  assert.equal(await run(`document.querySelectorAll('.qa-target-design:not(.missing) > svg').length`), 2, 'available designs use device icons');
+  assert.equal(await run(`document.querySelectorAll('.qa-target-design.missing .qa-target-unavailable svg').length`), 1, 'missing designs have a circle-slash badge');
+  assert.equal(await run(`document.querySelector('.qa-target-design.missing').getAttribute('aria-label')`), 'Tablet: no design');
+  assert.match(await run(`document.querySelector('.qa-target-design .qa-target-tooltip').textContent`), /alopecia-desktop@2x\.png/, 'design details live in the tooltip');
+  assert.equal(await run(`!!document.querySelector('.qa-target-warn,.qa-target-note')`), false, 'missing design notices no longer occupy the conversation');
+  win.focus();win.webContents.focus();
+  await run(`document.querySelector('.qa-target-design.missing').focus()`);await sleep(80);
+  assert.equal(await run(`getComputedStyle(document.querySelector('.qa-target-design.missing .qa-target-tooltip')).visibility`), 'visible', 'keyboard focus reveals the design tooltip');
+  assert.match(await text('.qa-target-design.missing .qa-target-tooltip'), /Add its Figma PNG/);
+  await run(`document.querySelector('.qa-chat-composer textarea').focus()`);
+  assert.equal(await run(`getComputedStyle(document.querySelector('.qa-target-design.missing .qa-target-tooltip')).visibility`), 'hidden');
+  const sameComposerHeight = `Math.abs(document.querySelector('.qa-command-toggle').getBoundingClientRect().height-document.querySelector('.qa-chat-composer textarea').getBoundingClientRect().height)<1`;
+  assert.equal(await run(sameComposerHeight), true, 'plus and text field share a height');
+  assert.equal(await run(`!!document.querySelector('.qa-command-toggle svg') && !document.querySelector('.qa-command-toggle').textContent.trim()`), true);
+  await type('.qa-chat-composer textarea', 'One\nTwo\nThree');
+  assert.equal(await run(sameComposerHeight), true, 'plus stays aligned when the message grows');
+  assert.ok(await run(`document.querySelector('.qa-chat-composer textarea').getBoundingClientRect().height > 40`));
+  await type('.qa-chat-composer textarea', '');
+  await click('.qa-command-toggle');
+  assert.equal(await run(`!!document.querySelector('.qa-composer-add-menu')`), true, 'plus opens images and commands');
+  await buttonText('.qa-composer-add-menu button','Commands');
+  assert.equal(await run(`!!document.querySelector('.qa-command-menu')`), true, 'commands remain available from plus');
+  await key('.qa-chat-composer textarea', 'Escape');
+  await type('.qa-chat-composer textarea', '');
+  await run(`document.querySelector('.qa-chat').parentElement.style.width='300px'`);
+  assert.equal(await run(`(()=>{const parent=document.querySelector('.qa-chat').getBoundingClientRect();return [...document.querySelectorAll('.qa-chat-actions button,.qa-chat-composer,.qa-target-design')].every(el=>{const r=el.getBoundingClientRect();return r.left>=parent.left&&r.right<=parent.right})})()`), true, 'controls fit a narrow chat');
+  assert.equal(await run(sameComposerHeight), true);
+  await shot('chat-minimal-narrow');
+  await run(`document.querySelector('.qa-chat').parentElement.style.width='400px'`);
+  for (const theme of [...new Set(themes)]) {
+    await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+    assert.equal(await run(`(()=>{const probe=document.createElement('i');probe.style.background='var(--bg-input)';document.body.append(probe);const same=getComputedStyle(document.querySelector('.qa-chat-composer')).backgroundColor===getComputedStyle(probe).backgroundColor;probe.remove();return same})()`), true, `composer follows ${theme}`);
+  }
+  await run(`document.documentElement.dataset.theme='light'`);await shot('chat-minimal-light');
+  await run(`document.documentElement.dataset.theme='parity'`);
   await shot('chat-target')
   await run(`window.__target = window.__targets.contact`); await sleep(3200)
   assert.match(await text('.qa-target-page'), /\/contact/, 'changing the page changes the target')
-  assert.equal(await run(`document.querySelectorAll('.qa-target-design:not(.missing) img').length`), 0, 'and the designs are that page\'s, not the previous one\'s')
-  assert.match(await text('.qa-target-warn'), /No designs for this page yet/)
+  assert.equal(await run(`document.querySelectorAll('.qa-target-design.missing').length`), 3, 'all three designs are absent on the new page')
+  assert.match(await run(`document.querySelector('.qa-target-tooltip').textContent`), /No desktop design for this page yet/)
   await run(`window.__target = window.__targets.alopecia`); await sleep(3200)
   assert.match(await text('.qa-chat-meter'), /tokens: —/, 'the meter says usage is not reported yet')
   const send = async message => { await run(`(() => { const t = document.querySelector('.qa-chat-composer textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, ${JSON.stringify(message)}); t.dispatchEvent(new Event('input', { bubbles: true })) })()`); await sleep(80); await click('.qa-chat-send'); await sleep(250) }
@@ -302,22 +337,66 @@ async function smoke() {
   await sleep(500)
   assert.ok((await run('window.__calls')).some(c => c.startsWith('chats-save chat-')), 'the chat is saved')
   assert.match(await text('.qa-chat-body'), /How big is the hero heading\?/, 'and shows as your bubble')
-  await send('/review tablet --agent codex'); assert.ok((await run('window.__calls')).includes('run {"agent":"codex","breakpoints":["tablet"]}'), '/review starts a review')
+  await send('/review tablet --agent codex'); assert.ok((await run('window.__calls')).some(c=>c.startsWith('run ')&&JSON.parse(c.slice(4)).agent==='codex'&&JSON.parse(c.slice(4)).chatId), '/review uses its chat selection and explicit agent')
   await send('/review --agent skynet'); assert.match(await text('.qa-chat-body'), /Unknown agent "skynet"/)
   await send('/agents'); assert.match(await text('.qa-chat-body'), /claude-code\s+ready/); assert.match(await text('.qa-chat-body'), /codex\s+not ready/)
   await send('/help'); assert.match(await text('.qa-chat-body'), /\/review \[desktop\|tablet\|mobile\]/); assert.match(await text('.qa-chat-body'), /--no-design/)
-  await send('/review mobile --no-design'); assert.ok((await run('window.__calls')).includes('run {"breakpoints":["mobile"],"standalone":true}'), '--no-design reviews the page on its own')
-  await send('/review --visual-only'); assert.ok((await run('window.__calls')).includes('run {"functional":false}'), '--visual-only skips testing links, buttons and forms')
+  assert.match(await text('.qa-chat-body'), /\/usage/); assert.match(await text('.qa-chat-body'), /\/quota/)
+  await send('/usage'); assert.match(await text('.qa-chat-body'), /does not mean zero usage/)
+  const beforeQuota = await run('window.__calls.filter(c=>c.startsWith("chat ")||c.startsWith("run ")).length')
+  await run('window.__quotaDelay=true')
+  await send('/quota codex --refresh')
+  await until(`!!document.querySelector('.qa-command-progress')`)
+  assert.match(await text('.qa-command-progress'), /Checking provider quota/)
+  assert.equal(await run(`!!document.querySelector('.qa-response-skeleton')`), false, 'quota checking does not pretend the model is thinking')
+  await run('window.__releaseQuota();window.__quotaDelay=false')
+  await until(`!!document.querySelector('.qa-quota-refresh')`)
+  assert.equal(await run(`getComputedStyle(document.querySelector('.qa-command-report')).whiteSpace`),'normal','command reports use compact Markdown spacing')
+  assert.equal(await run(`getComputedStyle(document.querySelector('.qa-quota-refresh')).borderRadius`),'6px','quota refresh follows themed controls')
+  assert.match(await text('.qa-chat-body'), /75% remaining/)
+  assert.equal(await run('window.__calls.filter(c=>c.startsWith("chat ")||c.startsWith("run ")).length'), beforeQuota, 'usage and quota never start inference or a review')
+  assert.ok((await run('window.__calls')).some(c=>c.startsWith('quota ')&&JSON.parse(c.slice(6)).agent==='codex'&&JSON.parse(c.slice(6)).refresh===true))
+  await run('window.__quotaError=true')
+  await click('.qa-quota-refresh')
+  await until(`document.querySelector('.qa-chat-body').innerText.includes('Could not check quota')`)
+  await run('window.__quotaError=false')
+  await click('.qa-quota-refresh',1)
+  await until(`document.querySelectorAll('.qa-quota-refresh').length===3`)
+  await shot('chat-usage-quota')
+  const reads = (await run('window.__calls')).filter(c=>c.startsWith('quota ')).length
+  await send('/quota unknown-provider')
+  assert.equal((await run('window.__calls')).filter(c=>c.startsWith('quota ')).length, reads, 'invalid providers are rejected before IPC')
+  await send('/review mobile --no-design'); assert.ok((await run('window.__calls')).some(c=>c.startsWith('run ')&&JSON.parse(c.slice(4)).standalone===true), '--no-design reviews the page on its own')
+  await send('/review --visual-only'); assert.ok((await run('window.__calls')).some(c=>c.startsWith('run ')&&JSON.parse(c.slice(4)).functional===false), '--visual-only skips testing links, buttons and forms')
   // A streamed answer: deltas join into one message, tool calls become cards, tokens add up, the turn ends with a summary.
   for (const e of [
     { type: 'started', agent: 'anthropic-api', label: 'Claude API (claude-opus-5-5)', budgetTokens: 10000 },
     { type: 'text', text: 'The **hero** heading is ', delta: true }, { type: 'text', text: '`28px` tall.', delta: true },
     { type: 'tool', name: 'get_section', args: { section: 'S2' } },
     { type: 'usage', inputTokens: 1000, outputTokens: 200 },
-  ]) await run(`window.__emit(${JSON.stringify(e)})`)
+  ]) {
+    await run(`window.__emit(${JSON.stringify(e)})`);await sleep(60)
+    if(e.type==='started') {
+      assert.match(await text('.qa-response-pending-label'), /Thinking/);
+      assert.equal(await run(`document.querySelectorAll('.qa-response-skeleton i').length`),3,'waiting shows a response skeleton');
+      assert.equal(await run(`getComputedStyle(document.querySelector('.qa-response-pending-label span')).animationName`),'qa-response-pulse');
+      await win.webContents.debugger.attach('1.3');
+      await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+      assert.equal(await run(`getComputedStyle(document.querySelector('.qa-response-skeleton i')).animationName`),'none');
+      assert.equal(await run(`getComputedStyle(document.querySelector('.qa-response-pending-label span')).animationName`),'none');
+      await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+      win.webContents.debugger.detach();
+      await shot('chat-thinking');
+    }
+    if(e.type==='text') assert.equal(await run(`!!document.querySelector('.qa-response-skeleton')`),false,'real streamed text replaces the skeleton');
+    if(e.type==='tool') {
+      assert.match(await text('.qa-response-pending-label'),/Checking the details/);
+      assert.equal(await run(`!!document.querySelector('.qa-response-skeleton')`),true,'the placeholder returns between tool work and the next reply');
+    }
+  }
   await sleep(250)
-  assert.match(await text('.qa-chat-agent'), /Claude API/); assert.match(await text('.qa-chat-activity'), /Waiting for response/)
-  assert.equal(await run(`document.querySelector('.qa-chat-send').textContent.includes('Stop')`), true, 'while working the button stops the agent')
+  assert.equal(await text('.qa-chat-title'), 'Chat'); assert.match(await text('.qa-chat-activity'), /Waiting for response/)
+  assert.equal(await run(`document.querySelector('.qa-chat-send').getAttribute('aria-label') === 'Stop'`), true, 'while working the button stops the agent')
   assert.equal(await run(`document.querySelectorAll('.qa-chat-tool.pending').length`), 1, 'a running tool shows as pending')
   assert.match(await text('.qa-chat-meter'), /1\.2k tokens/); assert.match(await text('.qa-chat-meter'), /\+1\.2k now/)
   for (const e of [
@@ -333,22 +412,82 @@ async function smoke() {
   assert.match(await text('.qa-chat-body'), /Inspect section/); assert.equal(await run(`document.querySelectorAll('.qa-chat-tool.ok').length`), 1, 'a finished tool shows as done')
   assert.match(chatBody, /3,500 tokens · 3,000 in, 500 out · 2 requests/, 'each message ends with its token use')
   assert.match(await text('.qa-chat-meter'), /3\.5k tokens/); assert.match(await text('.qa-chat-meter'), /3k in · 500 out/)
-  assert.equal(await run(`document.querySelector('.qa-chat-activity')`), null, 'the working marker clears when the agent finishes')
+  assert.equal(await run(`document.querySelector('.qa-chat-activity')`), null, 'the working marker clears when the agent finishes');
+  assert.equal(await run(`!!document.querySelector('.qa-response-pending')`),false,'completed replies leave no loader')
   await shot('chat')
   await run(`window.__historyTab = ''; window.addEventListener('parity:open-qa-history', (e) => { window.__historyTab = e.detail.tab })`)
-  await run(`[...document.querySelectorAll('.qa-chat-actions button')].find(b => b.textContent === 'History').click()`); await sleep(100)
+  await run(`[...document.querySelectorAll('.qa-chat-actions button')].find(b => b.getAttribute('aria-label') === 'History').click()`); await sleep(100)
   assert.equal(await run('window.__historyTab'), 'chats', 'History opens past chats')
-  await run(`[...document.querySelectorAll('.qa-chat-actions button')].find(b => b.textContent === 'New chat').click()`); await sleep(250)
+  await run(`[...document.querySelectorAll('.qa-chat-actions button')].find(b => b.getAttribute('aria-label') === 'New chat').click()`); await sleep(250)
   assert.ok((await run('window.__calls')).includes('chat-reset'), 'New chat tells the agent to forget')
   assert.equal(await run(`document.querySelectorAll('.qa-chat-msg').length`), 0, 'and clears the transcript')
   assert.match(await text('.qa-chat-meter'), /tokens: —/, 'and the counts')
+
+  // Images: real file inputs, paste/drop events, removal, lightbox and image-only sends.
+  const imageFile = `new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8i8AAAAASUVORK5CYII='),c=>c.charCodeAt(0))], 'Screenshot.png', {type:'image/png'})`;
+  await run(`(()=>{const transfer=new DataTransfer();transfer.items.add(${imageFile});const field=document.querySelector('[aria-label="Attach images"]');field.files=transfer.files;field.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+  await until(`!!document.querySelector('.qa-composer-attachments img')`);
+  await click('.qa-composer-attachments .qa-chat-image-view');
+  await until(`!!document.querySelector('.qa-lightbox img')`);
+  await key('.qa-chat-composer textarea','Escape');
+  assert.equal(await run(`!!document.querySelector('.qa-lightbox')`),false,'Escape closes attachment lightbox');
+  await click('.qa-chat-image-remove');
+  assert.equal(await run(`!!document.querySelector('.qa-composer-attachments')`),false,'draft images can be removed');
+  await run(`(()=>{const data=new DataTransfer();data.items.add(${imageFile});document.querySelector('.qa-chat-composer textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))})()`);
+  await until(`!!document.querySelector('.qa-composer-attachments img')`);
+  await shot('chat-attached-image');
+  await click('.qa-chat-send');await sleep(150);
+  assert.equal(await run(`window.__lastChatOptions.attachmentIds.length`),1,'send includes the owned image ID');
+  assert.equal(await run(`!!document.querySelector('.qa-composer-attachments')`),false,'sent attachments leave the draft');
+  await until(`!!document.querySelector('.qa-chat-bubble .qa-chat-images img')`);
+  await click('.qa-chat-bubble .qa-chat-image-view');await until(`!!document.querySelector('.qa-lightbox img')`);
+  await shot('chat-image-lightbox');
+  await key('.qa-chat-composer textarea','Escape');
+  await run(`window.__setView('none')`);await sleep(80);await run(`window.__setView('chat')`);await sleep(120);
+  await until(`!!document.querySelector('.qa-chat-bubble .qa-chat-images img')`);
+  await run(`(()=>{const data=new DataTransfer();data.items.add(${imageFile});document.querySelector('.qa-chat-composer').dispatchEvent(new DragEvent('drop',{dataTransfer:data,bubbles:true,cancelable:true}))})()`);
+  await until(`!!document.querySelector('.qa-composer-attachments img')`);
+  await click('.qa-chat-image-remove');
+  await run(`(()=>{const data=new DataTransfer();for(let i=0;i<5;i++)data.items.add(${imageFile});document.querySelector('.qa-chat-composer').dispatchEvent(new DragEvent('drop',{dataTransfer:data,bubbles:true,cancelable:true}))})()`);
+  assert.match(await text('.qa-composer-image-status'),/up to 4 images/);
+  await click('[aria-label="Dismiss image error"]');
+
+  // Smooth presentation for full paragraph replies; copy always retains received text.
+  const paragraph=('The page layout is consistent, but the heading needs more space. '+String.fromCodePoint(0x1f469,0x200d,0x1f467)+' ').repeat(6).trim();
+  await run(`window.__emit(${JSON.stringify({type:'text',text:paragraph})})`);
+  await sleep(80);
+  const partial=await run(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent`);
+  assert.ok(partial.length>0&&partial.length<paragraph.length,'new paragraphs reveal progressively instead of popping in');
+  win.webContents.sendInputEvent({type:'mouseMove',x:1050,y:850});await sleep(40);
+  assert.equal(await run(`getComputedStyle([...document.querySelectorAll('.qa-answer-copy')].at(-1)).opacity`),'0','copy icon stays hidden without hover or focus');
+  assert.equal(await run(`document.querySelectorAll('.qa-answer-copy svg').length===document.querySelectorAll('.qa-answer-copy').length`),true,'answers use SVG copy icons');
+  await run(`Object.defineProperty(navigator.clipboard,'writeText',{configurable:true,value:async text=>{window.__copiedAnswer=text}});[...document.querySelectorAll('.qa-answer-copy')].at(-1).focus()`);
+  assert.equal(await run(`getComputedStyle([...document.querySelectorAll('.qa-answer-copy')].at(-1)).opacity`),'1','keyboard focus reveals copy');
+  await run(`[...document.querySelectorAll('.qa-answer-copy')].at(-1).click()`);await sleep(50);
+  assert.equal(await run('window.__copiedAnswer'),paragraph,'copy includes the full received answer during the animation');
+  await until(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent===${JSON.stringify(paragraph)}`);
+  await run(`document.querySelector('textarea').focus()`);
+  const hoverPoint=await run(`(()=>{const r=[...document.querySelectorAll('.qa-chat-text')].at(-1).getBoundingClientRect();return{x:Math.round(r.left+8),y:Math.round(Math.max(r.top+8,document.querySelector('.qa-chat-body').getBoundingClientRect().top+8))}})()`);
+  win.webContents.sendInputEvent({type:'mouseMove',...hoverPoint});await sleep(60);
+  assert.equal(await run(`getComputedStyle([...document.querySelectorAll('.qa-answer-copy')].at(-1)).opacity`),'1','hover reveals the top-right copy control');
+  await shot('chat-hover-copy');
+  await run(`window.__setView('none')`);await sleep(60);await run(`window.__setView('chat')`);await sleep(80);
+  assert.equal(await run(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent`),paragraph,'reopening does not replay the typing effect');
+  await win.webContents.debugger.attach('1.3');
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await run(`window.__emit({type:'text',text:'This reduced-motion reply is shown immediately.'})`);await sleep(40);
+  assert.equal(await run(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent`),'This reduced-motion reply is shown immediately.');
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});win.webContents.debugger.detach();
+  await run(`window.__emit({type:'text',text:'Streaming',delta:true})`);
+  for(let i=0;i<20;i++)await run(`window.__emit({type:'text',text:' fast',delta:true})`);
+  await until(`[...document.querySelectorAll('.qa-answer-content')].at(-1).textContent===${JSON.stringify('Streaming'+' fast'.repeat(20))}`);
 
   // Formatted answers, command discovery, truthful timing, saved findings, and retries.
   await send('/unknown-command')
   assert.match(await text('.qa-chat-body'), /Unknown command/)
   assert.equal((await run('window.__calls')).includes('chat /unknown-command'), false, 'unknown commands stay local')
   await type('.qa-chat-composer textarea', '/r')
-  assert.equal(await run(`document.querySelectorAll('.qa-command-menu [role=option]').length`), 1)
+  assert.equal(await run(`document.querySelectorAll('.qa-command-menu [role=option]').length`), 3)
   await key('.qa-chat-composer textarea', 'Tab')
   assert.equal(await run(`document.querySelector('.qa-chat-composer textarea').value`), '/review ')
   await type('.qa-chat-composer textarea', '/review --agent cod')
@@ -363,9 +502,17 @@ async function smoke() {
   const stops = (await run('window.__calls')).filter(c=>c==='stop').length
   await key('.qa-chat-composer textarea', 'Escape')
   assert.equal((await run('window.__calls')).filter(c=>c==='stop').length, stops, 'Escape dismisses commands before stopping a run')
+  for(const phase of ['approval','retrying']) {
+    await run(`window.__emit({type:'activity',phase:${JSON.stringify(phase)},startedAt:Date.now(),retryAt:Date.now()+10000})`);await sleep(60);
+    assert.equal(await run(`!!document.querySelector('.qa-response-skeleton')`),false,'paused work does not pretend an answer is generating');
+    assert.equal(await run(`getComputedStyle(document.querySelector('.qa-response-pending-label span')).animationName`),'none');
+  }
+  await run(`window.__emit({type:'activity',phase:'waiting',startedAt:Date.now()})`);await sleep(60);
+  assert.equal(await run(`!!document.querySelector('.qa-response-skeleton')`),true,'resuming work restores the placeholder');
   await run(`window.__emit({type:'finished'})`)
   const markdown = '# Result\n\n| Check | Value |\n| --- | --- |\n| Font | 28px |\n\n> Verified\n\n- Parent\n  - Child\n\n```css\nh1 { color: red; }\n```\n\n[Docs](https://example.test/docs)\n\n![remote](https://example.test/image.png)\n\n<script>window.__injected=true</script>'
   await run(`window.__emit(${JSON.stringify({type:'text',text:markdown})})`)
+  await until(`document.querySelector('.qa-chat-text h1') && !document.querySelector('.qa-chat-text[aria-busy=true]')`);
   assert.equal(await run(`document.querySelectorAll('.qa-chat-text h1').length`), 1)
   assert.equal(await run(`document.querySelectorAll('.qa-chat-text table').length`), 1)
   assert.equal(await run(`document.querySelectorAll('.qa-chat-text blockquote').length`), 1)
@@ -396,9 +543,12 @@ async function smoke() {
   await type('[aria-label="Search findings"]','heading')
   assert.equal(await run(`document.querySelectorAll('.qa-organizer-item').length`),1)
   await type('[aria-label="Search findings"]','')
+  assert.equal(await run(`!!document.querySelector('.qa-organizer-filters')`), false, 'filters stay out of the way until requested');
+  await click('.qa-organizer-filter-toggle');
   await run(`document.querySelector('[aria-label="Filter findings by breakpoint"]').value='mobile';document.querySelector('[aria-label="Filter findings by breakpoint"]').dispatchEvent(new Event('change',{bubbles:true}))`);await sleep(120)
   assert.equal(await run(`document.querySelectorAll('.qa-organizer-item').length`),1)
   await run(`document.querySelector('[aria-label="Filter findings by breakpoint"]').value='';document.querySelector('[aria-label="Filter findings by breakpoint"]').dispatchEvent(new Event('change',{bubbles:true}))`);await sleep(120)
+  await click('.qa-organizer-filter-toggle');
   const hero='.qa-organizer-item:has([aria-label="Select finding Hero"])'
   await click(`${hero} summary`)
   await until(`!!document.querySelector('${hero} img')`)
@@ -414,7 +564,7 @@ async function smoke() {
   assert.match(await text(`${hero} .qa-organizer-state`),/Accepted/)
   await buttonText('.qa-organizer-actions.bulk button','Copy rows');await sleep(150)
   assert.ok((await run('window.__calls')).includes('findings-copy finding-a'))
-  await buttonText('.qa-organizer header button','Open in tracker')
+  await click('.qa-organizer [aria-label="Open in tracker"]')
   await until(`!!document.querySelector('.qa-tracker-dialog .fortune-sheet-container')`)
   assert.match(await text('.qa-tracker-dialog'),/AI Findings/)
   assert.match(await text('.qa-tracker-dialog'),/QA Tracker/,'manual sheets are still present')
@@ -449,6 +599,32 @@ async function smoke() {
   assert.equal(await run(`!!document.querySelector('.qa-tracker-dialog')`),false)
   assert.match(await text('.qa-organizer-list'),/Tracker-edited section/,'the organizer shows edits made in the grid')
   await shot('ai-findings-organizer')
+  await click('[aria-label="More findings actions"]');
+  assert.equal(await run(`document.querySelectorAll('.qa-organizer-menu [role=menuitem]').length`),2);
+  await key('.qa-organizer-menu [role=menuitem]','ArrowDown');
+  assert.equal(await run(`document.activeElement.textContent.trim()`),'Refresh','arrow keys navigate secondary actions');
+  await key('.qa-organizer-menu [role=menuitem]','Escape');
+  assert.equal(await run(`document.activeElement.getAttribute('aria-label')`),'More findings actions');
+  await click('[aria-label="More findings actions"]');
+  await buttonText('.qa-organizer-menu button','Import past findings');
+  await until(`window.__calls.includes('findings-import')`);
+  await run('window.__setFindingsEmpty()');
+  await until(`!!document.querySelector('.qa-organizer.is-empty')`);
+  assert.match(await text('.qa-organizer-empty'),/No findings yet/);
+  assert.equal(await run(`document.querySelectorAll('.qa-organizer input,.qa-organizer select,.qa-organizer footer,.qa-organizer-selection').length`),0,'empty findings contain no useless filters or zero-selection controls');
+  assert.equal(await run(`!!document.querySelector('.qa-organizer [aria-label="Open in tracker"] svg')`),true,'tracker remains accessible as an icon');
+  await shot('findings-empty-minimal');
+  await run(`document.querySelector('.qa-chat').parentElement.style.width='300px'`);
+  await click('[aria-label="More findings actions"]');
+  assert.equal(await run(`(()=>{const menu=document.querySelector('.qa-organizer-menu').getBoundingClientRect();const panel=document.querySelector('.qa-chat').getBoundingClientRect();return menu.left>=panel.left&&menu.right<=panel.right})()`),true,'secondary actions fit the narrow panel');
+  for(const theme of [...new Set(themes)]) {
+    await run(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);
+    assert.equal(await run(`(()=>{const probe=document.createElement('i');probe.style.background='var(--modal-bg)';document.body.append(probe);const same=getComputedStyle(document.querySelector('.qa-organizer-menu')).backgroundColor===getComputedStyle(probe).backgroundColor;probe.remove();return same})()`),true,`findings actions follow ${theme}`);
+  }
+  await run(`document.documentElement.dataset.theme='light'`);await shot('findings-empty-light');
+  await run(`document.documentElement.dataset.theme='parity';document.querySelector('.qa-chat').parentElement.style.width='400px'`);
+  await key('.qa-organizer-menu [role=menuitem]','Escape');
+
   await click('#qa-tab-chat')
 
   await open('agents');await run('window.__releaseOverview()');await until(`!!document.querySelector('.agents-remark-style')`)
@@ -463,6 +639,28 @@ async function smoke() {
   assert.equal(await run('window.__calls.filter(c=>c.startsWith("models ")).length'),discoveryCalls,'remark previews never make model requests')
   await run("document.querySelector('.agents-remark-style').scrollIntoView({block:'start'})");await shot('remark-style-controls')
 
+  // Workspace result cards, reviewed actions, and the composer model picker.
+  await open('chat')
+  const globalSettings=await run('window.electronAPI.qaAgentsSettings().then(JSON.stringify)')
+  await click('.qa-provider-trigger');await until(`document.querySelectorAll('.qa-provider-menu [role=option]').length===8`)
+  await run(`[...document.querySelectorAll('.qa-provider-menu button')].find(b=>b.textContent.includes('Custom server')).click()`)
+  await until(`document.querySelector('.qa-composer-model-caption').textContent.includes('For this chat')`)
+  assert.ok((await run('window.__calls')).some(c=>c.startsWith('chat-selection ')))
+  assert.equal((await run('window.__calls')).some(c=>c.startsWith('save ')),false,'composer selection does not save Settings')
+  assert.equal(await run('window.electronAPI.qaAgentsSettings().then(JSON.stringify)'),globalSettings)
+  await click('.qa-composer-model-caption button');await until(`document.querySelector('.qa-composer-model-caption').textContent.includes('Settings default')`)
+  await send('/search client');await until(`document.querySelectorAll('.qa-workspace-results button').length===2`)
+  await click('.qa-workspace-results button');assert.ok((await run('window.__calls')).includes('workspace-open project:owned-project'))
+  await send('/captures 10/09/26');assert.match(await text('.qa-workspace-results'),/Captured client website/)
+  await send('/create project https://new.test --folder "Client"');await until(`!!document.querySelector('.qa-workspace-action')`)
+  assert.equal((await run('window.__calls')).some(c=>c.startsWith('workspace-apply ')),false,'changes require Apply')
+  await run('window.__workspaceFail=true');await click('.qa-action-primary');await until(`document.querySelector('.qa-workspace-action').textContent.includes('Retry')`)
+  await run('window.__workspaceFail=false');await click('.qa-action-primary');await until(`document.querySelector('.qa-workspace-action').textContent.includes('applied')`)
+  assert.equal((await run('window.__calls')).some(c=>c.startsWith('capture ')),false,'creating projects never invokes capture')
+  await shot('workspace-assistant')
+  win.setSize(460,800);await click('.qa-composer-models .agents-model-trigger');await until(`!!document.querySelector('.agents-model-menu')`)
+  assert.equal(await run(`(()=>{const r=document.querySelector('.agents-model-menu').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight})()`),true,'chat model menu fits a narrow window')
+  await key('[aria-label="Search models"]','Escape');await shot('workspace-assistant-narrow')
   console.log('QA UI smoke passed')
   app.exit(0)
 }

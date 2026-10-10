@@ -2,7 +2,7 @@
 
 Parity is an Electron desktop application for quality assurance engineers, web developers, and designers reviewing website implementations. It combines authenticated Chromium previews, direct visual editing, Figma comparison, SEO and grammar audits, automated visual findings, annotations, and expiring browser-based review links in one QA workspace.
 
-**v1.5.0 was Parity's first public release. v1.5.4 adds a detachable agent chat, searchable model discovery, live model switching, formatted answers, recoverable retries, and a project findings organizer with configurable remarks.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
+**v1.5.0 was Parity's first public release. v1.5.5 adds workspace-aware assistance, reviewed project/folder management, image attachments, a cleaner chat and findings interface, fast typed replies, and `/usage` and `/quota` commands. It also fixes Gemini tool-call signatures.** Parity is available as a Windows installer and receives desktop updates through GitHub Releases.
 
 ## Links
 
@@ -105,6 +105,8 @@ The current link audit inventories destinations but does not make HTTP requests 
 - **Legacy compatibility**: Python/OpenCV source and packaging remain temporarily, but Automation has no runtime caller or fallback to them. See [foundation implementation report](AUTOMATION_FOUNDATION_REPORT.md) for checks and deferred work.
 
 ### 5. QA Agent
+
+The development build also supports Parity-wide assistance: account-scoped project/folder/capture searches, reviewed organization actions, and a per-chat provider/model picker above the composer. See [workspace assistance](docs/qa-agent.md#workspace-assistance).
 
 An AI agent does the first pass of QA: how the page looks (against the Figma exports when there are any, on its own when not), how it works (links, menus, buttons, forms, errors, tested in a browser of its own), and the SEO and accessibility basics. It drafts rows for the master tracker, adds a few suggestions as ENHANCEMENT (QA) rows, and you approve them before anything is copied.
 

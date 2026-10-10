@@ -50,6 +50,8 @@ jobs:
           if ($env:RELEASE_TAG -ne $expected) {
             throw "Release tag '$env:RELEASE_TAG' must match package version '$expected'."
           }
+          $lockVersion = node -p "require('./package-lock.json').version"
+          if ("v$lockVersion" -ne $expected) { throw "package-lock.json does not match the release version." }
           if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_URL)) {
             throw "Missing VITE_SUPABASE_URL in the production environment."
           }
@@ -60,6 +62,8 @@ jobs:
             throw "VITE_EPHEMERAL_VIEWER_URL must be https://parity-gfx.pages.dev."
           }
       - run: npm ci
+      - name: Check main and renderer types
+        run: npm run typecheck
       - name: Run regression tests
         run: npm test -- --maxWorkers=4
       - name: Verify desktop, authentication and QA workflows in Electron
@@ -134,6 +138,10 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) {
             throw "GitHub Release publication failed."
+          }
+          $updateVersion = Get-Content -LiteralPath 'dist/latest.yml' | Select-String '^version:\s*(.+)$'
+          if (-not $updateVersion -or $updateVersion.Matches[0].Groups[1].Value.Trim() -ne $version) {
+            throw "The auto-update manifest does not match installer v$version."
           }
           # A cancelled upload can leave a draft. Uploading missing artifacts
           # does not publish it, so finalize only after all uploads succeeded.
